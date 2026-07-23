@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export * from "./profile";
+export * from "./reading";
+
 export const serviceHealthSchema = z.object({
   service: z.string().min(1),
   status: z.literal("ok"),
