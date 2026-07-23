@@ -1,0 +1,1 @@
+export { schemaMetadata } from "./schema";

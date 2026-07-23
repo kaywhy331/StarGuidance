@@ -1,0 +1,41 @@
+{
+  "name": "@starguidance/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "5.4.0",
+    "@starguidance/ai": "workspace:*",
+    "@starguidance/contracts": "workspace:*",
+    "@starguidance/database": "workspace:*",
+    "@starguidance/design-system": "workspace:*",
+    "@starguidance/reading-machine": "workspace:*",
+    "@starguidance/tarot-content": "workspace:*",
+    "@starguidance/tarot-domain": "workspace:*",
+    "@stripe/stripe-js": "9.12.0",
+    "@supabase/ssr": "0.12.3",
+    "@supabase/supabase-js": "2.110.8",
+    "@xstate/react": "6.1.0",
+    "motion": "12.42.2",
+    "next": "16.2.11",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-hook-form": "7.82.0",
+    "stripe": "22.3.2",
+    "xstate": "5.32.5",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.3.3"
+  }
+}
