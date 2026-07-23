@@ -2,6 +2,7 @@ import "server-only";
 
 import type { ApplicationRepositories } from "@starguidance/database";
 
+import { isLocalRuntimeAdapterAuthorized } from "./hosted-runtime";
 import { localStore } from "./local-store";
 import { createLocalRepositories } from "./repositories/local";
 import { createPostgresRepositories } from "./repositories/postgres";
@@ -29,14 +30,7 @@ export function getRuntimeAdapter(): RuntimeAdapter {
       "RUNTIME_ADAPTER must explicitly select either local or supabase. No implicit fallback is permitted.",
     );
   if (selected === "local") {
-    const localEnvironment =
-      process.env.APP_ENV === "development" || process.env.APP_ENV === "test";
-    const netlifyContext = process.env.CONTEXT;
-    if (
-      process.env.ALLOW_LOCAL_RUNTIME_ADAPTER !== "true" ||
-      !localEnvironment ||
-      (netlifyContext !== undefined && netlifyContext !== "dev")
-    )
+    if (!isLocalRuntimeAdapterAuthorized())
       throw new RuntimeConfigurationError(
         "The local runtime adapter is allowed only when explicitly enabled for local development/test.",
       );

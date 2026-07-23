@@ -15,7 +15,7 @@ const SECRET_VALUES = {
 function configureStaging() {
   vi.stubEnv("APP_ENV", "staging");
   vi.stubEnv("RUNTIME_ADAPTER", "supabase");
-  vi.stubEnv("CONTEXT", "deploy-preview");
+  vi.stubEnv("SITE_ID", "synthetic-netlify-site-id");
   vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "");
   for (const [name, value] of Object.entries(SECRET_VALUES)) vi.stubEnv(name, value);
 }

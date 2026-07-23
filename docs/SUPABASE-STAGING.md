@@ -16,7 +16,7 @@ Configure these for the Netlify **Deploy Previews** context:
 - `PROFILE_ENGINE_URL`
 - `PROFILE_ENGINE_SHARED_SECRET`
 
-`APP_ENV=staging` and `RUNTIME_ADAPTER=supabase` are non-secret context values committed in `netlify.toml`. `DEPLOY_PRIME_URL` supplies the callback origin automatically. Add the deploy-preview callback wildcard and exact staging callback to Supabase Auth redirect allowlists.
+`APP_ENV=staging` and `RUNTIME_ADAPTER=supabase` are non-secret build values committed in `netlify.toml`. Netlify serverless functions do not receive configuration-file values at runtime, so configure the same names and values in the Netlify UI for the **Deploy Previews** context with **Functions** scope. `DEPLOY_PRIME_URL` is build-only; runtime Auth redirects use the request origin on Netlify previews. Add the deploy-preview callback wildcard and exact staging callback to Supabase Auth redirect allowlists.
 
 Configure the Render profile-engine service using the exact settings in [Deployment](DEPLOYMENT.md): Docker runtime, `apps/profile-engine` root directory, `./Dockerfile`, `.` build context, and `/health`. Render must set `APP_ENV=staging` and the server-only `PROFILE_ENGINE_SHARED_SECRET`; Netlify must use the same managed secret. Confirm variable names only. Never echo either service's value or authorization header.
 

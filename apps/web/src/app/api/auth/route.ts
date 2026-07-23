@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { SESSION_COOKIE } from "@/lib/auth";
+import { isHostedNetlifyRuntime } from "@/lib/hosted-runtime";
 import { createLocalSession } from "@/lib/local-store";
 import { getRuntimeAdapter, RuntimeConfigurationError } from "@/lib/runtime";
 import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
@@ -29,7 +30,10 @@ export async function POST(request: Request) {
       });
       return response;
     }
-    const appUrl = process.env.DEPLOY_PRIME_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+    const appUrl =
+      process.env.APP_ENV === "staging" && isHostedNetlifyRuntime()
+        ? new URL(request.url).origin
+        : process.env.NEXT_PUBLIC_APP_URL;
     if (!appUrl)
       throw new RuntimeConfigurationError("NEXT_PUBLIC_APP_URL is required for Auth redirects.");
     const supabase = await createSupabaseServerClient();

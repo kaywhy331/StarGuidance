@@ -21,7 +21,8 @@ describe("runtime adapter policy", () => {
     vi.stubEnv("RUNTIME_ADAPTER", "local");
     vi.stubEnv("APP_ENV", "test");
     vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
-    vi.stubEnv("CONTEXT", "dev");
+    vi.stubEnv("SITE_ID", "");
+    vi.stubEnv("SITE_NAME", "");
     expect(getRuntimeAdapter()).toBe("local");
   });
 
@@ -29,7 +30,7 @@ describe("runtime adapter policy", () => {
     vi.stubEnv("RUNTIME_ADAPTER", "local");
     vi.stubEnv("APP_ENV", "development");
     vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
-    vi.stubEnv("CONTEXT", "deploy-preview");
+    vi.stubEnv("SITE_ID", "synthetic-netlify-site-id");
     expect(() => getRuntimeAdapter()).toThrow(/only when explicitly enabled/);
   });
 

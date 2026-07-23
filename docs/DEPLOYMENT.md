@@ -2,7 +2,7 @@
 
 ## Netlify contexts
 
-The root `netlify.toml` pins Node and pnpm, builds `@starguidance/web`, and uses the pinned official Next.js adapter. Deploy previews explicitly set `APP_ENV=staging` and `RUNTIME_ADAPTER=supabase`; the local adapter therefore cannot become an accidental hosted fallback. The synthetic, noindex `/visual-preview` fixture remains deploy-preview only.
+The root `netlify.toml` pins Node and pnpm, builds `@starguidance/web`, and uses the pinned official Next.js adapter. Deploy-preview builds explicitly set `APP_ENV=staging` and `RUNTIME_ADAPTER=supabase`. Netlify does not pass `netlify.toml` environment values to serverless functions, so the same two non-secret values must also be configured in the Netlify UI for the **Deploy Previews** context with **Functions** scope. The local adapter remains fail-closed in hosted functions by detecting Netlify's runtime `SITE_ID`/`SITE_NAME` markers. The synthetic, noindex `/visual-preview` fixture remains deploy-preview only.
 
 PR #3 visual baseline: [deploy-preview-3--starguidance.netlify.app](https://deploy-preview-3--starguidance.netlify.app)
 
@@ -36,20 +36,20 @@ Render Blueprint fields are documented in the [official Blueprint specification]
 
 Configure secret values in the Netlify UI with the narrowest deploy-context scope. Never place values in Git, build logs, screenshots, fixtures, or pull-request text.
 
-| Variable                                 | Local development                | Deploy preview / staging                                | Production               | Scope and purpose                                            |
-| ---------------------------------------- | -------------------------------- | ------------------------------------------------------- | ------------------------ | ------------------------------------------------------------ |
-| `APP_ENV`                                | `development`                    | `staging` (committed context value)                     | `production`             | Non-secret environment policy                                |
-| `RUNTIME_ADAPTER`                        | `local` or `supabase`            | `supabase` (committed context value)                    | `supabase` when approved | Explicit fail-closed selector                                |
-| `ALLOW_LOCAL_RUNTIME_ADAPTER`            | `true` only for local/test       | unset                                                   | unset                    | Never configure on a hosted deploy                           |
-| `NEXT_PUBLIC_APP_URL`                    | `http://localhost:3000`          | optional; `DEPLOY_PRIME_URL` is preferred automatically | canonical HTTPS URL      | Auth redirect origin; not sensitive                          |
-| `NEXT_PUBLIC_SUPABASE_URL`               | required for local Supabase      | required                                                | required                 | Project URL; public runtime value                            |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY`          | required for local Supabase      | required                                                | required                 | Publishable/anon project key; RLS remains mandatory          |
-| `DATABASE_URL`                           | optional local Postgres          | required, server-only                                   | required, server-only    | Pooler/direct URL able to `SET LOCAL ROLE authenticated`     |
-| `DATA_ENCRYPTION_KEY`                    | required for Supabase mode       | required, server-only                                   | required, server-only    | Base64-encoded 32-byte managed key; never stored in Postgres |
-| `SUPABASE_SERVICE_ROLE_KEY`              | optional except account deletion | required, server-only                                   | required, server-only    | Auth deletion and disposable test-user cleanup only          |
-| `PROFILE_ENGINE_URL`                     | local URL                        | Render staging HTTPS URL                                | private production URL   | Server-to-server calculator; record hostname only            |
-| `PROFILE_ENGINE_SHARED_SECRET`           | optional                         | required, server-only                                   | required, server-only    | Calculator authentication                                    |
-| `PAYMENTS_PROVIDER` and Stripe variables | `local` or test                  | optional test mode                                      | owner approval required  | Commerce remains a separate gate                             |
+| Variable                                 | Local development                | Deploy preview / staging                                 | Production               | Scope and purpose                                            |
+| ---------------------------------------- | -------------------------------- | -------------------------------------------------------- | ------------------------ | ------------------------------------------------------------ |
+| `APP_ENV`                                | `development`                    | `staging` (build config plus Functions-scoped UI value)  | `production`             | Non-secret environment policy                                |
+| `RUNTIME_ADAPTER`                        | `local` or `supabase`            | `supabase` (build config plus Functions-scoped UI value) | `supabase` when approved | Explicit fail-closed selector                                |
+| `ALLOW_LOCAL_RUNTIME_ADAPTER`            | `true` only for local/test       | unset                                                    | unset                    | Never configure on a hosted deploy                           |
+| `NEXT_PUBLIC_APP_URL`                    | `http://localhost:3000`          | optional; verified request origin is used                | canonical HTTPS URL      | Auth redirect origin; not sensitive                          |
+| `NEXT_PUBLIC_SUPABASE_URL`               | required for local Supabase      | required                                                 | required                 | Project URL; public runtime value                            |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`          | required for local Supabase      | required                                                 | required                 | Publishable/anon project key; RLS remains mandatory          |
+| `DATABASE_URL`                           | optional local Postgres          | required, server-only                                    | required, server-only    | Pooler/direct URL able to `SET LOCAL ROLE authenticated`     |
+| `DATA_ENCRYPTION_KEY`                    | required for Supabase mode       | required, server-only                                    | required, server-only    | Base64-encoded 32-byte managed key; never stored in Postgres |
+| `SUPABASE_SERVICE_ROLE_KEY`              | optional except account deletion | required, server-only                                    | required, server-only    | Auth deletion and disposable test-user cleanup only          |
+| `PROFILE_ENGINE_URL`                     | local URL                        | Render staging HTTPS URL                                 | private production URL   | Server-to-server calculator; record hostname only            |
+| `PROFILE_ENGINE_SHARED_SECRET`           | optional                         | required, server-only                                    | required, server-only    | Calculator authentication                                    |
+| `PAYMENTS_PROVIDER` and Stripe variables | `local` or test                  | optional test mode                                       | owner approval required  | Commerce remains a separate gate                             |
 
 Supabase Auth must allow the exact staging callback and the Netlify preview wildcard pattern used by the site. Magic-link redirects terminate at `/auth/callback`; do not add question or birth data to redirect parameters.
 

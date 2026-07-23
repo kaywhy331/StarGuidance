@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
+
 const REQUIRED_STAGING_ENVIRONMENT = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
@@ -32,17 +34,6 @@ function appEnvironment(): string {
 function runtimeAdapter(): string {
   const value = process.env.RUNTIME_ADAPTER;
   return value === "local" || value === "supabase" ? value : "misconfigured";
-}
-
-function localPersistenceEnabled(): boolean {
-  const localEnvironment = process.env.APP_ENV === "development" || process.env.APP_ENV === "test";
-  const hostedContext = process.env.CONTEXT !== undefined && process.env.CONTEXT !== "dev";
-  return (
-    process.env.RUNTIME_ADAPTER === "local" &&
-    process.env.ALLOW_LOCAL_RUNTIME_ADAPTER === "true" &&
-    localEnvironment &&
-    !hostedContext
-  );
 }
 
 async function probeProfileEngine(): Promise<DependencyStatus> {
@@ -78,8 +69,7 @@ async function probeProfileEngine(): Promise<DependencyStatus> {
 }
 
 export async function GET() {
-  const stagingPreview =
-    process.env.APP_ENV === "staging" && process.env.CONTEXT === "deploy-preview";
+  const stagingPreview = process.env.APP_ENV === "staging" && isHostedNetlifyRuntime();
   const requiredEnvironment = REQUIRED_STAGING_ENVIRONMENT.map((name) => ({
     name,
     present: configured(name),
@@ -103,7 +93,7 @@ export async function GET() {
   const healthy =
     stagingPreview &&
     runtimeAdapter() === "supabase" &&
-    !localPersistenceEnabled() &&
+    !isLocalRuntimeAdapterAuthorized() &&
     process.env.ALLOW_LOCAL_RUNTIME_ADAPTER !== "true" &&
     missingEnvironmentVariables.length === 0 &&
     invalidEnvironmentVariables.length === 0 &&
@@ -116,7 +106,7 @@ export async function GET() {
       stagingPreview,
       appEnvironment: appEnvironment(),
       runtimeAdapter: runtimeAdapter(),
-      localPersistenceEnabled: localPersistenceEnabled(),
+      localPersistenceEnabled: isLocalRuntimeAdapterAuthorized(),
       localAdapterExplicitlyAllowed: process.env.ALLOW_LOCAL_RUNTIME_ADAPTER === "true",
       requiredEnvironment,
       missingEnvironmentVariables,

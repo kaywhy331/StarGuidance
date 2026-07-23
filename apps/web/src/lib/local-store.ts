@@ -14,6 +14,8 @@ import {
   type StoredReport,
 } from "@starguidance/database";
 
+import { isLocalRuntimeAdapterAuthorized } from "./hosted-runtime";
+
 export type {
   StoredEntitlement,
   StoredOrder,
@@ -69,14 +71,7 @@ export const localStore: LocalStore =
   });
 
 export function assertLocalAdapter(): void {
-  const netlifyContext = process.env.CONTEXT;
-  const localEnvironment = process.env.APP_ENV === "development" || process.env.APP_ENV === "test";
-  if (
-    process.env.RUNTIME_ADAPTER !== "local" ||
-    process.env.ALLOW_LOCAL_RUNTIME_ADAPTER !== "true" ||
-    !localEnvironment ||
-    (netlifyContext !== undefined && netlifyContext !== "dev")
-  )
+  if (!isLocalRuntimeAdapterAuthorized())
     throw new Error(
       "The local adapter requires explicit authorization and is disabled outside local development/test.",
     );
