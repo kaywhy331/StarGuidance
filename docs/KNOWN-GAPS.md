@@ -14,6 +14,8 @@
 
 No Supabase or Netlify secrets are present in this environment. Therefore the migration and seed have not been applied to an owner-managed Supabase staging project, real Supabase Auth users have not run the adversarial RLS procedure, and this stacked branch has no verified Netlify Deploy Preview. Required variable names and configuration locations are listed in [Supabase staging](SUPABASE-STAGING.md); secret values must never be pasted into chat.
 
+The profile-engine container is Render-ready, uses the runtime `PORT`, rejects weak hosted bearer secrets, and suppresses access/body logging. Its credentialed Render deployment, public health response, protected compute request, and eight-second Next.js client timeout behavior still require staging verification. Prefer an always-on staging instance; any bounded transient retry policy remains a separately reviewed change.
+
 Supabase Storage is not used by the current private data path. If future report artifacts enter Storage, private buckets and object-level RLS require a separate reviewed migration and test.
 
 ## External integrations and operations

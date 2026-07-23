@@ -16,6 +16,8 @@ Configure these for the Netlify **Deploy Previews** context:
 
 `APP_ENV=staging` and `RUNTIME_ADAPTER=supabase` are non-secret context values committed in `netlify.toml`. `DEPLOY_PRIME_URL` supplies the callback origin automatically. Add the deploy-preview callback wildcard and exact staging callback to Supabase Auth redirect allowlists.
 
+Configure the Render profile-engine service using the exact settings in [Deployment](DEPLOYMENT.md): Docker runtime, `apps/profile-engine` root directory, `./Dockerfile`, `.` build context, and `/health`. Render must set `APP_ENV=staging` and the server-only `PROFILE_ENGINE_SHARED_SECRET`; Netlify must use the same managed secret. Confirm variable names only. Never echo either service's value or authorization header.
+
 For migration and isolated SQL verification, configure only in the operator shell:
 
 - `DATABASE_URL` — disposable staging migration/seed target
@@ -26,17 +28,20 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 ## Apply and verify
 
 1. Confirm the target project name/ref twice and confirm it contains no production data.
-2. Run `corepack pnpm db:check`.
-3. Run `corepack pnpm db:migrate` with the disposable `DATABASE_URL`.
-4. Run `corepack pnpm db:seed` with the same URL.
-5. Run `corepack pnpm --filter @starguidance/database test:integration` with `DATABASE_INTEGRATION_URL`.
-6. Create two temporary Supabase Auth users through an operator-only process. Do not use real people or personal email addresses.
-7. With each user independently authenticated, create synthetic profiles, two snapshots for one user, a reading/follow-up, report entitlement, and order.
-8. Verify user A receives not-found/empty results for user B's profile, snapshots, reading, draw, encrypted question, follow-up, report, order, and export—and vice versa. Verify cross-user insert/update/delete attempts are rejected by RLS.
-9. Force one generation failure, refresh, retry, and submit a follow-up. Compare reading ID, deck/spread/shuffle versions, locked timestamp, positions, card IDs, orientations, and orders byte-for-byte before and after.
-10. Update birth data and confirm the prior reading still references snapshot v1 while only future readings use v2.
-11. Export user A, then delete the account. Confirm all user-A database rows and the Auth identity are gone while user B remains intact.
-12. Delete the temporary Auth users/project after evidence is captured. Record only non-secret pass/fail results and migration IDs.
+2. Confirm only that `DATABASE_URL` and `DATABASE_INTEGRATION_URL` are present in the operator shell; do not print their values.
+3. Run `corepack pnpm db:check`.
+4. Run `corepack pnpm db:migrate` with the disposable `DATABASE_URL`.
+5. Run `corepack pnpm db:seed` twice with the same URL and confirm the second execution is idempotent.
+6. Run `corepack pnpm --filter @starguidance/database test:integration` with `DATABASE_INTEGRATION_URL`. CI performs this with an isolated Postgres service.
+7. Confirm `/health` on the hosted profile engine and one unauthorized/authorized synthetic compute pair. Record the hostname and status results only.
+8. Create two temporary Supabase Auth users through an operator-only process. Do not use real people or personal email addresses.
+9. With each user independently authenticated, create synthetic profiles, two snapshots for one user, a reading/follow-up, report entitlement, and order.
+10. Verify user A receives not-found/empty results for user B's profile, snapshots, reading, draw, encrypted question, follow-up, report, order, and export—and vice versa. Verify cross-user insert/update/delete attempts are rejected by RLS.
+11. Force one generation failure, refresh, retry, and submit a follow-up. Compare reading ID, deck/spread/shuffle versions, locked timestamp, positions, card IDs, orientations, and orders byte-for-byte before and after.
+12. Update birth data and confirm the prior reading still references snapshot v1 while only future readings use v2.
+13. Export user A, then delete the account. Confirm all user-A database rows and the Auth identity are gone while user B remains intact.
+14. Inspect Netlify, Supabase, and profile-engine logs for birth data, questions, response bodies, secrets, and authorization headers. Record a redacted pass/fail result only.
+15. Delete the temporary Auth users/project after evidence is captured. Record only non-secret pass/fail results and migration IDs.
 
 ## Required evidence before this gate closes
 

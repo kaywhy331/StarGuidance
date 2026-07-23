@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from profile_engine import __version__
+from profile_engine.configuration import validate_runtime_configuration
 from profile_engine.dreamspell import calculate_dreamspell
 from profile_engine.models import BirthTimeKind, ProfileRequest, ProfileResponse, UnavailableResult
 from profile_engine.numerology import calculate_numerology
@@ -16,6 +17,9 @@ class HealthResponse(BaseModel):
     service: str
     status: str
     version: str
+
+
+validate_runtime_configuration()
 
 
 app = FastAPI(

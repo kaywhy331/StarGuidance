@@ -10,7 +10,8 @@ Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 - The Supabase repository encrypts raw profiles, calculation payloads, questions, follow-ups, and feedback comments with AES-256-GCM before SQL persistence. The managed key remains outside Postgres.
 - User-scoped SQL transactions assume the `authenticated` role and set only the subject obtained from verified Supabase Auth. RLS is forced on every user-owned table; anonymous/public table privileges are revoked.
 - Mutating browser routes validate Origin/Host and use bounded in-process rate limits. Stripe webhooks are exempt from Origin checks and require signature verification.
-- Profile-engine bearer authentication is enabled whenever `PROFILE_ENGINE_SHARED_SECRET` is configured.
+- Profile-engine bearer authentication is enabled whenever `PROFILE_ENGINE_SHARED_SECRET` is configured. In staging and production, startup rejects a missing or trivially weak secret before serving traffic.
+- The profile-engine container disables Uvicorn access logs, and its application does not log request bodies, response bodies, birth inputs, authorization headers, or derived calculations. `/health` remains public and contains no private data.
 - Safety classification occurs before a draw for crisis and compulsive-redraw language.
 - The draw function accepts no profile snapshot, trait, question, prompt, or AI input.
 - AI input is designed to contain only a locked draw, curated meanings, the private question, and a compact stable trait lens. Birth name/date/time/place, email, and raw calculations are excluded.
