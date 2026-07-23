@@ -15,7 +15,8 @@
     "typecheck": "corepack pnpm --recursive --if-present typecheck",
     "test": "corepack pnpm --recursive --if-present test",
     "test:e2e": "corepack pnpm --filter @starguidance/web test:e2e",
-    "db:check": "corepack pnpm --filter @starguidance/database db:check"
+    "db:check": "corepack pnpm --filter @starguidance/database db:check",
+    "db:seed": "tsx packages/database/src/seed.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
