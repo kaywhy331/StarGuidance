@@ -17,14 +17,18 @@ test("capture the completed reading for reviewer evidence", async ({ page }, tes
   await page.getByRole("button", { name: "Finish shuffling" }).click();
   await page.getByRole("button", { name: "Skip cut" }).click();
   await page.getByRole("button", { name: "Reveal all" }).click();
-  await page.getByRole("button", { name: "Open the reading" }).click();
-  await expect(page.getByText("Central theme")).toBeVisible();
+  await expect(page.getByTestId("oracle-transcript")).toBeVisible();
+  await expect(
+    page.locator(
+      '.oracle-entry[data-phase="uncertainty"] .oracle-entry-text > span[aria-hidden="true"]',
+    ),
+  ).toContainText(/Tarot is reflective guidance, not factual proof/i);
   await page.screenshot({
-    fullPage: true,
+    animations: "disabled",
     path: path.resolve(
       process.cwd(),
       "../../docs/screenshots",
-      `completed-reading-${testInfo.project.name}.png`,
+      `sanctuary-reading-${testInfo.project.name}.png`,
     ),
   });
 });

@@ -42,8 +42,8 @@ async function finishRitual(page: Page) {
   await page.getByRole("button", { name: "Finish shuffling" }).click();
   await page.getByRole("button", { name: "Skip cut" }).click();
   await page.getByRole("button", { name: "Reveal all" }).click();
-  await page.getByRole("button", { name: "Open the reading" }).click();
-  await expect(page.getByText("Central theme")).toBeVisible();
+  await expect(page.getByTestId("oracle-transcript")).toBeVisible();
+  await expect(page.getByText("Opening theme")).toBeVisible();
 }
 
 async function currentReading(page: Page) {
@@ -98,8 +98,14 @@ test("AI-disabled mode returns the deterministic structured fallback", async ({ 
   await createProfile(page);
   await beginReading(page);
   await finishRitual(page);
-  await expect(page.getByText(/Tarot is reflective guidance, not factual proof/i)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "What could disconfirm this?" })).toBeVisible();
+  await expect(
+    page.locator(
+      '.oracle-entry[data-phase="uncertainty"] .oracle-entry-text > span[aria-hidden="true"]',
+    ),
+  ).toContainText(/Tarot is reflective guidance, not factual proof/i);
+  await page.getByRole("button", { name: "Reading details" }).click();
+  await expect(page.getByRole("heading", { name: "Reading details" })).toBeVisible();
+  await expect(page.getByText("Uncertainty and disconfirming evidence")).toBeVisible();
 });
 
 test("an interrupted ritual recovers the identical locked draw", async ({ page }) => {
@@ -116,11 +122,16 @@ test("reduced-motion preference skips ritual transitions", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await createProfile(page);
   await beginReading(page);
-  await expect(page.getByRole("button", { name: "Skip motion" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Reduced motion" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await finishRitual(page);
+  await expect(page.locator(".oracle-cursor")).toHaveCount(0);
+  await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
+    "data-reduced-motion",
+    "true",
+  );
 });
 
 test("a follow-up uses the exact same cards", async ({ page }) => {
@@ -152,9 +163,114 @@ test("generation failure retries without a redraw", async ({ page }) => {
   await page.getByRole("button", { name: "Skip cut" }).click();
   await page.getByRole("button", { name: "Reveal all" }).click();
   await page.getByRole("button", { name: "Retry the same draw" }).click();
-  await page.getByRole("button", { name: "Open the reading" }).click();
+  await expect(page.getByTestId("oracle-transcript")).toBeVisible();
   const after = (await currentReading(page)).reading.draw;
   expect(after).toEqual(before);
+});
+
+test("stream interruption preserves received paragraphs and retries the same draw", async ({
+  page,
+}) => {
+  await createProfile(page);
+  await beginReading(page, "What should I understand about this next step?");
+  const before = (await currentReading(page)).reading.draw;
+  await page.evaluate(() => sessionStorage.setItem("sg:e2e-stream-fail-after", "2"));
+  await page.getByRole("button", { name: "Finish shuffling" }).click();
+  await page.getByRole("button", { name: "Skip cut" }).click();
+  await page.getByRole("button", { name: "Reveal all" }).click();
+  await expect(page.getByText(/Stream paused\. Your received text/i)).toBeVisible();
+  const retained = await page.locator(".oracle-entry").count();
+  expect(retained).toBeGreaterThanOrEqual(2);
+  await page.getByRole("button", { name: "Retry transcript" }).click();
+  await expect(
+    page.locator(
+      '.oracle-entry[data-phase="uncertainty"] .oracle-entry-text > span[aria-hidden="true"]',
+    ),
+  ).toContainText(/Tarot is reflective guidance, not factual proof/i);
+  expect(await page.locator(".oracle-entry").count()).toBeGreaterThan(retained);
+  expect((await currentReading(page)).reading.draw).toEqual(before);
+});
+
+test("manual transcript review suspends auto-scroll until return to latest", async ({ page }) => {
+  await createProfile(page);
+  await beginReading(page, "What patterns deserve my attention now?");
+  await finishRitual(page);
+  await expect.poll(async () => page.locator(".oracle-entry").count()).toBeGreaterThan(7);
+  await page.getByTestId("oracle-transcript").focus();
+  await page.keyboard.press("Home");
+  await expect(page.getByTestId("return-to-latest")).toBeVisible();
+  await page.getByTestId("return-to-latest").click();
+  await expect(page.getByTestId("return-to-latest")).toBeHidden();
+});
+
+test("keyboard users reveal cards, open details, and submit a same-draw follow-up", async ({
+  page,
+}) => {
+  await createProfile(page);
+  await beginReading(page, "What should I practice in this conversation?");
+  await page.getByRole("button", { name: "Finish shuffling" }).click();
+  await page.getByRole("button", { name: "Skip cut" }).click();
+  const before = (await currentReading(page)).reading.draw;
+  const cardButtons = page.locator(".physical-tarot-card");
+  await expect(cardButtons).toHaveCount(3);
+  for (let index = 0; index < (await cardButtons.count()); index += 1) {
+    await cardButtons.nth(index).focus();
+    await page.keyboard.press("Enter");
+  }
+  await expect(page.getByTestId("oracle-transcript")).toBeVisible();
+  await page.getByRole("button", { name: "Reading details" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Reading details" })).toBeVisible();
+  await page.getByRole("button", { name: "Close reading details" }).click();
+  const composer = page.getByLabel("Keep the same cards and ask what they add");
+  await composer.fill("What is one grounded action?");
+  await composer.press("Enter");
+  await expect.poll(async () => (await currentReading(page)).reading.followUps.length).toBe(1);
+  expect((await currentReading(page)).reading.draw).toEqual(before);
+});
+
+test("physical card faces are specific illustrated assets with external position labels", async ({
+  page,
+}) => {
+  await createProfile(page);
+  await beginReading(page);
+  await page.getByRole("button", { name: "Finish shuffling" }).click();
+  await page.getByRole("button", { name: "Skip cut" }).click();
+  const cards = page.locator(".physical-card-figure");
+  await expect(cards).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) {
+    await expect(cards.nth(index).locator(".physical-card-front img")).toHaveAttribute(
+      "src",
+      /\/art\/tarot\/v2\/.+\.svg$/,
+    );
+    const ratio = await cards
+      .nth(index)
+      .locator(".physical-tarot-card")
+      .evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.height / bounds.width;
+      });
+    expect(ratio).toBeGreaterThan(1.45);
+    expect(ratio).toBeLessThan(1.55);
+    await expect(cards.nth(index).locator("figcaption")).toBeVisible();
+  }
+});
+
+test("mobile sanctuary assets stay within the atmospheric image budget", async ({
+  page,
+}, testInfo) => {
+  test.skip(!testInfo.project.name.startsWith("mobile"), "Representative mobile viewport only.");
+  await createProfile(page);
+  const assets = await page.evaluate(() =>
+    performance
+      .getEntriesByType("resource")
+      .map((entry) => entry as PerformanceResourceTiming)
+      .filter((entry) => entry.name.includes("/art/sanctuary/"))
+      .map((entry) => ({ name: entry.name, transferSize: entry.transferSize })),
+  );
+  expect(assets.some(({ name }) => name.includes("mobile"))).toBe(true);
+  expect(assets.reduce((total, asset) => total + asset.transferSize, 0)).toBeLessThan(350_000);
+  await expect(page.locator("canvas")).toHaveCount(0);
 });
 
 test("Stripe test-mode report entitlement uses the credential-free local adapter", async ({

@@ -10,7 +10,10 @@ const requestSchema = z.object({ email: z.email() });
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    assertRateLimit(`auth:${request.headers.get("x-forwarded-for") ?? "local"}`, 30);
+    assertRateLimit(
+      `auth:${request.headers.get("x-forwarded-for") ?? "local"}`,
+      process.env.APP_ENV === "test" ? 200 : 30,
+    );
     const { email } = requestSchema.parse(await request.json());
     const { token } = createLocalSession(email);
     const response = NextResponse.json({ ok: true });
