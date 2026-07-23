@@ -114,6 +114,9 @@ importers:
       '@starguidance/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@starguidance/tarot-content':
+        specifier: workspace:*
+        version: link:../tarot-content
       '@starguidance/tarot-domain':
         specifier: workspace:*
         version: link:../tarot-domain

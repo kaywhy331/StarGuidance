@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@starguidance/contracts": "workspace:*",
+    "@starguidance/tarot-content": "workspace:*",
     "@starguidance/tarot-domain": "workspace:*",
     "zod": "4.4.3"
   }
