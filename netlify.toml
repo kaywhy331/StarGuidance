@@ -9,3 +9,6 @@
 
 [context.deploy-preview.environment]
   ENABLE_VISUAL_PREVIEW = "true"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

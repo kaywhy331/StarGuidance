@@ -19,6 +19,7 @@
     "db:seed": "tsx packages/database/src/seed.ts"
   },
   "devDependencies": {
+    "@netlify/plugin-nextjs": "5.15.12",
     "@playwright/test": "1.61.1",
     "@types/node": "26.1.1",
     "eslint": "9.39.5",
