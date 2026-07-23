@@ -6,7 +6,9 @@ The root `netlify.toml` pins Node and pnpm, builds `@starguidance/web`, and uses
 
 PR #3 visual baseline: [deploy-preview-3--starguidance.netlify.app](https://deploy-preview-3--starguidance.netlify.app)
 
-The stacked Supabase branch does not yet have a verified preview because its required secrets are not configured. No production deployment has been performed or implied.
+PR #4 credentialed staging preview: [deploy-preview-4--starguidance.netlify.app](https://deploy-preview-4--starguidance.netlify.app). The preview was enabled from the stacked `agent/starguidance-mvp` Branch Deploy base; verify its head commit after every staging trigger. No production deployment has been performed or implied.
+
+`/api/health` is a privacy-safe deployment check. It returns only environment-variable names/presence, the selected application environment/runtime adapter, whether local persistence could activate, and numeric status results for Render `/health` and an unauthenticated compute request. It never returns environment values, URLs, authorization headers, profile inputs, dependency response bodies, or exception text. A healthy staging response requires `APP_ENV=staging`, `RUNTIME_ADAPTER=supabase`, local persistence disabled, every required name present, a valid encryption-key envelope length, Render health `200`, and unauthenticated Render compute `401`.
 
 ## Render profile-engine staging service
 
