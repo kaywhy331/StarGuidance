@@ -60,9 +60,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -120,9 +118,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -300,9 +296,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -386,9 +380,7 @@
         "decks_version_unique": {
           "name": "decks_version_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "version"
-          ]
+          "columns": ["version"]
         }
       },
       "policies": {},
@@ -451,16 +443,12 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         },
         "entitlements_order_id_unique": {
           "name": "entitlements_order_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "order_id"
-          ]
+          "columns": ["order_id"]
         }
       },
       "policies": {},
@@ -517,9 +505,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -589,16 +575,12 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         },
         "orders_provider_session_id_unique": {
           "name": "orders_provider_session_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "provider_session_id"
-          ]
+          "columns": ["provider_session_id"]
         }
       },
       "policies": {},
@@ -649,9 +631,7 @@
         "payment_webhook_events_provider_event_id_unique": {
           "name": "payment_webhook_events_provider_event_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "provider_event_id"
-          ]
+          "columns": ["provider_event_id"]
         }
       },
       "policies": {},
@@ -753,9 +733,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -846,9 +824,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -911,9 +887,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -958,9 +932,7 @@
         "prompt_versions_version_unique": {
           "name": "prompt_versions_version_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "version"
-          ]
+          "columns": ["version"]
         }
       },
       "policies": {},
@@ -1029,16 +1001,12 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         },
         "reading_draws_reading_id_unique": {
           "name": "reading_draws_reading_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "reading_id"
-          ]
+          "columns": ["reading_id"]
         }
       },
       "policies": {},
@@ -1101,9 +1069,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -1178,9 +1144,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -1262,9 +1226,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -1321,9 +1283,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -1399,16 +1359,12 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         },
         "reports_entitlement_id_unique": {
           "name": "reports_entitlement_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "entitlement_id"
-          ]
+          "columns": ["entitlement_id"]
         }
       },
       "policies": {},
@@ -1563,9 +1519,7 @@
         "user_settings_user_id_unique": {
           "name": "user_settings_user_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "user_id"
-          ]
+          "columns": ["user_id"]
         }
       },
       "policies": {},
@@ -1604,9 +1558,7 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},
