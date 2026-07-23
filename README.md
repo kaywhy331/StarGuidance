@@ -1,49 +1,41 @@
 # StarGuidance
 
-StarGuidance is a private, immersive tarot-reading application personalized by deterministic birth-profile traits. Profile data shapes interpretation only; a cryptographically secure tarot service chooses and locks cards independently before any AI generation.
+StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The MVP supports private onboarding, immutable profile snapshots, four reading types, a locked ritual flow, deterministic interpretation fallback, same-draw follow-ups, history, privacy controls, and a separately entitled profile report.
 
 ## Workspace
 
-- `apps/web` — Next.js App Router product experience and server boundary.
-- `apps/profile-engine` — FastAPI calculation service.
-- `packages/contracts` — versioned Zod contracts shared across boundaries.
-- `packages/database` — Drizzle schema, migrations, encryption, and persistence adapters.
-- `packages/tarot-domain` — secure draw and reading-session rules.
-- `packages/tarot-content` — original, versioned 78-card and spread content.
-- `packages/reading-machine` — explicit XState reading workflow.
-- `packages/design-system` — accessible visual primitives.
-- `packages/ai` — provider-agnostic structured interpretation and deterministic fallback.
-- `packages/config` — shared build and feature configuration.
+- `apps/web` — Next.js App Router experience and authenticated server boundary.
+- `apps/profile-engine` — FastAPI calculation and trait-synthesis service.
+- `packages/contracts` — strict shared Zod contracts.
+- `packages/database` — Drizzle schema, SQL migration, RLS, and AES-256-GCM helpers.
+- `packages/tarot-domain` — CSPRNG shuffle and immutable draw rules.
+- `packages/tarot-content` — original, versioned 78-card content and four spreads.
+- `packages/reading-machine` — XState ritual workflow.
+- `packages/design-system` — accessible celestial primitives.
+- `packages/ai` — safety classification, compact trait-lens selection, structured provider boundary, and deterministic fallback.
 
-## Requirements
+## Implemented development flow
 
-- Node.js 24+
-- Corepack with pnpm 11.16.0
-- Python 3.10+
+The credential-free adapter uses HttpOnly sessions and encrypted in-process storage, and is blocked when `APP_ENV=production`. It exists so every critical product path can be run and tested without sending private data to an external service. Postgres/Supabase migrations and production boundaries are present, but hosted authentication and durable persistence remain an explicit integration gate.
 
-## Start locally
+Western astrology and BaZi return typed unavailable results. Dreamspell is deterministic but remains uncertified pending an approved reference dataset and rights review. No placeholder chart facts are returned.
 
-```bash
-corepack enable
-pnpm install
-cp .env.example .env.local
-pnpm dev
-```
+## Run and verify
 
-Run the profile service separately using the commands in `docs/LOCAL-DEVELOPMENT.md`.
-
-## Validation
+Requirements are Node.js 24+, Corepack/pnpm 11.16.0, and Python 3.10+. Follow [local development](docs/LOCAL-DEVELOPMENT.md) to run both applications.
 
 ```bash
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-pnpm test:e2e
+corepack pnpm install --frozen-lockfile
+corepack pnpm format:check
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm test
+corepack pnpm db:check
+corepack pnpm build
+corepack pnpm test:e2e
 ```
 
-Profile engine:
+Profile engine, from `apps/profile-engine` with its virtual environment active:
 
 ```bash
 pytest
@@ -51,6 +43,9 @@ ruff check .
 mypy .
 ```
 
-## Production gates
+## Review evidence
 
-Western astrology and BaZi remain typed, feature-flagged unavailable integrations until licensing, conventions, and golden-reference datasets are approved. AI, Supabase, observability, and Stripe require environment credentials. Development adapters never imply that those production paths have been verified. See `docs/KNOWN-GAPS.md` as implementation progresses.
+- [Desktop completed reading](docs/screenshots/completed-reading-desktop-chromium.png)
+- [Mobile completed reading](docs/screenshots/completed-reading-mobile-chromium.png)
+
+See [architecture](docs/ARCHITECTURE.md), [security](docs/SECURITY.md), [calculation status](docs/PROFILE-CALCULATIONS.md), [draw integrity](docs/TAROT-INTEGRITY.md), and [known production gates](docs/KNOWN-GAPS.md).

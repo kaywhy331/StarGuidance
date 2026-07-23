@@ -1,24 +1,32 @@
 # Architecture
 
-StarGuidance is a pnpm modular monorepo with a Next.js web application and an isolated FastAPI calculation service.
+StarGuidance is a modular pnpm monorepo. Next.js owns product orchestration, FastAPI owns deterministic profile calculations, and independent packages own draw, state-machine, persistence, UI, and narration boundaries.
 
-## Trust boundaries
+## Request flow
 
-1. The profile engine calculates only deterministic, versioned profile facts and uncertainty.
-2. The tarot domain creates a CSPRNG-based draw without accepting profile or question inputs.
-3. Persistence locks the full draw before interpretation generation.
-4. The AI adapter receives a minimized trait lens, locked cards, curated meanings, and the private question; it narrates but never calculates or deals.
-5. The web application renders validated structured data and never arbitrary provider HTML.
+1. An authenticated user submits birth facts to the web server; no sensitive field enters a URL.
+2. The web server calls the profile engine over a server-to-server boundary. A shared bearer secret can be required.
+3. The engine returns versioned numerology, Dreamspell, typed unavailable systems, stable/uncertain traits, and explicit tensions.
+4. The web server encrypts raw inputs and calculation payloads and creates an immutable snapshot.
+5. A reading request is safety-classified. Crisis or compulsive-redraw language is interrupted before any draw.
+6. The tarot domain receives only versioned deck and spread data. It uses CSPRNG Fisher–Yates and independent reversal bits; it accepts no profile, question, or AI data.
+7. The complete draw is persisted before interpretation. The reading record separately references its immutable profile snapshot.
+8. A deterministic selector sends at most three stable, question-relevant plain-language traits to the interpretation boundary. Raw birth and calculation data stay out.
+9. Schema-validated structured output is rendered as components, never arbitrary provider HTML. Retries and follow-ups reuse the same draw.
 
-## Packages
+## Package ownership
 
-- `contracts` owns versioned boundary schemas.
-- `database` owns typed persistence, migrations, encryption adapters, and authorization policy artifacts.
-- `tarot-domain` owns deck, spread, draw, and session invariants.
-- `tarot-content` owns original editorial content and provenance.
-- `reading-machine` owns valid reading transitions and recovery states.
-- `design-system` owns accessible primitives and celestial visual tokens.
-- `ai` owns classification, safety, provider adapters, validation, and fallback.
-- `config` owns feature flags and environment parsing.
+- `contracts`: boundary schemas and shared trait ontology.
+- `database`: 27-table relational model, migration metadata, RLS policy SQL, and encryption primitives.
+- `tarot-domain`: selection, reversal, locking, and follow-up lineage invariants.
+- `tarot-content`: original content, attribution, versions, and four spreads.
+- `reading-machine`: valid ritual transitions, failure, expiry, and high-stakes states.
+- `ai`: safety rules, reading-lens selection, provider interface, validation, and fallback.
+- `design-system`: reusable accessible UI primitives.
+- `config`: feature/environment parsing.
 
-No package may reverse these dependency directions by importing from `apps/web`.
+## Runtime adapters
+
+The current credential-free runtime is intentionally development-only: in-process users, encrypted snapshots, readings, reports, orders, entitlements, audit events, and idempotency keys. It is exercised by the browser suite but is not durable across server restarts.
+
+The production data model, migration, and RLS policies are implemented, but the Next.js repository layer and Supabase Auth adapter still require a real project and cross-user verification. Production must fail closed until that adapter, managed encryption key, durable jobs, and external services are configured.

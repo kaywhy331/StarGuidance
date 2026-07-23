@@ -2,60 +2,60 @@
 
 ## Prerequisites
 
-- Node.js 24 or newer
-- Corepack
-- Python 3.10 or newer
-- Docker Desktop for the later local Postgres/Supabase stack
+- Node.js 24+
+- Corepack and pnpm 11.16.0
+- Python 3.10+
 
-## JavaScript workspace
+## Install
 
 From the repository root:
 
 ```bash
-corepack enable
-pnpm install
-cp .env.example .env.local
-pnpm dev
+corepack pnpm install --frozen-lockfile
+cp .env.example apps/web/.env.local
 ```
 
-The web app is available at `http://localhost:3000`.
+Create the Python environment:
 
-## Profile engine
-
-PowerShell:
-
-```powershell
+```bash
 cd apps/profile-engine
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
-uvicorn profile_engine.main:app --reload
 ```
 
-Bash:
+On PowerShell, use `./.venv/Scripts/python.exe -m pip install -e ".[dev]"` if the environment is not activated.
+
+## Run
+
+Terminal one, from `apps/profile-engine`:
 
 ```bash
-cd apps/profile-engine
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[dev]'
-uvicorn profile_engine.main:app --reload
+python -m uvicorn profile_engine.main:app --reload --port 8000
 ```
 
-The service health endpoint is `http://127.0.0.1:8000/health`. API documentation is intentionally disabled until authenticated service boundaries are implemented.
-
-## Validation
+Terminal two, from the repository root:
 
 ```bash
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-pnpm test:e2e
+corepack pnpm dev
 ```
 
-From `apps/profile-engine` with the virtual environment active:
+Open `http://localhost:3000`. With `APP_ENV=development`, the local sign-in adapter creates an HttpOnly session. Profiles/readings/reports are encrypted but in process memory and disappear on restart.
+
+If `PROFILE_ENGINE_SHARED_SECRET` is set for FastAPI, configure the identical value for Next.js. Health remains public at `http://127.0.0.1:8000/health`; calculation requires the bearer secret.
+
+## Verify
+
+```bash
+corepack pnpm format:check
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm test
+corepack pnpm db:check
+corepack pnpm build
+corepack pnpm test:e2e
+```
+
+From `apps/profile-engine`:
 
 ```bash
 pytest
@@ -63,6 +63,11 @@ ruff check .
 mypy .
 ```
 
-## External services
+Playwright starts both FastAPI and Next.js, runs desktop and Pixel-sized Chromium projects, and leaves external AI/Stripe/Supabase disabled. To refresh review screenshots:
 
-No credential is required for the deterministic local fallback. Supabase, AI, Stripe, and observability integrations remain disabled when their environment settings are absent. Western astrology and BaZi stay explicitly unavailable until validation and licensing gates are satisfied.
+```powershell
+$env:CAPTURE_SCREENSHOTS="1"
+corepack pnpm --filter @starguidance/web exec playwright test tests/e2e/visual.spec.ts
+```
+
+The credential-free adapters are test aids, not proof of production integrations.

@@ -1,9 +1,28 @@
 # Security and privacy
 
-Raw birth fields, private questions, follow-ups, and optional comments are sensitive. They are encrypted with AES-256-GCM before persistence; the 32-byte key is supplied only through managed runtime secrets. The envelope includes a version, random 96-bit nonce, authentication tag, and ciphertext. Tampering is rejected.
+Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 
-All user-owned Postgres tables enable Row-Level Security and compare `user_id` with the authenticated JWT subject. Service-role access is reserved for narrow server and job boundaries and must emit an audit event. Production verification requires Supabase credentials and cross-user integration tests.
+## Implemented controls
 
-AI payloads contain the locked draw, curated meanings, the question, and only question-relevant plain-language traits. They exclude birth name, birth date/time/place, email, and raw calculation payloads. Analytics and error events may contain IDs, categories, lengths, statuses, and latency, never raw profile or question content.
+- AES-256-GCM envelopes use a random 96-bit nonce and authentication tag; tampering fails authentication.
+- The local adapter generates an ephemeral 256-bit key, stores only encrypted raw profiles/calculations/questions, uses HttpOnly SameSite=Strict session cookies, and is disabled in production.
+- Mutating browser routes validate Origin/Host and use bounded in-process rate limits. Stripe webhooks are exempt from Origin checks and require signature verification.
+- Profile-engine bearer authentication is enabled whenever `PROFILE_ENGINE_SHARED_SECRET` is configured.
+- Safety classification occurs before a draw for crisis and compulsive-redraw language.
+- The draw function accepts no profile snapshot, trait, question, prompt, or AI input.
+- AI input is designed to contain only a locked draw, curated meanings, the private question, and a compact stable trait lens. Birth name/date/time/place, email, and raw calculations are excluded.
+- History previews are decrypted only for an authenticated response; no question preview is stored in plaintext.
+- Authenticated export returns readable birth/profile/reading/report data. Account deletion removes local sessions, encrypted snapshots, readings, reports, orders, entitlements, and user-scoped idempotency entries.
+- The migration enables RLS on user-owned tables and defines JWT-subject policies. Audit metadata excludes raw birth and question content.
 
-Deletion revokes access immediately and later runs durable removal across profiles, readings, reports, storage, and configured backups. Payment instruments remain at Stripe. Key rotation, backup restore, retention periods, incident response, rate limits, production telemetry sampling, and provider no-retention settings remain launch gates.
+## Production gates
+
+The current web runtime does not yet connect to Supabase Auth/Postgres/Storage. RLS therefore has schema-level and migration validation, not live two-user verification. A deployment needs:
+
+- managed `DATA_ENCRYPTION_KEY` generation, rotation, and recovery procedures;
+- durable repositories and jobs for deletion, export, report generation, retention, and webhook processing;
+- Supabase project credentials and adversarial cross-user tests;
+- Stripe test credentials and replay tests against durable order/entitlement storage;
+- provider no-retention contracts, redaction verification, privacy-safe telemetry, backup/restore, incident response, and regional crisis resources.
+
+Never put birth data or questions in URLs, analytics, breadcrumbs, logs, support screenshots, or unauthenticated storage. The committed `.env.example` contains names only and no credentials.
