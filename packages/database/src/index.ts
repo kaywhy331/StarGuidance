@@ -1,1 +1,2 @@
-export { schemaMetadata } from "./schema";
+export * from "./encryption";
+export * from "./schema";
