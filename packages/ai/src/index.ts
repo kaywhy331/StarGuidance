@@ -1,5 +1,7 @@
 import {
+  oracleStreamEventSchema,
   readingResultSchema,
+  type OracleStreamEvent,
   type ProfileTrait,
   type ReadingResult,
 } from "@starguidance/contracts";
@@ -198,5 +200,74 @@ export class ValidatingProvider implements InterpretationProvider<
   }
   async generate(input: ReadingGenerationInput, signal?: AbortSignal) {
     return readingResultSchema.parse(await this.provider.generate(input, signal));
+  }
+}
+
+export interface StreamingInterpretationAdapter {
+  readonly id: string;
+  streamPersistedResult(result: ReadingResult): AsyncIterable<OracleStreamEvent>;
+}
+
+export function createOracleStreamEvents(result: ReadingResult): readonly OracleStreamEvent[] {
+  const validated = readingResultSchema.parse(result);
+  const phases: Omit<Extract<OracleStreamEvent, { type: "phase" }>, "sequence">[] = [
+    {
+      type: "phase",
+      phase: "openingTheme",
+      heading: "Opening theme",
+      text: `${validated.directAnswer} ${validated.centralTheme}`,
+    },
+    ...validated.cards.map((card, index) => ({
+      type: "phase" as const,
+      phase: "cardInterpretation" as const,
+      heading: `Card ${index + 1} · ${card.positionId.replaceAll("-", " ")}`,
+      text: `${card.traditionalMeaning} ${card.personalizedMeaning} ${card.questionConnection}`,
+    })),
+    {
+      type: "phase",
+      phase: "overallSynthesis",
+      heading: "Overall synthesis",
+      text: validated.synthesis,
+    },
+    {
+      type: "phase",
+      phase: "likelyTrajectory",
+      heading: "Likely trajectory",
+      text: `${validated.likelyTrajectory.summary} Conditions: ${validated.likelyTrajectory.conditions.join("; ")}.`,
+    },
+    {
+      type: "phase",
+      phase: "alternateTrajectory",
+      heading: "Alternate trajectory",
+      text: validated.likelyTrajectory.alternateTrajectory,
+    },
+    {
+      type: "phase",
+      phase: "userAgency",
+      heading: "Your agency",
+      text: validated.userAgency.join(" · "),
+    },
+    {
+      type: "phase",
+      phase: "reflectionPrompt",
+      heading: "Reflection prompt",
+      text: validated.reflectionQuestion,
+    },
+    {
+      type: "phase",
+      phase: "uncertainty",
+      heading: "Uncertainty",
+      text: `${validated.uncertainty} Disconfirming evidence: ${validated.disconfirmingEvidence.join("; ")}.`,
+    },
+  ];
+  return phases.map((phase, sequence) => oracleStreamEventSchema.parse({ ...phase, sequence }));
+}
+
+export class PersistedResultStreamAdapter implements StreamingInterpretationAdapter {
+  readonly id = "persisted-result-stream-v1";
+
+  async *streamPersistedResult(result: ReadingResult): AsyncIterable<OracleStreamEvent> {
+    for (const event of createOracleStreamEvents(result)) yield event;
+    yield { type: "complete" };
   }
 }

@@ -28,3 +28,29 @@ export const readingResultSchema = z.object({
 });
 
 export type ReadingResult = z.infer<typeof readingResultSchema>;
+
+export const oraclePhaseSchema = z.enum([
+  "openingTheme",
+  "cardInterpretation",
+  "overallSynthesis",
+  "likelyTrajectory",
+  "alternateTrajectory",
+  "userAgency",
+  "reflectionPrompt",
+  "uncertainty",
+]);
+
+export const oracleStreamEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("phase"),
+    sequence: z.number().int().nonnegative(),
+    phase: oraclePhaseSchema,
+    heading: z.string().min(1),
+    text: z.string().min(1),
+  }),
+  z.object({ type: z.literal("complete") }),
+  z.object({ type: z.literal("error"), message: z.string().min(1) }),
+]);
+
+export type OraclePhase = z.infer<typeof oraclePhaseSchema>;
+export type OracleStreamEvent = z.infer<typeof oracleStreamEventSchema>;

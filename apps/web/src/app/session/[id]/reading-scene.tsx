@@ -1,46 +1,57 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useMachine } from "@xstate/react";
 import type { ReadingResult } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
-import type { LockedDraw } from "@starguidance/tarot-domain";
-import { Button, LoadingState, Panel } from "@starguidance/design-system";
 
-interface ReadingPayload {
-  id: string;
-  draw: LockedDraw;
-  result?: ReadingResult;
-  generationStatus: "pending" | "ready" | "failed";
-  followUps: { id: string; result: ReadingResult }[];
-}
+import { MysticSanctuaryScene } from "./mystic-sanctuary-scene";
+import { OracleTranscript } from "./oracle-transcript";
+import { QuestionComposer } from "./question-composer";
+import { ReadingDetailsDrawer } from "./reading-details-drawer";
+import type { ReadingPayload } from "./reading-types";
+import { TarotSpreadStage } from "./tarot-spread-stage";
 
 function playRevealTone() {
-  const AudioContextClass = window.AudioContext;
-  const context = new AudioContextClass();
+  const context = new window.AudioContext();
   const oscillator = context.createOscillator();
   const gain = context.createGain();
   oscillator.frequency.value = 392;
-  gain.gain.setValueAtTime(0.04, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.16);
+  gain.gain.setValueAtTime(0.035, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.18);
   oscillator.connect(gain).connect(context.destination);
   oscillator.start();
-  oscillator.stop(context.currentTime + 0.16);
+  oscillator.stop(context.currentTime + 0.18);
+  oscillator.addEventListener("ended", () => void context.close());
 }
 
 export function ReadingScene({ readingId }: { readingId: string }) {
   const [state, send] = useMachine(readingMachine);
   const [reading, setReading] = useState<ReadingPayload>();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  const [skipMotion, setSkipMotion] = useState(
+  const [reducedMotion, setReducedMotion] = useState(
     () =>
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+  const [skipAnimation, setSkipAnimation] = useState(false);
   const [sound, setSound] = useState(false);
   const [error, setError] = useState<string>();
   const [followUp, setFollowUp] = useState("");
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [streamTarget, setStreamTarget] = useState("primary");
+  const [streamRetryToken, setStreamRetryToken] = useState(0);
   const bootstrapped = useRef(false);
+  const motionOff = reducedMotion || skipAnimation;
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handleChange = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
+    query.addEventListener("change", handleChange);
+    return () => query.removeEventListener("change", handleChange);
+  }, []);
 
   useEffect(() => {
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
@@ -65,328 +76,283 @@ export function ReadingScene({ readingId }: { readingId: string }) {
 
   useEffect(() => {
     if (!state.matches("dealing")) return;
-    const timer = window.setTimeout(() => send({ type: "DEALT" }), skipMotion ? 0 : 900);
+    const timer = window.setTimeout(() => send({ type: "DEALT" }), motionOff ? 0 : 850);
     return () => window.clearTimeout(timer);
-  }, [send, skipMotion, state]);
+  }, [motionOff, send, state]);
 
   useEffect(() => {
     if (!state.matches("generatingSynthesis") || !reading) return;
-    send({
-      type: reading.generationStatus === "ready" ? "GENERATION_READY" : "GENERATION_FAILED",
-    });
+    if (reading.generationStatus === "ready") send({ type: "GENERATION_READY" });
+    if (reading.generationStatus === "failed") send({ type: "GENERATION_FAILED" });
   }, [reading, send, state]);
 
-  if (error)
-    return (
-      <main className="mx-auto max-w-3xl px-6 py-20">
-        <Panel>
-          <h1 className="text-3xl">Reading unavailable</h1>
-          <p className="mt-3">{error}</p>
-        </Panel>
-      </main>
-    );
-  if (!reading || state.matches("idle") || state.matches("preparingDeck"))
-    return (
-      <main className="grid min-h-screen place-items-center">
-        <LoadingState label="Recovering your locked draw…" />
-      </main>
-    );
+  useEffect(() => {
+    if (!state.matches("revealingResult")) return;
+    const timer = window.setTimeout(() => send({ type: "RESULT_REVEALED" }), motionOff ? 0 : 420);
+    return () => window.clearTimeout(timer);
+  }, [motionOff, send, state]);
 
-  const allRevealed = revealed.size === reading.draw.assignments.length;
+  const allRevealed = Boolean(reading && revealed.size === reading.draw.assignments.length);
   const reveal = (index: number) => {
+    if (!reading) return;
+    if (revealed.has(index)) return;
     if (state.matches("awaitingReveal")) send({ type: "REVEAL" });
     if (!state.matches("awaitingReveal") && !state.matches("revealingCards")) return;
     const next = new Set(revealed).add(index);
     setRevealed(next);
     if (sound) playRevealTone();
     if (next.size === reading.draw.assignments.length)
-      window.setTimeout(() => send({ type: "ALL_REVEALED" }), skipMotion ? 0 : 500);
+      window.setTimeout(() => send({ type: "ALL_REVEALED" }), motionOff ? 0 : 420);
   };
   const revealAll = () => {
+    if (!reading) return;
     if (state.matches("awaitingReveal")) send({ type: "REVEAL" });
     setRevealed(new Set(reading.draw.assignments.map((_, index) => index)));
-    window.setTimeout(() => send({ type: "ALL_REVEALED" }), skipMotion ? 0 : 500);
+    window.setTimeout(() => send({ type: "ALL_REVEALED" }), motionOff ? 0 : 420);
   };
 
-  return (
-    <main className="mx-auto min-h-screen max-w-6xl px-5 py-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm tracking-[0.2em] text-[#d8b56d] uppercase">Locked reading</p>
-          <h1 className="text-3xl font-semibold">Reveal at your pace</h1>
+  const handleStreamState = useCallback(
+    (streamState: "idle" | "streaming" | "complete" | "failed") => {
+      if (streamState === "complete" && streamTarget === "primary" && reading?.followUps.at(-1)) {
+        setStreamTarget(reading.followUps.at(-1)!.id);
+      }
+    },
+    [reading, streamTarget],
+  );
+
+  const submitFollowUp = async () => {
+    if (!reading || !followUp.trim()) return;
+    setFollowUpLoading(true);
+    setError(undefined);
+    try {
+      const response = await fetch(`/api/readings/${readingId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "followUp", question: followUp }),
+      });
+      const payload = (await response.json()) as {
+        followUp?: { id: string; result: ReadingResult };
+        error?: string;
+        safety?: { guidance: string };
+      };
+      if (!response.ok || !payload.followUp)
+        throw new Error(payload.safety?.guidance ?? payload.error ?? "Unable to answer follow-up.");
+      setReading({ ...reading, followUps: [...reading.followUps, payload.followUp] });
+      setFollowUp("");
+      setStreamTarget(payload.followUp.id);
+      setStreamRetryToken(0);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to answer follow-up.");
+    } finally {
+      setFollowUpLoading(false);
+    }
+  };
+
+  if (error && !reading) {
+    return (
+      <MysticSanctuaryScene reducedMotion={true} testId="mystic-sanctuary-scene">
+        <div className="sanctuary-loading" role="alert">
+          <span aria-hidden="true">✦</span>
+          {error}
+          <Link href="/history">Return to reading history</Link>
         </div>
-        <div className="flex gap-2">
-          <button
-            aria-pressed={skipMotion}
-            className="rounded-full border border-white/15 px-3 py-2"
-            onClick={() => setSkipMotion((value) => !value)}
-          >
-            Skip motion
+      </MysticSanctuaryScene>
+    );
+  }
+
+  if (!reading || state.matches("idle") || state.matches("preparingDeck")) {
+    return (
+      <MysticSanctuaryScene reducedMotion={true} testId="mystic-sanctuary-scene">
+        <div className="sanctuary-loading" role="status">
+          <span aria-hidden="true">✦</span>
+          Recovering your locked draw…
+        </div>
+      </MysticSanctuaryScene>
+    );
+  }
+
+  const cardsVisible =
+    state.matches("awaitingReveal") ||
+    state.matches("revealingCards") ||
+    state.matches("generatingSynthesis") ||
+    state.matches("generationFailed") ||
+    state.matches("revealingResult") ||
+    state.matches("complete");
+
+  return (
+    <MysticSanctuaryScene reducedMotion={motionOff} testId="mystic-sanctuary-scene">
+      <header className="sanctuary-controls" aria-label="Reading controls">
+        <Link className="sanctuary-exit" href="/readings">
+          ← Exit
+        </Link>
+        <div className="sanctuary-control-group">
+          <button aria-pressed={sound} onClick={() => setSound((value) => !value)} type="button">
+            Sound <span>{sound ? "on" : "off"}</span>
           </button>
           <button
-            aria-pressed={sound}
-            className="rounded-full border border-white/15 px-3 py-2"
-            onClick={() => setSound((value) => !value)}
+            aria-pressed={reducedMotion}
+            onClick={() => setReducedMotion((value) => !value)}
+            type="button"
           >
-            Sound {sound ? "on" : "off"}
+            Reduced motion
+          </button>
+          <button
+            aria-pressed={skipAnimation}
+            onClick={() => setSkipAnimation((value) => !value)}
+            type="button"
+          >
+            Skip animation
+          </button>
+          <button onClick={() => setDetailsOpen(true)} type="button">
+            Reading details
           </button>
         </div>
       </header>
-      <p className="mt-4 text-[#b8adc8]">
-        Your profile shaped the interpretation, never this card selection. Reloading restores the
-        same locked cards.
+
+      <p className="locked-reading-note" data-testid="locked-reading-id">
+        Locked draw · profile and question never select cards
       </p>
 
-      {state.matches("shuffling") && (
-        <section className={`ritual-stage ${skipMotion ? "skip-motion" : ""}`}>
-          <div aria-hidden="true" className="shuffle-shells">
-            {Array.from({ length: 9 }, (_, index) => (
-              <span key={index} style={{ "--shell-index": index } as React.CSSProperties} />
-            ))}
+      <section className="sanctuary-stage" aria-live="polite">
+        {state.matches("shuffling") && (
+          <div className="ritual-moment">
+            <div aria-hidden="true" className="sanctuary-shuffle-shells">
+              {Array.from({ length: 9 }, (_, index) => (
+                <span key={index} style={{ "--shell-index": index } as React.CSSProperties} />
+              ))}
+            </div>
+            <h1>The draw is secured</h1>
+            <p>The ritual cannot alter your already locked cards.</p>
+            <button onClick={() => send({ type: "SHUFFLE_COMPLETE" })} type="button">
+              Finish shuffling
+            </button>
           </div>
-          <h2 className="text-2xl">The draw is secured</h2>
-          <p className="mt-2 text-[#b8adc8]">
-            The animation cannot alter the already locked cards.
-          </p>
-          <Button className="mt-5" onClick={() => send({ type: "SHUFFLE_COMPLETE" })}>
-            Finish shuffling
-          </Button>
-        </section>
-      )}
-
-      {state.matches("cuttingDeck") && (
-        <section className="ritual-stage">
-          <div aria-hidden="true" className="cut-deck-shell">
-            ✦
-          </div>
-          <h2 className="mt-6 text-2xl">Cut the deck?</h2>
-          <p className="mt-2 text-[#b8adc8]">This ritual choice does not change the locked draw.</p>
-          <div className="mt-5 flex justify-center gap-3">
-            <Button onClick={() => send({ type: "CUT" })}>Cut</Button>
-            <Button onClick={() => send({ type: "SKIP_CUT" })}>Skip cut</Button>
-          </div>
-        </section>
-      )}
-
-      {state.matches("dealing") && (
-        <section aria-live="polite" className="ritual-stage">
-          <div className={`deal-shells ${skipMotion ? "skip-motion" : ""}`} aria-hidden="true">
-            {reading.draw.assignments.map((assignment, index) => (
-              <span
-                key={assignment.positionId}
-                style={{ "--deal-index": index } as React.CSSProperties}
-              />
-            ))}
-          </div>
-          <LoadingState label="Dealing your locked cards…" />
-        </section>
-      )}
-
-      {(state.matches("awaitingReveal") || state.matches("revealingCards")) && (
-        <>
-          <section
-            aria-label="Your dealt cards"
-            className={`reading-table mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4 ${skipMotion ? "skip-motion" : ""}`}
-          >
-            {reading.draw.assignments.map((assignment, index) => {
-              const card = reading.result?.cards[index];
-              const isRevealed = revealed.has(index);
-              return (
-                <button
-                  aria-label={
-                    isRevealed
-                      ? `${card?.traditionalMeaning ?? "Revealed card"}, ${assignment.orientation}`
-                      : `Reveal card ${index + 1}`
-                  }
-                  className={`tarot-card ${isRevealed ? "is-revealed" : ""}`}
-                  key={assignment.positionId}
-                  onClick={() => reveal(index)}
-                >
-                  <span className="tarot-card-inner">
-                    <span className="tarot-card-back" aria-hidden="true">
-                      ✦
-                    </span>
-                    <span className="tarot-card-front">
-                      <small>{assignment.positionId.replaceAll("-", " ")}</small>
-                      <strong>
-                        {card?.traditionalMeaning.split(" highlights ")[0] ?? assignment.cardId}
-                      </strong>
-                      <span>{assignment.orientation}</span>
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </section>
-          {!allRevealed && (
-            <Button className="mt-8" onClick={revealAll}>
-              Reveal all
-            </Button>
-          )}
-        </>
-      )}
-
-      {state.matches("generatingSynthesis") && (
-        <div className="mt-16 flex justify-center">
-          <LoadingState label="Connecting the cards into a grounded reflection…" />
-        </div>
-      )}
-
-      {state.matches("generationFailed") && (
-        <Panel className="mt-12">
-          <h2 className="text-2xl">The cards are safe</h2>
-          <p className="mt-3">Interpretation generation failed. Retry without drawing again.</p>
-          <Button
-            className="mt-5"
-            onClick={async () => {
-              const response = await fetch(`/api/readings/${readingId}`, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ action: "retry" }),
-              });
-              if (!response.ok) return setError("Unable to retry the interpretation.");
-              const payload = (await response.json()) as { result: ReadingResult };
-              setReading({ ...reading, result: payload.result, generationStatus: "ready" });
-              send({ type: "RETRY_GENERATION" });
-            }}
-          >
-            Retry the same draw
-          </Button>
-        </Panel>
-      )}
-
-      {state.matches("revealingResult") && (
-        <section className="ritual-stage">
-          <h2 className="text-3xl">Your reflection is ready</h2>
-          <Button className="mt-6" onClick={() => send({ type: "RESULT_REVEALED" })}>
-            Open the reading
-          </Button>
-        </section>
-      )}
-
-      {state.matches("complete") && reading.result && (
-        <ResultView
-          followUp={followUp}
-          reading={reading}
-          result={reading.result}
-          readingId={readingId}
-          setError={setError}
-          setFollowUp={setFollowUp}
-          setReading={setReading}
-        />
-      )}
-    </main>
-  );
-}
-
-function ResultView({
-  followUp,
-  reading,
-  readingId,
-  result,
-  setError,
-  setFollowUp,
-  setReading,
-}: {
-  followUp: string;
-  reading: ReadingPayload;
-  readingId: string;
-  result: ReadingResult;
-  setError: (message: string) => void;
-  setFollowUp: (question: string) => void;
-  setReading: (reading: ReadingPayload) => void;
-}) {
-  return (
-    <section className="mt-12 grid gap-6">
-      <Panel>
-        <p className="text-sm text-[#d8b56d]">Central theme</p>
-        <h2 className="mt-2 text-3xl">{result.title}</h2>
-        <p className="mt-4 text-lg leading-8">{result.directAnswer}</p>
-        <p className="mt-5 leading-7 text-[#c9bfd4]">{result.synthesis}</p>
-      </Panel>
-      <div className="grid gap-5 md:grid-cols-2">
-        {result.cards.map((card, index) => (
-          <Panel key={`${card.positionId}-${card.cardId}`}>
-            <p className="text-sm text-[#d8b56d]">Card {index + 1}</p>
-            <h3 className="mt-2 text-xl capitalize">
-              {card.cardId.replaceAll("-", " ")} · {card.orientation}
-            </h3>
-            <p className="mt-3">{card.traditionalMeaning}</p>
-            <p className="mt-3 text-[#c9bfd4]">{card.personalizedMeaning}</p>
-            <p className="mt-3 text-sm text-[#a99db5]">{card.questionConnection}</p>
-          </Panel>
-        ))}
-      </div>
-      <Panel>
-        <h2 className="text-2xl">Likely trajectory</h2>
-        <p className="mt-3">{result.likelyTrajectory.summary}</p>
-        <h3 className="mt-5 font-semibold">Conditions</h3>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          {result.likelyTrajectory.conditions.map((condition) => (
-            <li key={condition}>{condition}</li>
-          ))}
-        </ul>
-        <h3 className="mt-5 font-semibold">Alternate trajectory</h3>
-        <p>{result.likelyTrajectory.alternateTrajectory}</p>
-      </Panel>
-      <Panel>
-        <h2 className="text-2xl">Your agency</h2>
-        <ul className="mt-3 list-disc space-y-2 pl-5">
-          {result.userAgency.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-        <p className="mt-5 text-lg italic">{result.reflectionQuestion}</p>
-        <h3 className="mt-5 font-semibold">What could disconfirm this?</h3>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          {result.disconfirmingEvidence.map((evidence) => (
-            <li key={evidence}>{evidence}</li>
-          ))}
-        </ul>
-        <p className="mt-5 text-sm text-[#a99db5]">{result.uncertainty}</p>
-      </Panel>
-      <Panel>
-        <h2 className="text-2xl">Ask one follow-up</h2>
-        {reading.followUps.length === 0 && (
-          <form
-            className="mt-4 grid gap-3"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              const response = await fetch(`/api/readings/${readingId}`, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ action: "followUp", question: followUp }),
-              });
-              const payload = (await response.json()) as {
-                followUp?: { id: string; result: ReadingResult };
-                safety?: { guidance: string };
-              };
-              if (!response.ok)
-                return setError(payload.safety?.guidance ?? "Unable to answer the follow-up.");
-              if (payload.followUp)
-                setReading({ ...reading, followUps: [...reading.followUps, payload.followUp] });
-              setFollowUp("");
-            }}
-          >
-            <label htmlFor="follow-up">Keep the same cards and ask what they add</label>
-            <textarea
-              className="rounded-2xl border border-white/15 bg-[#120e20] p-4"
-              id="follow-up"
-              maxLength={500}
-              onChange={(event) => setFollowUp(event.target.value)}
-              required
-              value={followUp}
-            />
-            <Button type="submit">Reflect on the same cards</Button>
-          </form>
         )}
-        {reading.followUps.map(({ id, result: followUpResult }) => (
-          <div className="mt-5 border-t border-white/10 pt-5" key={id}>
-            <p>{followUpResult.directAnswer}</p>
-            <p className="mt-2 text-sm text-[#a99db5]">{followUpResult.uncertainty}</p>
+
+        {state.matches("cuttingDeck") && (
+          <div className="ritual-moment">
+            <div aria-hidden="true" className="sanctuary-cut-deck" />
+            <h1>Cut the deck?</h1>
+            <p>This physical gesture does not change the locked draw.</p>
+            <div className="ritual-actions">
+              <button onClick={() => send({ type: "CUT" })} type="button">
+                Cut
+              </button>
+              <button onClick={() => send({ type: "SKIP_CUT" })} type="button">
+                Skip cut
+              </button>
+            </div>
           </div>
-        ))}
-      </Panel>
-    </section>
+        )}
+
+        {state.matches("dealing") && (
+          <div className="ritual-moment">
+            <div aria-hidden="true" className="sanctuary-deal-shells">
+              {reading.cards.map((card, index) => (
+                <span
+                  key={card.positionId}
+                  style={{ "--deal-index": index } as React.CSSProperties}
+                />
+              ))}
+            </div>
+            <p>Dealing your locked cards…</p>
+          </div>
+        )}
+
+        {cardsVisible && (
+          <TarotSpreadStage
+            cards={reading.cards}
+            onReveal={reveal}
+            reducedMotion={motionOff}
+            revealed={revealed}
+          />
+        )}
+
+        {(state.matches("awaitingReveal") || state.matches("revealingCards")) && !allRevealed && (
+          <button className="reveal-all-control" onClick={revealAll} type="button">
+            Reveal all
+          </button>
+        )}
+
+        {state.matches("generatingSynthesis") && (
+          <p className="stage-whisper" role="status">
+            The cards are gathering into a reflection…
+          </p>
+        )}
+
+        {state.matches("generationFailed") && (
+          <div className="generation-recovery" role="alert">
+            <p>The cards are safe. Interpretation generation paused.</p>
+            <button
+              onClick={async () => {
+                const response = await fetch(`/api/readings/${readingId}`, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ action: "retry" }),
+                });
+                if (!response.ok) return setError("Unable to retry the interpretation.");
+                const payload = (await response.json()) as { result: ReadingResult };
+                setReading({ ...reading, result: payload.result, generationStatus: "ready" });
+                send({ type: "RETRY_GENERATION" });
+              }}
+              type="button"
+            >
+              Retry the same draw
+            </button>
+          </div>
+        )}
+      </section>
+
+      <div className="oracle-console-stack">
+        {state.matches("complete") && reading.result ? (
+          <OracleTranscript
+            active
+            onRetry={() => setStreamRetryToken((token) => token + 1)}
+            onStateChange={handleStreamState}
+            readingId={readingId}
+            reducedMotion={motionOff}
+            retryToken={streamRetryToken}
+            target={streamTarget}
+          />
+        ) : (
+          <p className="oracle-console-placeholder">
+            Reveal the locked spread to begin the oracle transcript.
+          </p>
+        )}
+        {state.matches("complete") && (
+          <QuestionComposer
+            disabled={reading.followUps.length >= 1}
+            hint={
+              reading.followUps.length >= 1
+                ? "This reading’s follow-up is preserved with the same locked cards."
+                : "Shift+Enter adds a line. Enter sends privately."
+            }
+            label="Keep the same cards and ask what they add"
+            loading={followUpLoading}
+            onChange={setFollowUp}
+            onSubmit={submitFollowUp}
+            placeholder={
+              reading.followUps.length >= 1
+                ? "Follow-up complete"
+                : "Ask one follow-up about the same cards…"
+            }
+            submitLabel="Reflect on the same cards"
+            testId="follow-up-composer"
+            value={followUp}
+          />
+        )}
+        {error && (
+          <p className="sanctuary-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <ReadingDetailsDrawer
+        onClose={() => setDetailsOpen(false)}
+        open={detailsOpen}
+        result={reading.result}
+      />
+    </MysticSanctuaryScene>
   );
 }

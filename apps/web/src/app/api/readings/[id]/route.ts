@@ -4,6 +4,7 @@ import {
   classifyQuestion,
   selectReadingLens,
 } from "@starguidance/ai";
+import { spreads, tarotCards } from "@starguidance/tarot-content";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { decryptLocal, encryptLocal, localStore, recordAudit } from "@/lib/local-store";
@@ -24,11 +25,25 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
   try {
     const reading = await ownedReading((await context.params).id);
     if (!reading) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
+    const spread = spreads.find(({ id }) => id === reading.spreadId);
     return NextResponse.json({
       reading: {
         id: reading.id,
         spreadId: reading.spreadId,
         draw: reading.draw,
+        cards: reading.draw.assignments.map((assignment) => {
+          const card = tarotCards.find(({ id }) => id === assignment.cardId);
+          const position = spread?.positions.find(({ id }) => id === assignment.positionId);
+          if (!card) throw new Error("Locked draw references unavailable card content.");
+          return {
+            cardId: card.id,
+            name: card.name,
+            orientation: assignment.orientation,
+            positionId: assignment.positionId,
+            positionName: position?.displayName ?? assignment.positionId.replaceAll("-", " "),
+            artwork: card.artwork,
+          };
+        }),
         result: reading.result,
         generationStatus: reading.generationStatus,
         followUps: reading.followUps.map(({ id, result }) => ({ id, result })),

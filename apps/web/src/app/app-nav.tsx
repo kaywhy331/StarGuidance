@@ -13,7 +13,13 @@ const links = [
 export function AppNav() {
   const pathname = usePathname();
   const router = useRouter();
-  if (pathname === "/") return null;
+  if (
+    pathname === "/" ||
+    pathname === "/readings" ||
+    pathname === "/visual-preview" ||
+    pathname.startsWith("/session/")
+  )
+    return null;
   return (
     <header className="border-b border-white/10 bg-[#090713]/80 backdrop-blur">
       <nav
