@@ -90,6 +90,7 @@ export function OracleTranscript({
   const completedTargets = useRef(new Set<string>());
   const forcedFailureRef = useRef<string | null | undefined>(undefined);
   const manualReviewRef = useRef(false);
+  const previousScrollTopRef = useRef(0);
 
   const updateState = useCallback(
     (state: StreamState) => {
@@ -166,6 +167,7 @@ export function OracleTranscript({
   useEffect(() => {
     if (!followLatest) return;
     const frame = window.requestAnimationFrame(() => {
+      if (manualReviewRef.current) return;
       const viewport = viewportRef.current;
       viewport?.scrollTo({ top: viewport.scrollHeight, behavior: "auto" });
     });
@@ -182,7 +184,11 @@ export function OracleTranscript({
         className="oracle-transcript"
         data-testid="oracle-transcript"
         onKeyDown={(event) => {
-          if (["ArrowUp", "PageUp", "Home"].includes(event.key)) manualReviewRef.current = true;
+          if (["ArrowUp", "PageUp", "Home"].includes(event.key)) {
+            manualReviewRef.current = true;
+            if (event.currentTarget.scrollHeight - event.currentTarget.clientHeight > 72)
+              setFollowLatest(false);
+          }
         }}
         onPointerDown={() => {
           manualReviewRef.current = true;
@@ -190,7 +196,9 @@ export function OracleTranscript({
         onScroll={(event) => {
           const viewport = event.currentTarget;
           const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-          if (distance < 72) {
+          const movedTowardLatest = viewport.scrollTop > previousScrollTopRef.current;
+          previousScrollTopRef.current = viewport.scrollTop;
+          if (distance < 72 && (!manualReviewRef.current || movedTowardLatest)) {
             manualReviewRef.current = false;
             setFollowLatest(true);
           } else if (manualReviewRef.current) {
@@ -201,7 +209,11 @@ export function OracleTranscript({
           manualReviewRef.current = true;
         }}
         onWheel={(event) => {
-          if (event.deltaY < 0) manualReviewRef.current = true;
+          if (event.deltaY < 0) {
+            manualReviewRef.current = true;
+            if (event.currentTarget.scrollHeight - event.currentTarget.clientHeight > 72)
+              setFollowLatest(false);
+          }
         }}
         ref={viewportRef}
         role="region"

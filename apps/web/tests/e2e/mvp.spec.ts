@@ -34,8 +34,14 @@ async function createProfile(page: Page, kind: ProfileKind = "unknown") {
 
 async function beginReading(page: Page, question = "What should I focus on next?") {
   await page.getByLabel("Your private question").fill(question);
+  const readingResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/readings",
+  );
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
-  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/);
+  expect((await readingResponse).status()).toBe(201);
+  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 15_000 });
 }
 
 async function finishRitual(page: Page) {
@@ -195,9 +201,25 @@ test("manual transcript review suspends auto-scroll until return to latest", asy
   await createProfile(page);
   await beginReading(page, "What patterns deserve my attention now?");
   await finishRitual(page);
+  const transcript = page.getByTestId("oracle-transcript");
   await expect.poll(async () => page.locator(".oracle-entry").count()).toBeGreaterThan(7);
-  await page.getByTestId("oracle-transcript").focus();
-  await page.keyboard.press("Home");
+  await expect
+    .poll(async () => transcript.evaluate((element) => element.scrollHeight - element.clientHeight))
+    .toBeGreaterThan(72);
+  await expect
+    .poll(async () =>
+      transcript.evaluate(
+        (element) => element.scrollHeight - element.scrollTop - element.clientHeight,
+      ),
+    )
+    .toBeLessThan(72);
+  const transcriptBox = await transcript.boundingBox();
+  expect(transcriptBox).not.toBeNull();
+  await page.mouse.move(
+    transcriptBox!.x + transcriptBox!.width / 2,
+    transcriptBox!.y + transcriptBox!.height / 2,
+  );
+  await page.mouse.wheel(0, -500);
   await expect(page.getByTestId("return-to-latest")).toBeVisible();
   await page.getByTestId("return-to-latest").click();
   await expect(page.getByTestId("return-to-latest")).toBeHidden();
