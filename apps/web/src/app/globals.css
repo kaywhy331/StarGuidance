@@ -1,0 +1,1239 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --ink: #f5efe1;
+  --muted: #b8adc8;
+  --night: #090713;
+  --violet: #4a2f69;
+  --gold: #d8b56d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--night);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 20% 0%, rgb(74 47 105 / 45%), transparent 35rem),
+    radial-gradient(circle at 90% 25%, rgb(40 56 103 / 35%), transparent 32rem), var(--night);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 0.75rem;
+  left: -999rem;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--night);
+}
+
+.skip-link:focus {
+  left: 0.75rem;
+}
+
+[aria-current="page"] {
+  color: var(--gold);
+}
+
+:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.mystic-sanctuary {
+  position: relative;
+  min-height: 100svh;
+  height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+  background: #02070c;
+  color: #f7f1df;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.sanctuary-background,
+.sanctuary-background img,
+.atmospheric-layers,
+.sanctuary-vignette {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.sanctuary-background img {
+  object-fit: cover;
+  object-position: center;
+  filter: saturate(0.88) contrast(1.04) brightness(0.78);
+  transform: scale(1.025);
+}
+
+.sanctuary-content {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+}
+
+.atmospheric-layers {
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sanctuary-light {
+  position: absolute;
+  top: -28%;
+  left: 50%;
+  width: min(70vw, 70rem);
+  height: 88%;
+  translate: -50% 0;
+  background: conic-gradient(
+    from 168deg at 50% 0%,
+    transparent 0 37%,
+    rgb(228 238 215 / 0.13) 43%,
+    rgb(255 232 173 / 0.24) 50%,
+    rgb(189 235 225 / 0.12) 57%,
+    transparent 63%
+  );
+  filter: blur(20px);
+  animation: sanctuary-light-breathe 11s ease-in-out infinite alternate;
+}
+
+.sanctuary-sigil {
+  position: absolute;
+  top: 20%;
+  width: 12rem;
+  aspect-ratio: 1;
+  border: 1px solid rgb(216 181 109 / 0.2);
+  border-radius: 50%;
+  opacity: 0.35;
+  animation: sanctuary-sigil-turn 80s linear infinite;
+}
+
+.sanctuary-sigil::before,
+.sanctuary-sigil::after {
+  position: absolute;
+  content: "";
+  inset: 16%;
+  border: 1px solid rgb(164 230 220 / 0.22);
+  rotate: 45deg;
+}
+
+.sanctuary-sigil::after {
+  inset: 32%;
+  border-radius: 50%;
+}
+
+.sanctuary-sigil-left {
+  left: -3rem;
+}
+
+.sanctuary-sigil-right {
+  right: -3rem;
+  animation-direction: reverse;
+}
+
+.mist {
+  position: absolute;
+  right: -15%;
+  bottom: -16%;
+  left: -15%;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 25% 50%, rgb(114 185 175 / 0.17), transparent 42%),
+    radial-gradient(ellipse at 70% 35%, rgb(126 131 187 / 0.18), transparent 45%),
+    radial-gradient(ellipse at 50% 75%, rgb(214 224 212 / 0.1), transparent 50%);
+  filter: blur(28px);
+}
+
+.mist-far {
+  height: 42%;
+  animation: mist-drift 24s ease-in-out infinite alternate;
+}
+
+.mist-near {
+  height: 30%;
+  opacity: 0.9;
+  animation: mist-drift 16s ease-in-out -8s infinite alternate-reverse;
+}
+
+.sanctuary-particles i {
+  --particle-x: calc(var(--particle-index) * 7% + 3%);
+  position: absolute;
+  bottom: -1rem;
+  left: var(--particle-x);
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: #f3dfa5;
+  box-shadow: 0 0 10px 3px rgb(197 230 216 / 0.32);
+  animation: particle-rise calc(15s + var(--particle-index) * 0.7s) linear infinite;
+  animation-delay: calc(var(--particle-index) * -1.4s);
+}
+
+.sanctuary-vignette {
+  background:
+    linear-gradient(to bottom, rgb(1 5 10 / 0.25), transparent 25%, transparent 65%, #02060b 100%),
+    radial-gradient(ellipse at center, transparent 35%, rgb(0 4 8 / 0.65) 100%);
+}
+
+.atmosphere-still *,
+.mystic-sanctuary[data-reduced-motion="true"] * {
+  animation-play-state: paused !important;
+}
+
+.sanctuary-controls {
+  position: absolute;
+  z-index: 30;
+  top: max(0.8rem, env(safe-area-inset-top));
+  right: 1rem;
+  left: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+}
+
+.sanctuary-controls a,
+.sanctuary-controls button {
+  min-height: 2.35rem;
+  border: 1px solid rgb(222 211 172 / 0.2);
+  border-radius: 999px;
+  background: rgb(3 13 19 / 0.58);
+  color: #eee7d5;
+  backdrop-filter: blur(14px);
+}
+
+.sanctuary-controls a {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.85rem;
+  text-decoration: none;
+}
+
+.sanctuary-control-group {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.sanctuary-control-group button {
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+}
+
+.sanctuary-control-group button[aria-pressed="true"] {
+  border-color: rgb(216 181 109 / 0.8);
+  color: #f5d994;
+}
+
+.sanctuary-control-group span {
+  color: #bcded8;
+}
+
+.locked-reading-note {
+  position: absolute;
+  z-index: 4;
+  top: 4.15rem;
+  left: 50%;
+  margin: 0;
+  translate: -50% 0;
+  color: rgb(225 234 221 / 0.68);
+  font:
+    0.67rem/1.3 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sanctuary-stage {
+  position: absolute;
+  z-index: 5;
+  top: 5.6rem;
+  right: 1rem;
+  bottom: clamp(20rem, 38vh, 27rem);
+  left: 1rem;
+  display: grid;
+  place-items: center;
+  perspective: 1300px;
+}
+
+.ritual-moment {
+  display: grid;
+  place-items: center;
+  max-width: 32rem;
+  text-align: center;
+  text-shadow: 0 3px 18px #000;
+}
+
+.ritual-moment h1 {
+  margin: 1.15rem 0 0.4rem;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+.ritual-moment p,
+.stage-whisper {
+  color: #c8d6d0;
+  font:
+    0.9rem/1.5 Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.ritual-moment button,
+.reveal-all-control,
+.generation-recovery button {
+  min-height: 2.65rem;
+  margin-top: 1rem;
+  padding: 0.65rem 1.25rem;
+  border: 1px solid rgb(235 210 146 / 0.65);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgb(9 36 40 / 0.92), rgb(26 25 48 / 0.92));
+  box-shadow: 0 0 26px rgb(104 203 184 / 0.12);
+  color: #f5e7ba;
+  cursor: pointer;
+  font:
+    0.84rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.06em;
+}
+
+.ritual-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.sanctuary-shuffle-shells,
+.sanctuary-cut-deck {
+  position: relative;
+  width: 7.5rem;
+  aspect-ratio: 2 / 3;
+}
+
+.sanctuary-shuffle-shells span,
+.sanctuary-cut-deck,
+.sanctuary-deal-shells span {
+  border: 1px solid rgb(238 210 132 / 0.58);
+  border-radius: 0.42rem;
+  background: url("/art/tarot/v2/celestial-gothic-back-v1.webp") center / cover;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.58);
+}
+
+.sanctuary-shuffle-shells span {
+  --shell-offset: calc((var(--shell-index) - 4) * 0.35rem);
+  position: absolute;
+  inset: 0;
+  animation: sanctuary-shuffle 1.8s ease-in-out infinite alternate;
+  animation-delay: calc(var(--shell-index) * -95ms);
+  transform: translateX(var(--shell-offset)) rotate(calc((var(--shell-index) - 4) * 1.2deg));
+}
+
+.sanctuary-cut-deck::after {
+  position: absolute;
+  content: "";
+  inset: 0;
+  border: inherit;
+  border-radius: inherit;
+  background: inherit;
+  translate: 1.8rem 1rem;
+  box-shadow: inherit;
+}
+
+.sanctuary-deal-shells {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.sanctuary-deal-shells span {
+  width: 4.4rem;
+  aspect-ratio: 2 / 3;
+  animation: sanctuary-deal 720ms both;
+  animation-delay: calc(var(--deal-index) * 100ms);
+}
+
+.tarot-spread-stage {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  align-items: start;
+  justify-content: center;
+  gap: clamp(0.5rem, 1.5vw, 1.15rem);
+  width: min(100%, 72rem);
+  transform: translateY(-1vh);
+}
+
+.spread-count-1 {
+  grid-template-columns: auto;
+}
+
+.spread-count-3 {
+  grid-template-columns: repeat(3, auto);
+}
+
+.physical-card-figure {
+  width: clamp(5.25rem, 9.5vw, 8rem);
+  margin: 0;
+  text-align: center;
+  transition: translate 280ms ease;
+}
+
+.spread-count-1 .physical-card-figure {
+  width: clamp(8rem, 13vw, 11rem);
+}
+
+.physical-card-figure:hover {
+  translate: 0 -0.35rem;
+}
+
+.physical-tarot-card {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  border: 0;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  perspective: 1000px;
+}
+
+.physical-tarot-card:focus-visible {
+  outline: 3px solid #f4d98d;
+  outline-offset: 5px;
+}
+
+.physical-card-inner {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transform-style: preserve-3d;
+  transition: transform 780ms cubic-bezier(0.2, 0.82, 0.2, 1);
+}
+
+.physical-tarot-card.is-revealed .physical-card-inner {
+  transform: rotateY(180deg);
+}
+
+.physical-card-back,
+.physical-card-front {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  border: 1px solid rgb(233 206 133 / 0.72);
+  border-radius: inherit;
+  background: #071015;
+  backface-visibility: hidden;
+  box-shadow:
+    0 1.2rem 2.7rem rgb(0 0 0 / 0.56),
+    0 0 0 1px rgb(255 255 255 / 0.07) inset,
+    0 0 1.4rem rgb(115 214 190 / 0.08);
+}
+
+.physical-card-front {
+  transform: rotateY(180deg);
+}
+
+.physical-card-back picture,
+.physical-card-back img,
+.physical-card-front img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.physical-card-back img,
+.physical-card-front img {
+  object-fit: cover;
+  object-position: var(--focal-x) var(--focal-y);
+}
+
+.physical-card-front img {
+  transition: transform 600ms ease;
+}
+
+.physical-card-front img.card-art-reversed {
+  transform: rotate(180deg) scale(1.004);
+}
+
+.card-sheen {
+  position: absolute;
+  inset: -35%;
+  background: linear-gradient(110deg, transparent 42%, rgb(229 255 244 / 0.2) 50%, transparent 58%);
+  opacity: 0;
+  transform: translateX(-35%) rotate(8deg);
+  transition:
+    opacity 220ms ease,
+    transform 600ms ease;
+}
+
+.physical-tarot-card:hover .card-sheen,
+.physical-tarot-card:focus-visible .card-sheen {
+  opacity: 0.7;
+  transform: translateX(35%) rotate(8deg);
+}
+
+.physical-tarot-card.motion-off .physical-card-inner,
+.physical-tarot-card.motion-off .card-sheen,
+.physical-tarot-card.motion-off img {
+  transition: none;
+}
+
+.physical-card-caption {
+  display: grid;
+  gap: 0.15rem;
+  min-height: 2.35rem;
+  margin-top: 0.55rem;
+  color: #e9dec3;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 8px #000;
+}
+
+.physical-card-caption small {
+  overflow: hidden;
+  color: #a7c9c4;
+  font:
+    0.62rem Arial,
+    Helvetica,
+    sans-serif;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.reveal-all-control {
+  position: absolute;
+  bottom: -0.6rem;
+  left: 50%;
+  translate: -50% 0;
+}
+
+.stage-whisper,
+.generation-recovery {
+  position: absolute;
+  bottom: -0.1rem;
+  left: 50%;
+  width: min(90vw, 34rem);
+  margin: 0;
+  translate: -50% 0;
+  text-align: center;
+  text-shadow: 0 2px 12px #000;
+}
+
+.generation-recovery {
+  padding: 0.8rem;
+  border: 1px solid rgb(235 210 146 / 0.32);
+  border-radius: 1rem;
+  background: rgb(4 14 20 / 0.82);
+  font:
+    0.85rem Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.oracle-console-stack {
+  position: absolute;
+  z-index: 20;
+  right: 50%;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  display: grid;
+  width: min(46rem, calc(100vw - 2rem));
+  translate: 50% 0;
+  filter: drop-shadow(0 1rem 2.5rem rgb(0 0 0 / 0.5));
+}
+
+.oracle-transcript-shell {
+  position: relative;
+  min-height: 9rem;
+}
+
+.oracle-transcript {
+  max-height: clamp(9rem, 23vh, 15.5rem);
+  overflow: auto;
+  padding: 2.6rem 1.25rem 1.15rem;
+  border-radius: 1.2rem 1.2rem 0 0;
+  background: linear-gradient(to bottom, transparent, rgb(2 10 15 / 0.52) 28%, rgb(2 10 15 / 0.82));
+  mask-image: linear-gradient(to bottom, transparent, black 20%, black);
+  scrollbar-color: rgb(216 181 109 / 0.5) transparent;
+  scrollbar-width: thin;
+}
+
+.oracle-entry {
+  margin-left: auto;
+  width: min(100%, 42rem);
+  padding: 0.5rem 0;
+  animation: oracle-rise 420ms ease-out both;
+  color: #edf5ec;
+  text-shadow: 0 2px 12px #000;
+}
+
+.oracle-entry h2 {
+  margin: 0 0 0.25rem;
+  color: #d9bc79;
+  font:
+    0.64rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.oracle-entry-text {
+  margin: 0;
+  font-size: clamp(0.9rem, 1.6vw, 1.08rem);
+  line-height: 1.58;
+}
+
+.oracle-cursor {
+  display: inline-block;
+  width: 0.45rem;
+  height: 1em;
+  margin-left: 0.18rem;
+  border-right: 1px solid #e8d493;
+  vertical-align: -0.12em;
+  animation: cursor-pulse 800ms steps(1) infinite;
+}
+
+.oracle-awaiting,
+.oracle-console-placeholder {
+  margin: 0;
+  color: #bed3ce;
+  font-size: 0.88rem;
+  font-style: italic;
+  text-align: center;
+  text-shadow: 0 2px 12px #000;
+}
+
+.oracle-console-placeholder {
+  padding: 1rem 0;
+}
+
+.return-to-latest {
+  position: absolute;
+  z-index: 2;
+  right: 0.85rem;
+  bottom: 0.75rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid rgb(216 181 109 / 0.5);
+  border-radius: 999px;
+  background: rgb(3 14 20 / 0.9);
+  color: #f0dfb1;
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+
+.oracle-stream-error,
+.oracle-stream-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.8rem;
+  background: rgb(3 14 20 / 0.85);
+  color: #c8d6d0;
+  font:
+    0.68rem Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.oracle-stream-error button {
+  border: 0;
+  background: transparent;
+  color: #f2d88f;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.oracle-stream-status {
+  justify-content: flex-end;
+  color: #9fc8be;
+}
+
+.oracle-stream-status::before {
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 50%;
+  background: #85dcc7;
+  box-shadow: 0 0 0.65rem #85dcc7;
+  content: "";
+}
+
+.question-composer {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  min-height: 3.8rem;
+  padding: 0.55rem;
+  border: 1px solid rgb(220 199 138 / 0.42);
+  border-radius: 1.15rem;
+  background:
+    linear-gradient(135deg, rgb(5 20 24 / 0.92), rgb(10 12 27 / 0.94)),
+    radial-gradient(circle at 50% 0%, rgb(120 201 184 / 0.14), transparent 60%);
+  box-shadow:
+    0 0 0 1px rgb(111 212 190 / 0.06) inset,
+    0 0 2.8rem rgb(54 184 162 / 0.08);
+  backdrop-filter: blur(18px) saturate(1.2);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.question-composer:focus-within {
+  border-color: rgb(244 217 141 / 0.9);
+  box-shadow:
+    0 0 0 2px rgb(244 217 141 / 0.16),
+    0 0 2.5rem rgb(83 205 181 / 0.15);
+}
+
+.question-composer-field textarea {
+  display: block;
+  width: 100%;
+  min-height: 2.65rem;
+  max-height: 9.5rem;
+  resize: none;
+  padding: 0.7rem 0.8rem;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #f5f1e7;
+  font:
+    0.94rem/1.45 Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.question-composer-field textarea::placeholder {
+  color: #8fa8a4;
+}
+
+.question-composer-send {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 1px solid rgb(246 222 157 / 0.62);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #e9d49c, #9ccfc2);
+  color: #061116;
+  cursor: pointer;
+  font-size: 1.35rem;
+}
+
+.question-composer-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.question-composer-hint {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0.45rem 0.05rem;
+  color: #8fa8a4;
+  font-size: 0.64rem;
+}
+
+.sanctuary-error {
+  margin: 0.4rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.75rem;
+  background: rgb(72 23 42 / 0.9);
+  font:
+    0.75rem Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.reading-entry-stage {
+  position: absolute;
+  z-index: 5;
+  top: 10vh;
+  right: 1rem;
+  bottom: 11rem;
+  left: 1rem;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  text-shadow: 0 3px 18px #000;
+}
+
+.reading-entry-stage > p {
+  margin: 0;
+  color: #d8bc78;
+  font:
+    0.68rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.reading-entry-stage h1 {
+  max-width: 44rem;
+  margin: 0.6rem 0 clamp(1.25rem, 5vh, 3.5rem);
+  font-size: clamp(2rem, 5vw, 4.2rem);
+  font-weight: 400;
+}
+
+.ritual-spread-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr));
+  gap: 0.75rem;
+  width: min(68rem, calc(100vw - 2rem));
+}
+
+.ritual-spread-options label {
+  cursor: pointer;
+}
+
+.ritual-spread-options label > span {
+  display: grid;
+  min-height: 7rem;
+  place-content: center;
+  gap: 0.45rem;
+  padding: 1rem;
+  border: 1px solid rgb(228 214 171 / 0.24);
+  border-radius: 1rem;
+  background: rgb(3 17 22 / 0.5);
+  box-shadow: 0 1rem 2rem rgb(0 0 0 / 0.2);
+  backdrop-filter: blur(10px);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    translate 180ms ease;
+}
+
+.ritual-spread-options label:hover > span {
+  translate: 0 -0.2rem;
+  border-color: rgb(228 204 142 / 0.5);
+}
+
+.ritual-spread-options input:focus-visible + span {
+  outline: 3px solid #f4d98d;
+  outline-offset: 4px;
+}
+
+.ritual-spread-options input:checked + span {
+  border-color: rgb(239 214 143 / 0.9);
+  background: linear-gradient(145deg, rgb(9 49 49 / 0.8), rgb(27 26 52 / 0.78));
+  box-shadow:
+    0 0 0 1px rgb(238 216 150 / 0.12) inset,
+    0 0 2rem rgb(89 205 183 / 0.12);
+}
+
+.ritual-spread-options small {
+  color: #9fc9c0;
+  font:
+    0.62rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ritual-spread-options strong {
+  color: #f2e9d2;
+  font-size: 0.92rem;
+  font-weight: 400;
+}
+
+.reading-entry-console {
+  width: min(46rem, calc(100vw - 2rem));
+}
+
+.entry-privacy-note {
+  margin: 0 0 0.55rem;
+  color: #bed3ce;
+  font:
+    0.72rem Arial,
+    Helvetica,
+    sans-serif;
+  text-align: center;
+  text-shadow: 0 2px 12px #000;
+}
+
+.reading-details-drawer {
+  position: fixed;
+  inset: auto 0 0;
+  width: min(50rem, calc(100vw - 1rem));
+  max-height: min(78dvh, 48rem);
+  margin: auto;
+  padding: 0.8rem clamp(1rem, 4vw, 2rem) max(1.2rem, env(safe-area-inset-bottom));
+  overflow: hidden;
+  border: 1px solid rgb(218 192 127 / 0.42);
+  border-bottom: 0;
+  border-radius: 1.4rem 1.4rem 0 0;
+  background: rgb(4 13 20 / 0.96);
+  box-shadow: 0 -1rem 4rem rgb(0 0 0 / 0.58);
+  color: #eee9dd;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.reading-details-drawer::backdrop {
+  background: rgb(0 5 9 / 0.68);
+  backdrop-filter: blur(6px);
+}
+
+.details-drawer-handle {
+  width: 3rem;
+  height: 0.22rem;
+  margin: 0 auto 0.8rem;
+  border-radius: 999px;
+  background: rgb(225 211 170 / 0.42);
+}
+
+.reading-details-drawer > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.reading-details-drawer header p,
+.reading-details-drawer header h2 {
+  margin: 0;
+}
+
+.reading-details-drawer header p {
+  color: #d8b56d;
+  font-size: 0.65rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.reading-details-drawer header h2 {
+  margin-top: 0.18rem;
+  font:
+    1.45rem Georgia,
+    "Times New Roman",
+    serif;
+}
+
+.reading-details-drawer header button {
+  min-height: 2.4rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.details-drawer-scroll {
+  max-height: calc(78dvh - 6.5rem);
+  overflow: auto;
+  padding: 0.8rem 0 2rem;
+  scrollbar-color: rgb(216 181 109 / 0.5) transparent;
+}
+
+.details-drawer-scroll section,
+.details-drawer-scroll details {
+  padding: 1rem 0;
+  border-bottom: 1px solid rgb(255 255 255 / 0.09);
+}
+
+.details-drawer-scroll h3,
+.details-drawer-scroll p {
+  margin-top: 0.55rem;
+  margin-bottom: 0;
+}
+
+.details-drawer-scroll p,
+.details-drawer-scroll li {
+  color: #c4cfcc;
+  line-height: 1.6;
+}
+
+.details-drawer-scroll summary {
+  color: #f0dda8;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.details-drawer-scroll article {
+  margin-top: 0.9rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid rgb(216 181 109 / 0.35);
+}
+
+.details-reflection {
+  color: #f1e2b7 !important;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+}
+
+.details-empty,
+.sanctuary-loading {
+  color: #bfd0cc;
+  text-align: center;
+}
+
+.sanctuary-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  gap: 0.8rem;
+  translate: -50% -50%;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.sanctuary-loading span {
+  color: #e9cd84;
+  font-size: 2rem;
+}
+
+@keyframes sanctuary-shuffle {
+  to {
+    transform: translateX(calc(var(--shell-offset) * -1.2)) rotate(4deg);
+  }
+}
+
+@keyframes sanctuary-deal {
+  from {
+    opacity: 0;
+    transform: translate(5rem, -3rem) rotate(9deg);
+  }
+}
+
+@keyframes sanctuary-light-breathe {
+  to {
+    opacity: 0.65;
+    transform: scaleX(1.08);
+  }
+}
+
+@keyframes sanctuary-sigil-turn {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes mist-drift {
+  to {
+    translate: 6% -3%;
+    scale: 1.08;
+  }
+}
+
+@keyframes particle-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0) scale(0.6);
+  }
+  15% {
+    opacity: 0.6;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-90vh) translateX(3rem) scale(1.2);
+  }
+}
+
+@keyframes oracle-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.7rem);
+  }
+}
+
+@keyframes cursor-pulse {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .sanctuary-background img {
+    object-position: center top;
+  }
+
+  .sanctuary-controls {
+    align-items: flex-start;
+  }
+
+  .sanctuary-control-group {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    justify-content: end;
+  }
+
+  .sanctuary-control-group button {
+    min-height: 2rem;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.62rem;
+  }
+
+  .sanctuary-controls a {
+    min-height: 2rem;
+    padding: 0.35rem 0.6rem;
+  }
+
+  .locked-reading-note {
+    top: 6rem;
+    width: 75vw;
+    font-size: 0.56rem;
+  }
+
+  .sanctuary-stage {
+    top: 7.15rem;
+    bottom: clamp(20.5rem, 43vh, 27rem);
+  }
+
+  .tarot-spread-stage {
+    grid-template-columns: repeat(4, auto);
+    gap: 0.42rem;
+  }
+
+  .spread-count-1 {
+    grid-template-columns: auto;
+  }
+
+  .spread-count-3 {
+    grid-template-columns: repeat(3, auto);
+  }
+
+  .physical-card-figure {
+    width: clamp(3.65rem, 17vw, 4.8rem);
+  }
+
+  .spread-count-1 .physical-card-figure {
+    width: clamp(6.5rem, 30vw, 8.5rem);
+  }
+
+  .spread-count-3 .physical-card-figure {
+    width: clamp(4.8rem, 23vw, 6.2rem);
+  }
+
+  .physical-card-caption {
+    min-height: 1.8rem;
+    margin-top: 0.3rem;
+    font-size: 0.58rem;
+  }
+
+  .physical-card-caption small {
+    font-size: 0.5rem;
+  }
+
+  .oracle-console-stack {
+    bottom: max(0.45rem, env(safe-area-inset-bottom));
+    width: calc(100vw - 0.9rem);
+  }
+
+  .oracle-transcript {
+    max-height: min(29dvh, 14rem);
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+  }
+
+  .oracle-entry-text {
+    font-size: 0.86rem;
+    line-height: 1.48;
+  }
+
+  .question-composer {
+    border-radius: 1rem;
+  }
+
+  .question-composer-hint {
+    display: none;
+  }
+
+  .reading-details-drawer {
+    width: 100vw;
+    max-height: 88dvh;
+    border-radius: 1.1rem 1.1rem 0 0;
+  }
+
+  .reading-entry-stage {
+    top: 4rem;
+    bottom: 10rem;
+  }
+
+  .reading-entry-stage h1 {
+    margin-bottom: 1rem;
+    font-size: clamp(1.85rem, 9vw, 2.8rem);
+  }
+
+  .ritual-spread-options {
+    grid-template-columns: repeat(2, 1fr);
+    width: min(27rem, calc(100vw - 1.2rem));
+    gap: 0.5rem;
+  }
+
+  .ritual-spread-options label > span {
+    min-height: 5.2rem;
+    padding: 0.65rem;
+  }
+
+  .ritual-spread-options strong {
+    font-size: 0.76rem;
+  }
+}
+
+@media (max-height: 700px) {
+  .sanctuary-stage {
+    bottom: 17rem;
+  }
+
+  .oracle-transcript {
+    max-height: 8rem;
+  }
+
+  .physical-card-figure {
+    width: clamp(3.5rem, 8vw, 5.25rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sanctuary-background img {
+    transform: none;
+  }
+
+  .physical-card-figure:hover {
+    translate: none;
+  }
+
+  .oracle-entry {
+    animation: none;
+  }
+}

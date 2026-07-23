@@ -1,0 +1,8 @@
+.next
+AGENTS.md
+coverage
+docs/PRD.md
+node_modules
+playwright-report
+pnpm-lock.yaml
+test-results
