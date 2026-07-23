@@ -154,6 +154,7 @@ export const readingSessions = pgTable("reading_sessions", {
     .references(() => spreads.id),
   spreadVersion: text("spread_version").notNull(),
   encryptedQuestion: text("encrypted_question").notNull(),
+  readingLens: jsonb("reading_lens").notNull(),
   safetyClassification: text("safety_classification").notNull(),
   state: text("state").notNull(),
   createdAt,
@@ -214,18 +215,26 @@ export const products = pgTable("products", {
   active: boolean("active").default(true).notNull(),
   createdAt,
 });
-export const orders = pgTable("orders", {
-  id,
-  userId: userId(),
-  productId: text("product_id")
-    .notNull()
-    .references(() => products.id),
-  provider: text("provider").notNull(),
-  providerSessionId: text("provider_session_id").notNull().unique(),
-  status: text("status").notNull(),
-  createdAt,
-  updatedAt,
-});
+export const orders = pgTable(
+  "orders",
+  {
+    id,
+    userId: userId(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id),
+    profileSnapshotId: uuid("profile_snapshot_id")
+      .notNull()
+      .references(() => profileSnapshots.id),
+    provider: text("provider").notNull(),
+    providerSessionId: text("provider_session_id").notNull().unique(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status").notNull(),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [uniqueIndex("orders_user_idempotency_unique").on(table.userId, table.idempotencyKey)],
+);
 export const entitlements = pgTable("entitlements", {
   id,
   userId: userId(),

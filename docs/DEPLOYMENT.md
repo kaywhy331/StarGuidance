@@ -1,31 +1,52 @@
 # Deployment
 
-## Netlify preview
+## Netlify contexts
 
-The root `netlify.toml` pins Node and pnpm, builds the `@starguidance/web` workspace, and publishes the Next.js `.next` output through the pinned official `@netlify/plugin-nextjs` runtime adapter. The deploy-preview context alone enables the synthetic, noindex `/visual-preview` screenshot fixture.
+The root `netlify.toml` pins Node and pnpm, builds `@starguidance/web`, and uses the pinned official Next.js adapter. Deploy previews explicitly set `APP_ENV=staging` and `RUNTIME_ADAPTER=supabase`; the local adapter therefore cannot become an accidental hosted fallback. The synthetic, noindex `/visual-preview` fixture remains deploy-preview only.
 
-PR #3 preview: [deploy-preview-3--starguidance.netlify.app](https://deploy-preview-3--starguidance.netlify.app)
+PR #3 visual baseline: [deploy-preview-3--starguidance.netlify.app](https://deploy-preview-3--starguidance.netlify.app)
 
-No production deployment has been performed or implied.
+The stacked Supabase branch does not yet have a verified preview because its required secrets are not configured. No production deployment has been performed or implied.
 
-## Components
+## Environment matrix
 
-- Build `apps/web` on a Node 24-compatible Next.js host.
-- Build `apps/profile-engine` from its non-root Python container.
-- Apply every file in `packages/database/migrations` in journal order to Supabase-compatible Postgres, then run `corepack pnpm db:seed` with a staging `DATABASE_URL`.
-- Configure all required values from `.env.example` in managed secrets; never pass secrets as image build arguments.
+Configure secret values in the Netlify UI with the narrowest deploy-context scope. Never place values in Git, build logs, screenshots, fixtures, or pull-request text.
 
-## Release sequence
+| Variable                                 | Local development                | Deploy preview / staging                                | Production               | Scope and purpose                                            |
+| ---------------------------------------- | -------------------------------- | ------------------------------------------------------- | ------------------------ | ------------------------------------------------------------ |
+| `APP_ENV`                                | `development`                    | `staging` (committed context value)                     | `production`             | Non-secret environment policy                                |
+| `RUNTIME_ADAPTER`                        | `local` or `supabase`            | `supabase` (committed context value)                    | `supabase` when approved | Explicit fail-closed selector                                |
+| `ALLOW_LOCAL_RUNTIME_ADAPTER`            | `true` only for local/test       | unset                                                   | unset                    | Never configure on a hosted deploy                           |
+| `NEXT_PUBLIC_APP_URL`                    | `http://localhost:3000`          | optional; `DEPLOY_PRIME_URL` is preferred automatically | canonical HTTPS URL      | Auth redirect origin; not sensitive                          |
+| `NEXT_PUBLIC_SUPABASE_URL`               | required for local Supabase      | required                                                | required                 | Project URL; public runtime value                            |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`          | required for local Supabase      | required                                                | required                 | Publishable/anon project key; RLS remains mandatory          |
+| `DATABASE_URL`                           | optional local Postgres          | required, server-only                                   | required, server-only    | Pooler/direct URL able to `SET LOCAL ROLE authenticated`     |
+| `DATA_ENCRYPTION_KEY`                    | required for Supabase mode       | required, server-only                                   | required, server-only    | Base64-encoded 32-byte managed key; never stored in Postgres |
+| `SUPABASE_SERVICE_ROLE_KEY`              | optional except account deletion | required, server-only                                   | required, server-only    | Auth deletion and disposable test-user cleanup only          |
+| `PROFILE_ENGINE_URL`                     | local URL                        | private staging URL                                     | private production URL   | Server-to-server calculator                                  |
+| `PROFILE_ENGINE_SHARED_SECRET`           | optional                         | required, server-only                                   | required, server-only    | Calculator authentication                                    |
+| `PAYMENTS_PROVIDER` and Stripe variables | `local` or test                  | optional test mode                                      | owner approval required  | Commerce remains a separate gate                             |
 
-1. Run the full CI matrix, browser suite, migration check, and secret scan from a clean checkout.
-2. Connect Supabase Auth and the durable repository adapter; apply migrations in staging.
-3. Prove RLS isolation, export, deletion, consent history, and profile/read lineage with two real users.
-4. Configure a managed 32-byte encryption key and rehearse rotation, backup restore, deletion, and rollback.
-5. Require a profile-engine shared secret and restrict network ingress to the web service.
-6. Verify approved AI provider schema handling, no-retention controls, safety evaluations, timeout/retry behavior, and prompt privacy.
-7. Verify Stripe test Checkout, webhook signatures/replays, idempotent durable entitlement, refunds, and asynchronous report jobs. The included Stripe code path has not been externally verified.
-8. Keep Western astrology and BaZi flags off; certify Dreamspell only after reference and rights approval.
-9. Complete accessibility, reduced-motion, mobile, performance, telemetry-redaction, incident-response, and crisis-resource reviews.
-10. Deploy with kill switches and rehearse rollback.
+Supabase Auth must allow the exact staging callback and the Netlify preview wildcard pattern used by the site. Magic-link redirects terminate at `/auth/callback`; do not add question or birth data to redirect parameters.
 
-The credential-free runtime must never be enabled in production; `APP_ENV=production` disables local sign-in, and production readiness additionally requires removal of every in-process repository path.
+## Database release sequence
+
+1. Create a disposable Supabase staging project that contains no production data.
+2. Set `DATABASE_URL` only in the operator shell or secret manager.
+3. Run `corepack pnpm db:check`, `corepack pnpm db:migrate`, and `corepack pnpm db:seed`.
+4. Run `DATABASE_INTEGRATION_URL=<isolated-url> corepack pnpm --filter @starguidance/database test:integration` against a disposable database. CI performs this with an isolated Postgres service.
+5. Run the Auth-backed two-user procedure in [Supabase staging](SUPABASE-STAGING.md).
+6. Record migration IDs and non-secret results; do not copy connection strings or keys into the PR.
+
+Migration `0001_supabase_staging` adds durable reading lenses and order lineage, links hosted Auth identities when `auth.users` exists, forces RLS, revokes public access, and grants only the required authenticated operations. It refuses to invent missing legacy reading lenses or order snapshot lineage.
+
+## Release gates
+
+1. Full CI, browser suite, migration rehearsal, secret scan, and Netlify preview must be green.
+2. Rehearse encryption-key rotation, backup restore, export, deletion, and rollback.
+3. Restrict the profile engine to web-service ingress and rotate its shared secret.
+4. Verify approved AI no-retention/schema handling and Stripe test Checkout/webhook replay separately.
+5. Keep Western astrology and BaZi disabled; keep Dreamspell labeled pending certification.
+6. Obtain owner decisions for retention, crisis resources, telemetry, licensing, payments, and production rollout.
+
+Do not configure or change owner-managed DNS, domains, notifications, production secrets, or a production deploy from this branch.

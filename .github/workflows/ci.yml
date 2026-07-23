@@ -77,6 +77,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/starguidance
+      DATABASE_INTEGRATION_URL: postgresql://postgres:postgres@127.0.0.1:5432/starguidance
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v5
@@ -88,6 +89,7 @@ jobs:
       - run: pnpm db:check
       - run: pnpm --filter @starguidance/database exec drizzle-kit migrate
       - run: pnpm db:seed
+      - run: pnpm --filter @starguidance/database test:integration
 
   secret-scan:
     runs-on: ubuntu-latest

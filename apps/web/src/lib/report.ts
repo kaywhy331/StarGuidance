@@ -2,7 +2,8 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { decryptLocal, localStore, recordAudit, type StoredReport } from "./local-store";
+import type { StoredReport } from "@starguidance/database";
+import { persistenceFor, recordAudit } from "./persistence";
 import type { ProfileCalculation } from "./profile-engine";
 
 export async function generateProfileReport(input: {
@@ -10,9 +11,15 @@ export async function generateProfileReport(input: {
   snapshotId: string;
   orderId: string;
 }): Promise<StoredReport> {
-  const profile = localStore.profileSnapshots.get(input.snapshotId);
+  const persistence = persistenceFor({ id: input.userId });
+  const profile = await persistence.repositories.profileSnapshots.get(
+    input.userId,
+    input.snapshotId,
+  );
   if (!profile) throw new Error("PROFILE_SNAPSHOT_NOT_FOUND");
-  const calculation = JSON.parse(decryptLocal(profile.encryptedCalculations)) as ProfileCalculation;
+  const calculation = JSON.parse(
+    persistence.decrypt(profile.encryptedCalculations),
+  ) as ProfileCalculation;
   const report: StoredReport = {
     id: randomUUID(),
     userId: input.userId,
@@ -66,7 +73,7 @@ export async function generateProfileReport(input: {
       },
     ],
   };
-  localStore.reports.set(report.id, report);
-  recordAudit("report.generated", input.userId, report.id);
+  await persistence.repositories.reports.create(report);
+  await recordAudit(input.userId, "report.generated", "report", report.id);
   return report;
 }

@@ -16,9 +16,11 @@ The reading ritual uses an original responsive cosmic Gothic sanctuary, card-spe
 - `packages/design-system` — accessible celestial primitives.
 - `packages/ai` — safety classification, compact trait-lens selection, structured provider boundary, and deterministic fallback.
 
-## Implemented development flow
+## Runtime adapters
 
-The credential-free adapter uses HttpOnly sessions and encrypted in-process storage, and is blocked when `APP_ENV=production`. It exists so every critical product path can be run and tested without sending private data to an external service. Postgres/Supabase migrations and production boundaries are present, but hosted authentication and durable persistence remain an explicit integration gate.
+`RUNTIME_ADAPTER` must explicitly select `supabase` or `local`; there is no implicit fallback. The Supabase adapter uses hosted Auth, user-scoped Postgres repositories, application-level AES-256-GCM encryption, immutable profile snapshots, durable locked readings, export, deletion, orders, entitlements, webhook idempotency, and audit records. Each user-scoped database transaction assumes the `authenticated` role and sets the verified Auth subject so RLS remains active.
+
+The credential-free adapter remains available only when `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, and the environment is local development/test. It is rejected in Netlify deploy previews and production. Hosted staging migration, Auth-backed two-user verification, and the deploy preview still require owner-managed credentials; see [Supabase staging](docs/SUPABASE-STAGING.md).
 
 Western astrology and BaZi return typed unavailable results. Dreamspell is deterministic but remains uncertified pending an approved reference dataset and rights review. No placeholder chart facts are returned.
 

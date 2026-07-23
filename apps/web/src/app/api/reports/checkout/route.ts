@@ -2,34 +2,29 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { requireUser } from "@/lib/auth";
-import { localStore } from "@/lib/local-store";
+import { persistenceFor } from "@/lib/persistence";
 import { generateProfileReport } from "@/lib/report";
 import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
 
 export async function POST(request: Request) {
   try {
-    if (process.env.APP_ENV === "production")
-      return NextResponse.json(
-        { error: "Configure the durable production commerce adapter before enabling Checkout." },
-        { status: 503 },
-      );
     const user = await requireUser();
     assertSameOrigin(request);
     assertRateLimit(`checkout:${user.id}`, 6);
-    if (!user.profile)
-      return NextResponse.json({ error: "A profile is required." }, { status: 409 });
+    const persistence = persistenceFor(user);
+    const profile = await persistence.repositories.birthProfiles.getActive(user.id);
+    if (!profile) return NextResponse.json({ error: "A profile is required." }, { status: 409 });
     const key = request.headers.get("idempotency-key") ?? randomUUID();
-    const existingId = localStore.idempotency.get(`${user.id}:${key}`);
-    if (existingId) {
-      if (localStore.reports.has(existingId))
-        return NextResponse.json({ reportId: existingId, adapter: "local" });
-      const order = localStore.orders.get(existingId);
-      if (order)
-        return NextResponse.json({
-          orderId: order.id,
-          status: order.status,
-          adapter: order.provider,
-        });
+    const existingOrder = await persistence.repositories.orders.getByIdempotencyKey(user.id, key);
+    if (existingOrder) {
+      const existingReport = (await persistence.repositories.reports.list(user.id)).find(
+        ({ orderId }) => orderId === existingOrder.id,
+      );
+      return NextResponse.json({
+        ...(existingReport ? { reportId: existingReport.id } : { orderId: existingOrder.id }),
+        status: existingOrder.status,
+        adapter: existingOrder.provider,
+      });
     }
     if (process.env.PAYMENTS_PROVIDER === "stripe") {
       const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -48,47 +43,49 @@ export async function POST(request: Request) {
           line_items: [{ price, quantity: 1 }],
           customer_email: user.email,
           client_reference_id: orderId,
-          metadata: { userId: user.id, snapshotId: user.profile.snapshot.id, orderId },
+          metadata: { orderId },
           success_url: `${appUrl}/profile?checkout=success`,
           cancel_url: `${appUrl}/profile?checkout=cancelled`,
         },
         { idempotencyKey: `${user.id}:${key}` },
       );
-      localStore.orders.set(orderId, {
+      await persistence.repositories.orders.create({
         id: orderId,
         userId: user.id,
-        snapshotId: user.profile.snapshot.id,
+        snapshotId: profile.snapshot.id,
         provider: "stripe",
         providerSessionId: session.id,
+        idempotencyKey: key,
         status: "pending",
         createdAt: new Date().toISOString(),
       });
-      localStore.idempotency.set(`${user.id}:${key}`, orderId);
       return NextResponse.json({ checkoutUrl: session.url, orderId, adapter: "stripe" });
     }
     const orderId = randomUUID();
     const now = new Date().toISOString();
-    localStore.orders.set(orderId, {
+    await persistence.repositories.orders.create({
       id: orderId,
       userId: user.id,
-      snapshotId: user.profile.snapshot.id,
+      snapshotId: profile.snapshot.id,
       provider: "local",
+      providerSessionId: `local:${orderId}`,
+      idempotencyKey: key,
       status: "paid",
       createdAt: now,
     });
-    localStore.entitlements.set(orderId, {
+    await persistence.repositories.entitlements.grant({
       id: randomUUID(),
       userId: user.id,
-      snapshotId: user.profile.snapshot.id,
+      snapshotId: profile.snapshot.id,
       orderId,
+      status: "active",
       createdAt: now,
     });
     const report = await generateProfileReport({
       userId: user.id,
-      snapshotId: user.profile.snapshot.id,
+      snapshotId: profile.snapshot.id,
       orderId,
     });
-    localStore.idempotency.set(`${user.id}:${key}`, report.id);
     return NextResponse.json({ reportId: report.id, adapter: "local" }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });

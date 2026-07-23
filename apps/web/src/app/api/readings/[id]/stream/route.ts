@@ -1,16 +1,19 @@
 import { PersistedResultStreamAdapter } from "@starguidance/ai";
 import { oracleStreamEventSchema, readingResultSchema } from "@starguidance/contracts";
 import { requireUser } from "@/lib/auth";
-import { localStore } from "@/lib/local-store";
+import { persistenceFor } from "@/lib/persistence";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser();
-    const reading = localStore.readings.get((await context.params).id);
-    if (!reading || reading.userId !== user.id)
-      return Response.json({ error: "Reading not found." }, { status: 404 });
+    const persistence = persistenceFor(user);
+    const reading = await persistence.repositories.readingSessions.get(
+      user.id,
+      (await context.params).id,
+    );
+    if (!reading) return Response.json({ error: "Reading not found." }, { status: 404 });
 
     const target = new URL(request.url).searchParams.get("target") ?? "primary";
     const result =

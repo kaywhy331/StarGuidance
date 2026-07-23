@@ -10,6 +10,8 @@ afterEach(() => vi.unstubAllEnvs());
 describe("Stripe webhook boundary", () => {
   it("rejects an invalid signature without processing an event", async () => {
     vi.stubEnv("APP_ENV", "test");
+    vi.stubEnv("RUNTIME_ADAPTER", "local");
+    vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
     vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_local_only");
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", webhookSecret);
     const response = await POST(
@@ -24,6 +26,8 @@ describe("Stripe webhook boundary", () => {
 
   it("accepts and idempotently ignores a correctly signed unrelated event", async () => {
     vi.stubEnv("APP_ENV", "test");
+    vi.stubEnv("RUNTIME_ADAPTER", "local");
+    vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
     vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_local_only");
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", webhookSecret);
     const payload = JSON.stringify({

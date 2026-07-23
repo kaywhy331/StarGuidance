@@ -9,11 +9,14 @@
   "scripts": {
     "build": "tsc --noEmit",
     "db:check": "drizzle-kit check",
+    "test:integration": "vitest run src/repositories.integration.test.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@starguidance/contracts": "workspace:*",
     "@starguidance/tarot-content": "workspace:*",
+    "@starguidance/tarot-domain": "workspace:*",
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.9"
   },
