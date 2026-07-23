@@ -1,5 +1,11 @@
 # Deployment
 
+## Netlify preview
+
+The root `netlify.toml` pins Node and pnpm, builds the `@starguidance/web` workspace, and publishes the Next.js `.next` output through the pinned official `@netlify/plugin-nextjs` runtime adapter. The deploy-preview context alone enables the synthetic, noindex `/visual-preview` screenshot fixture.
+
+PR #3 preview: [deploy-preview-3--starguidance.netlify.app](https://deploy-preview-3--starguidance.netlify.app)
+
 No production deployment has been performed or implied.
 
 ## Components

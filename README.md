@@ -2,6 +2,8 @@
 
 StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The MVP supports private onboarding, immutable profile snapshots, four reading types, a locked ritual flow, deterministic interpretation fallback, same-draw follow-ups, history, privacy controls, and a separately entitled profile report.
 
+The reading ritual uses an original responsive cosmic Gothic sanctuary, card-specific illustrated faces, a physical 3D card system, and an authenticated streaming oracle transcript. See [artwork provenance](docs/ARTWORK-PROVENANCE.md) for sources, prompts, rights boundaries, hashes, and performance budgets.
+
 ## Workspace
 
 - `apps/web` — Next.js App Router experience and authenticated server boundary.

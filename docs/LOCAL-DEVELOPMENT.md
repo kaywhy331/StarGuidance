@@ -71,3 +71,16 @@ corepack pnpm --filter @starguidance/web exec playwright test tests/e2e/visual.s
 ```
 
 The credential-free adapters are test aids, not proof of production integrations.
+
+## Deploy-preview screenshots
+
+The synthetic `/visual-preview` route is available outside public production. The committed Netlify configuration enables it only for the `deploy-preview` context; `ENABLE_VISUAL_PREVIEW` defaults to false. It is no-indexed and contains no account, profile, question, or reading data. Capture screenshots from an actual Netlify preview with:
+
+```bash
+DEPLOY_PREVIEW_URL=https://deploy-preview-N--example.netlify.app \
+PREVIEW_SCREENSHOTS=1 \
+corepack pnpm --filter @starguidance/web exec playwright test \
+  --config playwright.preview.config.ts
+```
+
+The route contains no user profile, question, session, or production provider data.

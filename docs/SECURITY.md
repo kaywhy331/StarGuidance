@@ -14,6 +14,8 @@ Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 - History previews are decrypted only for an authenticated response; no question preview is stored in plaintext.
 - Authenticated export returns readable birth/profile/reading/report data. Account deletion removes local sessions, encrypted snapshots, readings, reports, orders, entitlements, and user-scoped idempotency entries.
 - The migration enables RLS on user-owned tables and defines JWT-subject policies. Audit metadata excludes raw birth and question content.
+- Oracle streaming emits only schema-validated persisted result phases; the private question is not included in the stream URL or payload.
+- The deploy-preview composition contains synthetic cards and text only, is `noindex`, and is enabled by a Netlify deploy-preview-only flag that defaults off on public production.
 
 ## Production gates
 

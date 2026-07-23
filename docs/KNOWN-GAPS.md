@@ -20,6 +20,7 @@
 - BaZi needs approved year/month/day/hour boundaries, reference cases, and expert sign-off.
 - Dreamspell needs an approved decoder dataset and terminology/rights review.
 - Pricing, refund policy, age policy, final legal/privacy copy, launch countries/currencies, crisis resources, report editorial review, deck art/brand, retention periods, and backup policy require owner decisions.
+- The generated sanctuary/card-back assets and original vector card-face system require final owner brand and production-distribution approval; no third-party deck license is relied upon.
 
 ## Operational gaps
 
