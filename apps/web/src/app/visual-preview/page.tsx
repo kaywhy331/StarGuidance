@@ -12,7 +12,9 @@ export const metadata: Metadata = {
 };
 
 export default function VisualPreviewPage() {
-  if (process.env.APP_ENV === "production") notFound();
+  const isPublicProduction =
+    process.env.APP_ENV === "production" && process.env.CONTEXT !== "deploy-preview";
+  if (isPublicProduction) notFound();
   const spread = spreads.find(({ id }) => id === "direction")!;
   const selected = [tarotCards[2]!, tarotCards[10]!, tarotCards[17]!];
   const cards = selected.map((card, index) => ({
