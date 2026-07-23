@@ -53,6 +53,8 @@ Supabase Auth must allow the exact staging callback and the Netlify preview wild
 
 ## Database release sequence
 
+The repository's Drizzle files in `packages/database/migrations` are the only migration authority. The Supabase GitHub integration must not create, adopt, or apply an independent `supabase/migrations` history. Keep Supabase automatic **Deploy to production** disabled until an owner approves a reviewed promotion workflow; a skipped Supabase Preview check is expected under this policy.
+
 1. Create a disposable Supabase staging project that contains no production data.
 2. Set `DATABASE_URL` only in the operator shell or secret manager.
 3. Run `corepack pnpm db:check`, `corepack pnpm db:migrate`, and `corepack pnpm db:seed`.

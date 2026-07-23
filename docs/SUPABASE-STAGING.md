@@ -2,6 +2,8 @@
 
 This procedure is intentionally credential-gated. Use a disposable Supabase project with no production data. Secret values belong in the operator shell, Supabase secret manager, GitHub Actions environment secrets, or Netlify UI—not Git, chat, screenshots, logs, fixtures, or PR text.
 
+`packages/database/migrations` is the authoritative Drizzle migration history. The connected Supabase GitHub integration is not a migration authority and must not create or apply a second `supabase/migrations` source. Keep Supabase automatic **Deploy to production** disabled; the integration's Preview check may remain skipped while migrations are applied explicitly from the operator shell.
+
 ## Required configuration
 
 Configure these for the Netlify **Deploy Previews** context:
