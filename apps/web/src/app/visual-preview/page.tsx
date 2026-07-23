@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { createOracleStreamEvents } from "@starguidance/ai";
 import { readingResultSchema } from "@starguidance/contracts";
@@ -12,18 +11,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export const dynamic = "force-dynamic";
-
-const deployPreviewHost = /^deploy-preview-\d+--starguidance\.netlify\.app(?::\d+)?$/;
-
-export default async function VisualPreviewPage() {
-  const requestHeaders = await headers();
-  const host = (requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "")
-    .split(",")[0]!
-    .trim()
-    .toLowerCase();
-  const isPublicProduction = process.env.APP_ENV === "production" && !deployPreviewHost.test(host);
-  if (isPublicProduction) notFound();
+export default function VisualPreviewPage() {
+  const previewEnabled =
+    process.env.APP_ENV !== "production" || process.env.ENABLE_VISUAL_PREVIEW === "true";
+  if (!previewEnabled) notFound();
   const spread = spreads.find(({ id }) => id === "direction")!;
   const selected = [tarotCards[2]!, tarotCards[10]!, tarotCards[17]!];
   const cards = selected.map((card, index) => ({
