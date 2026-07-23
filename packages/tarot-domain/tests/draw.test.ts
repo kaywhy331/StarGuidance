@@ -15,6 +15,19 @@ const cards: TarotCard[] = Array.from({ length: 8 }, (_, index) => ({
   reflectivePrompt: "What changes?",
   contentVersion: "test-v1",
   attribution: "test",
+  artwork: {
+    artworkId: "test-art-v1",
+    frontAsset: "/test-front.svg",
+    backAsset: "/test-back.webp",
+    altText: "Test illustration",
+    artistCredit: "Test",
+    license: "Test only",
+    source: "Test fixture",
+    provenance: "Test fixture",
+    focalPoint: { x: 0.5, y: 0.5 },
+    crop: "center",
+    artworkVersion: "test-v1",
+  },
 }));
 const spread: Spread = {
   id: "test-spread",

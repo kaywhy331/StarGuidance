@@ -2,6 +2,21 @@ export type Arcana = "major" | "minor";
 export type Suit = "wands" | "cups" | "swords" | "pentacles";
 export type CardOrientation = "upright" | "reversed";
 
+export interface TarotArtwork {
+  readonly artworkId: string;
+  readonly frontAsset: string;
+  readonly backAsset: string;
+  readonly backAssetAvif?: string;
+  readonly altText: string;
+  readonly artistCredit: string;
+  readonly license: string;
+  readonly source: string;
+  readonly provenance: string;
+  readonly focalPoint: { readonly x: number; readonly y: number };
+  readonly crop: "center" | "top" | "bottom";
+  readonly artworkVersion: string;
+}
+
 export interface TarotCard {
   readonly id: string;
   readonly name: string;
@@ -14,6 +29,7 @@ export interface TarotCard {
   readonly reflectivePrompt: string;
   readonly contentVersion: string;
   readonly attribution: string;
+  readonly artwork: TarotArtwork;
 }
 
 export interface SpreadPosition {

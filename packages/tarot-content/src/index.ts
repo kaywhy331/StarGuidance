@@ -1,7 +1,31 @@
 import type { Spread, SpreadPosition, Suit, TarotCard } from "@starguidance/tarot-domain";
 
+export { renderTarotFaceSvg } from "./artwork";
+
 export const TAROT_CONTENT_VERSION = "starguidance-original-v1" as const;
-export const DECK_VERSION = "starguidance-typographic-v1" as const;
+export const TAROT_ARTWORK_VERSION = "starguidance-celestial-gothic-v2" as const;
+export const DECK_VERSION = "starguidance-illustrated-v2" as const;
+
+const BACK_ASSET = "/art/tarot/v2/celestial-gothic-back-v1.webp";
+const BACK_ASSET_AVIF = "/art/tarot/v2/celestial-gothic-back-v1.avif";
+
+function artwork(id: string, name: string) {
+  return {
+    artworkId: `${TAROT_ARTWORK_VERSION}:${id}`,
+    frontAsset: `/art/tarot/v2/${id}.svg`,
+    backAsset: BACK_ASSET,
+    backAssetAvif: BACK_ASSET_AVIF,
+    altText: `Original celestial Gothic illustration for ${name}`,
+    artistCredit: "StarGuidance Studio",
+    license: "Original project artwork; project use authorized, redistribution not granted",
+    source: "In-house deterministic vector illustration system",
+    provenance:
+      "Card face composed from original procedural SVG geometry; shared card back generated for StarGuidance with OpenAI image generation and locally optimized",
+    focalPoint: { x: 0.5, y: 0.44 },
+    crop: "center" as const,
+    artworkVersion: TAROT_ARTWORK_VERSION,
+  };
+}
 
 const majorNames = [
   "The Fool",
@@ -123,6 +147,7 @@ const majors: TarotCard[] = majorNames.map((name, index) => ({
   reflectivePrompt: `Where is ${majorThemes[index]} asking for your conscious participation?`,
   contentVersion: TAROT_CONTENT_VERSION,
   attribution: "Original StarGuidance editorial content",
+  artwork: artwork(`major-${String(index).padStart(2, "0")}`, name),
 }));
 
 const minors: TarotCard[] = suits.flatMap(({ suit, noun, domain, shadow }) =>
@@ -145,6 +170,7 @@ const minors: TarotCard[] = suits.flatMap(({ suit, noun, domain, shadow }) =>
     reflectivePrompt: `How could ${rankThemes[index]} change your relationship with ${domain}?`,
     contentVersion: TAROT_CONTENT_VERSION,
     attribution: "Original StarGuidance editorial content",
+    artwork: artwork(`${suit}-${rank.toLowerCase()}`, `${rank} of ${noun}`),
   })),
 );
 
