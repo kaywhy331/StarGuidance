@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   birthProfileInputSchema,
@@ -12,12 +13,16 @@ import { useForm, useWatch } from "react-hook-form";
 
 export function BirthProfileForm() {
   const [completeness, setCompleteness] = useState<string>();
+  const [hasPlace, setHasPlace] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const [saveError, setSaveError] = useState<string>();
+  const router = useRouter();
   const form = useForm<BirthProfileInput>({
     resolver: zodResolver(birthProfileInputSchema),
     defaultValues: { fullBirthName: "", birthDate: "", birthTime: { kind: "unknown" } },
   });
   const timeKind = useWatch({ control: form.control, name: "birthTime.kind" });
-  const requiresPlace = timeKind !== "unknown";
+  const requiresContext = timeKind !== "unknown";
   const error = form.formState.errors;
   const label = useMemo(
     () => completeness?.replace(/([A-Z])/g, " $1").toLowerCase(),
@@ -29,7 +34,22 @@ export function BirthProfileForm() {
       <form
         className="grid gap-6"
         noValidate
-        onSubmit={form.handleSubmit((profile) => setCompleteness(getProfileCompleteness(profile)))}
+        onSubmit={form.handleSubmit(async (profile) => {
+          setSaveError(undefined);
+          const response = await fetch("/api/profile", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...profile, consentVersion: "privacy-reflective-v1" }),
+          });
+          if (response.status === 401) return router.push("/sign-in");
+          if (!response.ok) {
+            const payload = (await response.json()) as { error?: string };
+            setSaveError(payload.error ?? "The private profile could not be calculated.");
+            return;
+          }
+          setCompleteness(getProfileCompleteness(profile));
+          router.push("/readings");
+        })}
       >
         <Field
           autoComplete="name"
@@ -43,6 +63,14 @@ export function BirthProfileForm() {
           max={new Date().toISOString().slice(0, 10)}
           type="date"
           {...form.register("birthDate")}
+        />
+        <Field
+          error={error.latinNameRendering?.message}
+          hint="Only needed to confirm a Latin-letter rendering of a non-Latin birth name"
+          label="Confirmed Latin-letter rendering (optional)"
+          {...form.register("latinNameRendering", {
+            setValueAs: (value: string) => value.trim() || undefined,
+          })}
         />
         <fieldset className="grid gap-3">
           <legend className="text-sm font-medium">Birth time</legend>
@@ -75,30 +103,76 @@ export function BirthProfileForm() {
             />
           </div>
         )}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field
-            error={error.birthplace?.message}
-            hint={requiresPlace ? "Required with a birth time" : "Optional"}
-            label="Birth city"
-            {...form.register("birthplace.city")}
+        <Field
+          error={
+            error.authoritativeTimeZone?.message ??
+            (!hasPlace ? error.birthplace?.message : undefined)
+          }
+          hint={
+            requiresContext
+              ? "Required with a birth time unless a birthplace is supplied"
+              : "Optional IANA timezone, for example America/Los_Angeles"
+          }
+          label="Authoritative birth timezone (optional)"
+          placeholder="America/Los_Angeles"
+          {...form.register("authoritativeTimeZone", {
+            setValueAs: (value: string) => value.trim() || undefined,
+          })}
+        />
+        <label className="flex items-center gap-3 text-sm">
+          <input
+            checked={hasPlace}
+            onChange={(event) => {
+              setHasPlace(event.target.checked);
+              if (!event.target.checked) form.unregister("birthplace");
+            }}
+            type="checkbox"
           />
-          <Field
-            label="Country code"
-            maxLength={2}
-            placeholder="US"
-            {...form.register("birthplace.countryCode")}
-          />
-          <Field
-            label="IANA timezone"
-            placeholder="America/Los_Angeles"
-            {...form.register("birthplace.timeZone")}
-          />
-        </div>
+          Add birthplace (optional)
+        </label>
+        {hasPlace && (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field
+              error={error.birthplace?.message}
+              hint="Optional when authoritative timezone is supplied"
+              label="Birth city"
+              {...form.register("birthplace.city")}
+            />
+            <Field
+              label="Country code"
+              maxLength={2}
+              placeholder="US"
+              {...form.register("birthplace.countryCode")}
+            />
+            <Field
+              label="IANA timezone"
+              placeholder="America/Los_Angeles"
+              {...form.register("birthplace.timeZone")}
+            />
+          </div>
+        )}
         <p className="text-sm leading-6 text-[#a99db5]">
-          This form validates locally for the prototype. It does not persist birth data until an
-          authenticated encrypted profile store is configured.
+          Raw details are encrypted server-side and never sent to analytics or placed in a URL.
         </p>
-        <Button type="submit">Check profile capability</Button>
+        <label className="flex items-start gap-3 text-sm leading-6">
+          <input
+            checked={consent}
+            className="mt-1"
+            onChange={(event) => setConsent(event.target.checked)}
+            required
+            type="checkbox"
+          />
+          I consent to private profile calculation and understand that tarot is reflective guidance,
+          not factual prediction or professional advice.
+        </label>
+        <Button disabled={!consent || form.formState.isSubmitting} type="submit">
+          {form.formState.isSubmitting ? "Calculating privately…" : "Check profile capability"}
+        </Button>
+        {saveError && (
+          <p className="text-[#ffb7bd]" role="alert">
+            {saveError}
+          </p>
+        )}
         {label && (
           <p aria-live="polite" className="rounded-2xl bg-[#221936] p-4">
             Profile capability: <strong>{label}</strong>. Missing details reduce scope, not access

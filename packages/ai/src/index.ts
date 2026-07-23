@@ -1,4 +1,8 @@
-import { readingResultSchema, type ReadingResult } from "@starguidance/contracts";
+import {
+  readingResultSchema,
+  type ProfileTrait,
+  type ReadingResult,
+} from "@starguidance/contracts";
 import { tarotCards } from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
@@ -77,6 +81,49 @@ export interface ReadingGenerationInput {
   readonly draw: LockedDraw;
   readonly question: string;
   readonly relevantTraitStatements: readonly string[];
+}
+
+export interface ReadingLens {
+  readonly version: "question-trait-lens-v1";
+  readonly traitIndexes: readonly number[];
+  readonly statements: readonly string[];
+}
+
+const questionDomains: readonly [RegExp, readonly ProfileTrait["domain"][]][] = [
+  [
+    /\b(work|career|job|business|project|lead|decision)\b/i,
+    ["workStyle", "decisionStyle", "riskOrientation", "creativeExpression"],
+  ],
+  [
+    /\b(love|relationship|partner|friend|family|communicat|conflict)\b/i,
+    ["relationshipNeeds", "communicationStyle", "conflictResponse", "emotionalProcessing"],
+  ],
+  [
+    /\b(change|move|choice|direction|future|next)\b/i,
+    ["stabilityVsChange", "growthLever", "decisionStyle", "coreMotivation"],
+  ],
+];
+
+export function selectReadingLens(question: string, traits: readonly ProfileTrait[]): ReadingLens {
+  const preferred = questionDomains.find(([pattern]) => pattern.test(question))?.[1] ?? [
+    "coreMotivation",
+    "growthLever",
+    "communicationStyle",
+  ];
+  const ranked = traits
+    .map((trait, index) => ({ trait, index }))
+    .filter(({ trait }) => trait.stability === "stable")
+    .sort((left, right) => {
+      const leftRank = preferred.indexOf(left.trait.domain);
+      const rightRank = preferred.indexOf(right.trait.domain);
+      return (leftRank < 0 ? 99 : leftRank) - (rightRank < 0 ? 99 : rightRank);
+    })
+    .slice(0, 3);
+  return {
+    version: "question-trait-lens-v1",
+    traitIndexes: ranked.map(({ index }) => index),
+    statements: ranked.map(({ trait }) => trait.statement),
+  };
 }
 
 export class DeterministicFallbackProvider implements InterpretationProvider<

@@ -49,7 +49,6 @@ describe("locked draw", () => {
       cards,
       deckVersion: "test-deck-v1",
       spread,
-      profileSnapshotId: "00000000-0000-4000-8000-000000000001",
       id: "reading-1",
       now: new Date("2026-01-01T00:00:00Z"),
       random: (maximum) => (values.shift() ?? 0) % maximum,
@@ -64,7 +63,6 @@ describe("locked draw", () => {
       cards,
       deckVersion: "test-deck-v1",
       spread,
-      profileSnapshotId: "00000000-0000-4000-8000-000000000001",
     });
     expect(retryLockedDraw(draw)).toBe(draw);
     expect(createFollowUpLineage(draw, "follow-up-1").draw).toBe(draw);

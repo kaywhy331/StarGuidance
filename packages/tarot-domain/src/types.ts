@@ -47,7 +47,6 @@ export interface LockedDraw {
   readonly spreadId: string;
   readonly spreadVersion: string;
   readonly shuffleVersion: string;
-  readonly profileSnapshotId: string;
   readonly assignments: readonly DrawAssignment[];
   readonly lockedAt: string;
 }

@@ -101,6 +101,26 @@ class UnavailableResult(BaseModel):
     activation_requirements: tuple[str, ...]
 
 
+class ProfileTrait(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    domain: str
+    statement: str
+    source_system: str
+    source_rule: str
+    calculation_version: str
+    stability: str
+
+
+class ProfileTension(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    side_a: str
+    side_b: str
+    trait_indexes: tuple[int, int]
+
+
 class ProfileResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -109,3 +129,5 @@ class ProfileResponse(BaseModel):
     dreamspell: DreamspellResult
     western_astrology: UnavailableResult
     bazi: UnavailableResult
+    traits: tuple[ProfileTrait, ...]
+    tensions: tuple[ProfileTension, ...]

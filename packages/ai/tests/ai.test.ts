@@ -1,16 +1,50 @@
 import { describe, expect, it } from "vitest";
 import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
 import { createLockedDraw } from "@starguidance/tarot-domain";
-import { classifyQuestion, DeterministicFallbackProvider, ValidatingProvider } from "../src";
+import {
+  classifyQuestion,
+  DeterministicFallbackProvider,
+  selectReadingLens,
+  ValidatingProvider,
+} from "../src";
 
 const draw = createLockedDraw({
   cards: tarotCards,
   deckVersion: DECK_VERSION,
   spread: spreads[0]!,
-  profileSnapshotId: "00000000-0000-4000-8000-000000000001",
 });
 
 describe("AI boundary", () => {
+  it("selects a small stable question-relevant lens without exposing raw calculations", () => {
+    const lens = selectReadingLens("What should I consider in my career?", [
+      {
+        domain: "relationshipNeeds",
+        statement: "relationship trait",
+        sourceSystem: "numerology",
+        sourceRule: "test.relationship",
+        calculationVersion: "test-v1",
+        stability: "stable",
+      },
+      {
+        domain: "workStyle",
+        statement: "work trait",
+        sourceSystem: "numerology",
+        sourceRule: "test.work",
+        calculationVersion: "test-v1",
+        stability: "stable",
+      },
+      {
+        domain: "creativeExpression",
+        statement: "uncertain trait",
+        sourceSystem: "dreamspell",
+        sourceRule: "test.uncertain",
+        calculationVersion: "test-v1",
+        stability: "uncertain",
+      },
+    ]);
+    expect(lens.statements[0]).toBe("work trait");
+    expect(lens.statements).not.toContain("uncertain trait");
+  });
   it("interrupts crisis and compulsive rereading language", () => {
     expect(classifyQuestion("I want to kill myself").interrupt).toBe(true);
     expect(classifyQuestion("Can I keep redrawing the same question again?").category).toBe(

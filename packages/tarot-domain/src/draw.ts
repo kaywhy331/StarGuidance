@@ -26,7 +26,6 @@ export function createLockedDraw(input: {
   readonly cards: readonly TarotCard[];
   readonly deckVersion: string;
   readonly spread: Spread;
-  readonly profileSnapshotId: string;
   readonly now?: Date;
   readonly id?: string;
   readonly random?: SecureRandomInt;
@@ -52,7 +51,6 @@ export function createLockedDraw(input: {
     spreadId: input.spread.id,
     spreadVersion: input.spread.version,
     shuffleVersion: SHUFFLE_VERSION,
-    profileSnapshotId: input.profileSnapshotId,
     assignments: Object.freeze(assignments.map((assignment) => Object.freeze(assignment))),
     lockedAt: (input.now ?? new Date()).toISOString(),
   });

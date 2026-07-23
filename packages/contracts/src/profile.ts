@@ -132,3 +132,4 @@ export const profileSnapshotSchema = z.object({
 
 export type ProfileSnapshot = z.infer<typeof profileSnapshotSchema>;
 export type ProfileTrait = z.infer<typeof profileTraitSchema>;
+export type ProfileTension = z.infer<typeof profileTensionSchema>;

@@ -4,6 +4,7 @@ import pytest
 
 from profile_engine.dreamspell import calculate_dreamspell
 from profile_engine.numerology import calculate_numerology, reduce_number
+from profile_engine.traits import synthesize_traits
 
 
 def test_master_numbers_are_preserved() -> None:
@@ -39,3 +40,16 @@ def test_dreamspell_anchor_and_cycle_are_deterministic() -> None:
     assert (anchor.kin, anchor.tone_name, anchor.solar_seal_name) == (34, "Galactic", "Wizard")
     assert repeated.kin == anchor.kin
     assert anchor.certification_status == "implemented_pending_approved_reference_dataset"
+
+
+def test_trait_synthesis_preserves_source_and_uncertainty() -> None:
+    numerology = calculate_numerology("Ada Lovelace", date(1815, 12, 10))
+    dreamspell = calculate_dreamspell(date(1815, 12, 10))
+
+    traits, tensions = synthesize_traits(numerology, dreamspell)
+
+    assert len(traits) == 5
+    assert all(trait.source_rule for trait in traits)
+    assert all(trait.stability == "stable" for trait in traits[:4])
+    assert traits[-1].stability == "uncertain"
+    assert len(tensions) <= 1
