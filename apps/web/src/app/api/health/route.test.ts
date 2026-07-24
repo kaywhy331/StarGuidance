@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const database = vi.hoisted(() => {
+  const transaction = Object.assign(vi.fn(), { unsafe: vi.fn() });
+  const client = {
+    unsafe: vi.fn(),
+    begin: vi.fn(async (work: (tx: typeof transaction) => Promise<void>) => work(transaction)),
+    end: vi.fn().mockResolvedValue(undefined),
+  };
+  return { client, transaction };
+});
+
+vi.mock("@starguidance/database", () => ({
+  createDatabaseClient: () => database.client,
+}));
+
 import { GET } from "./route";
 
 const SECRET_VALUES = {
@@ -23,11 +37,19 @@ function configureStaging() {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+  database.client.begin.mockImplementation(
+    async (work: (tx: typeof database.transaction) => Promise<void>) => work(database.transaction),
+  );
+  database.client.end.mockResolvedValue(undefined);
+  database.transaction.mockResolvedValue([]);
+  database.transaction.unsafe.mockResolvedValue([]);
 });
 
 describe("deployment health", () => {
   it("reports a configured staging runtime without returning environment values", async () => {
     configureStaging();
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
     vi.stubGlobal(
       "fetch",
       vi
@@ -56,6 +78,12 @@ describe("deployment health", () => {
         unauthorizedComputeStatus: 401,
         authorizedComputeStatus: 200,
       },
+      database: {
+        connection: true,
+        schemaReady: true,
+        rlsReady: true,
+        actorTransactionReady: true,
+      },
     });
     for (const value of Object.values(SECRET_VALUES)) expect(serialized).not.toContain(value);
   });
@@ -75,11 +103,18 @@ describe("deployment health", () => {
       unauthorizedComputeStatus: null,
       authorizedComputeStatus: null,
     });
+    expect(body.database).toEqual({
+      connection: false,
+      schemaReady: false,
+      rlsReady: false,
+      actorTransactionReady: false,
+    });
     expect(JSON.stringify(body)).not.toContain("redacted dependency failure");
   });
 
   it("never enables local persistence in a hosted preview", async () => {
     configureStaging();
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
     vi.stubEnv("RUNTIME_ADAPTER", "local");
     vi.stubEnv("APP_ENV", "development");
     vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
@@ -97,5 +132,29 @@ describe("deployment health", () => {
 
     expect(response.status).toBe(503);
     expect(body.localPersistenceEnabled).toBe(false);
+  });
+
+  it("fails closed when the authoritative staging schema is not applied", async () => {
+    configureStaging();
+    database.client.unsafe.mockResolvedValue([{ schema_ready: false, rls_ready: false }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.database).toEqual({
+      connection: true,
+      schemaReady: false,
+      rlsReady: false,
+      actorTransactionReady: false,
+    });
   });
 });

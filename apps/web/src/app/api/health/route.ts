@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createDatabaseClient } from "@starguidance/database";
 
 import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
 
@@ -16,6 +17,13 @@ type DependencyStatus = {
   healthStatus: number | null;
   unauthorizedComputeStatus: number | null;
   authorizedComputeStatus: number | null;
+};
+
+type DatabaseStatus = {
+  connection: boolean;
+  schemaReady: boolean;
+  rlsReady: boolean;
+  actorTransactionReady: boolean;
 };
 
 function configured(name: string): boolean {
@@ -85,6 +93,88 @@ async function probeProfileEngine(): Promise<DependencyStatus> {
   return { healthStatus, unauthorizedComputeStatus, authorizedComputeStatus };
 }
 
+async function probeDatabase(): Promise<DatabaseStatus> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl)
+    return {
+      connection: false,
+      schemaReady: false,
+      rlsReady: false,
+      actorTransactionReady: false,
+    };
+  const client = createDatabaseClient(databaseUrl);
+  try {
+    const [readiness] = await client.unsafe<{ schema_ready: boolean; rls_ready: boolean }[]>(`
+      select
+        (
+          to_regclass('public.users') is not null
+          and to_regclass('public.consents') is not null
+          and to_regclass('public.birth_profiles') is not null
+          and to_regclass('public.profile_snapshots') is not null
+          and to_regclass('public.profile_components') is not null
+          and to_regclass('public.profile_traits') is not null
+          and exists (
+            select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'birth_profiles'
+              and column_name = 'active_snapshot_id'
+          )
+          and exists (
+            select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'reading_sessions'
+              and column_name = 'reading_lens'
+          )
+          and exists (
+            select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'orders'
+              and column_name = 'profile_snapshot_id'
+          )
+        ) as schema_ready,
+        not exists (
+          select 1
+          from unnest(array[
+            'users', 'consents', 'birth_profiles', 'profile_snapshots',
+            'profile_components', 'profile_traits'
+          ]) as required(table_name)
+          where not exists (
+            select 1
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and c.relname = required.table_name
+              and c.relrowsecurity and c.relforcerowsecurity
+          )
+        ) as rls_ready
+    `);
+    let actorTransactionReady = false;
+    if (readiness?.schema_ready && readiness.rls_ready) {
+      try {
+        await client.begin(async (tx) => {
+          await tx.unsafe("set local role authenticated");
+          await tx`select set_config('request.jwt.claim.sub', ${"00000000-0000-4000-8000-000000000000"}, true)`;
+          await tx`select id from users limit 1`;
+        });
+        actorTransactionReady = true;
+      } catch {
+        actorTransactionReady = false;
+      }
+    }
+    return {
+      connection: true,
+      schemaReady: readiness?.schema_ready === true,
+      rlsReady: readiness?.rls_ready === true,
+      actorTransactionReady,
+    };
+  } catch {
+    return {
+      connection: false,
+      schemaReady: false,
+      rlsReady: false,
+      actorTransactionReady: false,
+    };
+  } finally {
+    await client.end({ timeout: 1 }).catch(() => undefined);
+  }
+}
+
 export async function GET() {
   const stagingPreview = process.env.APP_ENV === "staging" && isHostedNetlifyRuntime();
   const requiredEnvironment = REQUIRED_STAGING_ENVIRONMENT.map((name) => ({
@@ -111,6 +201,14 @@ export async function GET() {
         unauthorizedComputeStatus: null,
         authorizedComputeStatus: null,
       };
+  const database = stagingPreview
+    ? await probeDatabase()
+    : {
+        connection: false,
+        schemaReady: false,
+        rlsReady: false,
+        actorTransactionReady: false,
+      };
   const healthy =
     stagingPreview &&
     runtimeAdapter() === "supabase" &&
@@ -120,7 +218,11 @@ export async function GET() {
     invalidEnvironmentVariables.length === 0 &&
     profileEngine.healthStatus === 200 &&
     profileEngine.unauthorizedComputeStatus === 401 &&
-    profileEngine.authorizedComputeStatus === 200;
+    profileEngine.authorizedComputeStatus === 200 &&
+    database.connection &&
+    database.schemaReady &&
+    database.rlsReady &&
+    database.actorTransactionReady;
 
   return NextResponse.json(
     {
@@ -134,6 +236,7 @@ export async function GET() {
       missingEnvironmentVariables,
       invalidEnvironmentVariables,
       profileEngine,
+      database,
     },
     { status: healthy ? 200 : 503, headers: { "cache-control": "no-store" } },
   );
