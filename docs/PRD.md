@@ -12,14 +12,14 @@ Prepared for Kevin
 
 > **Core product decision**
 >
-> Birth name and date of birth are required. Birthplace and birth time are optional. A supplied birth time requires birthplace or equivalent timezone context. Missing data reduces profile detail but never blocks a tarot reading.
+> Birth name and date of birth are required. Birth city/country and birth time are two independent optional fields. Onboarding asks four simple questions and does not require timezone entry or a time-confidence mode. Missing data reduces profile detail but never blocks a tarot reading.
 
 ## Document control
 | **Field** | **Value** |
 | --- | --- |
 | Product | Personalized Tarot & Horoscope Web App |
 | Document | Product Requirements Document and completion criteria |
-| Version / date | v1.0 / July 22, 2026 |
+| Version / date | v1.1 / July 23, 2026 |
 | Status | Implementation-ready draft; business, brand, legal, and domain-expert sign-off pending |
 | Primary platforms | Responsive web application; mobile-first; desktop supported |
 | Primary audience | Founder, product, design, engineering, content, QA, security/privacy, and operations |
@@ -43,7 +43,7 @@ The user experience remains simple on the surface: create an account, enter mini
 
 ## Product at a glance
 - **Required profile inputs:** full birth name and date of birth.
-- **Optional enhancement inputs:** birthplace and birth time; time requires place/timezone context.
+- **Optional enhancement inputs:** a free-text birth city/country and a single birth-time field.
 - **Private personalization:** the base reading uses plain-language traits without showing placements, numbers, pillars, or signature labels.
 - **Tarot integrity:** the profile affects interpretation, never card selection.
 - **MVP readings:** 1-card Focus, 3-card Direction, 5-card Crossroads, and 7-card Deeper Outlook.
@@ -145,7 +145,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **ID** | **Decision** | **Status** |
 | --- | --- | --- |
 | DEC-001 | Birth name and date of birth are required for personalized readings. | Confirmed |
-| DEC-002 | Birthplace and birth time are optional; a supplied time requires place/timezone context. | Confirmed |
+| DEC-002 | Birth city/country and birth time are independent optional fields; onboarding does not ask for timezone or time-confidence modes. | Owner-directed / confirmed |
 | DEC-003 | The private profile is used for readings but is not displayed in the base experience. | Confirmed |
 | DEC-004 | A detailed profile report is sold separately. | Confirmed |
 | DEC-005 | Profile data affects interpretation, never card selection. | Recommended / launch-critical |
@@ -215,8 +215,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | --- | --- | --- | --- |
 | Core | Birth name + date | Numerology, Dreamspell, date-stable Western factors, 3-pillar BaZi, compact trait lens | Ascendant, houses, BaZi hour pillar, time-sensitive placements |
 | Location-enhanced | + birthplace | Historical timezone/location normalization and stronger date-boundary handling | Ascendant/houses/hour pillar remain unavailable |
-| Approximate-time | + birthplace + time range | Stable factors across sampled interval; possible Ascendants/hour pillars recorded | Any changing factor is excluded from strong claims |
-| Complete | + exact birthplace + time | Ascendant, angles, Whole Sign, Placidus, precise time-sensitive factors, BaZi hour pillar | Only calculation-system limitations |
+| Complete | + birthplace + time | Time and place are retained for future validated integrations | Time-sensitive systems remain unavailable until licensing, reference validation, and safe timezone derivation are approved |
 
 > **User-facing wording**
 >
@@ -249,19 +248,19 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
 | **PRO-001** | Full birth name and date of birth are the minimum required inputs for a personalized profile. | **Must** | The Continue action is disabled until both fields are valid and the privacy explanation has been acknowledged. |
-| **PRO-002** | Birthplace is optional and is captured only at city/region/country granularity. | **Must** | The interface never asks for a street address; selected places resolve to normalized city, coordinates, country, and IANA timezone. |
-| **PRO-003** | Birth time is optional and supports Exact, Approximate, and Unknown states. | **Must** | Users can proceed without a time; the selected confidence state is persisted and used by the calculation engine. |
-| **PRO-004** | When a birth time is entered, birthplace becomes conditionally required. | **Must** | The form explains why location is needed and prevents profile completion until a place is supplied or the time is removed. |
+| **PRO-002** | Birth city/country is one optional free-text field. | **Must** | The interface never asks for a street address, country code, coordinates, IANA timezone, or additional location subfields. |
+| **PRO-003** | Birth time is one optional time field. | **Must** | Users can enter a time or leave it blank without selecting Unknown, Exact, or Approximate. |
+| **PRO-004** | Birthplace and birth time are independent. | **Must** | Either optional field can be supplied without the other and profile creation is never blocked by missing timezone context. |
 | **PRO-005** | The system never invents a default birth time. | **Must** | Unknown times remain null; noon, midnight, sunrise, or inferred times are not stored as the user's birth time. |
-| **PRO-006** | Approximate time is represented as an uncertainty interval rather than an exact midpoint. | **Should** | The engine receives a start/end range and only promotes traits that remain stable across the sampled interval. |
+| **PRO-006** | Time-sensitive calculations fail closed when required context is unavailable. | **Should** | The entered time is retained, but astrology or BaZi facts requiring validated timezone context remain unavailable rather than being guessed. |
 | **PRO-007** | The onboarding copy explains the benefit of optional details without implying guaranteed predictive accuracy. | **Must** | Copy states that time and place unlock a more detailed astrological profile, including houses and Ascendant where available. |
-| **PRO-008** | Users see profile completeness status, not the hidden horoscope interpretation. | **Must** | The base experience may show Core, Location-Enhanced, Approximate-Time, or Complete; it does not expose placements, pillars, numbers, or signature details. |
+| **PRO-008** | Users see profile completeness status, not the hidden horoscope interpretation. | **Must** | The base experience may show Core, Location-Enhanced, or Complete; it does not expose placements, pillars, numbers, or signature details. |
 | **PRO-009** | The hidden profile is used internally to personalize tarot language and emphasis. | **Must** | The reading service receives a compact trait lens, not the full raw calculation payload. |
 | **PRO-010** | Base tarot readings do not reveal paid-report details. | **Must** | Generated readings may use plain-language traits but must not reveal raw natal placements, numerology values, BaZi pillars, or Galactic Signature labels. |
 | **PRO-011** | Users can update optional birth data later. | **Must** | Saving changes creates a new profile snapshot; future readings use the new snapshot while historical readings retain the original snapshot reference. |
 | **PRO-012** | Birth date input supports international users and prevents impossible or future dates. | **Must** | Validated dates are stored canonically; locale-specific display does not alter the underlying date. |
 | **PRO-013** | Unicode birth names are preserved exactly as entered. | **Must** | Original input is encrypted and retained; normalization creates a separate derived value and never overwrites the original. |
-| **PRO-014** | Pythagorean numerology handles non-Latin names transparently. | **Should** | Users can confirm or enter a Latin-letter rendering; the system records the transformation method and avoids silent arbitrary transliteration. |
+| **PRO-014** | Pythagorean numerology handles non-Latin names transparently. | **Should** | The original Unicode name is preserved; unsupported name-derived values are explicitly unavailable without requesting a Latin rendering or silently transliterating. |
 | **PRO-015** | The user can review and correct supplied birth facts without viewing the hidden profile. | **Must** | Settings show birth name masked by default, date, place, and time status with edit and delete controls. |
 | **PRO-016** | Profile calculation failures are recoverable. | **Must** | The user sees a clear retry state; no partial profile is silently marked complete; operations receives a traceable error event. |
 
@@ -269,8 +268,8 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 
 | **[ ]** Core onboarding completes successfully using only birth name and date of birth. |
 | --- |
-| **[ ]** Birthplace and birth time remain optional, while time entry conditionally requires location/timezone context. |
-| **[ ]** Unknown or approximate time never becomes a fabricated exact time. |
+| **[ ]** Birth city/country and birth time remain independent optional fields with no timezone or confidence-mode questions. |
+| **[ ]** An omitted time remains absent and no birth time is fabricated. |
 | **[ ]** The user sees completeness and editable facts but not the hidden profile interpretation. |
 | **[ ]** Updating profile facts creates a new snapshot and leaves historical readings unchanged. |
 | **[ ]** Unicode and non-Latin name cases follow the approved numerology handling policy. |
@@ -282,7 +281,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **CAL-002** | Western astrology calculates planetary longitudes, signs, major aspects, and chart angles where inputs permit. | **Must** | Outputs include source data, orb rules, calculation timestamp, and engine version. |
 | **CAL-003** | Whole Sign and Placidus are calculated as two house-system views of the same natal chart. | **Must** | Both views use the same planetary positions and birth-time normalization; house output is marked unavailable when required inputs are missing. |
 | **CAL-004** | Date-only Western astrology uses a 24-hour uncertainty model. | **Must** | Stable sign/aspect facts are retained; any placement that changes during the local birth date is tagged uncertain and excluded from strong personalization. |
-| **CAL-005** | Approximate-time charts are sampled across the provided interval. | **Should** | Possible Ascendants, houses, and time-sensitive aspects are recorded; only stable observations enter the high-confidence trait lens. |
+| **CAL-005** | A supplied birth time is retained without forcing user-entered timezone context. | **Should** | Time-sensitive facts remain unavailable until a validated integration can derive the required context safely. |
 | **CAL-006** | Placidus calculation errors or polar-region fallbacks are explicit. | **Must** | The service records the failure/fallback state and never labels a fallback house system as Placidus. |
 | **CAL-007** | Pythagorean numerology computes the approved core set. | **Must** | Life Path, Expression/Destiny, Soul Urge, Personality, Birthday, and agreed master-number rules match the approved reference set. |
 | **CAL-008** | BaZi computes year, month, and day pillars without a birth time and adds the hour pillar when supported. | **Must** | Missing hour data is represented as unavailable, not guessed; conventions are stored with the result. |
@@ -774,12 +773,12 @@ error branches: generation_failed | session_expired | payment_required | safety_
 ## 10.2 Minimum reference and evaluation datasets
 | **Dataset** | **Minimum target** | **Coverage** |
 | --- | --- | --- |
-| Western astrology | 100 approved charts | DST, historical timezone, sign/house boundaries, high latitude, unknown/approximate time |
+| Western astrology | 100 approved charts | DST, historical timezone, sign/house boundaries, high latitude, missing time or location |
 | Numerology | 60 approved names/dates | Master numbers, punctuation, diacritics, suffixes, non-Latin handling |
 | BaZi | 100 approved cases | Li Chun, solar terms, midnight/23:00 boundary, timezone and solar-time policy |
 | Dreamspell | 60 approved dates | Known Kin/tone/seal mappings across centuries and leap dates |
 | AI reading eval | At least 300 cases | Four spreads x six domains x completeness levels x safety/adversarial cases |
-| Report eval | At least 40 profiles | Core, location-only, approximate, complete, contradictions, non-Latin names |
+| Report eval | At least 40 profiles | Core, location-only, time-only, complete, contradictions, non-Latin names |
 | Device/browser | At least 10 representative configurations | iOS/Android mid-tier, desktop browsers, reduced motion, text zoom |
 
 ## 10.3 AI quality rubric
@@ -891,7 +890,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 - Final product name, brand direction, deck art strategy, and content voice.
 - Adult-only launch or broader age policy and corresponding consent/parental requirements.
 - Free reading allowance, paid reading model, and Full Profile Report price.
-- Exact accepted formats for approximate birth time and report-regeneration policy after profile updates.
+- Report-regeneration policy after profile updates.
 - Western astrology aspect/orb set, BaZi boundary conventions, Pythagorean master-number rules, and Dreamspell content scope.
 - Whether the paid report includes a rendered natal chart wheel in MVP or a later release.
 - Supported launch countries/currencies and localized crisis/support content.
@@ -907,7 +906,7 @@ Any change that affects card randomness, profile capability rules, safety policy
 | --- | --- |
 | US-001 | As a new user, I can create a private Core profile with only my birth name and birth date so I am not blocked by an unknown birth time. |
 | US-002 | As a user who knows my birthplace but not my time, I can add the place and receive location-enhanced normalization without being shown invented houses. |
-| US-003 | As a user who knows my exact birth time, I can add it with birthplace and unlock the complete profile capability. |
+| US-003 | As a user who knows a birth time, I can enter it with or without birthplace and continue without supplying a timezone. |
 | US-004 | As a privacy-conscious user, I understand how my profile is used and can edit, export, or delete my data. |
 | US-005 | As a seeker, I can select a reading and ask a focused question without understanding tarot terminology. |
 | US-006 | As a user, I can trust that the cards were randomly drawn and were not selected to fit my profile. |

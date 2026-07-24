@@ -58,10 +58,8 @@ export async function saveProfileVersion(
     snapshot,
     maskedName: `${input.fullBirthName.slice(0, 1)}${"•".repeat(Math.min(input.fullBirthName.length - 1, 8))}`,
     birthDate: input.birthDate,
-    timeKind: input.birthTime.kind,
-    ...(input.birthplace
-      ? { birthplaceLabel: `${input.birthplace.city}, ${input.birthplace.countryCode}` }
-      : {}),
+    timeKind: input.birthTime ? "exact" : "unknown",
+    ...(input.birthplace ? { birthplaceLabel: input.birthplace } : {}),
   };
   await persistence.repositories.birthProfiles.saveVersion(user.id, profile);
   return snapshot;

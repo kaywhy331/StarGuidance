@@ -6,12 +6,13 @@ import { z } from "zod";
 const calculationSchema = z.object({
   completeness: z.enum(["core", "locationEnhanced", "approximateTime", "complete"]),
   numerology: z.object({
+    name_calculation_status: z.enum(["available", "unavailable"]),
     life_path: z.number().int().positive(),
-    expression: z.number().int().positive(),
-    soul_urge: z.number().int().nonnegative(),
-    personality: z.number().int().nonnegative(),
+    expression: z.number().int().positive().nullable(),
+    soul_urge: z.number().int().nonnegative().nullable(),
+    personality: z.number().int().nonnegative().nullable(),
     birthday: z.number().int().positive(),
-    name_rendering: z.string(),
+    name_rendering: z.string().nullable(),
     transformation: z.string(),
     algorithm_version: z.string(),
   }),
@@ -80,26 +81,8 @@ function toEngineRequest(input: BirthProfileInput) {
   return {
     full_birth_name: input.fullBirthName,
     birth_date: input.birthDate,
-    ...(input.birthplace
-      ? {
-          birthplace: {
-            city: input.birthplace.city,
-            region: input.birthplace.region,
-            country_code: input.birthplace.countryCode,
-            time_zone: input.birthplace.timeZone,
-          },
-        }
-      : {}),
-    ...(input.authoritativeTimeZone
-      ? { authoritative_time_zone: input.authoritativeTimeZone }
-      : {}),
-    birth_time:
-      input.birthTime.kind === "exact"
-        ? { kind: "exact", exact: input.birthTime.time }
-        : input.birthTime.kind === "approximate"
-          ? { kind: "approximate", start: input.birthTime.start, end: input.birthTime.end }
-          : { kind: "unknown" },
-    ...(input.latinNameRendering ? { latin_name_rendering: input.latinNameRendering } : {}),
+    ...(input.birthplace ? { birthplace: input.birthplace } : {}),
+    ...(input.birthTime ? { birth_time: input.birthTime } : {}),
   };
 }
 

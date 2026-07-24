@@ -33,7 +33,8 @@ describe("deployment health", () => {
       vi
         .fn()
         .mockResolvedValueOnce(new Response(null, { status: 200 }))
-        .mockResolvedValueOnce(new Response(null, { status: 401 })),
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
     );
 
     const response = await GET();
@@ -50,7 +51,11 @@ describe("deployment health", () => {
       localAdapterExplicitlyAllowed: false,
       missingEnvironmentVariables: [],
       invalidEnvironmentVariables: [],
-      profileEngine: { healthStatus: 200, unauthorizedComputeStatus: 401 },
+      profileEngine: {
+        healthStatus: 200,
+        unauthorizedComputeStatus: 401,
+        authorizedComputeStatus: 200,
+      },
     });
     for (const value of Object.values(SECRET_VALUES)) expect(serialized).not.toContain(value);
   });
@@ -65,7 +70,11 @@ describe("deployment health", () => {
 
     expect(response.status).toBe(503);
     expect(body.missingEnvironmentVariables).toEqual(["DATABASE_URL"]);
-    expect(body.profileEngine).toEqual({ healthStatus: null, unauthorizedComputeStatus: null });
+    expect(body.profileEngine).toEqual({
+      healthStatus: null,
+      unauthorizedComputeStatus: null,
+      authorizedComputeStatus: null,
+    });
     expect(JSON.stringify(body)).not.toContain("redacted dependency failure");
   });
 
@@ -79,7 +88,8 @@ describe("deployment health", () => {
       vi
         .fn()
         .mockResolvedValueOnce(new Response(null, { status: 200 }))
-        .mockResolvedValueOnce(new Response(null, { status: 401 })),
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
     );
 
     const response = await GET();

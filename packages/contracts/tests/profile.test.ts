@@ -5,7 +5,6 @@ import { birthProfileInputSchema, getProfileCompleteness } from "../src/profile"
 const core = {
   fullBirthName: "Ada Lovelace",
   birthDate: "1815-12-10",
-  birthTime: { kind: "unknown" as const },
 };
 
 describe("birth profile contract", () => {
@@ -14,27 +13,36 @@ describe("birth profile contract", () => {
     expect(getProfileCompleteness(parsed)).toBe("core");
   });
 
-  it("requires timezone context for exact times", () => {
-    const result = birthProfileInputSchema.safeParse({
-      ...core,
-      birthTime: { kind: "exact", time: "08:15" },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("keeps approximate time as a range", () => {
+  it("accepts a birth time without birthplace or timezone context", () => {
     const parsed = birthProfileInputSchema.parse({
       ...core,
-      birthplace: { city: "London", countryCode: "GB", timeZone: "Europe/London" },
-      birthTime: { kind: "approximate", start: "07:00", end: "09:00" },
+      birthTime: "08:15",
     });
-    expect(parsed.birthTime).toEqual({ kind: "approximate", start: "07:00", end: "09:00" });
-    expect(getProfileCompleteness(parsed)).toBe("approximateTime");
+    expect(parsed.birthTime).toBe("08:15");
+    expect(getProfileCompleteness(parsed)).toBe("core");
+  });
+
+  it("accepts the two optional fields as simple values", () => {
+    const parsed = birthProfileInputSchema.parse({
+      ...core,
+      birthplace: "London, United Kingdom",
+      birthTime: "07:00",
+    });
+    expect(parsed.birthplace).toBe("London, United Kingdom");
+    expect(parsed.birthTime).toBe("07:00");
+    expect(getProfileCompleteness(parsed)).toBe("complete");
+  });
+
+  it("accepts blank optional values", () => {
+    const parsed = birthProfileInputSchema.parse({ ...core, birthplace: "  ", birthTime: "" });
+    expect(parsed.birthplace).toBe("");
+    expect(parsed.birthTime).toBe("");
+    expect(getProfileCompleteness(parsed)).toBe("core");
   });
 
   it("preserves Unicode names", () => {
-    expect(birthProfileInputSchema.parse({ ...core, fullBirthName: "李 小龍" }).fullBirthName).toBe(
-      "李 小龍",
+    expect(birthProfileInputSchema.parse({ ...core, fullBirthName: "李" }).fullBirthName).toBe(
+      "李",
     );
   });
 });

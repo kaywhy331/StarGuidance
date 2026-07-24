@@ -9,12 +9,14 @@
 - Atomic session/locked-draw persistence, append-only outputs, same-draw retry/follow-up, durable recovery, and immutable profile history.
 - Durable Stripe order, entitlement, report, and webhook-idempotency storage.
 - Forced RLS/public privilege revocation and a two-subject isolated-Postgres test covering cross-user profile, snapshots, readings, draw, question, follow-up, report, order, export source data, and deletion.
+- Four-question profile onboarding: required full birth name and date, plus independent optional birth city/country and birth time fields. No timezone, time-confidence mode, or Latin rendering is requested.
+- Non-Latin names preserve the original input and reduce unsupported name-derived numerology detail instead of blocking the profile or inventing a transliteration.
 
-## Credential-blocked staging verification
+## Credential-backed staging status
 
-No Supabase or Netlify secrets are present in this environment. Therefore the migration and seed have not been applied to an owner-managed Supabase staging project, real Supabase Auth users have not run the adversarial RLS procedure, and this stacked branch has no verified Netlify Deploy Preview. Required variable names and configuration locations are listed in [Supabase staging](SUPABASE-STAGING.md); secret values must never be pasted into chat.
+Netlify Deploy Preview #4 is active with the staging Supabase adapter. The redacted runtime probe confirms that local persistence is disabled, required environment-variable names are present, Render `/health` returns 200, and an unauthenticated profile computation returns 401. The profile-engine client retains its eight-second timeout; prefer an always-on staging instance, and treat any bounded transient retry policy as a separately reviewed change.
 
-The profile-engine container is Render-ready, uses the runtime `PORT`, rejects weak hosted bearer secrets, and suppresses access/body logging. Its credentialed Render deployment, public health response, protected compute request, and eight-second Next.js client timeout behavior still require staging verification. Prefer an always-on staging instance; any bounded transient retry policy remains a separately reviewed change.
+Passwordless initiation with a non-deliverable synthetic address returned a generic rejection. An owner-controlled staging inbox is still required to verify the complete magic-link callback, authenticated profile persistence, refresh recovery, export, and account/Auth deletion. The authoritative Drizzle migration and two-user RLS procedure also remain to be executed against the owner-approved Supabase project from an operator shell that exposes `DATABASE_URL` and `DATABASE_INTEGRATION_URL` by name. Secret values must never be pasted into chat or recorded in evidence.
 
 Supabase Storage is not used by the current private data path. If future report artifacts enter Storage, private buckets and object-level RLS require a separate reviewed migration and test.
 

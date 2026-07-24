@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
-type ProfileKind = "unknown" | "exact" | "approximate";
+type ProfileKind = "date-only" | "all-fields" | "time-only";
 
 async function signIn(page: Page) {
   await page.goto("/sign-in");
@@ -11,22 +11,13 @@ async function signIn(page: Page) {
   await expect(page).toHaveURL(/\/onboarding$/);
 }
 
-async function createProfile(page: Page, kind: ProfileKind = "unknown") {
+async function createProfile(page: Page, kind: ProfileKind = "date-only") {
   await signIn(page);
   await page.getByLabel("Full birth name").fill("Ada Lovelace");
   await page.getByLabel("Date of birth").fill("1990-01-15");
-  await page.getByLabel(new RegExp(`^${kind}`, "i")).check();
-  if (kind !== "unknown") {
-    await page.getByLabel("Add birthplace (optional)").check();
-    await page.getByLabel("Birth city").fill("London");
-    await page.getByLabel("Country code").fill("GB");
-    await page.getByLabel("IANA timezone").fill("Europe/London");
-  }
-  if (kind === "exact") await page.getByLabel("Exact birth time").fill("08:15");
-  if (kind === "approximate") {
-    await page.getByLabel("Earliest time").fill("07:00");
-    await page.getByLabel("Latest time").fill("09:00");
-  }
+  if (kind === "all-fields")
+    await page.getByLabel("Birth city / country").fill("London, United Kingdom");
+  if (kind !== "date-only") await page.getByLabel("Birth time").fill("08:15");
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
   await page.getByRole("button", { name: "Check profile capability" }).click();
   await expect(page).toHaveURL(/\/readings$/);
@@ -74,23 +65,24 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   await finishRitual(page);
 });
 
-test("exact birth details reach a completed reading", async ({ page }) => {
-  await createProfile(page, "exact");
+test("all four birth details reach a completed reading", async ({ page }) => {
+  await createProfile(page, "all-fields");
   const profile = await page.evaluate(async () => (await fetch("/api/profile")).json());
   expect(profile.profile.snapshot.completeness).toBe("complete");
   await beginReading(page, "How can I approach a new project?");
   await finishRitual(page);
 });
 
-test("approximate birth time remains a range through a completed reading", async ({ page }) => {
-  await createProfile(page, "approximate");
+test("birth time works without birthplace or timezone", async ({ page }) => {
+  await createProfile(page, "time-only");
   const profile = await page.evaluate(async () => (await fetch("/api/profile")).json());
-  expect(profile.profile.snapshot.completeness).toBe("approximateTime");
+  expect(profile.profile.snapshot.completeness).toBe("core");
+  expect(profile.profile.birthTimeProvided).toBe(true);
   await beginReading(page, "What can support my next decision?");
   await finishRitual(page);
 });
 
-test("unknown birth time never fabricates astrology or BaZi", async ({ page }) => {
+test("omitted birth time never fabricates astrology or BaZi", async ({ page }) => {
   await createProfile(page);
   await page.goto("/profile");
   await page.getByRole("button", { name: "Purchase test report" }).click();

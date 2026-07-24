@@ -12,7 +12,6 @@ def profile_request() -> dict[str, object]:
     return {
         "full_birth_name": "Ada Lovelace",
         "birth_date": "1815-12-10",
-        "birth_time": {"kind": "unknown"},
     }
 
 
@@ -22,7 +21,6 @@ def test_date_only_profile_returns_unavailable_sensitive_systems() -> None:
         json={
             "full_birth_name": "Ada Lovelace",
             "birth_date": "1815-12-10",
-            "birth_time": {"kind": "unknown"},
         },
     )
 
@@ -33,34 +31,44 @@ def test_date_only_profile_returns_unavailable_sensitive_systems() -> None:
     assert payload["bazi"]["status"] == "unavailable"
 
 
-def test_exact_time_without_context_is_rejected() -> None:
+def test_birth_time_without_place_or_timezone_is_accepted() -> None:
     response = TestClient(app).post(
         "/v1/profile/compute",
         json={
             "full_birth_name": "Ada Lovelace",
             "birth_date": "1815-12-10",
-            "birth_time": {"kind": "exact", "exact": "08:15:00"},
-        },
-    )
-    assert response.status_code == 422
-
-
-def test_approximate_time_is_preserved_as_a_range() -> None:
-    response = TestClient(app).post(
-        "/v1/profile/compute",
-        json={
-            "full_birth_name": "Ada Lovelace",
-            "birth_date": "1815-12-10",
-            "birthplace": {
-                "city": "London",
-                "country_code": "GB",
-                "time_zone": "Europe/London",
-            },
-            "birth_time": {"kind": "approximate", "start": "07:00:00", "end": "09:00:00"},
+            "birth_time": "08:15:00",
         },
     )
     assert response.status_code == 200
-    assert response.json()["completeness"] == "approximateTime"
+    assert response.json()["completeness"] == "core"
+
+
+def test_simple_birthplace_and_time_create_complete_profile() -> None:
+    response = TestClient(app).post(
+        "/v1/profile/compute",
+        json={
+            "full_birth_name": "Ada Lovelace",
+            "birth_date": "1815-12-10",
+            "birthplace": "London, United Kingdom",
+            "birth_time": "07:00:00",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["completeness"] == "complete"
+
+
+def test_unicode_name_reduces_numerology_detail_without_blocking_profile() -> None:
+    response = TestClient(app).post(
+        "/v1/profile/compute",
+        json={"full_birth_name": "李小龍", "birth_date": "1940-11-27"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["numerology"]["name_calculation_status"] == "unavailable"
+    assert payload["numerology"]["expression"] is None
+    assert payload["numerology"]["life_path"] > 0
 
 
 def test_profile_compute_rejects_unauthorized_requests(

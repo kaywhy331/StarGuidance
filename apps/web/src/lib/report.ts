@@ -36,7 +36,13 @@ export async function generateProfileReport(input: {
       {
         key: "numerology",
         title: "Pythagorean numerology",
-        body: `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`,
+        body:
+          calculation.numerology.name_calculation_status !== "unavailable" &&
+          calculation.numerology.expression !== null &&
+          calculation.numerology.soul_urge !== null &&
+          calculation.numerology.personality !== null
+            ? `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`
+            : `Life Path ${calculation.numerology.life_path}; Birthday ${calculation.numerology.birthday}. Name-derived Pythagorean values are unavailable for this writing system and were not fabricated. Calculated with ${calculation.numerology.algorithm_version}.`,
       },
       {
         key: "dreamspell",

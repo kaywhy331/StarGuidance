@@ -31,8 +31,7 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === "PROFILE_CALCULATION_REJECTED")
       return NextResponse.json(
         {
-          error:
-            "The calculation could not use these inputs. Non-Latin birth names require a user-confirmed Latin-letter rendering.",
+          error: "The calculation could not use these birth details.",
         },
         { status: 422 },
       );
@@ -44,9 +43,19 @@ export async function POST(request: Request) {
         },
         { status: 503 },
       );
-    const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
+    if (error instanceof z.ZodError)
+      return NextResponse.json(
+        { error: "Check the four birth-profile fields and try again." },
+        { status: 422 },
+      );
+    const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 503;
     return NextResponse.json(
-      { error: status === 401 ? "Authentication required." : "Invalid birth profile." },
+      {
+        error:
+          status === 401
+            ? "Authentication required."
+            : "The private profile could not be saved. Your existing profile was not changed.",
+      },
       { status },
     );
   }
@@ -62,7 +71,7 @@ export async function GET() {
             snapshot: profile.snapshot,
             maskedName: profile.maskedName,
             birthDate: profile.birthDate,
-            timeKind: profile.timeKind,
+            birthTimeProvided: profile.timeKind !== "unknown",
             birthplaceLabel: profile.birthplaceLabel,
           }
         : null,

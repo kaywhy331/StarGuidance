@@ -15,6 +15,7 @@ const REQUIRED_STAGING_ENVIRONMENT = [
 type DependencyStatus = {
   healthStatus: number | null;
   unauthorizedComputeStatus: number | null;
+  authorizedComputeStatus: number | null;
 };
 
 function configured(name: string): boolean {
@@ -38,7 +39,13 @@ function runtimeAdapter(): string {
 
 async function probeProfileEngine(): Promise<DependencyStatus> {
   const baseUrl = process.env.PROFILE_ENGINE_URL?.replace(/\/$/, "");
-  if (!baseUrl) return { healthStatus: null, unauthorizedComputeStatus: null };
+  const sharedSecret = process.env.PROFILE_ENGINE_SHARED_SECRET;
+  if (!baseUrl)
+    return {
+      healthStatus: null,
+      unauthorizedComputeStatus: null,
+      authorizedComputeStatus: null,
+    };
 
   const probe = async (path: string, init?: RequestInit): Promise<number | null> => {
     try {
@@ -53,19 +60,29 @@ async function probeProfileEngine(): Promise<DependencyStatus> {
     }
   };
 
-  const [healthStatus, unauthorizedComputeStatus] = await Promise.all([
+  const syntheticRequest = JSON.stringify({
+    full_birth_name: "Synthetic Verification",
+    birth_date: "2000-01-01",
+  });
+  const [healthStatus, unauthorizedComputeStatus, authorizedComputeStatus] = await Promise.all([
     probe("/health"),
     probe("/v1/profile/compute", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        full_birth_name: "Synthetic Verification",
-        birth_date: "2000-01-01",
-        birth_time: { kind: "unknown" },
-      }),
+      body: syntheticRequest,
     }),
+    sharedSecret
+      ? probe("/v1/profile/compute", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${sharedSecret}`,
+          },
+          body: syntheticRequest,
+        })
+      : Promise.resolve(null),
   ]);
-  return { healthStatus, unauthorizedComputeStatus };
+  return { healthStatus, unauthorizedComputeStatus, authorizedComputeStatus };
 }
 
 export async function GET() {
@@ -89,7 +106,11 @@ export async function GET() {
 
   const profileEngine = stagingPreview
     ? await probeProfileEngine()
-    : { healthStatus: null, unauthorizedComputeStatus: null };
+    : {
+        healthStatus: null,
+        unauthorizedComputeStatus: null,
+        authorizedComputeStatus: null,
+      };
   const healthy =
     stagingPreview &&
     runtimeAdapter() === "supabase" &&
@@ -98,7 +119,8 @@ export async function GET() {
     missingEnvironmentVariables.length === 0 &&
     invalidEnvironmentVariables.length === 0 &&
     profileEngine.healthStatus === 200 &&
-    profileEngine.unauthorizedComputeStatus === 401;
+    profileEngine.unauthorizedComputeStatus === 401 &&
+    profileEngine.authorizedComputeStatus === 200;
 
   return NextResponse.json(
     {

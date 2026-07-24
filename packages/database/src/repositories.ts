@@ -1,9 +1,4 @@
-import type {
-  BirthProfileInput,
-  ProfileSnapshot,
-  ProfileTrait,
-  ReadingResult,
-} from "@starguidance/contracts";
+import type { ProfileSnapshot, ProfileTrait, ReadingResult } from "@starguidance/contracts";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
 export interface RepositoryUser {
@@ -31,7 +26,7 @@ export interface StoredProfileVersion {
   snapshot: ProfileSnapshot;
   maskedName: string;
   birthDate: string;
-  timeKind: BirthProfileInput["birthTime"]["kind"];
+  timeKind: "unknown" | "exact" | "approximate";
   birthplaceLabel?: string;
 }
 

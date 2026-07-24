@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from profile_engine import __version__
 from profile_engine.configuration import validate_runtime_configuration
 from profile_engine.dreamspell import calculate_dreamspell
-from profile_engine.models import BirthTimeKind, ProfileRequest, ProfileResponse, UnavailableResult
+from profile_engine.models import ProfileRequest, ProfileResponse, UnavailableResult
 from profile_engine.numerology import calculate_numerology
 from profile_engine.traits import synthesize_traits
 
@@ -53,18 +53,14 @@ def health() -> HealthResponse:
 def compute_profile(
     request: ProfileRequest, _: ServiceAuthorization
 ) -> ProfileResponse:
-    if request.birth_time.kind is BirthTimeKind.EXACT:
+    if request.birth_time is not None and request.birthplace is not None:
         completeness = "complete"
-    elif request.birth_time.kind is BirthTimeKind.APPROXIMATE:
-        completeness = "approximateTime"
     elif request.birthplace:
         completeness = "locationEnhanced"
     else:
         completeness = "core"
 
-    numerology = calculate_numerology(
-        request.full_birth_name, request.birth_date, request.latin_name_rendering
-    )
+    numerology = calculate_numerology(request.full_birth_name, request.birth_date)
     dreamspell = calculate_dreamspell(request.birth_date)
     traits, tensions = synthesize_traits(numerology, dreamspell)
 
