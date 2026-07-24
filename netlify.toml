@@ -8,7 +8,9 @@
   PNPM_VERSION = "11.16.0"
 
 [context.deploy-preview.environment]
+  APP_ENV = "staging"
   ENABLE_VISUAL_PREVIEW = "true"
+  RUNTIME_ADAPTER = "supabase"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

@@ -3,38 +3,20 @@ import { z } from "zod";
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-export const birthplaceSchema = z.object({
-  city: z.string().trim().min(1).max(120),
-  region: z.string().trim().max(120).optional(),
-  countryCode: z.string().trim().length(2).toUpperCase(),
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  timeZone: z.string().trim().min(1).max(100),
-});
+const optionalBirthplaceSchema = z.string().trim().max(200).optional();
 
-export const birthTimeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("unknown") }),
-  z.object({ kind: z.literal("exact"), time: z.string().regex(clockPattern) }),
-  z
-    .object({
-      kind: z.literal("approximate"),
-      start: z.string().regex(clockPattern),
-      end: z.string().regex(clockPattern),
-    })
-    .refine(({ start, end }) => start < end, {
-      message: "The approximate range end must be later than its start on the same day.",
-      path: ["end"],
-    }),
-]);
+const optionalBirthTimeSchema = z
+  .string()
+  .trim()
+  .refine((value) => value.length === 0 || clockPattern.test(value), "Enter a valid birth time.")
+  .optional();
 
 export const birthProfileInputSchema = z
   .object({
-    fullBirthName: z.string().trim().min(2).max(200),
+    fullBirthName: z.string().trim().min(1).max(200),
     birthDate: z.string().regex(isoDatePattern, "Use an ISO date in YYYY-MM-DD format."),
-    birthplace: birthplaceSchema.optional(),
-    authoritativeTimeZone: z.string().trim().min(1).max(100).optional(),
-    birthTime: birthTimeSchema,
-    latinNameRendering: z.string().trim().min(2).max(200).optional(),
+    birthplace: optionalBirthplaceSchema,
+    birthTime: optionalBirthTimeSchema,
   })
   .superRefine((profile, context) => {
     const parsedDate = new Date(`${profile.birthDate}T00:00:00.000Z`);
@@ -54,19 +36,6 @@ export const birthProfileInputSchema = z
         path: ["birthDate"],
       });
     }
-
-    if (
-      profile.birthTime.kind !== "unknown" &&
-      !profile.birthplace &&
-      !profile.authoritativeTimeZone
-    ) {
-      context.addIssue({
-        code: "custom",
-        message:
-          "Birthplace or authoritative timezone context is required when a birth time is supplied.",
-        path: ["birthplace"],
-      });
-    }
   });
 
 export const profileCompletenessSchema = z.enum([
@@ -77,12 +46,10 @@ export const profileCompletenessSchema = z.enum([
 ]);
 
 export type BirthProfileInput = z.infer<typeof birthProfileInputSchema>;
-export type BirthTime = z.infer<typeof birthTimeSchema>;
 export type ProfileCompleteness = z.infer<typeof profileCompletenessSchema>;
 
 export function getProfileCompleteness(profile: BirthProfileInput): ProfileCompleteness {
-  if (profile.birthTime.kind === "exact") return "complete";
-  if (profile.birthTime.kind === "approximate") return "approximateTime";
+  if (profile.birthTime && profile.birthplace) return "complete";
   if (profile.birthplace) return "locationEnhanced";
   return "core";
 }

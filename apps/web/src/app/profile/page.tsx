@@ -7,7 +7,7 @@ interface ProfileView {
   snapshot: { id: string; version: number; completeness: string };
   maskedName: string;
   birthDate: string;
-  timeKind: string;
+  birthTimeProvided: boolean;
   birthplaceLabel?: string;
 }
 export default function ProfilePage() {
@@ -46,8 +46,8 @@ export default function ProfilePage() {
               <dd>{profile.birthDate}</dd>
             </div>
             <div>
-              <dt className="text-sm text-[#a99db5]">Time status</dt>
-              <dd>{profile.timeKind}</dd>
+              <dt className="text-sm text-[#a99db5]">Birth time</dt>
+              <dd>{profile.birthTimeProvided ? "Provided" : "Not provided"}</dd>
             </div>
             <div>
               <dt className="text-sm text-[#a99db5]">Capability</dt>

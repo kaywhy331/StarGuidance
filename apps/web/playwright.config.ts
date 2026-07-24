@@ -19,6 +19,8 @@ export default defineConfig({
       command: "corepack pnpm exec next dev --port 3100",
       env: {
         APP_ENV: "test",
+        RUNTIME_ADAPTER: "local",
+        ALLOW_LOCAL_RUNTIME_ADAPTER: "true",
         AI_PROVIDER: "disabled",
         PAYMENTS_PROVIDER: "local",
         PROFILE_ENGINE_URL: "http://127.0.0.1:8000",

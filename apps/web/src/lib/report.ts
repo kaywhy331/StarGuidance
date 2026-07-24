@@ -2,7 +2,8 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { decryptLocal, localStore, recordAudit, type StoredReport } from "./local-store";
+import type { StoredReport } from "@starguidance/database";
+import { persistenceFor, recordAudit } from "./persistence";
 import type { ProfileCalculation } from "./profile-engine";
 
 export async function generateProfileReport(input: {
@@ -10,9 +11,15 @@ export async function generateProfileReport(input: {
   snapshotId: string;
   orderId: string;
 }): Promise<StoredReport> {
-  const profile = localStore.profileSnapshots.get(input.snapshotId);
+  const persistence = persistenceFor({ id: input.userId });
+  const profile = await persistence.repositories.profileSnapshots.get(
+    input.userId,
+    input.snapshotId,
+  );
   if (!profile) throw new Error("PROFILE_SNAPSHOT_NOT_FOUND");
-  const calculation = JSON.parse(decryptLocal(profile.encryptedCalculations)) as ProfileCalculation;
+  const calculation = JSON.parse(
+    persistence.decrypt(profile.encryptedCalculations),
+  ) as ProfileCalculation;
   const report: StoredReport = {
     id: randomUUID(),
     userId: input.userId,
@@ -29,7 +36,13 @@ export async function generateProfileReport(input: {
       {
         key: "numerology",
         title: "Pythagorean numerology",
-        body: `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`,
+        body:
+          calculation.numerology.name_calculation_status !== "unavailable" &&
+          calculation.numerology.expression !== null &&
+          calculation.numerology.soul_urge !== null &&
+          calculation.numerology.personality !== null
+            ? `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`
+            : `Life Path ${calculation.numerology.life_path}; Birthday ${calculation.numerology.birthday}. Name-derived Pythagorean values are unavailable for this writing system and were not fabricated. Calculated with ${calculation.numerology.algorithm_version}.`,
       },
       {
         key: "dreamspell",
@@ -66,7 +79,7 @@ export async function generateProfileReport(input: {
       },
     ],
   };
-  localStore.reports.set(report.id, report);
-  recordAudit("report.generated", input.userId, report.id);
+  await persistence.repositories.reports.create(report);
+  await recordAudit(input.userId, "report.generated", "report", report.id);
   return report;
 }

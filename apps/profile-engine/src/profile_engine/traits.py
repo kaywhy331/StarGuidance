@@ -1,6 +1,6 @@
 from profile_engine.models import DreamspellResult, NumerologyResult, ProfileTension, ProfileTrait
 
-TRAIT_VERSION = "profile-traits-v1"
+TRAIT_VERSION = "profile-traits-v2"
 
 
 def _family(value: int) -> str:
@@ -26,37 +26,12 @@ def synthesize_traits(
     numerology: NumerologyResult, dreamspell: DreamspellResult
 ) -> tuple[tuple[ProfileTrait, ...], tuple[ProfileTension, ...]]:
     motivation_family = _family(numerology.life_path)
-    expression_family = _family(numerology.expression)
-    traits = (
+    traits: tuple[ProfileTrait, ...] = (
         ProfileTrait(
             domain="coreMotivation",
             statement=FAMILY_LANGUAGE[motivation_family],
             source_system="numerology",
             source_rule=f"pythagorean.life_path.{motivation_family}",
-            calculation_version=numerology.algorithm_version,
-            stability="stable",
-        ),
-        ProfileTrait(
-            domain="creativeExpression",
-            statement=FAMILY_LANGUAGE[expression_family],
-            source_system="numerology",
-            source_rule=f"pythagorean.expression.{expression_family}",
-            calculation_version=numerology.algorithm_version,
-            stability="stable",
-        ),
-        ProfileTrait(
-            domain="relationshipNeeds",
-            statement=FAMILY_LANGUAGE[_family(numerology.soul_urge)],
-            source_system="numerology",
-            source_rule=f"pythagorean.soul_urge.{_family(numerology.soul_urge)}",
-            calculation_version=numerology.algorithm_version,
-            stability="stable",
-        ),
-        ProfileTrait(
-            domain="communicationStyle",
-            statement=FAMILY_LANGUAGE[_family(numerology.personality)],
-            source_system="numerology",
-            source_rule=f"pythagorean.personality.{_family(numerology.personality)}",
             calculation_version=numerology.algorithm_version,
             stability="stable",
         ),
@@ -72,8 +47,42 @@ def synthesize_traits(
             stability="uncertain",
         ),
     )
+    expression_family: str | None = None
+    if (
+        numerology.expression is not None
+        and numerology.soul_urge is not None
+        and numerology.personality is not None
+    ):
+        expression_family = _family(numerology.expression)
+        name_traits = (
+            ProfileTrait(
+                domain="creativeExpression",
+                statement=FAMILY_LANGUAGE[expression_family],
+                source_system="numerology",
+                source_rule=f"pythagorean.expression.{expression_family}",
+                calculation_version=numerology.algorithm_version,
+                stability="stable",
+            ),
+            ProfileTrait(
+                domain="relationshipNeeds",
+                statement=FAMILY_LANGUAGE[_family(numerology.soul_urge)],
+                source_system="numerology",
+                source_rule=f"pythagorean.soul_urge.{_family(numerology.soul_urge)}",
+                calculation_version=numerology.algorithm_version,
+                stability="stable",
+            ),
+            ProfileTrait(
+                domain="communicationStyle",
+                statement=FAMILY_LANGUAGE[_family(numerology.personality)],
+                source_system="numerology",
+                source_rule=f"pythagorean.personality.{_family(numerology.personality)}",
+                calculation_version=numerology.algorithm_version,
+                stability="stable",
+            ),
+        )
+        traits = (traits[0], *name_traits, traits[1])
     tensions: tuple[ProfileTension, ...] = ()
-    if motivation_family != expression_family:
+    if expression_family is not None and motivation_family != expression_family:
         tensions = (
             ProfileTension(
                 id="motivation-expression-tension-v1",

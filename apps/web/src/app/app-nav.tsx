@@ -41,7 +41,7 @@ export function AppNav() {
         <button
           className="rounded-full border border-white/15 px-3 py-1.5 text-sm"
           onClick={async () => {
-            await fetch("/api/auth/local", { method: "DELETE" });
+            await fetch("/api/auth", { method: "DELETE" });
             router.push("/");
             router.refresh();
           }}

@@ -39,7 +39,9 @@ Terminal two, from the repository root:
 corepack pnpm dev
 ```
 
-Open `http://localhost:3000`. With `APP_ENV=development`, the local sign-in adapter creates an HttpOnly session. Profiles/readings/reports are encrypted but in process memory and disappear on restart.
+Open `http://localhost:3000`. The example configuration explicitly sets `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, and `APP_ENV=development`. All three policy conditions are required; profiles/readings/reports remain encrypted in process memory and disappear on restart. Never carry `ALLOW_LOCAL_RUNTIME_ADAPTER` into a hosted context.
+
+To exercise the durable adapter locally, change only `RUNTIME_ADAPTER` to `supabase` and configure the Supabase variables through an uncommitted `.env.local`. The app will fail closed if any required database, Auth, or encryption setting is absent.
 
 If `PROFILE_ENGINE_SHARED_SECRET` is set for FastAPI, configure the identical value for Next.js. Health remains public at `http://127.0.0.1:8000/health`; calculation requires the bearer secret.
 
@@ -71,6 +73,15 @@ corepack pnpm --filter @starguidance/web exec playwright test tests/e2e/visual.s
 ```
 
 The credential-free adapters are test aids, not proof of production integrations.
+
+For an isolated Postgres integration database that has already received the migrations and seed:
+
+```bash
+DATABASE_INTEGRATION_URL=postgresql://... \
+corepack pnpm --filter @starguidance/database test:integration
+```
+
+The suite creates synthetic users, forces the `authenticated` role/JWT subject, proves two-user RLS isolation and same-draw recovery, tests snapshot history/export scope/deletion, and removes its fixtures. Use only a disposable database.
 
 ## Deploy-preview screenshots
 

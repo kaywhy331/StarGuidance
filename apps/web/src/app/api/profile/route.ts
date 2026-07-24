@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { birthProfileInputSchema } from "@starguidance/contracts";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { recordAudit, saveLocalProfile } from "@/lib/local-store";
+import { persistenceFor, recordAudit, saveProfileVersion } from "@/lib/persistence";
 import { calculateProfile } from "@/lib/profile-engine";
 import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
 
@@ -17,20 +17,21 @@ export async function POST(request: Request) {
     assertRateLimit(`profile:${user.id}`, 8);
     const input = profileRequestSchema.parse(await request.json());
     const calculation = await calculateProfile(input);
+    const persistence = persistenceFor(user);
     if (!user.consentRecords.some(({ version }) => version === input.consentVersion))
-      user.consentRecords.push({
+      await persistence.repositories.consents.grant(user.id, {
+        policy: "privacy-reflective",
         version: input.consentVersion,
         grantedAt: new Date().toISOString(),
       });
-    const snapshot = saveLocalProfile(user, input, calculation);
-    recordAudit("profile.snapshot.created", user.id, snapshot.id);
+    const snapshot = await saveProfileVersion(user, input, calculation);
+    await recordAudit(user.id, "profile.snapshot.created", "profile_snapshot", snapshot.id);
     return NextResponse.json({ snapshot }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "PROFILE_CALCULATION_REJECTED")
       return NextResponse.json(
         {
-          error:
-            "The calculation could not use these inputs. Non-Latin birth names require a user-confirmed Latin-letter rendering.",
+          error: "The calculation could not use these birth details.",
         },
         { status: 422 },
       );
@@ -42,9 +43,19 @@ export async function POST(request: Request) {
         },
         { status: 503 },
       );
-    const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
+    if (error instanceof z.ZodError)
+      return NextResponse.json(
+        { error: "Check the four birth-profile fields and try again." },
+        { status: 422 },
+      );
+    const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 503;
     return NextResponse.json(
-      { error: status === 401 ? "Authentication required." : "Invalid birth profile." },
+      {
+        error:
+          status === 401
+            ? "Authentication required."
+            : "The private profile could not be saved. Your existing profile was not changed.",
+      },
       { status },
     );
   }
@@ -53,14 +64,15 @@ export async function POST(request: Request) {
 export async function GET() {
   try {
     const user = await requireUser();
+    const profile = await persistenceFor(user).repositories.birthProfiles.getActive(user.id);
     return NextResponse.json({
-      profile: user.profile
+      profile: profile
         ? {
-            snapshot: user.profile.snapshot,
-            maskedName: user.profile.maskedName,
-            birthDate: user.profile.birthDate,
-            timeKind: user.profile.timeKind,
-            birthplaceLabel: user.profile.birthplaceLabel,
+            snapshot: profile.snapshot,
+            maskedName: profile.maskedName,
+            birthDate: profile.birthDate,
+            birthTimeProvided: profile.timeKind !== "unknown",
+            birthplaceLabel: profile.birthplaceLabel,
           }
         : null,
     });

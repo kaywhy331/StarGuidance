@@ -35,6 +35,8 @@ The noindex `/visual-preview` route uses synthetic, non-personal fixtures for de
 
 ## Runtime adapters
 
-The current credential-free runtime is intentionally development-only: in-process users, encrypted snapshots, readings, reports, orders, entitlements, audit events, and idempotency keys. It is exercised by the browser suite but is not durable across server restarts.
+The selector has no default. `supabase` activates hosted Auth and Postgres repositories; `local` activates the in-process test adapter only after a second explicit allow flag and only in development/test. Deploy previews select `supabase`, so missing credentials produce a closed authentication/persistence boundary instead of silently creating volatile sessions.
 
-The production data model, migration, and RLS policies are implemented, but the Next.js repository layer and Supabase Auth adapter still require a real project and cross-user verification. Production must fail closed until that adapter, managed encryption key, durable jobs, and external services are configured.
+The repository contract exposes users, settings, consent, profiles, snapshots, components, traits, sessions, draws, outputs, follow-ups, history, feedback, reports, orders, entitlements, webhook events, audit, export, and deletion. Supabase requests use a pooled server-only SQL connection inside a transaction that assumes the `authenticated` database role and sets the verified JWT subject. Service operations are constructed separately and are limited to webhook idempotency/order completion and Auth identity deletion.
+
+Profile updates append a snapshot and change only the active pointer. Reading rows retain their original snapshot foreign key. Reading creation commits the session and full draw atomically before any provider runs; retry appends output without writing the draw.

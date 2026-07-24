@@ -196,12 +196,15 @@ export function OracleTranscript({
         onScroll={(event) => {
           const viewport = event.currentTarget;
           const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-          const movedTowardLatest = viewport.scrollTop > previousScrollTopRef.current;
+          const previousScrollTop = previousScrollTopRef.current;
+          const movedTowardLatest = viewport.scrollTop > previousScrollTop;
+          const movedAwayFromLatest = viewport.scrollTop < previousScrollTop;
           previousScrollTopRef.current = viewport.scrollTop;
           if (distance < 72 && (!manualReviewRef.current || movedTowardLatest)) {
             manualReviewRef.current = false;
             setFollowLatest(true);
-          } else if (manualReviewRef.current) {
+          } else if (manualReviewRef.current || movedAwayFromLatest) {
+            manualReviewRef.current = true;
             setFollowLatest(false);
           }
         }}
