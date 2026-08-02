@@ -15,6 +15,13 @@
       "when": 1784824560072,
       "tag": "0001_supabase_staging",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785709399728,
+      "tag": "0002_remove_auth_user_sync_trigger",
+      "breakpoints": true
     }
   ]
 }

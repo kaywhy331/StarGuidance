@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc --noEmit",
     "db:check": "drizzle-kit check",
-    "test:integration": "vitest run src/repositories.integration.test.ts",
+    "test:integration": "vitest run --no-file-parallelism src/repositories.integration.test.ts tests/auth-provisioning.integration.test.ts",
+    "db:auth-shim": "tsx scripts/install-auth-shim.ts",
     "staging:preflight": "tsx scripts/preflight-staging-database.ts",
     "staging:verify-schema": "tsx scripts/verify-staging-schema.ts",
     "staging:fingerprint": "tsx scripts/seed-fingerprint.ts",

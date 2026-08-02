@@ -8,7 +8,11 @@ import { record, requiredEnv } from "./staging-result";
  * `packages/database/migrations` is the only migration authority; this script
  * asserts the applied state and never creates or alters schema itself.
  */
-const EXPECTED_MIGRATIONS = ["0000_busy_centennial", "0001_supabase_staging"] as const;
+const EXPECTED_MIGRATIONS = [
+  "0000_busy_centennial",
+  "0001_supabase_staging",
+  "0002_remove_auth_user_sync_trigger",
+] as const;
 
 const USER_OWNED_TABLES = [
   "users",
@@ -47,6 +51,49 @@ async function main(): Promise<void> {
       detail: migrationsOk
         ? `${appliedCount} applied: ${EXPECTED_MIGRATIONS.join(", ")}`
         : `expected ${EXPECTED_MIGRATIONS.length} applied entries, found ${appliedCount}`,
+    });
+
+    // Migration 0002 removed the SECURITY DEFINER trigger that forced RLS made
+    // unusable. Its return would break Supabase Auth signup again, so absence is
+    // asserted directly rather than inferred from the migration count.
+    const [trigger] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from pg_trigger t
+      join pg_class c on c.oid = t.tgrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'auth' and c.relname = 'users'
+        and t.tgname = 'sync_authenticated_user_after_insert'`;
+    const [routine] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'sync_authenticated_user'`;
+    const syncRemoved = (trigger?.count ?? -1) === 0 && (routine?.count ?? -1) === 0;
+    if (!syncRemoved) failed = true;
+    record({
+      section: "Migrations",
+      check: "auth.users synchronisation trigger and function removed",
+      status: syncRemoved ? "pass" : "fail",
+      detail: syncRemoved
+        ? "no sync trigger and no sync function remain; provisioning is the application boundary"
+        : `trigger present ${(trigger?.count ?? 0) > 0}; function present ${(routine?.count ?? 0) > 0}`,
+    });
+
+    // The cascade is now the only link from an Auth identity to application data.
+    const [cascade] = await sql<{ count: number }[]>`
+      select count(*)::int as count from pg_constraint
+      where conname = 'users_auth_user_id_fk'
+        and conrelid = 'public.users'::regclass
+        and confdeltype = 'c'`;
+    const cascadeOk = (cascade?.count ?? 0) === 1;
+    if (!cascadeOk) failed = true;
+    record({
+      section: "Migrations",
+      check: "Auth foreign key retains ON DELETE CASCADE",
+      status: cascadeOk ? "pass" : "fail",
+      detail: cascadeOk
+        ? "public.users.id references auth.users(id) on delete cascade"
+        : "the cascading foreign key onto auth.users is absent",
     });
 
     const missingTables = await sql<{ name: string }[]>`

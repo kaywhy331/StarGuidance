@@ -87,6 +87,11 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:check
+      # Installs a minimal auth.users stand-in so migration 0001 really creates
+      # the Supabase foreign key and synchronisation trigger, and migration 0002
+      # really removes them. Without it neither statement would run outside the
+      # credential-gated staging project.
+      - run: pnpm --filter @starguidance/database db:auth-shim
       - run: pnpm --filter @starguidance/database exec drizzle-kit migrate
       - run: pnpm db:seed
       - run: pnpm --filter @starguidance/database test:integration

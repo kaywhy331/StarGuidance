@@ -3,6 +3,14 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDatabaseClient, type DatabaseTransaction } from "./postgres-client";
+import {
+  createSubject,
+  deleteSubject,
+  detectSubjectMode,
+  SYNTHETIC_PREFIX,
+  type SubjectMode,
+  type SyntheticSubject,
+} from "../tests/support/synthetic-subjects";
 
 const databaseUrl = process.env.DATABASE_INTEGRATION_URL;
 const describeDatabase = databaseUrl ? describe.sequential : describe.skip;
@@ -10,52 +18,18 @@ const sql = databaseUrl ? createDatabaseClient(databaseUrl) : undefined;
 
 /**
  * On a real Supabase project `public.users.id` is a foreign key onto
- * `auth.users`, so synthetic subjects must be genuine Auth identities. On a
- * plain Postgres (CI's isolated service) that constraint does not exist and the
- * rows are inserted directly. Both paths exercise the same RLS policies.
+ * `auth.users`, so synthetic subjects must be genuine Auth identities. CI
+ * installs an `auth.users` shim before migrating, so the same foreign key and
+ * the same cascade are exercised there without any credential. A bare Postgres
+ * database with no `auth` schema also works. All three paths exercise the same
+ * RLS policies; the helper decides which one applies.
  */
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/$/, "");
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-const SYNTHETIC_PREFIX = "sg-verify-";
-let authBackedSubjects = false;
-
-async function authUsersPresent(): Promise<boolean> {
-  if (!sql) return false;
-  const [row] = await sql<{ present: boolean }[]>`
-    select to_regclass('auth.users') is not null as present`;
-  return row?.present === true;
-}
-
-async function createAuthIdentity(label: string): Promise<string> {
-  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-    method: "POST",
-    headers: {
-      apikey: serviceRoleKey as string,
-      authorization: `Bearer ${serviceRoleKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      email: `${SYNTHETIC_PREFIX}rls-${label}-${randomUUID()}@example.com`,
-      password: `Sg!${randomUUID()}${randomUUID()}`,
-      email_confirm: true,
-    }),
-  });
-  if (!response.ok)
-    throw new Error(`Creating the synthetic Auth subject failed with status ${response.status}`);
-  const body = (await response.json()) as { id?: string };
-  if (!body.id) throw new Error("The Admin API returned no subject identifier");
-  return body.id;
-}
-
-async function deleteAuthIdentity(id: string): Promise<void> {
-  await fetch(`${supabaseUrl}/auth/v1/admin/users/${id}`, {
-    method: "DELETE",
-    headers: { apikey: serviceRoleKey as string, authorization: `Bearer ${serviceRoleKey}` },
-  }).catch(() => undefined);
-}
+let mode: SubjectMode = "plain";
+let subjectA: SyntheticSubject | undefined;
+let subjectB: SyntheticSubject | undefined;
 
 const ids = {
-  // Widened: on a Supabase project these are replaced by real Auth subjects.
+  // Replaced in beforeAll by the created subjects.
   userA: randomUUID() as string,
   userB: randomUUID() as string,
   profileA: randomUUID(),
@@ -89,23 +63,19 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
     const [spread] = await sql`select id, version from spreads order by id limit 1`;
     if (!deck || !spread) throw new Error("Reference seed data is required");
 
-    authBackedSubjects = await authUsersPresent();
-    if (authBackedSubjects) {
-      if (!supabaseUrl || !serviceRoleKey)
-        throw new Error(
-          "NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required when auth.users exists",
-        );
-      ids.userA = await createAuthIdentity("a");
-      ids.userB = await createAuthIdentity("b");
-    }
+    mode = await detectSubjectMode(sql);
+    subjectA = await createSubject(sql, mode, "rls-a");
+    subjectB = await createSubject(sql, mode, "rls-b");
+    ids.userA = subjectA.id;
+    ids.userB = subjectB.id;
 
     const now = new Date().toISOString();
     await sql.begin(async (tx) => {
-      // The Supabase sync trigger may already have created these rows.
+      // Since migration 0002 no trigger provisions these rows; the fixture
+      // creates them explicitly, exactly as the application boundary does.
       await tx`insert into users (id, email) values
-        (${ids.userA}, ${`${SYNTHETIC_PREFIX}rls-a-${ids.userA}@example.com`}),
-        (${ids.userB}, ${`${SYNTHETIC_PREFIX}rls-b-${ids.userB}@example.com`})
-        on conflict (id) do nothing`;
+        (${ids.userA}, ${subjectA?.email ?? ""}),
+        (${ids.userB}, ${subjectB?.email ?? ""})`;
       await tx`insert into user_settings (user_id, display_name) values
         (${ids.userA}, 'A'), (${ids.userB}, 'B')`;
       await tx`insert into consents (user_id, policy, policy_version, accepted_at) values
@@ -176,11 +146,11 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
   afterAll(async () => {
     if (!sql) return;
     await sql`delete from users where id in (${ids.userA}, ${ids.userB})`;
-    if (authBackedSubjects) {
-      // Removing the Auth identity also cascades away anything left behind.
-      await deleteAuthIdentity(ids.userA);
-      await deleteAuthIdentity(ids.userB);
+    // Removing the Auth identity also cascades away anything left behind.
+    for (const subject of [subjectA, subjectB]) {
+      if (subject) await deleteSubject(sql, mode, subject).catch(() => undefined);
     }
+    await sql`delete from users where email like ${`${SYNTHETIC_PREFIX}rls-%`}`;
     await sql.end();
   });
 
