@@ -61,7 +61,8 @@ jobs:
       STAGING_BASE_URL: ${{ vars.NETLIFY_PREVIEW_URL || inputs.preview_url }}
       STAGING_RESULTS: ${{ github.workspace }}/staging-results.jsonl
       SUMMARY_FILE: ${{ github.workspace }}/staging-verification-summary.md
-      FINGERPRINT_FILE: ${{ runner.temp }}/seed-fingerprint.json
+      # The runner context is not available to job-level env, so use a literal path.
+      FINGERPRINT_FILE: /tmp/seed-fingerprint.json
     steps:
       - name: Refuse a non-staging runtime selection
         run: |
