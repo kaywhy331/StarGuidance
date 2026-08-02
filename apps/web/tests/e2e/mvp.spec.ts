@@ -86,7 +86,9 @@ test("omitted birth time never fabricates astrology or BaZi", async ({ page }) =
   await createProfile(page);
   await page.goto("/profile");
   await page.getByRole("button", { name: "Purchase test report" }).click();
-  await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/);
+  // Only the report tests reach the checkout route, so under `next dev` this
+  // navigation always pays that route's first-request compilation cost.
+  await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByText("Western astrology")).toBeVisible();
   await expect(page.getByText("BaZi Four Pillars")).toBeVisible();
   await expect(page.getByText("Explicitly unavailable")).toHaveCount(2);
@@ -293,7 +295,7 @@ test("Stripe test-mode report entitlement uses the credential-free local adapter
   await createProfile(page);
   await page.goto("/profile");
   await page.getByRole("button", { name: "Purchase test report" }).click();
-  await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/);
+  await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByText(/Life Path \d+; Expression \d+/)).toBeVisible();
   await expect(page.getByText(/local test entitlement/i)).toBeVisible();
 });
