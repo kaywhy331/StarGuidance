@@ -24,6 +24,9 @@ const FORBIDDEN_PATTERNS: readonly RegExp[] = [
   /\bBearer\s+\S+/gi,
   /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+  // Driver and fetch errors quote the host they failed to reach, which would
+  // carry a project reference into published evidence.
+  /\b[A-Za-z0-9][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+\.[A-Za-z]{2,}\b/g,
 ];
 
 export function redact(value: string): string {

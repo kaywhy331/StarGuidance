@@ -130,7 +130,30 @@ jobs:
             echo "Add the values in the protected environment. Never paste them into chat or a PR."
             exit 1
           fi
-          printf '{"section":"Configuration","check":"Required configuration present","status":"pass","detail":"all 9 required names are present"}\n' \
+          # Presence is not enough: a variable holding a bare host or the wrong
+          # service fails deep inside a later step with an opaque error. Validate
+          # shape here, reporting names only.
+          malformed=""
+          case "$NEXT_PUBLIC_SUPABASE_URL" in
+            https://*.supabase.co|https://*.supabase.co/|https://*.supabase.in|https://*.supabase.in/) ;;
+            *) malformed="$malformed NEXT_PUBLIC_SUPABASE_URL" ;;
+          esac
+          case "$PROFILE_ENGINE_URL" in
+            https://*) ;;
+            *) malformed="$malformed PROFILE_ENGINE_URL" ;;
+          esac
+          case "$STAGING_BASE_URL" in
+            https://*) ;;
+            *) malformed="$malformed NETLIFY_PREVIEW_URL" ;;
+          esac
+          if [ -n "$malformed" ]; then
+            printf '{"section":"Configuration","check":"Configuration values are well formed","status":"fail","detail":"malformed or pointing at the wrong service, by name:%s"}\n' \
+              "$malformed" >>"$STAGING_RESULTS"
+            echo "::error::Malformed configuration in the starguidance-staging environment:$malformed"
+            echo "Each must be an absolute https URL for its own service. Values are never printed."
+            exit 1
+          fi
+          printf '{"section":"Configuration","check":"Required configuration present","status":"pass","detail":"all 9 required names are present and well formed"}\n' \
             >>"$STAGING_RESULTS"
           touch "$STAGE_DIR/configuration"
           # Cleanup may only be attempted once the credentials it needs exist.
@@ -182,9 +205,14 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: .github/scripts/stage.sh fingerprint-compare "Second seed is idempotent" corepack pnpm --filter @starguidance/database staging:fingerprint compare "$FINGERPRINT_FILE"
 
+      # On a real Supabase project public.users.id is a foreign key onto
+      # auth.users, so the two synthetic subjects must be genuine Auth
+      # identities created through the Admin API.
       - name: Run the two-user forced-RLS isolation suite
         env:
           DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
         run: .github/scripts/stage.sh rls-suite "Two-user isolation suite against staging" corepack pnpm --filter @starguidance/database test:integration
 
       - name: Install the verification browser
