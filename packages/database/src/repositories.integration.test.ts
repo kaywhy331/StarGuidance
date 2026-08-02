@@ -170,6 +170,47 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
     });
   });
 
+  it("blocks cross-user deletes across every user-owned resource", async () => {
+    const targets = [
+      ["user_settings", "user_id", ids.userB],
+      ["consents", "user_id", ids.userB],
+      ["profile_components", "user_id", ids.userB],
+      ["profile_traits", "user_id", ids.userB],
+      ["reading_draws", "reading_id", ids.readingB],
+      ["reading_outputs", "reading_id", ids.readingB],
+      ["follow_up_questions", "reading_id", ids.readingB],
+      ["reading_feedback", "reading_id", ids.readingB],
+      ["report_sections", "report_id", ids.reportB],
+      ["audit_events", "user_id", ids.userB],
+      ["reports", "id", ids.reportB],
+      ["entitlements", "id", ids.entitlementB],
+      ["orders", "id", ids.orderB],
+      ["reading_sessions", "id", ids.readingB],
+      ["profile_snapshots", "id", ids.snapshotB],
+      ["birth_profiles", "id", ids.profileB],
+      ["users", "id", ids.userB],
+    ] as const;
+
+    for (const [table, column, value] of targets) {
+      await asUser(ids.userA, async (tx) => {
+        const rows = await tx.unsafe<{ deleted: string }[]>(
+          `delete from public.${table} where ${column} = $1 returning ${column} as deleted`,
+          [value],
+        );
+        expect(rows, `${table} must reject a cross-user delete`).toHaveLength(0);
+      });
+    }
+
+    if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+    for (const [table, column, value] of targets) {
+      const [row] = await sql.unsafe<{ count: number }[]>(
+        `select count(*)::integer as count from public.${table} where ${column} = $1`,
+        [value],
+      );
+      expect(row?.count, `${table} row for the other user must survive`).toBeGreaterThan(0);
+    }
+  });
+
   it("recovers a failed reading with the identical locked draw", async () => {
     await asUser(ids.userA, async (tx) => {
       const [before] = await tx`select d.assignments, s.encrypted_question from reading_sessions s
