@@ -8,7 +8,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:staging": "playwright test --config=playwright.staging.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "5.4.0",
@@ -33,9 +34,11 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.2",
     "@tailwindcss/postcss": "4.3.3",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
+    "axe-core": "4.11.2",
     "tailwindcss": "4.3.3"
   }
 }

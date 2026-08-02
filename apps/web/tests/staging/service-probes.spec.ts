@@ -1,0 +1,184 @@
+import { record } from "@starguidance/database/staging-evidence";
+import { expect, test } from "@playwright/test";
+
+/**
+ * Probes the deployed dependencies of the staging preview. Only hostnames-free
+ * status codes and booleans are recorded.
+ */
+const SYNTHETIC_COMPUTE_REQUEST = {
+  full_birth_name: "Synthetic Verification",
+  birth_date: "2000-01-01",
+};
+
+function profileEngineUrl(): string {
+  const value = process.env.PROFILE_ENGINE_URL?.trim();
+  if (!value) throw new Error("PROFILE_ENGINE_URL is required");
+  return value.replace(/\/$/, "");
+}
+
+test.describe.configure({ mode: "serial" });
+
+test("the hosted profile engine is healthy and refuses unauthorized computation", async () => {
+  const base = profileEngineUrl();
+  // A suspended free instance can need far longer than the application's own
+  // 8s client timeout; allow a generous cold start so "asleep" is not reported
+  // as "unreachable".
+  const health = await fetch(`${base}/health`, { signal: AbortSignal.timeout(90_000) });
+  record({
+    section: "Profile engine",
+    check: "GET /health returns 200",
+    status: health.status === 200 ? "pass" : "fail",
+    detail: `status ${health.status}`,
+  });
+  expect(health.status, "profile engine /health").toBe(200);
+
+  const unauthorized = await fetch(`${base}/v1/profile/compute`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(SYNTHETIC_COMPUTE_REQUEST),
+    signal: AbortSignal.timeout(60_000),
+  });
+  record({
+    section: "Profile engine",
+    check: "Unauthenticated compute returns 401",
+    status: unauthorized.status === 401 ? "pass" : "fail",
+    detail: `status ${unauthorized.status}`,
+  });
+  expect(unauthorized.status, "unauthenticated compute").toBe(401);
+
+  const secret = process.env.PROFILE_ENGINE_SHARED_SECRET?.trim();
+  expect(secret, "PROFILE_ENGINE_SHARED_SECRET must be provided").toBeTruthy();
+  const authorized = await fetch(`${base}/v1/profile/compute`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+    body: JSON.stringify(SYNTHETIC_COMPUTE_REQUEST),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const authorizedBody = authorized.ok
+    ? ((await authorized.json()) as { numerology?: { life_path?: number } })
+    : undefined;
+  const computed = typeof authorizedBody?.numerology?.life_path === "number";
+  record({
+    section: "Profile engine",
+    check: "Authorized synthetic computation succeeds",
+    status: authorized.status === 200 && computed ? "pass" : "fail",
+    detail: `status ${authorized.status}; deterministic numerology ${computed ? "returned" : "absent"}`,
+  });
+  expect(authorized.status, "authorized compute").toBe(200);
+  expect(computed, "authorized compute returned a deterministic result").toBe(true);
+});
+
+test("the deployed preview runtime is staging, Supabase-backed, and schema ready", async ({
+  request,
+}) => {
+  const response = await request.get("/api/health", { timeout: 120_000 });
+  const body = (await response.json()) as {
+    appEnvironment?: string;
+    runtimeAdapter?: string;
+    localPersistenceEnabled?: boolean;
+    localAdapterExplicitlyAllowed?: boolean;
+    missingEnvironmentVariables?: string[];
+    invalidEnvironmentVariables?: string[];
+    database?: {
+      connection?: boolean;
+      schemaReady?: boolean;
+      rlsReady?: boolean;
+      actorTransactionReady?: boolean;
+    };
+  };
+
+  const checks: { check: string; ok: boolean; detail: string }[] = [
+    {
+      check: "APP_ENV is staging",
+      ok: body.appEnvironment === "staging",
+      detail: `appEnvironment=${body.appEnvironment}`,
+    },
+    {
+      check: "RUNTIME_ADAPTER is supabase",
+      ok: body.runtimeAdapter === "supabase",
+      detail: `runtimeAdapter=${body.runtimeAdapter}`,
+    },
+    {
+      check: "Local persistence disabled",
+      ok: body.localPersistenceEnabled === false && body.localAdapterExplicitlyAllowed === false,
+      detail: `localPersistenceEnabled=${body.localPersistenceEnabled}`,
+    },
+    {
+      check: "Required runtime configuration present",
+      ok:
+        (body.missingEnvironmentVariables?.length ?? 1) === 0 &&
+        (body.invalidEnvironmentVariables?.length ?? 1) === 0,
+      detail: `${body.missingEnvironmentVariables?.length ?? "?"} missing, ${
+        body.invalidEnvironmentVariables?.length ?? "?"
+      } invalid`,
+    },
+    {
+      check: "Application schema present",
+      ok: body.database?.connection === true && body.database?.schemaReady === true,
+      detail: `connection=${body.database?.connection} schemaReady=${body.database?.schemaReady}`,
+    },
+    {
+      check: "Authenticated database transactions available",
+      ok: body.database?.rlsReady === true && body.database?.actorTransactionReady === true,
+      detail: `rlsReady=${body.database?.rlsReady} actorTransactionReady=${body.database?.actorTransactionReady}`,
+    },
+  ];
+
+  for (const { check, ok, detail } of checks)
+    record({ section: "Netlify runtime", check, status: ok ? "pass" : "fail", detail });
+
+  for (const { check, ok } of checks) expect(ok, check).toBe(true);
+});
+
+test("the passwordless callback initiates and fails closed on an invalid code", async ({
+  page,
+  request,
+}) => {
+  const initiated = await page.request.post("/api/auth", {
+    headers: { origin: new URL(page.url() || test.info().project.use.baseURL || "/").origin },
+    data: { email: `sg-verify-${process.env.GITHUB_RUN_ID ?? "local"}-probe@example.com` },
+  });
+  const initiatedBody = (await initiated.json()) as { pending?: boolean };
+  const initiationOk = initiated.status() === 200 && initiatedBody.pending === true;
+  record({
+    section: "Auth callback",
+    check: "Passwordless initiation accepted by Supabase",
+    status: initiationOk ? "pass" : "fail",
+    detail: `status ${initiated.status()}; pending=${initiatedBody.pending === true}`,
+  });
+
+  const invalid = await request.get("/auth/callback?code=invalid-verification-code", {
+    maxRedirects: 0,
+  });
+  const invalidLocation = invalid.headers().location ?? "";
+  const failsClosed = invalid.status() >= 300 && invalidLocation.includes("/sign-in?error=");
+  record({
+    section: "Auth callback",
+    check: "Invalid code fails closed to sign-in",
+    status: failsClosed ? "pass" : "fail",
+    detail: `redirected to ${failsClosed ? invalidLocation.replace(/^https?:\/\/[^/]+/, "") : "an unexpected destination"}`,
+  });
+
+  const missing = await request.get("/auth/callback", { maxRedirects: 0 });
+  const missingLocation = missing.headers().location ?? "";
+  const missingClosed = missing.status() >= 300 && missingLocation.includes("/sign-in?error=");
+  record({
+    section: "Auth callback",
+    check: "Absent code fails closed to sign-in",
+    status: missingClosed ? "pass" : "fail",
+    detail: `redirected to ${missingClosed ? missingLocation.replace(/^https?:\/\/[^/]+/, "") : "an unexpected destination"}`,
+  });
+
+  record({
+    section: "Auth callback",
+    check: "Positive magic-link code exchange",
+    status: "limited",
+    detail:
+      "not automated: the PKCE verifier is bound to the browser that initiated sign-in, so an " +
+      "admin-generated link cannot produce a valid code. Owner inbox smoke test still required.",
+  });
+
+  expect(initiationOk, "passwordless initiation").toBe(true);
+  expect(failsClosed, "invalid code fails closed").toBe(true);
+  expect(missingClosed, "absent code fails closed").toBe(true);
+});

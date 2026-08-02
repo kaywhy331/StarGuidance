@@ -4,12 +4,17 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./staging-evidence": "./scripts/staging-result.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",
     "db:check": "drizzle-kit check",
     "test:integration": "vitest run src/repositories.integration.test.ts",
+    "staging:verify-schema": "tsx scripts/verify-staging-schema.ts",
+    "staging:fingerprint": "tsx scripts/seed-fingerprint.ts",
+    "staging:cleanup": "tsx scripts/cleanup-synthetic.ts",
+    "staging:summary": "tsx scripts/render-staging-summary.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },

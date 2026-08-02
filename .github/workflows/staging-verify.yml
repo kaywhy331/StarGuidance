@@ -1,0 +1,237 @@
+name: Staging verification
+
+# Credential-gated verification of the owner-managed Supabase staging project.
+#
+# This workflow never runs automatically. It is restricted to the stacked
+# staging branch, runs only against the protected `starguidance-staging`
+# environment, and publishes a single redacted Markdown summary. Secret values
+# are read into step environments and are never printed, echoed, or uploaded.
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_url:
+        description: "Deploy preview to verify"
+        required: true
+        default: "https://deploy-preview-4--starguidance.netlify.app"
+      confirm_disposable:
+        description: "Type DISPOSABLE to confirm the target Supabase project holds no production data"
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-verify
+  cancel-in-progress: false
+
+env:
+  ALLOWED_REF: agent/starguidance-supabase-staging
+
+jobs:
+  # Runs without the protected environment so an unapproved ref is rejected
+  # before the owner is ever prompted to approve a deployment.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse any ref other than the stacked staging branch
+        run: |
+          if [ "${{ github.ref_name }}" != "$ALLOWED_REF" ]; then
+            echo "::error::Refusing to run against '${{ github.ref_name }}'. Only $ALLOWED_REF is permitted."
+            exit 1
+          fi
+          echo "Ref accepted: $ALLOWED_REF"
+
+      - name: Require explicit disposable-project confirmation
+        run: |
+          if [ "${{ inputs.confirm_disposable }}" != "DISPOSABLE" ]; then
+            echo "::error::confirm_disposable must be the literal word DISPOSABLE."
+            exit 1
+          fi
+          echo "Disposable target confirmed by the operator."
+
+  verify:
+    needs: guard
+    runs-on: ubuntu-latest
+    environment: starguidance-staging
+    env:
+      APP_ENV: ${{ vars.APP_ENV || 'staging' }}
+      RUNTIME_ADAPTER: ${{ vars.RUNTIME_ADAPTER || 'supabase' }}
+      STAGING_BASE_URL: ${{ vars.NETLIFY_PREVIEW_URL || inputs.preview_url }}
+      STAGING_RESULTS: ${{ github.workspace }}/staging-results.jsonl
+      SUMMARY_FILE: ${{ github.workspace }}/staging-verification-summary.md
+      FINGERPRINT_FILE: ${{ runner.temp }}/seed-fingerprint.json
+    steps:
+      - name: Refuse a non-staging runtime selection
+        run: |
+          if [ "$APP_ENV" != "staging" ]; then
+            echo "::error::APP_ENV must be 'staging' for this workflow (got '$APP_ENV')."
+            exit 1
+          fi
+          if [ "$RUNTIME_ADAPTER" != "supabase" ]; then
+            echo "::error::RUNTIME_ADAPTER must be 'supabase' for this workflow (got '$RUNTIME_ADAPTER')."
+            exit 1
+          fi
+          echo "Runtime selection accepted: APP_ENV=staging RUNTIME_ADAPTER=supabase"
+
+      - name: Confirm required configuration is present by name only
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+          PROFILE_ENGINE_SHARED_SECRET: ${{ secrets.PROFILE_ENGINE_SHARED_SECRET }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
+        run: |
+          missing=""
+          for name in DATABASE_URL DATABASE_INTEGRATION_URL SUPABASE_SERVICE_ROLE_KEY \
+                      DATA_ENCRYPTION_KEY PROFILE_ENGINE_SHARED_SECRET \
+                      NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY PROFILE_ENGINE_URL; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing configuration in the starguidance-staging environment:$missing"
+            echo "Add the values in the protected environment. Never paste them into chat or a PR."
+            exit 1
+          fi
+          if [ -z "$STAGING_BASE_URL" ]; then
+            echo "::error::NETLIFY_PREVIEW_URL or the preview_url input is required."
+            exit 1
+          fi
+          echo "All required names are present."
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - run: corepack enable
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify the migration history is well formed
+        run: corepack pnpm db:check
+
+      - name: Apply the authoritative Drizzle migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: corepack pnpm db:migrate
+
+      - name: Confirm migrations and forced RLS are applied
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: corepack pnpm --filter @starguidance/database staging:verify-schema
+
+      - name: Seed reference data
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: corepack pnpm db:seed
+
+      - name: Capture the reference-data fingerprint
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: corepack pnpm --filter @starguidance/database staging:fingerprint capture "$FINGERPRINT_FILE"
+
+      - name: Seed a second time
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: corepack pnpm db:seed
+
+      - name: Confirm the second seed changed nothing
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: corepack pnpm --filter @starguidance/database staging:fingerprint compare "$FINGERPRINT_FILE"
+
+      - name: Run the two-user forced-RLS isolation suite
+        env:
+          DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
+        run: |
+          if corepack pnpm --filter @starguidance/database test:integration; then
+            status=pass
+            detail="cross-user select, insert, update, delete, lineage, recovery, export and deletion all isolated"
+          else
+            status=fail
+            detail="the two-subject isolation suite reported failures"
+          fi
+          node -e "require('fs').appendFileSync(process.env.STAGING_RESULTS, JSON.stringify({section:'Row level security',check:'Two-user isolation suite against staging',status:process.argv[1],detail:process.argv[2]})+'\n')" "$status" "$detail"
+          [ "$status" = "pass" ]
+
+      - name: Install the verification browser
+        run: corepack pnpm exec playwright install --with-deps chromium
+
+      - name: Verify deployed services, sessions, lineage, isolation, export and deletion
+        env:
+          DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+          PROFILE_ENGINE_SHARED_SECRET: ${{ secrets.PROFILE_ENGINE_SHARED_SECRET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
+        run: corepack pnpm --filter @starguidance/web test:staging
+
+      - name: Record the hosted log review and its access limits
+        if: always()
+        run: |
+          node -e "
+          const fs = require('fs');
+          const add = (check, status, detail) =>
+            fs.appendFileSync(process.env.STAGING_RESULTS,
+              JSON.stringify({section:'Hosted log review', check, status, detail}) + '\n');
+          add('Application health endpoint exposes no values',
+              'pass',
+              'the staging probe reports variable names and booleans only, never values');
+          add('Netlify, Supabase and Render log inspection',
+              'limited',
+              'not automated: this workflow holds no Netlify, Supabase or Render log-read token, ' +
+              'and unrestricted hosted logs must not be downloaded or published as artifacts. ' +
+              'Owner review of provider log retention remains required.');
+          "
+
+      - name: Fail if any recorded evidence looks like a secret
+        if: always()
+        run: |
+          if [ ! -f "$STAGING_RESULTS" ]; then
+            echo "::error::No verification evidence was recorded."
+            exit 1
+          fi
+          if grep -nEi 'postgres(ql)?://[^ "]*:[^ "@]+@|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|sb[ph]?_[A-Za-z0-9_-]{8,}|bearer [A-Za-z0-9._-]{8,}|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$STAGING_RESULTS"; then
+            echo "::error::Recorded evidence matched a secret-shaped pattern and will not be published."
+            exit 1
+          fi
+          echo "Recorded evidence passed the redaction self-check."
+
+      - name: Render the redacted summary
+        if: always()
+        run: |
+          corepack pnpm --filter @starguidance/database staging:summary "$STAGING_RESULTS" "$SUMMARY_FILE" || true
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only the redacted summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-verification-summary
+          path: ${{ env.SUMMARY_FILE }}
+          if-no-files-found: error
+
+      - name: Remove every synthetic identity and prove the removal
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: corepack pnpm --filter @starguidance/database staging:cleanup
+
+      - name: Fail the run if the gate did not pass
+        if: always()
+        run: |
+          if grep -q '"status":"fail"' "$STAGING_RESULTS"; then
+            echo "::error::One or more staging verification checks failed. See the job summary."
+            exit 1
+          fi
+          echo "Staging verification gate passed."
