@@ -134,17 +134,22 @@ jobs:
           # service fails deep inside a later step with an opaque error. Validate
           # shape here, reporting names only.
           malformed=""
+          # Each must be an absolute https URL for its own service.
+          for pair in "NEXT_PUBLIC_SUPABASE_URL:$NEXT_PUBLIC_SUPABASE_URL" \
+                      "PROFILE_ENGINE_URL:$PROFILE_ENGINE_URL" \
+                      "NETLIFY_PREVIEW_URL:$STAGING_BASE_URL"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            case "$value" in
+              https://*) ;;
+              *) malformed="$malformed $name" ;;
+            esac
+          done
+          # The Supabase URL must not point at the application itself; that
+          # misconfiguration otherwise surfaces only as an opaque Admin API error.
           case "$NEXT_PUBLIC_SUPABASE_URL" in
-            https://*.supabase.co|https://*.supabase.co/|https://*.supabase.in|https://*.supabase.in/) ;;
-            *) malformed="$malformed NEXT_PUBLIC_SUPABASE_URL" ;;
-          esac
-          case "$PROFILE_ENGINE_URL" in
-            https://*) ;;
-            *) malformed="$malformed PROFILE_ENGINE_URL" ;;
-          esac
-          case "$STAGING_BASE_URL" in
-            https://*) ;;
-            *) malformed="$malformed NETLIFY_PREVIEW_URL" ;;
+            *netlify.app*|"$STAGING_BASE_URL")
+              malformed="$malformed NEXT_PUBLIC_SUPABASE_URL(points-at-the-app)" ;;
           esac
           if [ -n "$malformed" ]; then
             printf '{"section":"Configuration","check":"Configuration values are well formed","status":"fail","detail":"malformed or pointing at the wrong service, by name:%s"}\n' \
