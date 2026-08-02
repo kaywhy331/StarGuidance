@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 
 import { evaluateGate, SUCCESS_MARKER, type GateStatus } from "./staging-gate";
-import { redact, type StagingResult, type StagingStatus } from "./staging-result";
+import { completeStage, redact, type StagingResult, type StagingStatus } from "./staging-result";
 
 /**
  * Renders the recorded results into the single redacted Markdown document that
@@ -19,8 +19,10 @@ const SECTION_ORDER = [
   "Profile engine",
   "Netlify runtime",
   "Auth callback",
+  "Identity provisioning",
   "Profile persistence",
   "Profile lineage",
+  "Reading creation",
   "Draw equality",
   "Cross-user isolation",
   "Export",
@@ -69,7 +71,11 @@ function readStages(): string[] {
 }
 
 const results = readResults();
-const stages = readStages();
+// Rendering is itself the `summary` stage. Its marker is written at the end of
+// this script, so include it here or the document would always report itself as
+// the one stage that did not complete. The authoritative decision is made by the
+// separate gate step, which reads the marker from disk after this script exits.
+const stages = [...new Set([...readStages(), "summary"])];
 const verdict = evaluateGate({
   results,
   completedStages: stages.filter((stage) => stage !== SUCCESS_MARKER),
@@ -149,5 +155,9 @@ lines.push(
 );
 
 writeFileSync(outputFile, lines.join("\n"), "utf8");
+// Rendering is itself a mandatory stage: a run that produced no publishable,
+// redacted evidence has demonstrated nothing, whatever else succeeded. The
+// marker is written after the file exists, and the gate step reads it next.
+completeStage("summary");
 process.stdout.write(`gate=${verdict.status}\n`);
 if (verdict.status !== "passed") process.exitCode = 1;

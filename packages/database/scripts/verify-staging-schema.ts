@@ -1,5 +1,5 @@
 import { createDatabaseClient } from "../src/postgres-client";
-import { record, requiredEnv } from "./staging-result";
+import { completeStage, record, requiredEnv } from "./staging-result";
 
 /**
  * Confirms the authoritative Drizzle history is applied to the connected staging
@@ -37,6 +37,10 @@ const USER_OWNED_TABLES = [
 async function main(): Promise<void> {
   const sql = createDatabaseClient(requiredEnv("DATABASE_URL"));
   let failed = false;
+  // Two independent mandatory stages are proved here; each marks itself only if
+  // all of its own checks passed.
+  let syncRemovalProved = false;
+  let forcedRlsProved = false;
 
   try {
     const applied = await sql<{ id: number }[]>`
@@ -95,6 +99,7 @@ async function main(): Promise<void> {
         ? "public.users.id references auth.users(id) on delete cascade"
         : "the cascading foreign key onto auth.users is absent",
     });
+    syncRemovalProved = migrationsOk && syncRemoved && cascadeOk;
 
     const missingTables = await sql<{ name: string }[]>`
       select required.name from unnest(${sql.array(
@@ -177,10 +182,13 @@ async function main(): Promise<void> {
         ? "set local role authenticated with a verified subject succeeded"
         : "the connection role cannot assume the authenticated role",
     });
+    forcedRlsProved = tablesOk && rlsOk && policiesOk && webhookOk && actorOk;
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);
   }
 
+  if (syncRemovalProved) completeStage("sync-trigger-absent");
+  if (forcedRlsProved) completeStage("forced-rls");
   if (failed) process.exitCode = 1;
 }
 

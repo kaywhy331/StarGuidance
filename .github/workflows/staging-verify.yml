@@ -169,8 +169,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Verify the migration history is well formed
-        run: corepack pnpm db:check
+      # Validates the migration history itself: drizzle-kit's own consistency
+      # check plus the immutability digests and the assertion that no migration
+      # reintroduces the auth.users synchronisation trigger removed by 0002.
+      - name: Validate the migration history
+        run: .github/scripts/stage.sh migration-history "Migration history validation" corepack pnpm --filter @starguidance/database staging:migration-history
 
       # drizzle-kit reports `applying migrations...undefined` and discards the
       # underlying driver error, so probe connectivity, privileges, and DDL
@@ -180,15 +183,19 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: .github/scripts/stage.sh database-preflight "Staging database preflight" corepack pnpm --filter @starguidance/database staging:preflight
 
+      # Applies 0002, which removes the auth.users synchronisation trigger that
+      # forced row level security made unusable.
       - name: Apply the authoritative Drizzle migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: .github/scripts/stage.sh migrations "Apply the authoritative Drizzle migrations" corepack pnpm db:migrate
 
-      - name: Confirm migrations and forced RLS are applied
+      # Marks two mandatory stages of its own: `sync-trigger-absent` and
+      # `forced-rls`. Each is marked only if every check belonging to it passed.
+      - name: Confirm the trigger removal and forced RLS are applied
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: .github/scripts/stage.sh schema-assertions "Confirm migrations and forced RLS" corepack pnpm --filter @starguidance/database staging:verify-schema
+        run: .github/scripts/stage.sh schema-assertions "Confirm trigger removal and forced RLS" corepack pnpm --filter @starguidance/database staging:verify-schema
 
       - name: Seed reference data
         env:
@@ -223,8 +230,15 @@ jobs:
       - name: Install the verification browser
         run: corepack pnpm exec playwright install --with-deps chromium
 
-      - name: Verify deployed services, sessions, lineage, isolation, export and deletion
+      # The deployed suites mark their own mandatory stages as each one passes:
+      # profile-engine-probe, netlify-preview-probe, auth-identity-creation,
+      # app-provisioning, profile-onboarding, profile-lineage, reading-creation,
+      # draw-equality, cross-user-denial, export-isolation, account-deletion and
+      # accessibility. A suite that stops half way therefore leaves the stages it
+      # never reached unmarked, and the gate refuses to pass.
+      - name: Verify deployed services, provisioning, sessions, isolation, export and deletion
         env:
+          DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
           DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
           PROFILE_ENGINE_SHARED_SECRET: ${{ secrets.PROFILE_ENGINE_SHARED_SECRET }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

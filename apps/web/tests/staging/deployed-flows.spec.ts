@@ -1,4 +1,4 @@
-import { record } from "@starguidance/database/staging-evidence";
+import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import {
@@ -176,6 +176,7 @@ test("both identities complete onboarding and the profile survives refresh and r
   });
   expect(signedOut.status, "signed-out profile request is rejected").toBe(401);
   expect(durable, "profile is durable").toBe(true);
+  completeStage("profile-onboarding");
 });
 
 test("updating birth data appends an immutable snapshot and preserves prior readings", async () => {
@@ -213,6 +214,33 @@ test("updating birth data appends an immutable snapshot and preserves prior read
   });
   expect(appended, "snapshot appended").toBe(true);
   expect(historyIntact, "history intact").toBe(true);
+  completeStage("profile-lineage");
+});
+
+test("a reading is created against the active snapshot with a locked draw", async () => {
+  const before = await activeSnapshot(pageA);
+  const readingId = await createReading(pageA, "What is worth attending to today?");
+  const reading = await readingState(pageA, readingId);
+
+  const assignments = Array.isArray((reading.draw as { assignments?: unknown[] })?.assignments)
+    ? ((reading.draw as { assignments: unknown[] }).assignments?.length ?? 0)
+    : 0;
+  const created =
+    Boolean(reading.id) &&
+    reading.profileSnapshotId === before.id &&
+    assignments > 0 &&
+    reading.generationStatus !== "pending";
+
+  record({
+    section: "Reading creation",
+    check: "Deployed reading creation locks a draw against the active snapshot",
+    status: created ? "pass" : "fail",
+    detail:
+      `${assignments} position(s) assigned; generation status ${reading.generationStatus}; ` +
+      "the reading references the identity's active snapshot",
+  });
+  expect(created, "a reading is created with a locked draw").toBe(true);
+  completeStage("reading-creation");
 });
 
 test("the locked draw is byte-identical across refresh, stream failure, retry, and follow-up", async () => {
@@ -260,6 +288,7 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
       "staging. A real aborted stream was used instead.",
   });
   expect(stable, "locked draw is immutable").toBe(true);
+  completeStage("draw-equality");
 });
 
 test("neither identity can reach the other's resources over the deployed API", async () => {
@@ -307,6 +336,7 @@ test("neither identity can reach the other's resources over the deployed API", a
 
   expect(denied, "cross-identity reads denied").toBe(true);
   expect(writesDenied, "cross-identity writes denied").toBe(true);
+  completeStage("cross-user-denial");
 });
 
 test("export is scoped to the requesting identity", async () => {
@@ -324,6 +354,7 @@ test("export is scoped to the requesting identity", async () => {
       : "the export contained data belonging to another identity",
   });
   expect(ok, "export is scoped").toBe(true);
+  completeStage("export-isolation");
 });
 
 test("account deletion removes application data and the Auth identity, leaving the other intact", async () => {
@@ -361,4 +392,5 @@ test("account deletion removes application data and the Auth identity, leaving t
   expect(deletion, "account deletion accepted").toBe(200);
   expect(identityGone, "Auth identity removed").toBe(true);
   expect(otherIntact && otherIdentityIntact, "other identity intact").toBe(true);
+  completeStage("account-deletion");
 });

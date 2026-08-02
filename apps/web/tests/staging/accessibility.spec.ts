@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { record } from "@starguidance/database/staging-evidence";
+import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import {
@@ -149,4 +149,5 @@ test("critical deployed flows pass automated WCAG rules", async () => {
       .map(({ flow, id }) => `${flow}:${id}`)
       .join(", ")}`,
   ).toEqual([]);
+  completeStage("accessibility");
 });

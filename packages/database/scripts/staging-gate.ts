@@ -11,19 +11,48 @@ import type { StagingResult } from "./staging-result";
  */
 export type GateStatus = "passed" | "failed" | "not-run";
 
-/** Stages that must all have run for a verification to mean anything. */
+/**
+ * Stages that must all have run for a verification to mean anything.
+ *
+ * Workflow steps mark their own stage through `.github/scripts/stage.sh`; the
+ * stages that live inside a suite mark themselves through `completeStage()`.
+ * Either way an unreached stage leaves no marker, so a partial run reports
+ * FAILED or NOT RUN rather than PASSED.
+ */
 export const REQUIRED_STAGES = [
+  // Configuration and database readiness
   "configuration",
   "database-preflight",
+  "migration-history",
   "migrations",
-  "schema-assertions",
+  // Migration 0002 and the protections it had to preserve
+  "sync-trigger-absent",
+  "forced-rls",
+  // Reference data
   "seed-first",
   "fingerprint-capture",
   "seed-second",
   "fingerprint-compare",
+  // Database-level isolation
   "rls-suite",
-  "browser-verification",
+  // Deployed services
+  "profile-engine-probe",
+  "netlify-preview-probe",
+  // Identity and provisioning after the trigger was removed
+  "auth-identity-creation",
+  "app-provisioning",
+  // Application behaviour on the deploy preview
+  "profile-onboarding",
+  "profile-lineage",
+  "reading-creation",
+  "draw-equality",
+  "cross-user-denial",
+  "export-isolation",
+  "account-deletion",
+  "accessibility",
+  // Reporting and teardown
   "cleanup",
+  "summary",
 ] as const;
 
 export type RequiredStage = (typeof REQUIRED_STAGES)[number];

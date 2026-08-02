@@ -27,6 +27,12 @@ export interface SyntheticIdentity {
   readonly id: string;
   readonly email: string;
   readonly password: string;
+  /**
+   * Admin API status for the creation call. Before migration 0002 this was 500
+   * for every signup, because the SECURITY DEFINER synchronisation trigger could
+   * not satisfy forced row level security.
+   */
+  readonly creationStatus: number;
 }
 
 interface TokenSet {
@@ -70,7 +76,7 @@ export async function createSyntheticIdentity(alias: string): Promise<SyntheticI
     throw new Error(`Creating synthetic ${alias} failed with status ${response.status}`);
   const body = (await response.json()) as { id?: string };
   if (!body.id) throw new Error(`Creating synthetic ${alias} returned no subject`);
-  return { alias, id: body.id, email, password };
+  return { alias, id: body.id, email, password, creationStatus: response.status };
 }
 
 /** Exchanges the synthetic credential for a real Supabase session. */

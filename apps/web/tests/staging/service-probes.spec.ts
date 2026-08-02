@@ -1,4 +1,4 @@
-import { record } from "@starguidance/database/staging-evidence";
+import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -66,6 +66,7 @@ test("the hosted profile engine is healthy and refuses unauthorized computation"
   });
   expect(authorized.status, "authorized compute").toBe(200);
   expect(computed, "authorized compute returned a deterministic result").toBe(true);
+  completeStage("profile-engine-probe");
 });
 
 test("the deployed preview runtime is staging, Supabase-backed, and schema ready", async ({
@@ -128,6 +129,7 @@ test("the deployed preview runtime is staging, Supabase-backed, and schema ready
     record({ section: "Netlify runtime", check, status: ok ? "pass" : "fail", detail });
 
   for (const { check, ok } of checks) expect(ok, check).toBe(true);
+  completeStage("netlify-preview-probe");
 });
 
 test("the passwordless callback initiates and fails closed on an invalid code", async ({

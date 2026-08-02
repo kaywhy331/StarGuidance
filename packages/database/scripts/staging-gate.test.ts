@@ -1,9 +1,42 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateGate, REQUIRED_STAGES, type GateInput } from "./staging-gate";
+import { evaluateGate, REQUIRED_STAGES, SUCCESS_MARKER, type GateInput } from "./staging-gate";
 import type { StagingResult } from "./staging-result";
 
 const ALL_STAGES = [...REQUIRED_STAGES];
+
+/**
+ * The mandatory stages of the Supabase staging gate, in pipeline order. This
+ * list is duplicated here on purpose: shrinking REQUIRED_STAGES to make a run
+ * pass must fail a test rather than silently narrow what "PASSED" means.
+ */
+const CONTRACTED_STAGES = [
+  "configuration",
+  "database-preflight",
+  "migration-history",
+  "migrations",
+  "sync-trigger-absent",
+  "forced-rls",
+  "seed-first",
+  "fingerprint-capture",
+  "seed-second",
+  "fingerprint-compare",
+  "rls-suite",
+  "profile-engine-probe",
+  "netlify-preview-probe",
+  "auth-identity-creation",
+  "app-provisioning",
+  "profile-onboarding",
+  "profile-lineage",
+  "reading-creation",
+  "draw-equality",
+  "cross-user-denial",
+  "export-isolation",
+  "account-deletion",
+  "accessibility",
+  "cleanup",
+  "summary",
+] as const;
 
 function result(status: StagingResult["status"], check = "example check"): StagingResult {
   return { section: "Example", check, status, detail: "synthetic" };
@@ -19,6 +52,13 @@ function gate(overrides: Partial<GateInput> = {}) {
 }
 
 describe("staging verification gate", () => {
+  it("requires every mandatory stage of the verification contract", () => {
+    expect(ALL_STAGES).toEqual([...CONTRACTED_STAGES]);
+    // 25 stages plus the end-of-pipeline success marker.
+    expect(ALL_STAGES).toHaveLength(25);
+    expect(SUCCESS_MARKER).toBe("all-mandatory-complete");
+  });
+
   it("passes only when every stage completed, the marker exists, and nothing failed", () => {
     const verdict = gate({ results: [result("pass"), result("limited")] });
     expect(verdict.status).toBe("passed");
@@ -84,7 +124,7 @@ describe("staging verification gate", () => {
     expect(limitedOnly.status).toBe("passed");
     const limitedButIncomplete = gate({
       results: [result("limited")],
-      completedStages: ALL_STAGES.filter((stage) => stage !== "browser-verification"),
+      completedStages: ALL_STAGES.filter((stage) => stage !== "draw-equality"),
       successMarker: false,
     });
     expect(limitedButIncomplete.status).toBe("failed");

@@ -1,4 +1,5 @@
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Shared recorder for the credential-gated staging verification workflow.
@@ -44,6 +45,25 @@ export function record(result: StagingResult): void {
     `${JSON.stringify({ ...result, detail: redact(result.detail) })}\n`,
     "utf8",
   );
+}
+
+/**
+ * Marks one mandatory verification stage as having completed successfully.
+ *
+ * The gate is positive-evidence driven, so a stage that never calls this is
+ * treated as not run and the whole verification cannot report PASSED. Stages
+ * that live inside a suite rather than inside a workflow step mark themselves
+ * here, which is why a suite that crashes half way through still leaves the
+ * stages it never reached unmarked.
+ *
+ * A no-op outside the workflow, so the suites remain runnable locally.
+ */
+export function completeStage(stage: string): void {
+  const dir = process.env.STAGE_DIR;
+  if (!dir) return;
+  if (!/^[a-z0-9-]+$/.test(stage)) throw new Error(`invalid stage name: ${stage}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, stage), "", "utf8");
 }
 
 /** Reads a required configuration value without ever echoing it. */
