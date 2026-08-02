@@ -72,7 +72,11 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
     const now = new Date().toISOString();
     await sql.begin(async (tx) => {
       // Since migration 0002 no trigger provisions these rows; the fixture
-      // creates them explicitly, exactly as the application boundary does.
+      // creates them explicitly. The fixture connection is the migration role,
+      // which bypasses row level security (BYPASSRLS on Supabase, superuser in
+      // CI) — that is what lets it both seed and later inspect rows it does not
+      // own. Every assertion below runs as `authenticated` instead, so nothing
+      // that is being tested benefits from that exemption.
       await tx`insert into users (id, email) values
         (${ids.userA}, ${subjectA?.email ?? ""}),
         (${ids.userB}, ${subjectB?.email ?? ""})`;

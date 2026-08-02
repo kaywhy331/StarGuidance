@@ -4,6 +4,23 @@ This procedure is intentionally credential-gated. Use a disposable Supabase proj
 
 `packages/database/migrations` is the authoritative Drizzle migration history. The connected Supabase GitHub integration is not a migration authority and must not create or apply a second `supabase/migrations` source. Keep Supabase automatic **Deploy to production** disabled; the integration's Preview check may remain skipped while migrations are applied explicitly from the operator shell.
 
+Applied migrations are immutable. A correction is always a new migration; `packages/database/tests/migration-integrity.test.ts` pins the digest of every applied file so an edit fails a test instead of silently diverging databases that already ran it.
+
+## How an application user comes into existence
+
+Migration 0001 installed a SECURITY DEFINER trigger on `auth.users` that inserted the matching `public.users` row. That could never work: `FORCE ROW LEVEL SECURITY` applies to SECURITY DEFINER functions as well, `request.jwt.claim.sub` is unset inside GoTrue's signup transaction, and the `users_self` check therefore rejected the insert with `42501`. Supabase Auth surfaced that as HTTP 500 and no identity could be created at all.
+
+Migration 0002 removes the trigger and its function. Provisioning is now a single application boundary, and no database object creates a user row:
+
+1. Supabase Auth creates the `auth.users` row. Nothing else happens.
+2. The first authenticated application request reaches `requireUser()`, which validates the Supabase subject.
+3. `repositories.users.ensure()` runs as the `authenticated` role with the verified subject bound to `request.jwt.claim.sub`, so the row it upserts can only ever be the caller's own. Repeats are idempotent and the address is normalised to lower case.
+4. Deleting the `auth.users` row cascades into `public.users` and every owned application table.
+
+Nothing was relaxed to achieve this: no `BYPASSRLS` role, no service-role policy, no trigger-specific exception, no replacement SECURITY DEFINER function, and no temporary disabling of row level security. Migration 0002 fails if the foreign key, its cascade, forced RLS, the ownership policies, or the `authenticated` grants are missing when it runs.
+
+Because that boundary is the only provisioning path, every route that touches a user-owned repository must pass through `requireUser()` first; `apps/web/src/lib/provisioning-boundary.test.ts` enforces this and requires a written justification for each exempt route.
+
 ## Required configuration
 
 Configure these for the Netlify **Deploy Previews** context:
@@ -31,12 +48,12 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 
 1. Confirm the target project name/ref twice and confirm it contains no production data.
 2. Confirm only that `DATABASE_URL` and `DATABASE_INTEGRATION_URL` are present in the operator shell; do not print their values.
-3. Run `corepack pnpm db:check`.
-4. Run `corepack pnpm db:migrate` with the disposable `DATABASE_URL`.
+3. Run `corepack pnpm --filter @starguidance/database staging:migration-history`, which runs `drizzle-kit check` and the migration-immutability assertions.
+4. Run `corepack pnpm db:migrate` with the disposable `DATABASE_URL`, then confirm no `sync_authenticated_user_after_insert` trigger and no `public.sync_authenticated_user()` function remain.
 5. Run `corepack pnpm db:seed` twice with the same URL and confirm the second execution is idempotent.
 6. Run `corepack pnpm --filter @starguidance/database test:integration` with `DATABASE_INTEGRATION_URL`. CI performs this with an isolated Postgres service.
 7. Confirm `/health` on the hosted profile engine and one unauthorized/authorized synthetic compute pair. Record the hostname and status results only.
-8. Create two temporary Supabase Auth users through an operator-only process. Do not use real people or personal email addresses.
+8. Create two temporary Supabase Auth users through an operator-only process. Do not use real people or personal email addresses. Confirm the Admin API returns a success status rather than 500, and that no `public.users` row exists for either subject until the application is first used.
 9. With each user independently authenticated, create synthetic profiles, two snapshots for one user, a reading/follow-up, report entitlement, and order.
 10. Verify user A receives not-found/empty results for user B's profile, snapshots, reading, draw, encrypted question, follow-up, report, order, and export—and vice versa. Verify cross-user insert/update/delete attempts are rejected by RLS.
 11. Force one generation failure, refresh, retry, and submit a follow-up. Compare reading ID, deck/spread/shuffle versions, locked timestamp, positions, card IDs, orientations, and orders byte-for-byte before and after.

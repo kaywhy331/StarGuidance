@@ -9,6 +9,7 @@
 - Atomic session/locked-draw persistence, append-only outputs, same-draw retry/follow-up, durable recovery, and immutable profile history.
 - Durable Stripe order, entitlement, report, and webhook-idempotency storage.
 - Forced RLS/public privilege revocation and a two-subject isolated-Postgres test covering cross-user profile, snapshots, readings, draw, question, follow-up, report, order, export source data, and deletion.
+- Application users are provisioned only at the `requireUser()` boundary. Migration 0002 removed the `auth.users` synchronisation trigger, which forced RLS made unusable and which made every Supabase Auth signup fail; CI installs an `auth.users` shim so that migration path, the cascade, and the reproduction of the original failure are all exercised without credentials.
 - Four-question profile onboarding: required full birth name and date, plus independent optional birth city/country and birth time fields. No timezone, time-confidence mode, or Latin rendering is requested.
 - Non-Latin names preserve the original input and reduce unsupported name-derived numerology detail instead of blocking the profile or inventing a transliteration.
 
