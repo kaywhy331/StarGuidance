@@ -144,6 +144,14 @@ jobs:
       - name: Verify the migration history is well formed
         run: corepack pnpm db:check
 
+      # drizzle-kit reports `applying migrations...undefined` and discards the
+      # underlying driver error, so probe connectivity, privileges, and DDL
+      # capability first and record a precise, redacted reason.
+      - name: Diagnose the staging database before migrating
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: .github/scripts/stage.sh database-preflight "Staging database preflight" corepack pnpm --filter @starguidance/database staging:preflight
+
       - name: Apply the authoritative Drizzle migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

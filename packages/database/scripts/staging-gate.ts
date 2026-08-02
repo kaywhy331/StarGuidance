@@ -14,6 +14,7 @@ export type GateStatus = "passed" | "failed" | "not-run";
 /** Stages that must all have run for a verification to mean anything. */
 export const REQUIRED_STAGES = [
   "configuration",
+  "database-preflight",
   "migrations",
   "schema-assertions",
   "seed-first",
