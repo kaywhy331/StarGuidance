@@ -15,6 +15,7 @@
     "staging:fingerprint": "tsx scripts/seed-fingerprint.ts",
     "staging:cleanup": "tsx scripts/cleanup-synthetic.ts",
     "staging:summary": "tsx scripts/render-staging-summary.ts",
+    "staging:gate": "tsx scripts/run-staging-gate.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },

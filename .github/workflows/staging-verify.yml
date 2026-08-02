@@ -6,6 +6,11 @@ name: Staging verification
 # staging branch, runs only against the protected `starguidance-staging`
 # environment, and publishes a single redacted Markdown summary. Secret values
 # are read into step environments and are never printed, echoed, or uploaded.
+#
+# The gate is positive-evidence driven. Every mandatory stage must leave a
+# completion marker and a success marker must be created at the end of the
+# pipeline, so a skipped, partial, or misconfigured run reports NOT RUN or
+# FAILED and can never report PASSED.
 
 on:
   workflow_dispatch:
@@ -61,22 +66,44 @@ jobs:
       STAGING_BASE_URL: ${{ vars.NETLIFY_PREVIEW_URL || inputs.preview_url }}
       STAGING_RESULTS: ${{ github.workspace }}/staging-results.jsonl
       SUMMARY_FILE: ${{ github.workspace }}/staging-verification-summary.md
+      STAGE_DIR: ${{ github.workspace }}/staging-stages
       # The runner context is not available to job-level env, so use a literal path.
       FINGERPRINT_FILE: /tmp/seed-fingerprint.json
     steps:
+      # Checkout first so the redaction, summary, and cleanup utilities are always
+      # available to the always() steps below.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Prepare the evidence and stage directories
+        run: |
+          mkdir -p "$STAGE_DIR"
+          : >"$STAGING_RESULTS"
+          chmod +x .github/scripts/stage.sh
+          echo "repository checked out; evidence recording ready"
+
       - name: Refuse a non-staging runtime selection
         run: |
-          if [ "$APP_ENV" != "staging" ]; then
-            echo "::error::APP_ENV must be 'staging' for this workflow (got '$APP_ENV')."
+          fail() {
+            printf '{"section":"Configuration","check":"%s","status":"fail","detail":"%s"}\n' \
+              "Runtime selection is staging/supabase" "$1" >>"$STAGING_RESULTS"
+            echo "::error::$1"
             exit 1
+          }
+          if [ "$APP_ENV" != "staging" ]; then
+            fail "APP_ENV must be 'staging' for this workflow"
           fi
           if [ "$RUNTIME_ADAPTER" != "supabase" ]; then
-            echo "::error::RUNTIME_ADAPTER must be 'supabase' for this workflow (got '$RUNTIME_ADAPTER')."
-            exit 1
+            fail "RUNTIME_ADAPTER must be 'supabase' for this workflow"
           fi
           echo "Runtime selection accepted: APP_ENV=staging RUNTIME_ADAPTER=supabase"
 
       - name: Confirm required configuration is present by name only
+        id: configuration
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
@@ -93,23 +120,22 @@ jobs:
                       NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY PROFILE_ENGINE_URL; do
             if [ -z "${!name}" ]; then missing="$missing $name"; fi
           done
+          if [ -z "$STAGING_BASE_URL" ]; then missing="$missing NETLIFY_PREVIEW_URL"; fi
           if [ -n "$missing" ]; then
+            # Record the failure before exiting so the gate and the published
+            # summary both reflect it. Only names are recorded, never values.
+            printf '{"section":"Configuration","check":"Required configuration present","status":"fail","detail":"absent by name:%s"}\n' \
+              "$missing" >>"$STAGING_RESULTS"
             echo "::error::Missing configuration in the starguidance-staging environment:$missing"
             echo "Add the values in the protected environment. Never paste them into chat or a PR."
             exit 1
           fi
-          if [ -z "$STAGING_BASE_URL" ]; then
-            echo "::error::NETLIFY_PREVIEW_URL or the preview_url input is required."
-            exit 1
-          fi
+          printf '{"section":"Configuration","check":"Required configuration present","status":"pass","detail":"all 9 required names are present"}\n' \
+            >>"$STAGING_RESULTS"
+          touch "$STAGE_DIR/configuration"
+          # Cleanup may only be attempted once the credentials it needs exist.
+          echo "cleanup_ready=true" >>"$GITHUB_OUTPUT"
           echo "All required names are present."
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          package-manager-cache: false
 
       - run: corepack enable
 
@@ -121,46 +147,37 @@ jobs:
       - name: Apply the authoritative Drizzle migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: corepack pnpm db:migrate
+        run: .github/scripts/stage.sh migrations "Apply the authoritative Drizzle migrations" corepack pnpm db:migrate
 
       - name: Confirm migrations and forced RLS are applied
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: corepack pnpm --filter @starguidance/database staging:verify-schema
+        run: .github/scripts/stage.sh schema-assertions "Confirm migrations and forced RLS" corepack pnpm --filter @starguidance/database staging:verify-schema
 
       - name: Seed reference data
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: corepack pnpm db:seed
+        run: .github/scripts/stage.sh seed-first "First seed" corepack pnpm db:seed
 
       - name: Capture the reference-data fingerprint
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: corepack pnpm --filter @starguidance/database staging:fingerprint capture "$FINGERPRINT_FILE"
+        run: .github/scripts/stage.sh fingerprint-capture "Capture reference fingerprint" corepack pnpm --filter @starguidance/database staging:fingerprint capture "$FINGERPRINT_FILE"
 
       - name: Seed a second time
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: corepack pnpm db:seed
+        run: .github/scripts/stage.sh seed-second "Second seed" corepack pnpm db:seed
 
       - name: Confirm the second seed changed nothing
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: corepack pnpm --filter @starguidance/database staging:fingerprint compare "$FINGERPRINT_FILE"
+        run: .github/scripts/stage.sh fingerprint-compare "Second seed is idempotent" corepack pnpm --filter @starguidance/database staging:fingerprint compare "$FINGERPRINT_FILE"
 
       - name: Run the two-user forced-RLS isolation suite
         env:
           DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
-        run: |
-          if corepack pnpm --filter @starguidance/database test:integration; then
-            status=pass
-            detail="cross-user select, insert, update, delete, lineage, recovery, export and deletion all isolated"
-          else
-            status=fail
-            detail="the two-subject isolation suite reported failures"
-          fi
-          node -e "require('fs').appendFileSync(process.env.STAGING_RESULTS, JSON.stringify({section:'Row level security',check:'Two-user isolation suite against staging',status:process.argv[1],detail:process.argv[2]})+'\n')" "$status" "$detail"
-          [ "$status" = "pass" ]
+        run: .github/scripts/stage.sh rls-suite "Two-user isolation suite against staging" corepack pnpm --filter @starguidance/database test:integration
 
       - name: Install the verification browser
         run: corepack pnpm exec playwright install --with-deps chromium
@@ -173,11 +190,26 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
-        run: corepack pnpm --filter @starguidance/web test:staging
+        run: .github/scripts/stage.sh browser-verification "Deployed browser verification" corepack pnpm --filter @starguidance/web test:staging
+
+      - name: Mark every mandatory stage complete
+        run: |
+          touch "$STAGE_DIR/all-mandatory-complete"
+          echo "All mandatory verification stages completed."
+
+      # ---------------------------------------------------------------------
+      # Always-run reporting. Cleanup runs BEFORE the summary is rendered so its
+      # result is counted; the previous ordering let a failed cleanup go
+      # unreported in the published summary.
+      # ---------------------------------------------------------------------
 
       - name: Record the hosted log review and its access limits
         if: always()
         run: |
+          if [ ! -f "$STAGING_RESULTS" ]; then
+            echo "No evidence file; the job stopped before recording could start."
+            exit 0
+          fi
           node -e "
           const fs = require('fs');
           const add = (check, status, detail) =>
@@ -193,12 +225,31 @@ jobs:
               'Owner review of provider log retention remains required.');
           "
 
+      - name: Remove every synthetic identity and prove the removal
+        # Only attempt cleanup once the configuration step has confirmed the
+        # credentials it needs are present, which also implies the repository is
+        # checked out. The step output is used rather than this step's own env,
+        # which is not reliably readable from an `if` condition.
+        if: always() && steps.configuration.outputs.cleanup_ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          if [ ! -d node_modules ]; then
+            printf '{"section":"Cleanup","check":"Synthetic identity cleanup","status":"fail","detail":"cleanup utilities were unavailable because dependency installation did not complete"}\n' \
+              >>"$STAGING_RESULTS"
+            echo "::error::Cleanup could not run: dependencies were never installed."
+            exit 1
+          fi
+          .github/scripts/stage.sh cleanup "Synthetic identity cleanup" corepack pnpm --filter @starguidance/database staging:cleanup
+
       - name: Fail if any recorded evidence looks like a secret
         if: always()
         run: |
           if [ ! -f "$STAGING_RESULTS" ]; then
-            echo "::error::No verification evidence was recorded."
-            exit 1
+            echo "No evidence recorded; nothing to scan."
+            exit 0
           fi
           if grep -nEi 'postgres(ql)?://[^ "]*:[^ "@]+@|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|sb[ph]?_[A-Za-z0-9_-]{8,}|bearer [A-Za-z0-9._-]{8,}|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$STAGING_RESULTS"; then
             echo "::error::Recorded evidence matched a secret-shaped pattern and will not be published."
@@ -209,30 +260,39 @@ jobs:
       - name: Render the redacted summary
         if: always()
         run: |
-          corepack pnpm --filter @starguidance/database staging:summary "$STAGING_RESULTS" "$SUMMARY_FILE" || true
-          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f package.json ] && [ -d node_modules ]; then
+            # The renderer exits non-zero when the gate did not pass; the summary
+            # is still written, and the dedicated gate step below decides the job.
+            corepack pnpm --filter @starguidance/database staging:summary \
+              "$STAGING_RESULTS" "$SUMMARY_FILE" "$STAGE_DIR" || true
+          fi
+          if [ ! -s "$SUMMARY_FILE" ]; then
+            # Fallback that needs neither the workspace nor its dependencies.
+            {
+              echo "# Supabase staging verification"
+              echo
+              echo "**Gate result: NOT RUN**"
+              echo
+              echo "The verification could not be rendered from repository utilities, so no"
+              echo "staging evidence exists for this run. Treat the staging gate as open."
+            } >"$SUMMARY_FILE"
+          fi
+          cat "$SUMMARY_FILE" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Upload only the redacted summary
-        if: always()
+        if: always() && hashFiles('staging-verification-summary.md') != ''
         uses: actions/upload-artifact@v4
         with:
           name: staging-verification-summary
           path: ${{ env.SUMMARY_FILE }}
           if-no-files-found: error
 
-      - name: Remove every synthetic identity and prove the removal
-        if: always()
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-        run: corepack pnpm --filter @starguidance/database staging:cleanup
-
-      - name: Fail the run if the gate did not pass
+      - name: Fail the run unless every mandatory stage proved it passed
         if: always()
         run: |
-          if grep -q '"status":"fail"' "$STAGING_RESULTS"; then
-            echo "::error::One or more staging verification checks failed. See the job summary."
-            exit 1
+          if [ -f package.json ] && [ -d node_modules ]; then
+            corepack pnpm --filter @starguidance/database staging:gate "$STAGING_RESULTS" "$STAGE_DIR"
+            exit $?
           fi
-          echo "Staging verification gate passed."
+          echo "::error::The repository utilities were unavailable, so no staging verification was proved."
+          exit 1

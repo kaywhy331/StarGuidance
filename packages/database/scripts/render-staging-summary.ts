@@ -1,13 +1,18 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 
+import { evaluateGate, SUCCESS_MARKER, type GateStatus } from "./staging-gate";
 import { redact, type StagingResult, type StagingStatus } from "./staging-result";
 
 /**
  * Renders the recorded results into the single redacted Markdown document that
  * is published to the job summary, uploaded as the only artifact, and copied
  * into the draft pull request.
+ *
+ * The heading is derived from the gate, never from a bare count of rows, so a
+ * skipped or partial run cannot present itself as a pass.
  */
 const SECTION_ORDER = [
+  "Configuration",
   "Migrations",
   "Seed",
   "Row level security",
@@ -21,6 +26,7 @@ const SECTION_ORDER = [
   "Export",
   "Deletion",
   "Cleanup",
+  "Pipeline",
   "Hosted log review",
   "Accessibility",
 ] as const;
@@ -32,32 +38,76 @@ const ICON: Record<StagingStatus, string> = {
   limited: "⚠️",
 };
 
-const [resultsFile, outputFile] = process.argv.slice(2);
-if (!resultsFile || !outputFile)
-  throw new Error("usage: render-staging-summary <results> <output>");
+const HEADLINE: Record<GateStatus, string> = {
+  passed: "**Gate result: PASSED**",
+  failed: "**Gate result: FAILED**",
+  "not-run": "**Gate result: NOT RUN**",
+};
 
-const results: StagingResult[] = readFileSync(resultsFile, "utf8")
-  .split("\n")
-  .filter((line) => line.trim().length > 0)
-  .map((line) => JSON.parse(line) as StagingResult);
+const [resultsFile, outputFile, stageDir] = process.argv.slice(2);
+if (!resultsFile || !outputFile)
+  throw new Error("usage: render-staging-summary <results> <output> [stageDir]");
+
+function readResults(): StagingResult[] {
+  try {
+    return readFileSync(resultsFile, "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as StagingResult);
+  } catch {
+    return [];
+  }
+}
+
+function readStages(): string[] {
+  if (!stageDir) return [];
+  try {
+    return readdirSync(stageDir);
+  } catch {
+    return [];
+  }
+}
+
+const results = readResults();
+const stages = readStages();
+const verdict = evaluateGate({
+  results,
+  completedStages: stages.filter((stage) => stage !== SUCCESS_MARKER),
+  successMarker: stages.includes(SUCCESS_MARKER),
+});
 
 const counts = results.reduce<Record<string, number>>((totals, { status }) => {
   totals[status] = (totals[status] ?? 0) + 1;
   return totals;
 }, {});
 
-const failed = (counts.fail ?? 0) > 0;
 const lines: string[] = [
   "# Supabase staging verification",
   "",
-  `**Gate result: ${failed ? "FAILED" : "PASSED"}** — ` +
-    `${counts.pass ?? 0} passed, ${counts.fail ?? 0} failed, ` +
+  `${HEADLINE[verdict.status]} — ${counts.pass ?? 0} passed, ${counts.fail ?? 0} failed, ` +
     `${counts.limited ?? 0} limited, ${counts.skipped ?? 0} skipped.`,
   "",
+];
+
+if (verdict.status !== "passed") {
+  lines.push(
+    verdict.status === "not-run"
+      ? "No substantive verification stage ran, so nothing about the staging " +
+          "environment has been demonstrated by this run."
+      : "This run did not complete every mandatory stage. Treat the staging gate as open.",
+    "",
+    "Why this run cannot be reported as passed:",
+    "",
+  );
+  for (const reason of verdict.reasons) lines.push(`- ${redact(reason)}`);
+  lines.push("");
+}
+
+lines.push(
   "All values below are redacted status text. No secret, connection string, token, " +
     "link, cookie, email address, or raw identifier is recorded.",
   "",
-];
+);
 
 const ordered = [
   ...SECTION_ORDER,
@@ -67,7 +117,7 @@ const ordered = [
 ];
 
 for (const section of ordered) {
-  const entries = results.filter((result) => result.section === section);
+  const entries = results.filter((entry) => entry.section === section);
   if (entries.length === 0) continue;
   lines.push(`## ${section}`, "", "| Check | Result | Detail |", "| --- | --- | --- |");
   for (const entry of entries)
@@ -78,6 +128,16 @@ for (const section of ordered) {
 }
 
 lines.push(
+  "## Stage completion",
+  "",
+  "| Stage | Completed |",
+  "| --- | --- |",
+  ...[...new Set([...stages.filter((stage) => stage !== SUCCESS_MARKER), ...verdict.missingStages])]
+    .sort()
+    .map((stage) => `| ${stage} | ${stages.includes(stage) ? "✅ yes" : "❌ no"} |`),
+  "",
+  `Success marker present: ${stages.includes(SUCCESS_MARKER) ? "✅ yes" : "❌ no"}`,
+  "",
   "## Scope of this evidence",
   "",
   "- Automated scanning is not a human WCAG 2.2 AA certification.",
@@ -88,7 +148,6 @@ lines.push(
   "",
 );
 
-const summary = lines.join("\n");
-writeFileSync(outputFile, summary, "utf8");
-process.stdout.write(failed ? "gate=failed\n" : "gate=passed\n");
-if (failed) process.exitCode = 1;
+writeFileSync(outputFile, lines.join("\n"), "utf8");
+process.stdout.write(`gate=${verdict.status}\n`);
+if (verdict.status !== "passed") process.exitCode = 1;
