@@ -227,6 +227,10 @@ export interface StreamingInterpretationAdapter {
 
 export function createOracleStreamEvents(result: ReadingResult): readonly OracleStreamEvent[] {
   const validated = readingResultSchema.parse(result);
+  // The reading itself carries no disclaimer: the standing statement about what
+  // tarot is and is not belongs in the site terms, linked from every page,
+  // rather than appended to every reading. The `uncertainty` field is still
+  // recorded with the result; it is simply not spoken aloud.
   const phases: Omit<Extract<OracleStreamEvent, { type: "phase" }>, "sequence">[] = [
     {
       type: "phase",
@@ -270,12 +274,6 @@ export function createOracleStreamEvents(result: ReadingResult): readonly Oracle
       heading: "Reflection prompt",
       text: validated.reflectionQuestion,
     },
-    {
-      type: "phase",
-      phase: "uncertainty",
-      heading: "Uncertainty",
-      text: `${validated.uncertainty} Disconfirming evidence: ${validated.disconfirmingEvidence.join("; ")}.`,
-    },
   ];
   return phases.map((phase, sequence) => oracleStreamEventSchema.parse({ ...phase, sequence }));
 }
@@ -287,4 +285,40 @@ export class PersistedResultStreamAdapter implements StreamingInterpretationAdap
     for (const event of createOracleStreamEvents(result)) yield event;
     yield { type: "complete" };
   }
+}
+
+import { GroqInterpretationProvider } from "./groq-provider";
+
+export {
+  GroqInterpretationProvider,
+  PROMPT_VERSION,
+  RESPONSE_SCHEMA_VERSION,
+  type GroqProviderOptions,
+} from "./groq-provider";
+
+/**
+ * Chooses the interpretation provider from configuration.
+ *
+ * `AI_PROVIDER=disabled`, or an absent key, yields the deterministic reader —
+ * that is the staging kill switch, and it means a missing credential degrades
+ * the reading rather than breaking the product.
+ */
+export function createInterpretationProvider(): InterpretationProvider<
+  ReadingGenerationInput,
+  ReadingResult
+> {
+  const selected = process.env.AI_PROVIDER?.trim();
+  const apiKey = process.env.AI_PROVIDER_API_KEY?.trim();
+  if (selected !== "groq" || !apiKey) return new DeterministicFallbackProvider();
+  const timeout = Number.parseInt(process.env.AI_PROVIDER_TIMEOUT_MS ?? "", 10);
+  const maxOutput = Number.parseInt(process.env.AI_PROVIDER_MAX_OUTPUT_TOKENS ?? "", 10);
+  return new GroqInterpretationProvider({
+    apiKey,
+    model: process.env.AI_PROVIDER_MODEL?.trim() || "openai/gpt-oss-120b",
+    ...(process.env.AI_PROVIDER_BASE_URL?.trim()
+      ? { baseUrl: process.env.AI_PROVIDER_BASE_URL.trim() }
+      : {}),
+    ...(Number.isFinite(timeout) ? { timeoutMs: timeout } : {}),
+    ...(Number.isFinite(maxOutput) ? { maxOutputTokens: maxOutput } : {}),
+  });
 }

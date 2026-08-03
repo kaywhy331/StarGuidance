@@ -84,7 +84,13 @@ describe("AI boundary", () => {
     });
     const events = createOracleStreamEvents(result);
     expect(events[0]).toMatchObject({ phase: "openingTheme" });
-    expect(events.at(-1)).toMatchObject({ phase: "uncertainty" });
+    // The reading no longer ends on a disclaimer: the standing statement about
+    // what tarot is lives in the site terms, linked from every page, so the
+    // reading can close on the reflection it offers.
+    expect(events.at(-1)).toMatchObject({ phase: "reflectionPrompt" });
+    expect(events.some((event) => event.type === "phase" && event.phase === "uncertainty")).toBe(
+      false,
+    );
     expect(
       new Set(events.map((event) => (event.type === "phase" ? event.phase : undefined))),
     ).toEqual(
@@ -96,7 +102,6 @@ describe("AI boundary", () => {
         "alternateTrajectory",
         "userAgency",
         "reflectionPrompt",
-        "uncertainty",
       ]),
     );
     const streamed: OracleStreamEvent[] = [];

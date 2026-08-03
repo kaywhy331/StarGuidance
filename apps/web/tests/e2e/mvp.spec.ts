@@ -141,11 +141,9 @@ test("AI-disabled mode returns the deterministic structured fallback", async ({ 
   await createProfile(page);
   await beginReading(page);
   await finishRitual(page);
-  await expect(
-    page.locator(
-      '.oracle-entry[data-phase="uncertainty"] .oracle-entry-text > span[aria-hidden="true"]',
-    ),
-  ).toContainText(/Tarot is reflective guidance, not factual proof/i);
+  // The reading no longer carries a disclaimer; the standing statement lives in
+  // the site terms, reachable from the footer of every page.
+  await expect(page.locator('.oracle-entry[data-phase="uncertainty"]')).toHaveCount(0);
   await page.getByRole("button", { name: "Reading details" }).click();
   await expect(page.getByRole("heading", { name: "Reading details" })).toBeVisible();
   await expect(page.getByText("Uncertainty and disconfirming evidence")).toBeVisible();
@@ -225,11 +223,9 @@ test("stream interruption preserves received paragraphs and retries the same dra
   const retained = await page.locator(".oracle-entry").count();
   expect(retained).toBeGreaterThanOrEqual(2);
   await page.getByRole("button", { name: "Retry transcript" }).click();
-  await expect(
-    page.locator(
-      '.oracle-entry[data-phase="uncertainty"] .oracle-entry-text > span[aria-hidden="true"]',
-    ),
-  ).toContainText(/Tarot is reflective guidance, not factual proof/i);
+  // The reading no longer carries a disclaimer; the standing statement lives in
+  // the site terms, reachable from the footer of every page.
+  await expect(page.locator('.oracle-entry[data-phase="uncertainty"]')).toHaveCount(0);
   expect(await page.locator(".oracle-entry").count()).toBeGreaterThan(retained);
   expect((await currentReading(page)).reading.draw).toEqual(before);
 });
@@ -341,4 +337,17 @@ test("Stripe test-mode report entitlement uses the credential-free local adapter
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByText(/Life Path \d+; Expression \d+/)).toBeVisible();
   await expect(page.getByText(/local test entitlement/i)).toBeVisible();
+});
+
+test("the standing terms are reachable from every page instead of every reading", async ({
+  page,
+}) => {
+  await page.goto("/sign-in");
+  const terms = page.getByRole("link", { name: /Terms & how to read a reading/i });
+  await expect(terms).toBeVisible();
+  await terms.click();
+  await expect(page).toHaveURL(/\/terms$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(/Terms/i);
+  await expect(page.getByText(/not a factual prediction/i)).toBeVisible();
+  await expect(page.getByText(/crisis/i).first()).toBeVisible();
 });

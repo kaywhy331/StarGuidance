@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  DeterministicFallbackProvider,
+  createInterpretationProvider,
   classifyQuestion,
   selectReadingLens,
 } from "@starguidance/ai";
@@ -69,7 +69,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const { persistence, reading, user } = owned;
     assertRateLimit(`reading-action:${reading.userId}`, 15);
     const input = actionSchema.parse(await request.json());
-    const provider = new DeterministicFallbackProvider();
+    const provider = createInterpretationProvider();
     const snapshot = (
       await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
     )?.snapshot;

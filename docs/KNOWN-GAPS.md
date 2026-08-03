@@ -23,7 +23,8 @@ Supabase Storage is not used by the current private data path. If future report 
 
 ## External integrations and operations
 
-- AI synthesis still needs an approved provider key, no-retention contract, redaction validation, and safety evaluation. The deterministic fallback remains active.
+- Live AI synthesis is implemented behind the provider-neutral interface and verified against Groq's API with `openai/gpt-oss-120b`, the only offered model that supports strict `json_schema` output. The model never selects cards: it receives the already-locked draw, its curated meanings, each card's position function, the question, and the minimised trait lens, and card identity and orientation are restored from the draw after generation. Any error, timeout, or invalid response falls back to the deterministic reader. Still required before production: an approved provider contract, a no-retention configuration, redaction validation, cost/latency budgets, and the safety evaluation suite.
+- Readings no longer carry a disclaimer. The standing statement about what a reading is and is not lives at `/terms`, linked from the footer of every page. Readings are written in a direct, predictive voice by owner decision; the safety classifier still refuses to diagnose, predict death or pregnancy, determine guilt, or assert private facts about third parties, and still interrupts for crisis.
 - Stripe needs test keys, price ID, webhook secret, public test endpoint, refund/revocation tests, and owner commerce policy.
 - Durable async report jobs, distributed rate limiting, key rotation, backup/restore, retention automation, telemetry redaction, incident response, email policy, and regional crisis resources remain production gates.
 - Production connection-pool sizing and the database role used by `DATABASE_URL` must be load tested on the selected Supabase plan.

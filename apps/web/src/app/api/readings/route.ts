@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   classifyQuestion,
-  DeterministicFallbackProvider,
+  createInterpretationProvider,
   selectReadingLens,
 } from "@starguidance/ai";
 import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
         request.headers.get("x-e2e-force-generation-failure") === "1"
       )
         throw new Error("TEST_GENERATION_FAILURE");
-      const result = await new DeterministicFallbackProvider().generate({
+      const result = await createInterpretationProvider().generate({
         draw,
         question: input.question,
         relevantTraitStatements: readingLens.statements,
