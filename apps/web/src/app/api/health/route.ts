@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createDatabaseClient } from "@starguidance/database";
 
 import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
+import { profileEngineBaseUrl } from "@/lib/profile-engine";
+import { findServiceUrlProblem } from "@/lib/service-url";
 
 const REQUIRED_STAGING_ENVIRONMENT = [
   "NEXT_PUBLIC_SUPABASE_URL",
@@ -46,7 +48,15 @@ function runtimeAdapter(): string {
 }
 
 async function probeProfileEngine(): Promise<DependencyStatus> {
-  const baseUrl = process.env.PROFILE_ENGINE_URL?.replace(/\/$/, "");
+  // Built the same way the application builds it. Normalising here but not in
+  // the client is precisely what let a trailing slash break every calculation
+  // while this endpoint reported the dependency healthy.
+  let baseUrl: string | undefined;
+  try {
+    baseUrl = process.env.PROFILE_ENGINE_URL ? profileEngineBaseUrl() : undefined;
+  } catch {
+    baseUrl = undefined;
+  }
   const sharedSecret = process.env.PROFILE_ENGINE_SHARED_SECRET;
   if (!baseUrl)
     return {
@@ -192,6 +202,16 @@ export async function GET() {
     } catch {
       invalidEnvironmentVariables.push("DATA_ENCRYPTION_KEY");
     }
+  }
+  // A dependency address that is not a base URL is a configuration fault, and
+  // reporting it here is the difference between "the engine is down" and "the
+  // variable is wrong".
+  if (configured("PROFILE_ENGINE_URL")) {
+    const problem = findServiceUrlProblem(
+      "PROFILE_ENGINE_URL",
+      (process.env.PROFILE_ENGINE_URL as string).trim().replace(/\/+$/, ""),
+    );
+    if (problem) invalidEnvironmentVariables.push("PROFILE_ENGINE_URL");
   }
 
   const profileEngine = stagingPreview

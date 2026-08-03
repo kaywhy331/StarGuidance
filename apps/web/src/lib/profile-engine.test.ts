@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { calculateProfile } from "./profile-engine";
+import { calculateProfile, profileEngineBaseUrl } from "./profile-engine";
 
 /**
  * A response that never arrived, one that arrived too late, and one that
@@ -55,5 +55,38 @@ describe("profile engine failure modes", () => {
   it("reports a server error from the engine as unavailable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 503 })));
     await expect(calculateProfile(INPUT)).rejects.toThrow("PROFILE_ENGINE_UNAVAILABLE");
+  });
+});
+
+describe("profile engine address resolution", () => {
+  it("builds the same request whether or not the variable ends in a slash", async () => {
+    // A trailing slash produced `//v1/profile/compute`, which the service
+    // answers with 404 while the health check — which normalised the same value
+    // — kept reporting the dependency healthy. Every calculation failed and
+    // nothing said why.
+    for (const configured of [
+      "https://engine.example",
+      "https://engine.example/",
+      "https://engine.example///",
+    ]) {
+      vi.stubEnv("PROFILE_ENGINE_URL", configured);
+      const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 422 }));
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(calculateProfile(INPUT)).rejects.toThrow("PROFILE_CALCULATION_REJECTED");
+      expect(fetchMock.mock.calls[0]?.[0], `configured as ${configured}`).toBe(
+        "https://engine.example/v1/profile/compute",
+      );
+    }
+  });
+
+  it("refuses an address that names an endpoint instead of the service", async () => {
+    vi.stubEnv("PROFILE_ENGINE_URL", "https://engine.example/health");
+    vi.stubGlobal("fetch", vi.fn());
+    await expect(calculateProfile(INPUT)).rejects.toThrow("PROFILE_ENGINE_MISCONFIGURED");
+  });
+
+  it("leaves a local development address alone", () => {
+    vi.stubEnv("PROFILE_ENGINE_URL", "");
+    expect(profileEngineBaseUrl()).toBe("http://127.0.0.1:8000");
   });
 });

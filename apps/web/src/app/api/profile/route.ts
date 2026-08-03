@@ -44,6 +44,7 @@ export async function POST(request: Request) {
         "PROFILE_ENGINE_UNAVAILABLE",
         "PROFILE_ENGINE_TIMEOUT",
         "PROFILE_ENGINE_CONTRACT_MISMATCH",
+        "PROFILE_ENGINE_MISCONFIGURED",
       ].includes(error.message);
     if (engineFailure)
       return NextResponse.json(
