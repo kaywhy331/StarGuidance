@@ -34,7 +34,59 @@ async function readDeployedCommit(baseUrl: string): Promise<string | undefined> 
   }
 }
 
+/**
+ * Wakes the hosted profile engine before any spec runs.
+ *
+ * The staging instance suspends when idle and can take far longer to answer its
+ * first request than the application's deliberate eight-second client timeout.
+ * Onboarding then fails with "the engine could not complete the calculation",
+ * which is correct behaviour for an unavailable dependency but says nothing
+ * about the application, and it lands on whichever spec happens to run first.
+ */
+async function wakeProfileEngine(): Promise<void> {
+  const base = process.env.PROFILE_ENGINE_URL?.trim().replace(/\/+$/, "");
+  if (!base) {
+    record({
+      section: "Profile engine",
+      check: "Instance warmed before verification",
+      status: "skipped",
+      detail: "PROFILE_ENGINE_URL was not provided to this step",
+    });
+    return;
+  }
+
+  const deadline = Date.now() + 180_000;
+  let attempts = 0;
+  let status = 0;
+  while (Date.now() < deadline) {
+    attempts += 1;
+    try {
+      const response = await fetch(`${base}/health`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(60_000),
+      });
+      status = response.status;
+      if (status === 200) break;
+    } catch {
+      status = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
+
+  record({
+    section: "Profile engine",
+    check: "Instance warmed before verification",
+    status: status === 200 ? "pass" : "fail",
+    detail:
+      status === 200
+        ? `awake after ${attempts} request(s), so no spec pays the cold start`
+        : `still not answering 200 after ${attempts} request(s) over three minutes (last status ${status})`,
+  });
+}
+
 export default async function waitForPreview(): Promise<void> {
+  await wakeProfileEngine();
+
   const baseUrl = process.env.STAGING_BASE_URL?.trim().replace(/\/$/, "");
   if (!baseUrl) throw new Error("STAGING_BASE_URL must name the deploy preview to verify");
 

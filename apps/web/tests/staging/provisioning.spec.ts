@@ -88,6 +88,9 @@ test("Supabase Auth creates an identity and no application row appears", async (
 test("the first authenticated request provisions the row, idempotently", async () => {
   await authenticate(context, identity, baseUrl);
   const page = await context.newPage();
+  // A page that has never navigated is on about:blank, where a relative URL has
+  // no base and fetch throws before reaching the application at all.
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   const first = await page.evaluate(async () => {
     const response = await fetch("/api/profile", { cache: "no-store" });

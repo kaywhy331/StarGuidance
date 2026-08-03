@@ -83,7 +83,22 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await page.getByLabel("Date of birth").fill("1988-03-21");
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
   await page.getByRole("button", { name: "Check profile capability" }).click();
-  await expect(page).toHaveURL(/\/readings$/, { timeout: 60_000 });
+  try {
+    await expect(page).toHaveURL(/\/readings$/, { timeout: 60_000 });
+  } catch (error) {
+    // Say what the form reported rather than only which URL was expected.
+    const alert = page.getByRole("alert").first();
+    const message = (await alert.isVisible().catch(() => false))
+      ? ((await alert.textContent().catch(() => "")) ?? "").trim()
+      : "no visible error";
+    record({
+      section: "Accessibility",
+      check: "Onboarding reached the reading selection",
+      status: "fail",
+      detail: `stopped at ${new URL(page.url()).pathname}: "${message}"`,
+    });
+    throw new Error(`Onboarding did not complete during the scan — ${message}`, { cause: error });
+  }
   await scan("reading selection");
 
   await page.getByLabel("Your private question").fill("What deserves my attention now?");

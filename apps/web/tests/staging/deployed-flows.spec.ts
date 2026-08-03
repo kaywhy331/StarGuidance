@@ -44,7 +44,17 @@ function drawDigest(draw: unknown): string {
   return JSON.stringify(draw);
 }
 
+/**
+ * A page that has never navigated sits on `about:blank`, where a relative URL
+ * has no base to resolve against and `fetch` throws before any request is made.
+ * Every helper below therefore puts the page on the application origin first.
+ */
+async function onAppOrigin(page: Page): Promise<void> {
+  if (!page.url().startsWith("http")) await page.goto("/", { waitUntil: "domcontentloaded" });
+}
+
 async function apiGet<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
+  await onAppOrigin(page);
   return page.evaluate(async (target) => {
     const response = await fetch(target, { cache: "no-store" });
     return { status: response.status, body: (await response.json()) as T };
@@ -56,6 +66,7 @@ async function apiPost<T>(
   path: string,
   payload: unknown,
 ): Promise<{ status: number; body: T }> {
+  await onAppOrigin(page);
   return page.evaluate(
     async ({ target, data }) => {
       const response = await fetch(target, {
@@ -69,6 +80,21 @@ async function apiPost<T>(
   );
 }
 
+/**
+ * Reports why onboarding did not complete.
+ *
+ * A bare "expected /readings" tells nobody whether the calculation service was
+ * unavailable, the input was rejected, or the session had expired. The form
+ * already shows the reason; this reads it back so the failure explains itself.
+ */
+async function onboardingFailure(page: Page): Promise<string> {
+  const alert = page.getByRole("alert").first();
+  const visible = await alert.isVisible().catch(() => false);
+  const message = visible ? ((await alert.textContent().catch(() => "")) ?? "").trim() : "";
+  const path = new URL(page.url()).pathname;
+  return message ? `stopped at ${path}: "${message}"` : `stopped at ${path} with no visible error`;
+}
+
 async function completeOnboarding(
   page: Page,
   details: { name: string; date: string; city?: string; time?: string },
@@ -80,7 +106,18 @@ async function completeOnboarding(
   if (details.time) await page.getByLabel("Birth time").fill(details.time);
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
   await page.getByRole("button", { name: "Check profile capability" }).click();
-  await expect(page).toHaveURL(/\/readings$/, { timeout: 60_000 });
+  try {
+    await expect(page).toHaveURL(/\/readings$/, { timeout: 60_000 });
+  } catch (error) {
+    const reason = await onboardingFailure(page);
+    record({
+      section: "Profile persistence",
+      check: "Deployed onboarding completes",
+      status: "fail",
+      detail: reason,
+    });
+    throw new Error(`Onboarding did not complete — ${reason}`, { cause: error });
+  }
 }
 
 async function activeSnapshot(page: Page): Promise<{ id: string; version: number }> {
