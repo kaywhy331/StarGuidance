@@ -23,6 +23,12 @@ interface Violation {
   readonly id: string;
   readonly impact: string;
   readonly nodes: number;
+  /**
+   * CSS selectors for the offending elements. Structural only — never element
+   * text — so a violation can be located in the source without carrying a
+   * question, a card, or anything a person typed into published evidence.
+   */
+  readonly where: string;
 }
 
 let identity: SyntheticIdentity;
@@ -40,6 +46,10 @@ async function scan(flow: string): Promise<void> {
       id: violation.id,
       impact: violation.impact ?? "unknown",
       nodes: violation.nodes.length,
+      where: violation.nodes
+        .slice(0, 3)
+        .map((node) => node.target.flat().join(" "))
+        .join(" | "),
     })),
   });
 }
@@ -70,6 +80,10 @@ test("critical deployed flows pass automated WCAG rules", async () => {
         id: violation.id,
         impact: violation.impact ?? "unknown",
         nodes: violation.nodes.length,
+        where: violation.nodes
+          .slice(0, 3)
+          .map((node) => node.target.flat().join(" "))
+          .join(" | "),
       })),
     });
     await anonymous.close();
@@ -164,7 +178,10 @@ test("critical deployed flows pass automated WCAG rules", async () => {
         violations.length === 0
           ? "no violations reported by axe-core"
           : violations
-              .map(({ id, impact, nodes }) => `${id} (${impact}, ${nodes} node(s))`)
+              .map(
+                ({ id, impact, nodes, where }) =>
+                  `${id} (${impact}, ${nodes} node(s)) at ${where || "an unreported selector"}`,
+              )
               .join("; "),
     });
 
