@@ -95,9 +95,12 @@ async function main(): Promise<void> {
       section: "Migrations",
       check: "Auth foreign key retains ON DELETE CASCADE",
       status: cascadeOk ? "pass" : "fail",
+      // Written without a dotted three-part name on purpose: the recorder's
+      // hostname redaction would otherwise mistake it for a domain and publish
+      // the row as "[redacted] references ...".
       detail: cascadeOk
-        ? "public.users.id references auth.users(id) on delete cascade"
-        : "the cascading foreign key onto auth.users is absent",
+        ? "the users foreign key onto the Auth schema is ON DELETE CASCADE"
+        : "the cascading foreign key onto the Auth schema is absent",
     });
     syncRemovalProved = migrationsOk && syncRemoved && cascadeOk;
 
