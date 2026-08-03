@@ -1,6 +1,7 @@
 import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test } from "@playwright/test";
 
+import { assertServiceBaseUrl } from "../../src/lib/service-url";
 import { SYNTHETIC_EMAIL_DOMAIN, SYNTHETIC_EMAIL_PREFIX } from "./synthetic-auth";
 
 /**
@@ -15,7 +16,9 @@ const SYNTHETIC_COMPUTE_REQUEST = {
 function profileEngineUrl(): string {
   const value = process.env.PROFILE_ENGINE_URL?.trim();
   if (!value) throw new Error("PROFILE_ENGINE_URL is required");
-  return value.replace(/\/$/, "");
+  // A value that already points at an endpoint would make every probe request
+  // 404 and read as an unreachable service rather than a misconfigured name.
+  return assertServiceBaseUrl("PROFILE_ENGINE_URL", value);
 }
 
 test.describe.configure({ mode: "serial" });

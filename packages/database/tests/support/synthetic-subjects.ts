@@ -53,7 +53,38 @@ export async function detectSubjectMode(sql: DatabaseClient): Promise<SubjectMod
 }
 
 export function syntheticEmail(label: string): string {
-  return `${SYNTHETIC_PREFIX}${label}-${randomUUID()}@${SYNTHETIC_EMAIL_DOMAIN}`;
+  const address = `${SYNTHETIC_PREFIX}${label}-${randomUUID()}@${SYNTHETIC_EMAIL_DOMAIN}`;
+  maskInWorkflowLog(address);
+  return address;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Refuses to let a malformed subject reach a query.
+ *
+ * An empty identifier used to flow into every statement and surface as
+ * `22P02 invalid input syntax for type uuid`, which reads like a database
+ * defect and hid the provider rejection that actually caused it.
+ */
+export function assertUsableSubject(id: string, context: string): string {
+  if (!UUID_PATTERN.test(id))
+    throw new Error(
+      `Refusing to run ${context} with a subject identifier that is not a UUID; ` +
+        "the Auth identity was never created.",
+    );
+  return id;
+}
+
+/**
+ * Hides a synthetic address from the workflow log.
+ *
+ * Driver errors serialise their bound parameters, so an address can reach the
+ * public job log even though the published summary redacts it. GitHub scrubs
+ * any value registered this way from all later output.
+ */
+function maskInWorkflowLog(value: string): void {
+  if (process.env.GITHUB_ACTIONS === "true") process.stdout.write(`::add-mask::${value}\n`);
 }
 
 /**
@@ -113,7 +144,7 @@ export async function createSubject(
     }
     const body = (await response.json()) as { id?: string };
     if (!body.id) throw new Error("The Supabase Admin API returned no subject identifier");
-    return { id: body.id, email, httpStatus };
+    return { id: assertUsableSubject(body.id, "the verification suite"), email, httpStatus };
   }
 
   const id = randomUUID();
@@ -129,7 +160,10 @@ export async function deleteSubject(
   mode: SubjectMode,
   subject: SyntheticSubject,
 ): Promise<void> {
+  // Teardown must never run with a malformed identifier either: a blank id in
+  // a delete is not a harmless no-op, it is an error that masks the real one.
   if (!subject.id) return;
+  assertUsableSubject(subject.id, "synthetic subject teardown");
   if (mode === "supabase-admin") {
     await fetch(`${supabaseUrl()}/auth/v1/admin/users/${subject.id}`, {
       method: "DELETE",
@@ -152,6 +186,7 @@ export async function authSubjectExists(
   mode: SubjectMode,
   id: string,
 ): Promise<boolean> {
+  assertUsableSubject(id, "a synthetic subject lookup");
   if (mode === "supabase-admin") {
     const response = await fetch(`${supabaseUrl()}/auth/v1/admin/users/${id}`, {
       headers: {

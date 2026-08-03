@@ -70,6 +70,9 @@ function serviceKey(): string {
 export async function createSyntheticIdentity(alias: string): Promise<SyntheticIdentity> {
   const runId = process.env.GITHUB_RUN_ID ?? "local";
   const email = `${SYNTHETIC_EMAIL_PREFIX}${runId}-${randomUUID()}@${SYNTHETIC_EMAIL_DOMAIN}`;
+  // Register the address with the runner before it can appear anywhere: driver
+  // and fetch errors quote their inputs, and this job log is public.
+  if (process.env.GITHUB_ACTIONS === "true") process.stdout.write(`::add-mask::${email}\n`);
   const password = `Sg!${randomUUID()}${randomUUID()}`;
   const response = await fetch(`${supabaseUrl()}/auth/v1/admin/users`, {
     method: "POST",
@@ -96,6 +99,8 @@ export async function createSyntheticIdentity(alias: string): Promise<SyntheticI
   }
   const body = (await response.json()) as { id?: string };
   if (!body.id) throw new Error(`Creating synthetic ${alias} returned no subject`);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id))
+    throw new Error(`Creating synthetic ${alias} returned an identifier that is not a UUID`);
   return { alias, id: body.id, email, password, creationStatus: response.status };
 }
 

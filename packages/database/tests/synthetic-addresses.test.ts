@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assertUsableSubject,
   SYNTHETIC_EMAIL_DOMAIN,
   SYNTHETIC_PREFIX,
   syntheticEmail,
@@ -49,6 +50,33 @@ describe("synthetic verification addresses", () => {
       expect(address.endsWith(`@${SYNTHETIC_EMAIL_DOMAIN}`)).toBe(true);
       expect(address).toContain(label);
     }
+  });
+
+  it("refuses to let an unusable subject identifier reach a query", () => {
+    // This is the guard that keeps a provider rejection legible. Without it an
+    // empty id reached every statement and surfaced as 22P02 invalid-UUID
+    // errors, which read as a database defect rather than a failed signup.
+    for (const unusable of ["", " ", "undefined", "null", "not-a-uuid", "12345"]) {
+      expect(
+        () => assertUsableSubject(unusable, "a query"),
+        `${JSON.stringify(unusable)} must be refused`,
+      ).toThrow(/not a UUID/);
+    }
+  });
+
+  it("explains that the identity was never created rather than blaming the query", () => {
+    expect(() => assertUsableSubject("", "synthetic subject teardown")).toThrow(
+      /Auth identity was never created/,
+    );
+    expect(() => assertUsableSubject("", "synthetic subject teardown")).toThrow(
+      /synthetic subject teardown/,
+    );
+  });
+
+  it("accepts a well-formed identifier in either case", () => {
+    const lower = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    expect(assertUsableSubject(lower, "a query")).toBe(lower);
+    expect(assertUsableSubject(lower.toUpperCase(), "a query")).toBe(lower.toUpperCase());
   });
 
   it("generates a distinct address every time", () => {

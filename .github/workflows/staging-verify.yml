@@ -151,6 +151,17 @@ jobs:
             *netlify.app*|"$STAGING_BASE_URL")
               malformed="$malformed NEXT_PUBLIC_SUPABASE_URL(points-at-the-app)" ;;
           esac
+          # A service URL must be the base address, not one of the service's own
+          # endpoints. `https://engine/health` passes every other check here and
+          # then makes each probe request `/health/health`, so the service looks
+          # unreachable when only the variable is wrong.
+          case "${PROFILE_ENGINE_URL%/}" in
+            */health|*/healthz|*/ping|*/v1/profile/compute)
+              malformed="$malformed PROFILE_ENGINE_URL(is-an-endpoint-not-a-base-url)" ;;
+          esac
+          case "$PROFILE_ENGINE_URL" in
+            *\?*|*\#*) malformed="$malformed PROFILE_ENGINE_URL(has-a-query-or-fragment)" ;;
+          esac
           if [ -n "$malformed" ]; then
             printf '{"section":"Configuration","check":"Configuration values are well formed","status":"fail","detail":"malformed or pointing at the wrong service, by name:%s"}\n' \
               "$malformed" >>"$STAGING_RESULTS"
