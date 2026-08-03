@@ -1,6 +1,7 @@
 import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test } from "@playwright/test";
 
+import { calculationSchema } from "../../src/lib/profile-engine";
 import { assertServiceBaseUrl } from "../../src/lib/service-url";
 import { SYNTHETIC_EMAIL_DOMAIN, SYNTHETIC_EMAIL_PREFIX } from "./synthetic-auth";
 
@@ -71,6 +72,25 @@ test("the hosted profile engine is healthy and refuses unauthorized computation"
   });
   expect(authorized.status, "authorized compute").toBe(200);
   expect(computed, "authorized compute returned a deterministic result").toBe(true);
+
+  // Checking one field would let the deployed engine drift away from the
+  // contract the application enforces, and the application reports that drift
+  // as "the engine could not complete the calculation" — indistinguishable
+  // from an outage. Validate the whole payload here, and name the fields.
+  const contract = calculationSchema.safeParse(authorizedBody);
+  record({
+    section: "Profile engine",
+    check: "Computation matches the contract the application enforces",
+    status: contract.success ? "pass" : "fail",
+    detail: contract.success
+      ? "the deployed engine's response satisfies every field the application requires"
+      : `the response does not satisfy: ${[
+          ...new Set(contract.error.issues.map((issue) => issue.path.join("."))),
+        ]
+          .slice(0, 12)
+          .join(", ")}`,
+  });
+  expect(contract.success, "the deployed engine matches the application's contract").toBe(true);
   completeStage("profile-engine-probe");
 });
 

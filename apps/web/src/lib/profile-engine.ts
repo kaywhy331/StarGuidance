@@ -3,7 +3,7 @@ import "server-only";
 import type { BirthProfileInput, ProfileTension, ProfileTrait } from "@starguidance/contracts";
 import { z } from "zod";
 
-const calculationSchema = z.object({
+export const calculationSchema = z.object({
   completeness: z.enum(["core", "locationEnhanced", "approximateTime", "complete"]),
   numerology: z.object({
     name_calculation_status: z.enum(["available", "unavailable"]),
@@ -109,7 +109,12 @@ export async function calculateProfile(input: BirthProfileInput): Promise<Profil
       if (response.status === 422) throw new Error("PROFILE_CALCULATION_REJECTED");
       throw new Error("PROFILE_ENGINE_UNAVAILABLE");
     }
-    const calculation = calculationSchema.parse(await response.json());
+    const parsed = calculationSchema.safeParse(await response.json());
+    // A response that arrived but does not match the agreed contract is a
+    // different fault from an unreachable service, and reporting both as
+    // "unavailable" sends an operator to check uptime when the payload changed.
+    if (!parsed.success) throw new Error("PROFILE_ENGINE_CONTRACT_MISMATCH");
+    const calculation = parsed.data;
     return {
       ...calculation,
       mappedTraits: calculation.traits.map((trait) => ({
@@ -128,7 +133,16 @@ export async function calculateProfile(input: BirthProfileInput): Promise<Profil
       })),
     };
   } catch (error) {
-    if (error instanceof Error && error.message === "PROFILE_CALCULATION_REJECTED") throw error;
+    if (
+      error instanceof Error &&
+      (error.message === "PROFILE_CALCULATION_REJECTED" ||
+        error.message === "PROFILE_ENGINE_CONTRACT_MISMATCH")
+    )
+      throw error;
+    // An abort is this client's own eight-second deadline expiring, which says
+    // the service was too slow rather than absent.
+    if (error instanceof Error && error.name === "AbortError")
+      throw new Error("PROFILE_ENGINE_TIMEOUT");
     throw new Error("PROFILE_ENGINE_UNAVAILABLE");
   } finally {
     clearTimeout(timer);

@@ -35,11 +35,22 @@ export async function POST(request: Request) {
         },
         { status: 422 },
       );
-    if (error instanceof Error && error.message === "PROFILE_ENGINE_UNAVAILABLE")
+    // Same message either way — the person cannot act on the distinction — but
+    // the reason code lets an operator tell a slow service from a changed
+    // contract from an unreachable one. It names a condition, never a value.
+    const engineFailure =
+      error instanceof Error &&
+      [
+        "PROFILE_ENGINE_UNAVAILABLE",
+        "PROFILE_ENGINE_TIMEOUT",
+        "PROFILE_ENGINE_CONTRACT_MISMATCH",
+      ].includes(error.message);
+    if (engineFailure)
       return NextResponse.json(
         {
           error:
             "The private profile engine could not complete the calculation. Your profile was not changed; retry when it is available.",
+          reason: (error as Error).message,
         },
         { status: 503 },
       );

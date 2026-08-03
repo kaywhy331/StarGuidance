@@ -73,14 +73,43 @@ async function wakeProfileEngine(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 5_000));
   }
 
+  // Waking the container is not the same as warming the path the application
+  // uses. `/health` is trivial, while the first computation loads the modules
+  // and data it needs, and that can exceed the application's deliberate
+  // eight-second client timeout — so the first onboarding of the run fails with
+  // "the engine could not complete the calculation" on an engine that is up.
+  let computeStatus = 0;
+  let computeMs = 0;
+  const secret = process.env.PROFILE_ENGINE_SHARED_SECRET?.trim();
+  if (status === 200 && secret) {
+    const started = Date.now();
+    try {
+      const response = await fetch(`${base}/v1/profile/compute`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
+        body: JSON.stringify({ full_birth_name: "Warm Up", birth_date: "2000-01-01" }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      computeStatus = response.status;
+      await response.arrayBuffer();
+    } catch {
+      computeStatus = 0;
+    }
+    computeMs = Date.now() - started;
+  }
+
   record({
     section: "Profile engine",
     check: "Instance warmed before verification",
-    status: status === 200 ? "pass" : "fail",
+    status: status === 200 && computeStatus === 200 ? "pass" : status === 200 ? "limited" : "fail",
     detail:
-      status === 200
-        ? `awake after ${attempts} request(s), so no spec pays the cold start`
-        : `still not answering 200 after ${attempts} request(s) over three minutes (last status ${status})`,
+      status !== 200
+        ? `not answering 200 after ${attempts} request(s) over three minutes (last status ${status})`
+        : computeStatus === 200
+          ? `awake after ${attempts} health request(s); first computation took ${computeMs}ms, ` +
+            "so no spec pays the initialisation cost"
+          : `health is 200 but the warm-up computation returned ${computeStatus}; the first ` +
+            "onboarding of this run may exceed the application's client timeout",
   });
 }
 
