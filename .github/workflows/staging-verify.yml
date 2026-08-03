@@ -206,6 +206,11 @@ jobs:
       - name: Confirm the trigger removal and forced RLS are applied
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # The Auth diagnostics ask the Admin API to create an identity and then
+          # read the database to see whether anything survived the attempt, which
+          # separates a rejected write from a failure after the write.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
         run: .github/scripts/stage.sh schema-assertions "Confirm trigger removal and forced RLS" corepack pnpm --filter @starguidance/database staging:verify-schema
 
       - name: Seed reference data

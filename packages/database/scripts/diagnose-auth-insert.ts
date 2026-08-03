@@ -183,6 +183,144 @@ async function probeSignupSequence(sql: DatabaseClient, subjectId: string): Prom
     });
 }
 
+/**
+ * Reports what GoTrue's own role is actually allowed to do.
+ *
+ * The write probe can only assume that role when the connection is a member of
+ * it, and on this project it is not. Catalog privilege lookups need no such
+ * membership, so a missing grant is still visible.
+ */
+async function reportGotrueRolePrivileges(sql: DatabaseClient): Promise<void> {
+  const [role] = await sql<{ present: boolean }[]>`
+    select exists (select 1 from pg_roles where rolname = ${GOTRUE_ROLE}) as present`;
+  if (role?.present !== true) {
+    // A Supabase-managed project always has this role. Its absence means this
+    // is a stand-in database, where privilege questions do not arise.
+    record({
+      section: "Auth diagnostics",
+      check: "GoTrue role present",
+      status: "limited",
+      detail: `${GOTRUE_ROLE} does not exist, so this is not a Supabase-managed Auth deployment`,
+    });
+    return;
+  }
+
+  const tables = await sql<{ name: string; owner: string; can_insert: boolean }[]>`
+    select c.relname as name,
+           pg_get_userbyid(c.relowner) as owner,
+           has_table_privilege(${GOTRUE_ROLE}, c.oid, 'INSERT') as can_insert
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'auth' and c.relkind = 'r'
+    order by c.relname`;
+
+  const denied = tables.filter(({ can_insert }) => !can_insert);
+  record({
+    section: "Auth diagnostics",
+    check: "GoTrue role may write every Auth table",
+    status: denied.length === 0 ? "pass" : "fail",
+    detail:
+      denied.length === 0
+        ? `${tables.length} auth table(s), all writable by ${GOTRUE_ROLE}`
+        : `${denied.length} table(s) refuse INSERT to ${GOTRUE_ROLE}: ` +
+          denied.map(({ name }) => name).join(", "),
+  });
+
+  const foreign = [...new Set(tables.map(({ owner }) => owner))].filter(
+    (owner) => owner !== GOTRUE_ROLE,
+  );
+  record({
+    section: "Auth diagnostics",
+    check: "Auth table ownership",
+    status: foreign.length === 0 ? "pass" : "limited",
+    detail:
+      foreign.length === 0
+        ? `every auth table is owned by ${GOTRUE_ROLE}`
+        : `owners other than ${GOTRUE_ROLE} present: ${foreign.join(", ")}`,
+  });
+
+  const [schema] = await sql<{ usage: boolean; create: boolean }[]>`
+    select has_schema_privilege(${GOTRUE_ROLE}, 'auth', 'USAGE') as usage,
+           has_schema_privilege(${GOTRUE_ROLE}, 'auth', 'CREATE') as create`;
+  record({
+    section: "Auth diagnostics",
+    check: "GoTrue role may use the Auth schema",
+    status: schema?.usage ? "pass" : "fail",
+    detail: `USAGE ${schema?.usage === true}; CREATE ${schema?.create === true}`,
+  });
+}
+
+/**
+ * Asks the Admin API to create an identity and reports what the database shows
+ * afterwards.
+ *
+ * Whether a row survives a failed call separates "the insert was rejected" from
+ * "the insert succeeded and something after it failed" — a distinction no
+ * amount of schema inspection can make, and one `unexpected_failure` hides.
+ */
+async function probeAdminCreate(sql: DatabaseClient): Promise<void> {
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/$/, "");
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!baseUrl || !serviceKey) {
+    record({
+      section: "Auth diagnostics",
+      check: "Admin API identity creation",
+      status: "skipped",
+      detail: "the Admin API credentials were not provided to this step",
+    });
+    return;
+  }
+
+  const marker = `sg-verify-admindiag-${Date.now()}`;
+  const email = `${marker}@starguidance.test`;
+  if (process.env.GITHUB_ACTIONS === "true") process.stdout.write(`::add-mask::${email}\n`);
+
+  let status = 0;
+  let errorCode = "";
+  try {
+    const response = await fetch(`${baseUrl}/auth/v1/admin/users`, {
+      method: "POST",
+      headers: {
+        apikey: serviceKey,
+        authorization: `Bearer ${serviceKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ email, password: `Sg!${marker}-${marker}`, email_confirm: true }),
+    });
+    status = response.status;
+    if (!response.ok) {
+      const body = (await response.json()) as { error_code?: string; msg?: string };
+      errorCode = body.error_code ?? body.msg?.replace(/"[^"]*"/g, "[redacted]") ?? "";
+    }
+  } catch {
+    errorCode = "the request itself failed";
+  }
+
+  // Did any row survive the attempt?
+  const [remnant] = await sql<{ users: number; identities: number }[]>`
+    select
+      (select count(*)::int from auth.users where email = ${email}) as users,
+      (select count(*)::int from auth.identities
+         where user_id in (select id from auth.users where email = ${email})) as identities`;
+
+  record({
+    section: "Auth diagnostics",
+    check: "Admin API identity creation",
+    status: status > 0 && status < 300 ? "pass" : "fail",
+    detail:
+      `status ${status}${errorCode ? ` (${errorCode})` : ""}; ` +
+      `rows left behind: auth.users ${remnant?.users ?? -1}, auth.identities ${remnant?.identities ?? -1}. ` +
+      (status >= 500 && (remnant?.users ?? 0) === 0
+        ? "nothing was written, so the transaction was rolled back inside the provider"
+        : status >= 500
+          ? "a partial row survived, so the failure happened after the user row was written"
+          : "created"),
+  });
+
+  // Never leave a diagnostic identity behind.
+  await sql`delete from auth.users where email = ${email}`.catch(() => undefined);
+}
+
 /** Runs every Auth-side diagnostic. Returns false when one of them failed. */
 export async function diagnoseAuthInsert(sql: DatabaseClient, subjectId: string): Promise<boolean> {
   const [row] = await sql<{ present: boolean }[]>`
@@ -200,5 +338,7 @@ export async function diagnoseAuthInsert(sql: DatabaseClient, subjectId: string)
   const triggersClean = await reportAuthTriggers(sql);
   await reportSecurityDefiners(sql);
   await probeSignupSequence(sql, subjectId);
+  await reportGotrueRolePrivileges(sql);
+  await probeAdminCreate(sql);
   return triggersClean;
 }
