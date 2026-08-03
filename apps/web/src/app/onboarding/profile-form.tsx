@@ -10,12 +10,21 @@ import { useForm } from "react-hook-form";
 export function BirthProfileForm() {
   const [consent, setConsent] = useState(false);
   const [saveError, setSaveError] = useState<string>();
+  /**
+   * A calculation service that has been idle takes noticeably longer to answer
+   * its first request, and the client waits through that rather than failing.
+   * Without a word after a few seconds a correct wait is indistinguishable from
+   * a frozen page, and someone reasonably gives up on a profile that was about
+   * to succeed.
+   */
+  const [stillWorking, setStillWorking] = useState(false);
   const router = useRouter();
   const form = useForm<BirthProfileInput>({
     resolver: zodResolver(birthProfileInputSchema),
     defaultValues: { fullBirthName: "", birthDate: "", birthplace: "", birthTime: "" },
   });
   const error = form.formState.errors;
+  const submitting = form.formState.isSubmitting;
 
   return (
     <Panel className="mt-10">
@@ -24,18 +33,25 @@ export function BirthProfileForm() {
         noValidate
         onSubmit={form.handleSubmit(async (profile) => {
           setSaveError(undefined);
-          const response = await fetch("/api/profile", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ ...profile, consentVersion: "privacy-reflective-v1" }),
-          });
-          if (response.status === 401) return router.push("/sign-in");
-          if (!response.ok) {
-            const payload = (await response.json()) as { error?: string };
-            setSaveError(payload.error ?? "The private profile could not be calculated.");
-            return;
+          setStillWorking(false);
+          const hint = setTimeout(() => setStillWorking(true), 6_000);
+          try {
+            const response = await fetch("/api/profile", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ ...profile, consentVersion: "privacy-reflective-v1" }),
+            });
+            if (response.status === 401) return router.push("/sign-in");
+            if (!response.ok) {
+              const payload = (await response.json()) as { error?: string };
+              setSaveError(payload.error ?? "The private profile could not be calculated.");
+              return;
+            }
+            router.push("/readings");
+          } finally {
+            clearTimeout(hint);
+            setStillWorking(false);
           }
-          router.push("/readings");
         })}
       >
         <Field
@@ -86,6 +102,11 @@ export function BirthProfileForm() {
         <Button disabled={!consent || form.formState.isSubmitting} type="submit">
           {form.formState.isSubmitting ? "Calculating privately…" : "Check profile capability"}
         </Button>
+        {submitting && stillWorking && (
+          <p aria-live="polite" className="text-sm text-[#c9bfd4]">
+            Still working. The private calculation service can take a moment to start up.
+          </p>
+        )}
         {saveError && (
           <p className="text-[#ffb7bd]" role="alert">
             {saveError}

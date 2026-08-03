@@ -37,9 +37,12 @@ export function profileEngineBaseUrl(): string {
   return normalised;
 }
 
-export async function calculateProfile(input: BirthProfileInput): Promise<ProfileCalculation> {
+async function attemptCalculation(
+  input: BirthProfileInput,
+  deadlineMs: number,
+): Promise<ProfileCalculation> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
+  const timer = setTimeout(() => controller.abort(), deadlineMs);
   try {
     const response = await fetch(`${profileEngineBaseUrl()}/v1/profile/compute`, {
       method: "POST",
@@ -95,5 +98,47 @@ export async function calculateProfile(input: BirthProfileInput): Promise<Profil
     throw new Error("PROFILE_ENGINE_UNAVAILABLE");
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/**
+ * The first attempt's deadline, kept short so a healthy service answers fast.
+ */
+const FIRST_ATTEMPT_MS = 8_000;
+
+/**
+ * The second attempt's deadline. A suspended instance takes far longer to
+ * answer its first request than a running one takes to answer any request.
+ */
+const WAKE_ATTEMPT_MS = 25_000;
+
+/** Faults that describe the request, not the service, and must not be retried. */
+const PERMANENT_FAULTS = new Set([
+  "PROFILE_CALCULATION_REJECTED",
+  "PROFILE_ENGINE_CONTRACT_MISMATCH",
+  "PROFILE_ENGINE_MISCONFIGURED",
+]);
+
+/**
+ * Calculates a profile, retrying once when the service was merely too slow.
+ *
+ * A staging instance that suspends when idle cannot answer its first request
+ * inside the deadline a running instance needs, so the first person to arrive
+ * after an idle period was told the calculation could not complete — while
+ * their request was the very thing waking the service. Retrying succeeded,
+ * which is what the message advised, but only for someone willing to try again.
+ *
+ * The computation is a pure function of the birth details and writes nothing,
+ * so repeating it is safe. Only a slow or unreachable service is retried: a
+ * rejected input, a changed contract and a misconfigured address are all
+ * properties of the request or the deployment, and repeating them would just
+ * cost the person more waiting.
+ */
+export async function calculateProfile(input: BirthProfileInput): Promise<ProfileCalculation> {
+  try {
+    return await attemptCalculation(input, FIRST_ATTEMPT_MS);
+  } catch (error) {
+    if (error instanceof Error && PERMANENT_FAULTS.has(error.message)) throw error;
+    return attemptCalculation(input, WAKE_ATTEMPT_MS);
   }
 }
