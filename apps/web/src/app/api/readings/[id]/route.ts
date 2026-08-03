@@ -32,6 +32,10 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       reading: {
         id: reading.id,
         spreadId: reading.spreadId,
+        // The immutable snapshot this reading was drawn against. Later profile
+        // versions never move it, and a caller cannot otherwise tell which
+        // version of themselves a past reading interpreted.
+        profileSnapshotId: reading.profileSnapshotId,
         draw: reading.draw,
         cards: reading.draw.assignments.map((assignment) => {
           const card = tarotCards.find(({ id }) => id === assignment.cardId);

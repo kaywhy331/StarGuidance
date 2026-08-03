@@ -49,6 +49,7 @@ async function currentReading(page: Page) {
     const response = await fetch(`/api/readings/${readingId}`, { cache: "no-store" });
     return (await response.json()) as {
       reading: {
+        profileSnapshotId: string;
         draw: unknown;
         generationStatus: string;
         followUps: unknown[];
@@ -92,6 +93,48 @@ test("omitted birth time never fabricates astrology or BaZi", async ({ page }) =
   await expect(page.getByText("Western astrology")).toBeVisible();
   await expect(page.getByText("BaZi Four Pillars")).toBeVisible();
   await expect(page.getByText("Explicitly unavailable")).toHaveCount(2);
+});
+
+test("a reading stays pinned to the snapshot it was drawn against", async ({ page }) => {
+  await createProfile(page);
+  const before = await page.evaluate(
+    async () =>
+      (await fetch("/api/profile", { cache: "no-store" })).json() as Promise<{
+        profile: { snapshot: { id: string; version: number } };
+      }>,
+  );
+  await beginReading(page);
+  const reading = await currentReading(page);
+  expect(reading.reading.profileSnapshotId, "a reading names the snapshot it interpreted").toBe(
+    before.profile.snapshot.id,
+  );
+
+  // Updating birth data appends a new snapshot; the existing reading must keep
+  // pointing at the version of the profile it actually interpreted.
+  const sessionUrl = page.url();
+  await page.goto("/onboarding");
+  await page.getByLabel("Full birth name").fill("Ada Lovelace");
+  await page.getByLabel("Date of birth").fill("1990-01-15");
+  await page.getByLabel("Birth city / country").fill("Edinburgh, United Kingdom");
+  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
+  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await expect(page).toHaveURL(/\/readings$/);
+
+  const after = await page.evaluate(
+    async () =>
+      (await fetch("/api/profile", { cache: "no-store" })).json() as Promise<{
+        profile: { snapshot: { id: string; version: number } };
+      }>,
+  );
+  expect(after.profile.snapshot.id).not.toBe(before.profile.snapshot.id);
+  expect(after.profile.snapshot.version).toBeGreaterThan(before.profile.snapshot.version);
+
+  await page.goto(sessionUrl);
+  const unchanged = await currentReading(page);
+  expect(
+    unchanged.reading.profileSnapshotId,
+    "the earlier reading still references the original snapshot",
+  ).toBe(before.profile.snapshot.id);
 });
 
 test("AI-disabled mode returns the deterministic structured fallback", async ({ page }) => {

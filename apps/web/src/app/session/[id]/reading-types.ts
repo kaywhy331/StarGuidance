@@ -12,6 +12,8 @@ export interface DealtCardView {
 
 export interface ReadingPayload {
   id: string;
+  /** The immutable profile snapshot this reading was drawn against. */
+  profileSnapshotId: string;
   draw: LockedDraw;
   cards: DealtCardView[];
   result?: ReadingResult;
