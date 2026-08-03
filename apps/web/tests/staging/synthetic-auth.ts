@@ -20,6 +20,14 @@ import type { BrowserContext, Cookie } from "@playwright/test";
  */
 export const SYNTHETIC_EMAIL_PREFIX = "sg-verify-";
 
+/**
+ * Reserved by RFC 6761: `.test` can never resolve or accept mail, so no message
+ * can reach a real person. `example.com` is deliberately not used — Supabase's
+ * email validator rejects it with `email_address_invalid`, which prevented every
+ * synthetic identity from being created.
+ */
+export const SYNTHETIC_EMAIL_DOMAIN = "starguidance.test";
+
 export interface SyntheticIdentity {
   /** Non-identifying label used in assertion messages, e.g. "user A". */
   readonly alias: string;
@@ -61,7 +69,7 @@ function serviceKey(): string {
 /** Creates a confirmed synthetic identity. No email is ever dispatched. */
 export async function createSyntheticIdentity(alias: string): Promise<SyntheticIdentity> {
   const runId = process.env.GITHUB_RUN_ID ?? "local";
-  const email = `${SYNTHETIC_EMAIL_PREFIX}${runId}-${randomUUID()}@example.com`;
+  const email = `${SYNTHETIC_EMAIL_PREFIX}${runId}-${randomUUID()}@${SYNTHETIC_EMAIL_DOMAIN}`;
   const password = `Sg!${randomUUID()}${randomUUID()}`;
   const response = await fetch(`${supabaseUrl()}/auth/v1/admin/users`, {
     method: "POST",
@@ -72,8 +80,20 @@ export async function createSyntheticIdentity(alias: string): Promise<SyntheticI
     },
     body: JSON.stringify({ email, password, email_confirm: true }),
   });
-  if (!response.ok)
-    throw new Error(`Creating synthetic ${alias} failed with status ${response.status}`);
+  if (!response.ok) {
+    // Carry the provider's own error code: an opaque status is what made the
+    // previous failure take a whole verification run to explain.
+    let code = "";
+    try {
+      const failure = (await response.json()) as { error_code?: string; msg?: string };
+      code = failure.error_code ?? failure.msg?.replace(/"[^"]*"/g, "[redacted]") ?? "";
+    } catch {
+      code = "";
+    }
+    throw new Error(
+      `Creating synthetic ${alias} failed with status ${response.status}${code ? ` (${code})` : ""}`,
+    );
+  }
   const body = (await response.json()) as { id?: string };
   if (!body.id) throw new Error(`Creating synthetic ${alias} returned no subject`);
   return { alias, id: body.id, email, password, creationStatus: response.status };

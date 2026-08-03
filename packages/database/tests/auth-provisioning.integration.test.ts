@@ -8,6 +8,7 @@ import {
   createSubject,
   deleteSubject,
   detectSubjectMode,
+  SYNTHETIC_EMAIL_DOMAIN,
   SYNTHETIC_PREFIX,
   type SubjectMode,
   type SyntheticSubject,
@@ -212,7 +213,7 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
     await expect(
       asSubject(userA.id, async (tx) => {
         await tx`insert into users (id, email)
-          values (${foreignId}, ${`${SYNTHETIC_PREFIX}provision-forged@example.com`})`;
+          values (${foreignId}, ${`${SYNTHETIC_PREFIX}provision-forged@${SYNTHETIC_EMAIL_DOMAIN}`})`;
       }),
       "an authenticated caller must not insert an arbitrary user id",
     ).rejects.toMatchObject({ code: "42501" });
@@ -220,7 +221,7 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
     await expect(
       asSubject(userA.id, async (tx) => {
         await tx`insert into users (id, email)
-          values (${userB.id}, ${`${SYNTHETIC_PREFIX}provision-stolen@example.com`})
+          values (${userB.id}, ${`${SYNTHETIC_PREFIX}provision-stolen@${SYNTHETIC_EMAIL_DOMAIN}`})
           on conflict (id) do update set email = excluded.email`;
       }),
       "an authenticated caller must not take over another subject",
@@ -243,7 +244,7 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
     await expect(
       asUnidentifiedSession(async (tx) => {
         await tx`insert into users (id, email)
-          values (${randomUUID()}, ${`${SYNTHETIC_PREFIX}provision-anon@example.com`})`;
+          values (${randomUUID()}, ${`${SYNTHETIC_PREFIX}provision-anon@${SYNTHETIC_EMAIL_DOMAIN}`})`;
       }),
       "an unidentified authenticated session must not provision",
     ).rejects.toMatchObject({ code: "42501" });
@@ -276,7 +277,7 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
 
     await asSubject(userA.id, async (tx) => {
       const updated =
-        await tx`update users set email = ${`${SYNTHETIC_PREFIX}provision-hijack@example.com`}
+        await tx`update users set email = ${`${SYNTHETIC_PREFIX}provision-hijack@${SYNTHETIC_EMAIL_DOMAIN}`}
         where id = ${userB.id} returning id`;
       expect(updated, "a cross-user update must affect no rows").toHaveLength(0);
       const deleted = await tx`delete from users where id = ${userB.id} returning id`;
@@ -340,7 +341,7 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
       client().begin(async (tx) => {
         await tx.unsafe(`set local role ${signup}`);
         const rows = await tx`insert into auth.users (id, email)
-          values (${randomUUID()}, ${`${SYNTHETIC_PREFIX}provision-rc-${randomUUID()}@example.com`})
+          values (${randomUUID()}, ${`${SYNTHETIC_PREFIX}provision-rc-${randomUUID()}@${SYNTHETIC_EMAIL_DOMAIN}`})
           returning id`;
         return rows.length;
       });

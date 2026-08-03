@@ -17,10 +17,17 @@ import type { DatabaseClient } from "../../src/postgres-client";
  *   any credential.
  * - `plain` — a bare Postgres database with no `auth` schema at all.
  *
- * No address here belongs to a person: every one is a random `@example.com`
- * label under a prefix the cleanup utility recognises.
+ * No address here belongs to a person: every one is a random label under a
+ * prefix the cleanup utility recognises, at the reserved `.test` top-level
+ * domain, which RFC 6761 guarantees can never resolve or receive mail.
+ *
+ * `example.com` is deliberately not used. Supabase's email validator rejects it
+ * outright with `email_address_invalid`, so every synthetic identity failed to
+ * be created; the reserved `.test` domain passes validation while remaining
+ * undeliverable.
  */
 export const SYNTHETIC_PREFIX = "sg-verify-";
+export const SYNTHETIC_EMAIL_DOMAIN = "starguidance.test";
 
 export type SubjectMode = "supabase-admin" | "auth-shim" | "plain";
 
@@ -46,7 +53,27 @@ export async function detectSubjectMode(sql: DatabaseClient): Promise<SubjectMod
 }
 
 export function syntheticEmail(label: string): string {
-  return `${SYNTHETIC_PREFIX}${label}-${randomUUID()}@example.com`;
+  return `${SYNTHETIC_PREFIX}${label}-${randomUUID()}@${SYNTHETIC_EMAIL_DOMAIN}`;
+}
+
+/**
+ * Turns a rejected Admin API call into a message that says what happened.
+ *
+ * The provider's own error code is the whole diagnostic value here — an opaque
+ * status turned one root cause into eight confusing downstream failures the
+ * last time this broke. The address is deliberately not included: it would be
+ * scrubbed from published evidence anyway.
+ */
+async function describeAdminFailure(response: Response): Promise<string> {
+  let code = "";
+  try {
+    const body = (await response.json()) as { error_code?: string; code?: string; msg?: string };
+    code = body.error_code ?? (typeof body.code === "string" ? body.code : "") ?? "";
+    if (!code && body.msg) code = body.msg.replace(/"[^"]*"/g, "[redacted]");
+  } catch {
+    code = "";
+  }
+  return `status ${response.status}${code ? ` (${code})` : ""}`;
 }
 
 /**
@@ -77,9 +104,12 @@ export async function createSubject(
     });
     const httpStatus = response.status;
     if (!response.ok) {
-      // The body may carry a provider message; the status alone is enough
-      // evidence and cannot leak a credential.
-      return { id: "", email, httpStatus };
+      // Fail loudly and specifically. Returning a subject with an empty id used
+      // to push an invalid UUID into every later query, which buried the real
+      // cause under a pile of `invalid input syntax for type uuid` errors.
+      throw new Error(
+        `Supabase Auth refused to create the synthetic subject: ${await describeAdminFailure(response)}`,
+      );
     }
     const body = (await response.json()) as { id?: string };
     if (!body.id) throw new Error("The Supabase Admin API returned no subject identifier");

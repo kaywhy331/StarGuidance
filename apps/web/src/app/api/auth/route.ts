@@ -10,6 +10,16 @@ import { createSupabaseServerClient } from "@/lib/supabase";
 
 const requestSchema = z.object({ email: z.email() });
 
+/** Recognises the provider's outbound-mail quota rejection. */
+function isSendRateLimited(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { status?: unknown; code?: unknown };
+  return (
+    candidate.status === 429 ||
+    (typeof candidate.code === "string" && candidate.code === "over_email_send_rate_limit")
+  );
+}
+
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
@@ -44,14 +54,25 @@ export async function POST(request: Request) {
     if (error) throw error;
     return NextResponse.json({ ok: true, authenticated: false, pending: true });
   } catch (error) {
-    const configurationError = error instanceof RuntimeConfigurationError;
+    if (error instanceof RuntimeConfigurationError)
+      return NextResponse.json(
+        { error: "Authentication is not configured for this deployment." },
+        { status: 503 },
+      );
+    // A provider send-rate rejection is not a bad address, and telling someone
+    // their sign-in "failed" when the mail quota is momentarily exhausted sends
+    // them to correct an address that was fine. Report it as what it is.
+    if (isSendRateLimited(error))
+      return NextResponse.json(
+        {
+          error: "Too many sign-in links have been requested. Try again shortly.",
+          retryable: true,
+        },
+        { status: 429 },
+      );
     return NextResponse.json(
-      {
-        error: configurationError
-          ? "Authentication is not configured for this deployment."
-          : "Unable to start a private sign-in session.",
-      },
-      { status: configurationError ? 503 : 400 },
+      { error: "Unable to start a private sign-in session." },
+      { status: 400 },
     );
   }
 }
