@@ -91,11 +91,31 @@ test("critical deployed flows pass automated WCAG rules", async () => {
     const message = (await alert.isVisible().catch(() => false))
       ? ((await alert.textContent().catch(() => "")) ?? "").trim()
       : "no visible error";
+    // The message is identical for several unrelated faults; the API reports
+    // which one, so ask it rather than leaving the next run to guess.
+    let apiReason = "";
+    try {
+      apiReason = await page.evaluate(async () => {
+        const response = await fetch("/api/profile", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            fullBirthName: "Diagnostic Synthetic",
+            birthDate: "1990-01-15",
+            consentVersion: "privacy-reflective-v1",
+          }),
+        });
+        const body = (await response.json()) as { reason?: string };
+        return `${response.status}${body.reason ? ` (${body.reason})` : ""}`;
+      });
+    } catch {
+      apiReason = "unavailable";
+    }
     record({
       section: "Accessibility",
       check: "Onboarding reached the reading selection",
       status: "fail",
-      detail: `stopped at ${new URL(page.url()).pathname}: "${message}"`,
+      detail: `stopped at ${new URL(page.url()).pathname}: "${message}"; direct API attempt returned ${apiReason}`,
     });
     throw new Error(`Onboarding did not complete during the scan — ${message}`, { cause: error });
   }

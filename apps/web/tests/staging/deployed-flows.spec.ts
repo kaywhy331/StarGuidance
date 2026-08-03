@@ -95,6 +95,35 @@ async function onboardingFailure(page: Page): Promise<string> {
   return message ? `stopped at ${path}: "${message}"` : `stopped at ${path} with no visible error`;
 }
 
+/**
+ * Asks the API directly why onboarding failed.
+ *
+ * The form shows one message for a refused connection, an expired deadline and
+ * a changed contract alike, because none of those distinctions helps the person
+ * reading it. The API returns a reason code beside that message, so this posts
+ * the same profile and records which of them it actually was.
+ */
+async function profileFailureReason(page: Page): Promise<string> {
+  try {
+    const result = await page.evaluate(async () => {
+      const response = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fullBirthName: "Diagnostic Synthetic",
+          birthDate: "1990-01-15",
+          consentVersion: "privacy-reflective-v1",
+        }),
+      });
+      const body = (await response.json()) as { reason?: string; error?: string };
+      return { status: response.status, reason: body.reason ?? "" };
+    });
+    return `direct API attempt returned ${result.status}${result.reason ? ` (${result.reason})` : ""}`;
+  } catch {
+    return "the direct API attempt could not be made";
+  }
+}
+
 async function completeOnboarding(
   page: Page,
   details: { name: string; date: string; city?: string; time?: string },
@@ -110,11 +139,12 @@ async function completeOnboarding(
     await expect(page).toHaveURL(/\/readings$/, { timeout: 60_000 });
   } catch (error) {
     const reason = await onboardingFailure(page);
+    const apiReason = await profileFailureReason(page);
     record({
       section: "Profile persistence",
       check: "Deployed onboarding completes",
       status: "fail",
-      detail: reason,
+      detail: `${reason}; ${apiReason}`,
     });
     throw new Error(`Onboarding did not complete — ${reason}`, { cause: error });
   }
