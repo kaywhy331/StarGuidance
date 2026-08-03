@@ -35,4 +35,6 @@ Supabase Storage is not used by the current private data path. If future report 
 - Dreamspell needs an approved decoder dataset and terminology/rights review.
 - Pricing, refunds, age policy, legal/privacy copy, launch regions, retention, backup policy, and final artwork distribution approval remain owner decisions.
 
+Automated accessibility scanning excludes frames injected by the deploy-preview host. Those carry `aria-required-children` and `aria-hidden-focus` violations in the host's own toolbar markup, which this project does not ship, cannot repair, and which production does not serve. The application embeds no frames of its own — the suite asserts that, so the exclusion cannot begin hiding our own markup unnoticed.
+
 No production payment, AI, Supabase, authentication, persistence, or deployment path should be described as verified until its credentialed staging evidence is recorded.

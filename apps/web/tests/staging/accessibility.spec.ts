@@ -38,8 +38,32 @@ const findings: { flow: string; violations: Violation[] }[] = [];
 
 test.describe.configure({ mode: "serial" });
 
+/**
+ * Counts frames on the page and separates ours from the preview host's.
+ *
+ * A deploy preview carries an injected toolbar in an iframe that this project
+ * neither ships nor can repair, and which does not exist in production.
+ * Scanning it reports critical failures against someone else's markup. The
+ * application embeds no frames of its own, so any same-origin frame would be
+ * ours and must never be excluded silently — hence the count is recorded and
+ * asserted rather than assumed.
+ */
+async function frameOrigins(): Promise<{ injected: number; sameOrigin: number }> {
+  const appOrigin = new URL(String(test.info().project.use.baseURL)).origin;
+  return page.evaluate((origin) => {
+    const frames = [...document.querySelectorAll("iframe")];
+    let sameOrigin = 0;
+    for (const frame of frames) {
+      const source = frame.getAttribute("src") ?? "";
+      if (!source || source.startsWith("/") || source.startsWith(origin)) sameOrigin += 1;
+    }
+    return { injected: frames.length - sameOrigin, sameOrigin };
+  }, appOrigin);
+}
+
 async function scan(flow: string): Promise<void> {
-  const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  // Exclude the preview host's injected frames, never our own.
+  const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).exclude("iframe").analyze();
   findings.push({
     flow,
     violations: results.violations.map((violation) => ({
@@ -73,7 +97,10 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   if (anonymous) {
     const anonymousPage = await anonymous.newPage();
     await anonymousPage.goto(`${String(test.info().project.use.baseURL)}/sign-in`);
-    const results = await new AxeBuilder({ page: anonymousPage }).withTags(WCAG_TAGS).analyze();
+    const results = await new AxeBuilder({ page: anonymousPage })
+      .withTags(WCAG_TAGS)
+      .exclude("iframe")
+      .analyze();
     findings.push({
       flow: "sign-in",
       violations: results.violations.map((violation) => ({
@@ -185,6 +212,19 @@ test("critical deployed flows pass automated WCAG rules", async () => {
               .join("; "),
     });
 
+  const frames = await frameOrigins();
+  record({
+    section: "Accessibility",
+    check: "Frames excluded from the scan belong to the preview host",
+    status: frames.sameOrigin === 0 ? "pass" : "fail",
+    detail:
+      frames.sameOrigin === 0
+        ? `${frames.injected} frame(s) injected by the deploy-preview host were excluded; ` +
+          "the application embeds none of its own, and production serves none of theirs"
+        : `${frames.sameOrigin} frame(s) belong to the application and must not be excluded`,
+  });
+  expect(frames.sameOrigin, "the application must not embed frames the scan would skip").toBe(0);
+
   record({
     section: "Accessibility",
     check: "Scan scope",
@@ -192,6 +232,8 @@ test("critical deployed flows pass automated WCAG rules", async () => {
     detail:
       `${findings.length} flows scanned against ${WCAG_TAGS.join("/")}; ` +
       `${blocking.length} critical/serious and ${moderate.length} lesser violation(s). ` +
+      "Frames injected by the deploy-preview host are excluded: they are not shipped by this " +
+      "project, cannot be repaired here, and are absent in production. " +
       "Automated rules are not a human WCAG 2.2 AA certification.",
   });
 
