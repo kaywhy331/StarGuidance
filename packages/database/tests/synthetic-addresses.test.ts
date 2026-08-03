@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertUsableSubject,
+  MAX_PROVIDER_PASSWORD_BYTES,
   SYNTHETIC_EMAIL_DOMAIN,
   SYNTHETIC_PREFIX,
   syntheticEmail,
+  syntheticPassword,
 } from "./support/synthetic-subjects";
 
 /**
@@ -77,6 +79,29 @@ describe("synthetic verification addresses", () => {
     const lower = "0f8fad5b-d9cb-469f-a165-70867728950e";
     expect(assertUsableSubject(lower, "a query")).toBe(lower);
     expect(assertUsableSubject(lower.toUpperCase(), "a query")).toBe(lower.toUpperCase());
+  });
+
+  it("keeps every synthetic password inside the provider's bcrypt limit", () => {
+    // The generator that concatenated two UUIDs produced 75 bytes. bcrypt
+    // consumes at most 72, and Supabase Auth refuses rather than truncating —
+    // answering unexpected_failure with HTTP 500, which was mistaken in turn
+    // for an RLS conflict, a leftover trigger, and a rejected address before
+    // anyone measured the length.
+    expect(MAX_PROVIDER_PASSWORD_BYTES).toBe(72);
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const password = syntheticPassword();
+      expect(
+        Buffer.byteLength(password, "utf8"),
+        `"${password.slice(0, 3)}…" is too long for bcrypt`,
+      ).toBeLessThanOrEqual(MAX_PROVIDER_PASSWORD_BYTES);
+    }
+  });
+
+  it("still generates an unguessable password", () => {
+    const passwords = new Set(Array.from({ length: 50 }, () => syntheticPassword()));
+    expect(passwords.size).toBe(50);
+    // One UUID carries 122 bits of entropy; the prefix satisfies complexity rules.
+    for (const password of passwords) expect(password.length).toBeGreaterThan(20);
   });
 
   it("generates a distinct address every time", () => {

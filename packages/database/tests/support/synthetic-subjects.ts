@@ -52,6 +52,24 @@ export async function detectSubjectMode(sql: DatabaseClient): Promise<SubjectMod
   return supabaseUrl() && serviceRoleKey() ? "supabase-admin" : "auth-shim";
 }
 
+/**
+ * bcrypt consumes at most 72 bytes and Supabase Auth refuses a longer password
+ * rather than truncating it, answering `unexpected_failure` with HTTP 500. The
+ * previous generator produced 75 bytes, so no synthetic identity could be
+ * created at all. One UUID is ample entropy and stays well inside the limit.
+ */
+export const MAX_PROVIDER_PASSWORD_BYTES = 72;
+
+export function syntheticPassword(): string {
+  const password = `Sg!${randomUUID()}`;
+  if (Buffer.byteLength(password, "utf8") > MAX_PROVIDER_PASSWORD_BYTES)
+    throw new Error(
+      `A synthetic password of ${Buffer.byteLength(password, "utf8")} bytes exceeds the ` +
+        `${MAX_PROVIDER_PASSWORD_BYTES}-byte limit the provider enforces.`,
+    );
+  return password;
+}
+
 export function syntheticEmail(label: string): string {
   const address = `${SYNTHETIC_PREFIX}${label}-${randomUUID()}@${SYNTHETIC_EMAIL_DOMAIN}`;
   maskInWorkflowLog(address);
@@ -129,7 +147,7 @@ export async function createSubject(
       },
       body: JSON.stringify({
         email,
-        password: `Sg!${randomUUID()}${randomUUID()}`,
+        password: syntheticPassword(),
         email_confirm: true,
       }),
     });

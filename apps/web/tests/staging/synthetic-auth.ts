@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { createServerClient } from "@supabase/ssr";
 import type { BrowserContext, Cookie } from "@playwright/test";
 
+import { syntheticPassword } from "./synthetic-credentials";
+
 /**
  * Credential handling for the staging verification suite.
  *
@@ -73,7 +75,7 @@ export async function createSyntheticIdentity(alias: string): Promise<SyntheticI
   // Register the address with the runner before it can appear anywhere: driver
   // and fetch errors quote their inputs, and this job log is public.
   if (process.env.GITHUB_ACTIONS === "true") process.stdout.write(`::add-mask::${email}\n`);
-  const password = `Sg!${randomUUID()}${randomUUID()}`;
+  const password = syntheticPassword();
   const response = await fetch(`${supabaseUrl()}/auth/v1/admin/users`, {
     method: "POST",
     headers: {
