@@ -177,10 +177,16 @@ export function createLocalRepositories(): ApplicationRepositories {
   };
 
   const outputs = {
-    async save(userId: string, readingId: string, result: StoredReading["result"] & {}) {
+    async save(
+      userId: string,
+      readingId: string,
+      result: StoredReading["result"] & {},
+      provenance: NonNullable<StoredReading["outputProvenance"]>,
+    ) {
       const reading = ownedReading(userId, readingId);
       if (!reading) throw new Error("READING_NOT_FOUND");
       reading.result = result;
+      reading.outputProvenance = provenance;
       reading.generationStatus = "ready";
     },
     async latest(userId: string, readingId: string) {

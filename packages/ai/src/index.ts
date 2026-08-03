@@ -3,6 +3,7 @@ import {
   readingResultSchema,
   type OracleStreamEvent,
   type ProfileTrait,
+  type ReadingOutputProvenance,
   type ReadingResult,
 } from "@starguidance/contracts";
 import type { LockedDraw } from "@starguidance/tarot-domain";
@@ -26,6 +27,23 @@ export interface InterpretationProvider<TInput, TOutput> {
 }
 
 export const FALLBACK_PROVIDER_ID = "deterministic-fallback-v1" as const;
+export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v1" as const;
+export const READING_RESULT_SCHEMA_VERSION = "reading-result-v1" as const;
+
+export interface ReadingGenerationOutcome {
+  result: ReadingResult;
+  provenance: ReadingOutputProvenance;
+}
+
+export interface ReadingInterpretationProvider extends InterpretationProvider<
+  ReadingGenerationInput,
+  ReadingResult
+> {
+  generateWithProvenance(
+    input: ReadingGenerationInput,
+    signal?: AbortSignal,
+  ): Promise<ReadingGenerationOutcome>;
+}
 
 export type SafetyCategory =
   | "ordinary"
@@ -140,10 +158,7 @@ export function selectReadingLens(question: string, traits: readonly ProfileTrai
   };
 }
 
-export class DeterministicFallbackProvider implements InterpretationProvider<
-  ReadingGenerationInput,
-  ReadingResult
-> {
+export class DeterministicFallbackProvider implements ReadingInterpretationProvider {
   readonly id = FALLBACK_PROVIDER_ID;
 
   async generate(input: ReadingGenerationInput): Promise<ReadingResult> {
@@ -204,6 +219,17 @@ export class DeterministicFallbackProvider implements InterpretationProvider<
         "Tarot is reflective guidance, not factual proof or a guarantee of future events. This reading describes a pattern under current conditions, and those conditions are yours to change.",
       safetyFlags: safety.category === "ordinary" ? [] : [safety.category],
     });
+  }
+
+  async generateWithProvenance(input: ReadingGenerationInput): Promise<ReadingGenerationOutcome> {
+    return {
+      result: await this.generate(input),
+      provenance: {
+        providerId: this.id,
+        promptVersion: FALLBACK_PROMPT_VERSION,
+        schemaVersion: READING_RESULT_SCHEMA_VERSION,
+      },
+    };
   }
 }
 
@@ -303,10 +329,7 @@ export {
  * that is the staging kill switch, and it means a missing credential degrades
  * the reading rather than breaking the product.
  */
-export function createInterpretationProvider(): InterpretationProvider<
-  ReadingGenerationInput,
-  ReadingResult
-> {
+export function createInterpretationProvider(): ReadingInterpretationProvider {
   const selected = process.env.AI_PROVIDER?.trim();
   const apiKey = process.env.AI_PROVIDER_API_KEY?.trim();
   if (selected !== "groq" || !apiKey) return new DeterministicFallbackProvider();

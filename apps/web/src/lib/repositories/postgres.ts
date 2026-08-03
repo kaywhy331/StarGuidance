@@ -4,8 +4,10 @@ import { randomUUID } from "node:crypto";
 
 import {
   profileSnapshotSchema,
+  readingOutputProvenanceSchema,
   readingResultSchema,
   type ProfileSnapshot,
+  type ReadingOutputProvenance,
   type ReadingResult,
 } from "@starguidance/contracts";
 import type {
@@ -418,7 +420,8 @@ export function createPostgresRepositories(
       lockedAt: iso(drawRow.locked_at as Date),
     };
     const [outputRow] = await tx`
-      select payload from reading_outputs where reading_id = ${String(row.id)}
+      select provider_id, prompt_version, schema_version, payload
+      from reading_outputs where reading_id = ${String(row.id)}
       order by created_at desc, id desc limit 1
     `;
     const followRows = await tx`
@@ -435,6 +438,15 @@ export function createPostgresRepositories(
       safetyClassification: String(row.safety_classification),
       draw,
       ...(outputRow ? { result: readingResultSchema.parse(outputRow.payload) } : {}),
+      ...(outputRow
+        ? {
+            outputProvenance: readingOutputProvenanceSchema.parse({
+              providerId: outputRow.provider_id,
+              promptVersion: outputRow.prompt_version,
+              schemaVersion: outputRow.schema_version,
+            }),
+          }
+        : {}),
       generationStatus: row.state as StoredReading["generationStatus"],
       followUps: followRows.map((follow) => ({
         id: String(follow.id),
@@ -509,14 +521,21 @@ export function createPostgresRepositories(
   };
 
   const outputs = {
-    async save(userId: string, readingId: string, result: ReadingResult) {
+    async save(
+      userId: string,
+      readingId: string,
+      result: ReadingResult,
+      provenance: ReadingOutputProvenance,
+    ) {
+      const verifiedProvenance = readingOutputProvenanceSchema.parse(provenance);
       await userTransaction(userId, async (tx) => {
         await tx`
           insert into reading_outputs (
             user_id, reading_id, provider_id, prompt_version, content_version, schema_version, payload
           ) values (
-            ${userId}, ${readingId}, 'deterministic-fallback', 'deterministic-fallback-v1',
-            ${TAROT_CONTENT_VERSION}, 'reading-result-v1', ${tx.json(json(readingResultSchema.parse(result)))}
+            ${userId}, ${readingId}, ${verifiedProvenance.providerId},
+            ${verifiedProvenance.promptVersion}, ${TAROT_CONTENT_VERSION},
+            ${verifiedProvenance.schemaVersion}, ${tx.json(json(readingResultSchema.parse(result)))}
           )
         `;
         await tx`

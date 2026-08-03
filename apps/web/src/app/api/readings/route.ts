@@ -62,12 +62,17 @@ export async function POST(request: Request) {
         request.headers.get("x-e2e-force-generation-failure") === "1"
       )
         throw new Error("TEST_GENERATION_FAILURE");
-      const result = await createInterpretationProvider().generate({
+      const generated = await createInterpretationProvider().generateWithProvenance({
         draw,
         question: input.question,
         relevantTraitStatements: readingLens.statements,
       });
-      await persistence.repositories.outputs.save(user.id, reading.id, result);
+      await persistence.repositories.outputs.save(
+        user.id,
+        reading.id,
+        generated.result,
+        generated.provenance,
+      );
       reading.generationStatus = "ready";
       await persistence.repositories.readingSessions.setGenerationStatus(
         user.id,

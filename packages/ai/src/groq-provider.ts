@@ -3,7 +3,9 @@ import { readingResultSchema, type ReadingResult } from "@starguidance/contracts
 import {
   classifyQuestion,
   DeterministicFallbackProvider,
+  type ReadingGenerationOutcome,
   type ReadingGenerationInput,
+  type ReadingInterpretationProvider,
 } from "./index";
 import { answerCard, resolveDraw } from "./interpretation";
 
@@ -125,7 +127,7 @@ function responseSchema(): Record<string, unknown> {
   };
 }
 
-export class GroqInterpretationProvider {
+export class GroqInterpretationProvider implements ReadingInterpretationProvider {
   readonly id: string;
   private readonly fallback = new DeterministicFallbackProvider();
 
@@ -156,11 +158,25 @@ export class GroqInterpretationProvider {
   }
 
   async generate(input: ReadingGenerationInput, signal?: AbortSignal): Promise<ReadingResult> {
+    return (await this.generateWithProvenance(input, signal)).result;
+  }
+
+  async generateWithProvenance(
+    input: ReadingGenerationInput,
+    signal?: AbortSignal,
+  ): Promise<ReadingGenerationOutcome> {
     try {
-      return await this.callProvider(input, signal);
+      return {
+        result: await this.callProvider(input, signal),
+        provenance: {
+          providerId: this.id,
+          promptVersion: PROMPT_VERSION,
+          schemaVersion: RESPONSE_SCHEMA_VERSION,
+        },
+      };
     } catch {
       // A person who asked a question gets a reading either way (AI-015).
-      return this.fallback.generate(input);
+      return this.fallback.generateWithProvenance(input);
     }
   }
 

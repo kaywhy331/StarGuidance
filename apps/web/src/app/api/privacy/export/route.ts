@@ -27,6 +27,7 @@ export async function GET() {
           safetyClassification: reading.safetyClassification,
           draw: reading.draw,
           result: reading.result,
+          outputProvenance: reading.outputProvenance,
           generationStatus: reading.generationStatus,
           followUps: reading.followUps.map((followUp) => ({
             id: followUp.id,

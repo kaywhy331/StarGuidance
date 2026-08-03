@@ -91,7 +91,7 @@ describe("the draw is authoritative, not the model", () => {
         ),
       ),
     );
-    const result = await provider().generate(input);
+    const { result, provenance } = await provider().generateWithProvenance(input);
     // AI-002: nothing the model says may change which cards were drawn.
     for (const [index, position] of spread.positions.entries()) {
       expect(result.cards[index]!.positionId).toBe(position.id);
@@ -99,15 +99,25 @@ describe("the draw is authoritative, not the model", () => {
       expect(result.cards[index]!.orientation).toBe(index === 1 ? "reversed" : "upright");
     }
     expect(result.directAnswer).toBe("A");
+    expect(provenance).toEqual({
+      providerId: "groq:test-model",
+      promptVersion: "reader-voice-v1",
+      schemaVersion: "reading-result-v1",
+    });
   });
 });
 
 describe("a person always gets a reading (AI-015)", () => {
   it("falls back to the deterministic reader when the provider errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 500 })));
-    const result = await provider().generate(input);
+    const { result, provenance } = await provider().generateWithProvenance(input);
     expect(result.directAnswer.length).toBeGreaterThan(0);
     expect(result.cards).toHaveLength(spread.positions.length);
+    expect(provenance).toEqual({
+      providerId: "deterministic-fallback-v1",
+      promptVersion: "deterministic-fallback-v1",
+      schemaVersion: "reading-result-v1",
+    });
   });
 
   it("falls back when the provider returns something that is not a valid reading", async () => {

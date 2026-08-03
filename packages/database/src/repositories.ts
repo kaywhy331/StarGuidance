@@ -1,4 +1,9 @@
-import type { ProfileSnapshot, ProfileTrait, ReadingResult } from "@starguidance/contracts";
+import type {
+  ProfileSnapshot,
+  ProfileTrait,
+  ReadingOutputProvenance,
+  ReadingResult,
+} from "@starguidance/contracts";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
 export interface RepositoryUser {
@@ -64,6 +69,7 @@ export interface StoredReading {
   safetyClassification: string;
   draw: LockedDraw;
   result?: ReadingResult;
+  outputProvenance?: ReadingOutputProvenance;
   generationStatus: "pending" | "ready" | "failed";
   followUps: StoredFollowUp[];
   createdAt: string;
@@ -166,7 +172,12 @@ export interface LockedDrawRepository {
 }
 
 export interface ReadingOutputRepository {
-  save(userId: string, readingId: string, result: ReadingResult): Promise<void>;
+  save(
+    userId: string,
+    readingId: string,
+    result: ReadingResult,
+    provenance: ReadingOutputProvenance,
+  ): Promise<void>;
   latest(userId: string, readingId: string): Promise<ReadingResult | undefined>;
 }
 

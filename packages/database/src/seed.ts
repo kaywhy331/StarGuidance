@@ -88,7 +88,9 @@ try {
     `;
     await transaction`
       insert into prompt_versions (version, purpose)
-      values (${"deterministic-fallback-v1"}, ${"schema-valid credential-free reading fallback"})
+      values
+        (${"deterministic-fallback-v1"}, ${"schema-valid credential-free reading fallback"}),
+        (${"reader-voice-v1"}, ${"position-aware live reading narrator with minimised trait lens"})
       on conflict (version) do update set purpose = excluded.purpose
     `;
   });

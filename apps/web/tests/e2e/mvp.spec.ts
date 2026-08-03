@@ -223,10 +223,10 @@ test("stream interruption preserves received paragraphs and retries the same dra
   const retained = await page.locator(".oracle-entry").count();
   expect(retained).toBeGreaterThanOrEqual(2);
   await page.getByRole("button", { name: "Retry transcript" }).click();
+  await expect.poll(async () => page.locator(".oracle-entry").count()).toBeGreaterThan(retained);
   // The reading no longer carries a disclaimer; the standing statement lives in
   // the site terms, reachable from the footer of every page.
   await expect(page.locator('.oracle-entry[data-phase="uncertainty"]')).toHaveCount(0);
-  expect(await page.locator(".oracle-entry").count()).toBeGreaterThan(retained);
   expect((await currentReading(page)).reading.draw).toEqual(before);
 });
 

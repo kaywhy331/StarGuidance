@@ -26,6 +26,11 @@ interface ReadingResponse {
     id: string;
     draw: unknown;
     generationStatus: string;
+    outputProvenance?: {
+      providerId: string;
+      promptVersion: string;
+      schemaVersion: string;
+    };
     followUps: { id: string }[];
     profileSnapshotId?: string;
   };
@@ -297,6 +302,10 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     reading.profileSnapshotId === before.id &&
     assignments > 0 &&
     reading.generationStatus !== "pending";
+  const liveProvenance =
+    reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b" &&
+    reading.outputProvenance.promptVersion === "reader-voice-v1" &&
+    reading.outputProvenance.schemaVersion === "reading-result-v1";
 
   record({
     section: "Reading creation",
@@ -306,7 +315,16 @@ test("a reading is created against the active snapshot with a locked draw", asyn
       `${assignments} position(s) assigned; generation status ${reading.generationStatus}; ` +
       "the reading references the identity's active snapshot",
   });
+  record({
+    section: "Reading creation",
+    check: "Live AI model provenance is persisted",
+    status: liveProvenance ? "pass" : "fail",
+    detail: liveProvenance
+      ? "the persisted output identifies the approved provider model, prompt, and response schema"
+      : "the persisted output did not identify the approved live generation contract",
+  });
   expect(created, "a reading is created with a locked draw").toBe(true);
+  expect(liveProvenance, "the live generation contract is persisted").toBe(true);
   completeStage("reading-creation");
 });
 

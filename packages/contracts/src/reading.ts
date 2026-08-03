@@ -29,6 +29,14 @@ export const readingResultSchema = z.object({
 
 export type ReadingResult = z.infer<typeof readingResultSchema>;
 
+export const readingOutputProvenanceSchema = z.object({
+  providerId: z.string().min(1),
+  promptVersion: z.string().min(1),
+  schemaVersion: z.string().min(1),
+});
+
+export type ReadingOutputProvenance = z.infer<typeof readingOutputProvenanceSchema>;
+
 export const oraclePhaseSchema = z.enum([
   "openingTheme",
   "cardInterpretation",

@@ -51,6 +51,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           };
         }),
         result: reading.result,
+        outputProvenance: reading.outputProvenance,
         generationStatus: reading.generationStatus,
         followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
         createdAt: reading.createdAt,
@@ -74,21 +75,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
     )?.snapshot;
     if (input.action === "retry") {
-      const result = await provider.generate({
+      const generated = await provider.generateWithProvenance({
         draw: reading.draw,
         question: persistence.decrypt(reading.encryptedQuestion),
         relevantTraitStatements: snapshot
           ? reading.readingLens.traitIndexes.map((index) => snapshot.traits[index]?.statement ?? "")
           : [],
       });
-      await persistence.repositories.outputs.save(user.id, reading.id, result);
+      await persistence.repositories.outputs.save(
+        user.id,
+        reading.id,
+        generated.result,
+        generated.provenance,
+      );
       await persistence.repositories.readingSessions.setGenerationStatus(
         user.id,
         reading.id,
         "ready",
       );
       await recordAudit(user.id, "reading.generation.retried", "reading", reading.id);
-      return NextResponse.json({ result, draw: reading.draw });
+      return NextResponse.json({ result: generated.result, draw: reading.draw });
     }
     if (reading.followUps.length >= 1)
       return NextResponse.json(
