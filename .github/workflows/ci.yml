@@ -24,6 +24,16 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm db:check
+      # The credential-gated staging specs never execute here, so an import
+      # error in them is invisible until a protected run collects them and the
+      # whole suite dies before its first assertion. Listing the tests compiles
+      # every spec and its imports without contacting any service — which is
+      # how a `server-only` import reached a Playwright suite unnoticed.
+      - name: Compile the staging verification specs
+        env:
+          STAGING_BASE_URL: https://compile-check.invalid
+          DATABASE_INTEGRATION_URL: postgresql://compile:check@127.0.0.1:5432/none
+        run: pnpm --filter @starguidance/web exec playwright test --config=playwright.staging.config.ts --list
       - run: pnpm build
 
   profile-engine:

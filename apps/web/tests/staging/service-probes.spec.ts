@@ -1,7 +1,7 @@
 import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test } from "@playwright/test";
 
-import { calculationSchema } from "../../src/lib/profile-engine";
+import { calculationSchema } from "../../src/lib/profile-engine-contract";
 import { assertServiceBaseUrl } from "../../src/lib/service-url";
 import { SYNTHETIC_EMAIL_DOMAIN, SYNTHETIC_EMAIL_PREFIX } from "./synthetic-auth";
 
