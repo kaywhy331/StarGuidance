@@ -411,6 +411,48 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
     }
   });
 
+  it("detects any other trigger that would write behind the provisioning boundary", async () => {
+    if (mode !== "auth-shim") return;
+    // A diagnostic that cannot detect the thing it looks for is worse than
+    // none: it turns an unexplained failure into false reassurance.
+    const { mkdtempSync, readFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { diagnoseAuthInsert } = await import("../scripts/diagnose-auth-insert");
+
+    const evidence = join(mkdtempSync(join(tmpdir(), "sg-diag-")), "results.jsonl");
+    const previous = process.env.STAGING_RESULTS;
+    process.env.STAGING_RESULTS = evidence;
+    const decoy = `sg_decoy_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
+
+    try {
+      expect(await diagnoseAuthInsert(client(), randomUUID()), "a clean database").toBe(true);
+
+      await client().unsafe(`
+        create function public.${decoy}() returns trigger language plpgsql as $d$
+        begin return new; end $d$;
+        create trigger ${decoy} after insert on auth.users
+          for each row execute function public.${decoy}();
+      `);
+      expect(
+        await diagnoseAuthInsert(client(), randomUUID()),
+        "an unexpected trigger on auth.users must be reported",
+      ).toBe(false);
+
+      const reported = readFileSync(evidence, "utf8");
+      expect(reported).toContain(decoy);
+    } finally {
+      await client()
+        .unsafe(
+          `drop trigger if exists ${decoy} on auth.users;
+           drop function if exists public.${decoy}();`,
+        )
+        .catch(() => undefined);
+      if (previous === undefined) delete process.env.STAGING_RESULTS;
+      else process.env.STAGING_RESULTS = previous;
+    }
+  });
+
   it("removes every synthetic row it created", async () => {
     await deleteSubject(client(), mode, userB);
     if (mode !== "plain") {

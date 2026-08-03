@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 import { createDatabaseClient } from "../src/postgres-client";
+import { diagnoseAuthInsert } from "./diagnose-auth-insert";
 import { completeStage, record, requiredEnv } from "./staging-result";
 
 /**
@@ -102,7 +105,12 @@ async function main(): Promise<void> {
         ? "the users foreign key onto the Auth schema is ON DELETE CASCADE"
         : "the cascading foreign key onto the Auth schema is absent",
     });
-    syncRemovalProved = migrationsOk && syncRemoved && cascadeOk;
+    // Removing our own trigger is not the same as proving nothing else writes
+    // to public.users behind the application's back, which is what an opaque
+    // GoTrue `unexpected_failure` would otherwise leave unexplained.
+    const authDiagnosticsClean = await diagnoseAuthInsert(sql, randomUUID());
+    if (!authDiagnosticsClean) failed = true;
+    syncRemovalProved = migrationsOk && syncRemoved && cascadeOk && authDiagnosticsClean;
 
     const missingTables = await sql<{ name: string }[]>`
       select required.name from unnest(${sql.array(
