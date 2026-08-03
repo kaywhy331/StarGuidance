@@ -5,8 +5,20 @@ import {
   type ProfileTrait,
   type ReadingResult,
 } from "@starguidance/contracts";
-import { tarotCards } from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
+
+import {
+  agencyFrom,
+  answerCard,
+  disconfirmingFrom,
+  drawShape,
+  personalEmphasis,
+  positionalReading,
+  questionSubject,
+  resolveDraw,
+  subjectVoices,
+  trajectoryFrom,
+} from "./interpretation";
 
 export interface InterpretationProvider<TInput, TOutput> {
   readonly id: string;
@@ -136,55 +148,60 @@ export class DeterministicFallbackProvider implements InterpretationProvider<
 
   async generate(input: ReadingGenerationInput): Promise<ReadingResult> {
     const safety = classifyQuestion(input.question);
-    const cards = input.draw.assignments.map((assignment) => {
-      const card = tarotCards.find(({ id }) => id === assignment.cardId);
-      if (!card) throw new Error(`Unknown locked card: ${assignment.cardId}`);
-      const themes =
-        assignment.orientation === "upright" ? card.uprightThemes : card.reversedThemes;
-      return {
-        positionId: assignment.positionId,
-        cardId: card.id,
-        orientation: assignment.orientation,
-        traditionalMeaning: `${card.name} highlights ${themes.join(" and ")}.`,
-        personalizedMeaning: input.relevantTraitStatements[0]
-          ? `In light of your stated pattern—${input.relevantTraitStatements[0]}—consider how this theme changes your available response.`
-          : "Notice which part of this theme matches your observable experience and which part does not.",
-        questionConnection:
-          safety.category === "ordinary"
-            ? "Treat this as a perspective on the question, not a guaranteed outcome."
-            : safety.guidance,
-      };
-    });
+    const subject = questionSubject(input.question);
+    const voice = subjectVoices[subject];
+    const resolved = resolveDraw(input.draw);
+    const answer = answerCard(input.draw, resolved);
+    const traits = input.relevantTraitStatements;
+
+    const cards = resolved.map((entry, index) => ({
+      positionId: entry.position.id,
+      cardId: entry.card.id,
+      orientation: entry.orientation,
+      traditionalMeaning: positionalReading(entry, subject, index),
+      // A different trait per card. One trait repeated under every card was a
+      // large part of why every reading sounded the same.
+      personalizedMeaning: personalEmphasis(
+        entry,
+        traits[index % Math.max(traits.length, 1)],
+        subject,
+      ),
+      questionConnection:
+        safety.category === "ordinary"
+          ? `${entry.card.reflectivePrompt} Hold that as a perspective on the question, not a verdict on it.`
+          : safety.guidance,
+    }));
+
+    // AI-007: answer first, then elaborate.
+    const directAnswer =
+      safety.category === "ordinary"
+        ? `On ${voice.about}: the answer sits in the ${answer.position.displayName} position, where ${
+            answer.orientation === "reversed"
+              ? `${answer.card.name} appears reversed`
+              : answer.card.name
+          } speaks to ${answer.themes.join(" and ")}. Under current conditions that points toward ${voice.wellPhrase}.`
+        : `On ${voice.about}: this reading will not answer that as a matter of fact. ${safety.guidance}`;
+
     return readingResultSchema.parse({
-      title: "A pattern to consider",
-      directAnswer:
-        "The draw suggests slowing down enough to distinguish current conditions from assumptions.",
-      centralTheme: cards.map(({ traditionalMeaning }) => traditionalMeaning).join(" "),
+      title: `${answer.card.name} in ${answer.position.displayName}`,
+      directAnswer,
+      centralTheme: drawShape(resolved),
       cards,
-      synthesis:
-        "Taken together, these cards describe a conditional pattern. Keep what matches observable evidence and release what does not.",
-      likelyTrajectory: {
-        summary: "If current conditions continue, the highlighted pattern may become more visible.",
-        conditions: [
-          "The present behavior continues",
-          "No significant new evidence changes the situation",
-        ],
-        alternateTrajectory:
-          "A different choice, conversation, or new evidence can change the direction.",
-      },
-      userAgency: [
-        "Name one observable fact",
-        "Choose one proportionate next action",
-        "Revisit the question after new evidence appears",
-      ],
-      reflectionQuestion:
-        "What would you choose if you did not need certainty before taking the next grounded step?",
-      disconfirmingEvidence: [
-        "Behavior that contradicts the card themes",
-        "A material change in circumstances",
-      ],
+      synthesis: resolved
+        .map(
+          (entry) =>
+            `${entry.position.displayName}: ${entry.orientation === "reversed" ? `${entry.card.name} reversed` : entry.card.name} — ${entry.themes.join(" and ")}.`,
+        )
+        .join(" ")
+        .concat(
+          ` Together these describe a conditional pattern around ${voice.about}, not a fixed result. Keep what matches what you can observe and let go of the rest.`,
+        ),
+      likelyTrajectory: trajectoryFrom(answer, resolved, subject),
+      userAgency: agencyFrom(answer, resolved, traits),
+      reflectionQuestion: answer.card.reflectivePrompt,
+      disconfirmingEvidence: disconfirmingFrom(resolved),
       uncertainty:
-        "Tarot is reflective guidance, not factual proof or a guarantee of future events.",
+        "Tarot is reflective guidance, not factual proof or a guarantee of future events. This reading describes a pattern under current conditions, and those conditions are yours to change.",
       safetyFlags: safety.category === "ordinary" ? [] : [safety.category],
     });
   }

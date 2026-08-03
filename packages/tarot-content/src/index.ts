@@ -158,7 +158,7 @@ const minors: TarotCard[] = suits.flatMap(({ suit, noun, domain, shadow }) =>
     suit,
     rank,
     uprightThemes: [rankThemes[index] as string, domain],
-    reversedThemes: [`a delayed or inward ${rankThemes[index]}`, shadow],
+    reversedThemes: [`${rankThemes[index]}, delayed or turned inward`, shadow],
     eventTags:
       index === 0
         ? ["initiation"]
@@ -176,6 +176,77 @@ const minors: TarotCard[] = suits.flatMap(({ suit, noun, domain, shadow }) =>
 
 export const tarotCards: readonly TarotCard[] = Object.freeze([...majors, ...minors]);
 
+/**
+ * What each slot in a spread actually does interpretively.
+ *
+ * A position is not decoration: the same card means something different in
+ * "Challenge" than in "Direction", and a reading that ignores the slot reduces
+ * every spread to a bag of cards. The interpretive function is what lets a
+ * reading say why this card, here, in answer to this question.
+ */
+const positionMeanings: Record<string, { readonly fn: string; readonly description: string }> = {
+  focus: {
+    fn: "what most wants your attention right now",
+    description: "The single thing the reading places in front of you today.",
+  },
+  situation: {
+    fn: "the conditions you are actually standing in",
+    description: "Where matters currently stand, before interpretation or hope is added.",
+  },
+  challenge: {
+    fn: "what resists or complicates the situation",
+    description: "The friction that has to be worked with rather than wished away.",
+  },
+  direction: {
+    fn: "where the pattern points under current conditions",
+    description: "The way this tends to move if nothing meaningful changes.",
+  },
+  "current-path": {
+    fn: "the road you are already walking",
+    description: "The trajectory already in motion before any new choice.",
+  },
+  "hidden-influence": {
+    fn: "what is shaping this from outside your view",
+    description: "A factor at work that is not yet obvious from where you stand.",
+  },
+  "path-a": {
+    fn: "what the first option opens and costs",
+    description: "One branch of the choice, taken on its own terms.",
+  },
+  "path-b": {
+    fn: "what the second option opens and costs",
+    description: "The other branch, taken on its own terms.",
+  },
+  leverage: {
+    fn: "where your effort changes the most",
+    description: "The point at which a small deliberate action has disproportionate effect.",
+  },
+  foundation: {
+    fn: "what this is built on",
+    description: "The history and conditions the present rests upon.",
+  },
+  present: {
+    fn: "what is live right now",
+    description: "The active center of the situation as it stands.",
+  },
+  incoming: {
+    fn: "what is arriving next",
+    description: "An influence moving toward the situation rather than already in it.",
+  },
+  obstacle: {
+    fn: "what stands in the way",
+    description: "The specific difficulty this reading asks you to account for.",
+  },
+  external: {
+    fn: "what others and circumstance contribute",
+    description: "The part of this that is not yours to control.",
+  },
+  outcome: {
+    fn: "where this tends if the present continues",
+    description: "A conditional trajectory, not a fixed result.",
+  },
+};
+
 function position(
   id: string,
   displayName: string,
@@ -183,11 +254,13 @@ function position(
   x: number,
   y: number,
 ): SpreadPosition {
+  const meaning = positionMeanings[id];
+  if (!meaning) throw new Error(`Spread position ${id} has no interpretive function`);
   return {
     id,
     displayName,
-    interpretiveFunction: id,
-    description: `Explore ${displayName.toLowerCase()} without treating it as fixed fate.`,
+    interpretiveFunction: meaning.fn,
+    description: meaning.description,
     order,
     placement: { x, y, rotation: 0 },
   };
