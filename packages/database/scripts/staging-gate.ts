@@ -36,6 +36,7 @@ export const REQUIRED_STAGES = [
   // Database-level isolation
   "rls-suite",
   // Deployed services
+  "preview-provenance",
   "profile-engine-probe",
   "netlify-preview-probe",
   // Identity and provisioning after the trigger was removed

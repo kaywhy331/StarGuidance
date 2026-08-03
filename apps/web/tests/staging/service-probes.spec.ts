@@ -69,24 +69,33 @@ test("the hosted profile engine is healthy and refuses unauthorized computation"
   completeStage("profile-engine-probe");
 });
 
+interface HealthBody {
+  deployedCommit?: string | null;
+  appEnvironment?: string;
+  runtimeAdapter?: string;
+  localPersistenceEnabled?: boolean;
+  localAdapterExplicitlyAllowed?: boolean;
+  missingEnvironmentVariables?: string[];
+  invalidEnvironmentVariables?: string[];
+  database?: {
+    connection?: boolean;
+    schemaReady?: boolean;
+    rlsReady?: boolean;
+    actorTransactionReady?: boolean;
+  };
+}
+
 test("the deployed preview runtime is staging, Supabase-backed, and schema ready", async ({
   request,
 }) => {
-  const response = await request.get("/api/health", { timeout: 120_000 });
-  const body = (await response.json()) as {
-    appEnvironment?: string;
-    runtimeAdapter?: string;
-    localPersistenceEnabled?: boolean;
-    localAdapterExplicitlyAllowed?: boolean;
-    missingEnvironmentVariables?: string[];
-    invalidEnvironmentVariables?: string[];
-    database?: {
-      connection?: boolean;
-      schemaReady?: boolean;
-      rlsReady?: boolean;
-      actorTransactionReady?: boolean;
-    };
-  };
+  const body = (await (
+    await request.get("/api/health", { timeout: 120_000 })
+  ).json()) as HealthBody;
+  // Global setup already waited for this build and refused to continue without
+  // it; re-asserting here keeps the guarantee attached to the recorded stage.
+  const expected = process.env.GITHUB_SHA?.trim();
+  if (expected)
+    expect(body.deployedCommit, "the preview must serve the commit under test").toBe(expected);
 
   const checks: { check: string; ok: boolean; detail: string }[] = [
     {

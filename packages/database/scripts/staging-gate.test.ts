@@ -22,6 +22,7 @@ const CONTRACTED_STAGES = [
   "seed-second",
   "fingerprint-compare",
   "rls-suite",
+  "preview-provenance",
   "profile-engine-probe",
   "netlify-preview-probe",
   "auth-identity-creation",
@@ -54,8 +55,8 @@ function gate(overrides: Partial<GateInput> = {}) {
 describe("staging verification gate", () => {
   it("requires every mandatory stage of the verification contract", () => {
     expect(ALL_STAGES).toEqual([...CONTRACTED_STAGES]);
-    // 25 stages plus the end-of-pipeline success marker.
-    expect(ALL_STAGES).toHaveLength(25);
+    // 26 stages plus the end-of-pipeline success marker.
+    expect(ALL_STAGES).toHaveLength(26);
     expect(SUCCESS_MARKER).toBe("all-mandatory-complete");
   });
 

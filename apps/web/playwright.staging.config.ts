@@ -13,6 +13,9 @@ if (!baseURL) throw new Error("STAGING_BASE_URL must name the deploy preview to 
 
 export default defineConfig({
   testDir: "./tests/staging",
+  // Refuses to verify a preview that was not built from the commit under test,
+  // before any spec runs against it.
+  globalSetup: "./tests/staging/wait-for-preview.ts",
   fullyParallel: false,
   workers: 1,
   retries: 0,

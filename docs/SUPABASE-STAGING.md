@@ -52,7 +52,8 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 4. Run `corepack pnpm db:migrate` with the disposable `DATABASE_URL`, then confirm no `sync_authenticated_user_after_insert` trigger and no `public.sync_authenticated_user()` function remain.
 5. Run `corepack pnpm db:seed` twice with the same URL and confirm the second execution is idempotent.
 6. Run `corepack pnpm --filter @starguidance/database test:integration` with `DATABASE_INTEGRATION_URL`. CI performs this with an isolated Postgres service.
-7. Confirm `/health` on the hosted profile engine and one unauthorized/authorized synthetic compute pair. Record the hostname and status results only.
+7. Confirm `/health` on the hosted profile engine and one unauthorized/authorized synthetic compute pair. Record the hostname and status results only. A suspended free instance can need a long cold start; that is not the same as unreachable.
+   7a. Confirm the deploy preview reports the commit under test. `/api/health` returns `deployedCommit` in staging previews only, built from Netlify's `COMMIT_REF`; the automated suite waits up to ten minutes for the expected build and refuses to verify an earlier one, because verifying a stale preview proves nothing about the commit being gated.
 8. Create two temporary Supabase Auth users through an operator-only process. Do not use real people or personal email addresses. Confirm the Admin API returns a success status rather than 500, and that no `public.users` row exists for either subject until the application is first used.
 9. With each user independently authenticated, create synthetic profiles, two snapshots for one user, a reading/follow-up, report entitlement, and order.
 10. Verify user A receives not-found/empty results for user B's profile, snapshots, reading, draw, encrypted question, follow-up, report, order, and export—and vice versa. Verify cross-user insert/update/delete attempts are rejected by RLS.

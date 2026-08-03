@@ -88,6 +88,31 @@ describe("deployment health", () => {
     for (const value of Object.values(SECRET_VALUES)) expect(serialized).not.toContain(value);
   });
 
+  it("reports the build commit in staging and withholds it elsewhere", async () => {
+    configureStaging();
+    vi.stubEnv("DEPLOYED_COMMIT_REF", "0123456789abcdef0123456789abcdef01234567");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const staging = await (await GET()).json();
+    expect(staging.deployedCommit, "staging verification proves which build it tested").toBe(
+      "0123456789abcdef0123456789abcdef01234567",
+    );
+
+    // Outside a hosted staging preview the field must stay null, so a public
+    // deployment never advertises the commit it runs.
+    vi.stubEnv("APP_ENV", "production");
+    const production = await (await GET()).json();
+    expect(production.deployedCommit).toBeNull();
+  });
+
   it("returns only missing variable names when staging configuration is incomplete", async () => {
     configureStaging();
     vi.stubEnv("DATABASE_URL", "");

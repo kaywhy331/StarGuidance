@@ -228,6 +228,10 @@ export async function GET() {
     {
       status: healthy ? "ok" : "degraded",
       stagingPreview,
+      // Build provenance, so staging verification can prove the preview it is
+      // testing was built from the commit under test. Withheld in production:
+      // a public deployment need not advertise which commit it runs.
+      deployedCommit: stagingPreview ? (process.env.DEPLOYED_COMMIT_REF ?? null) || null : null,
       appEnvironment: appEnvironment(),
       runtimeAdapter: runtimeAdapter(),
       localPersistenceEnabled: isLocalRuntimeAdapterAuthorized(),
