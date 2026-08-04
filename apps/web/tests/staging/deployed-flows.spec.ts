@@ -47,11 +47,66 @@ let activeReadingId: string;
 let userBReadingId: string;
 
 const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
+const NAVIGATION_ATTEMPTS = 3;
 const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60_000;
 
 /** Stable digest of a locked draw for byte-for-byte comparison. */
 function drawDigest(draw: unknown): string {
   return JSON.stringify(draw);
+}
+
+function pagePath(page: Page): string {
+  try {
+    return new URL(page.url()).pathname;
+  } catch {
+    return "";
+  }
+}
+
+async function navigateApp(page: Page, target: string, ready?: () => Promise<void>): Promise<void> {
+  const expectedPath = new URL(target, baseUrl).pathname;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= NAVIGATION_ATTEMPTS; attempt += 1) {
+    let reachedTarget = false;
+    try {
+      await page.goto(target, NAVIGATION_OPTIONS);
+      reachedTarget = true;
+    } catch (error) {
+      lastError = error;
+      // Netlify can abort Playwright's navigation bookkeeping after the new
+      // document commits. Only accept that case when the intended path and a
+      // caller-supplied application marker independently prove readiness.
+      reachedTarget = pagePath(page) === expectedPath;
+    }
+
+    if (reachedTarget) {
+      try {
+        await ready?.();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (attempt < NAVIGATION_ATTEMPTS) await page.waitForTimeout(attempt * 500);
+  }
+
+  throw lastError ?? new Error(`navigation to ${expectedPath} did not commit`);
+}
+
+async function reloadApp(page: Page): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= NAVIGATION_ATTEMPTS; attempt += 1) {
+    try {
+      await page.reload(NAVIGATION_OPTIONS);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < NAVIGATION_ATTEMPTS) await page.waitForTimeout(attempt * 500);
+    }
+  }
+  throw lastError ?? new Error("application reload did not commit");
 }
 
 /**
@@ -60,7 +115,7 @@ function drawDigest(draw: unknown): string {
  * Every helper below therefore puts the page on the application origin first.
  */
 async function onAppOrigin(page: Page): Promise<void> {
-  if (!page.url().startsWith("http")) await page.goto("/", NAVIGATION_OPTIONS);
+  if (!page.url().startsWith("http")) await navigateApp(page, "/");
 }
 
 async function apiGet<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
@@ -142,25 +197,34 @@ async function completeOnboarding(
   // pending indefinitely, and its deferred script can also hold DOMContentLoaded
   // open after the application response has arrived. Response commit plus the
   // concrete form locators below proves the application itself is usable.
-  await page.goto("/onboarding", NAVIGATION_OPTIONS);
-  await page.getByLabel("Full birth name").fill(details.name);
-  await page.getByLabel("Date of birth").fill(details.date);
-  if (details.city) await page.getByLabel("Birth city / country").fill(details.city);
-  if (details.time) await page.getByLabel("Birth time").fill(details.time);
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  let phase = "navigation";
   try {
+    const nameField = page.getByLabel("Full birth name");
+    await navigateApp(page, "/onboarding", () =>
+      expect(nameField).toBeVisible({ timeout: 15_000 }),
+    );
+    phase = "form entry";
+    await nameField.fill(details.name);
+    await page.getByLabel("Date of birth").fill(details.date);
+    if (details.city) await page.getByLabel("Birth city / country").fill(details.city);
+    if (details.time) await page.getByLabel("Birth time").fill(details.time);
+    await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
+    phase = "submission";
+    await page.getByRole("button", { name: "Check profile capability" }).click();
     await expect(page).toHaveURL(/\/readings$/, { timeout: 60_000 });
   } catch (error) {
     const reason = await onboardingFailure(page);
-    const apiReason = await profileFailureReason(page);
+    const apiReason =
+      phase === "submission"
+        ? await profileFailureReason(page)
+        : "direct API diagnosis was not attempted before submission";
     record({
       section: "Profile persistence",
       check: "Deployed onboarding completes",
       status: "fail",
-      detail: `${reason}; ${apiReason}`,
+      detail: `failed during ${phase}; ${reason}; ${apiReason}`,
     });
-    throw new Error(`Onboarding did not complete — ${reason}`, { cause: error });
+    throw new Error(`Onboarding did not complete during ${phase} — ${reason}`, { cause: error });
   }
 }
 
@@ -246,7 +310,7 @@ test("both identities complete onboarding and the profile survives refresh and r
     detail: `active snapshot version ${created.version} for user A; user B also created`,
   });
 
-  await pageA.reload(NAVIGATION_OPTIONS);
+  await reloadApp(pageA);
   const afterRefresh = await activeSnapshot(pageA);
 
   await signOut(contextA);
@@ -405,14 +469,14 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   const readingId = activeReadingId;
   const original = drawDigest((await readingState(pageA, readingId)).draw);
 
-  await pageA.goto(`/session/${readingId}`, NAVIGATION_OPTIONS);
-  await pageA.reload(NAVIGATION_OPTIONS);
+  await navigateApp(pageA, `/session/${readingId}`);
+  await reloadApp(pageA);
   const afterRefresh = drawDigest((await readingState(pageA, readingId)).draw);
 
   // The APP_ENV=test failure hooks are correctly inert in staging, so this
   // interrupts the transcript with a real aborted network request instead.
   await pageA.route("**/api/readings/*/stream", (route) => route.abort());
-  await pageA.goto(`/session/${readingId}`, NAVIGATION_OPTIONS);
+  await navigateApp(pageA, `/session/${readingId}`);
   await pageA.waitForTimeout(2_000);
   await pageA.unroute("**/api/readings/*/stream");
   const afterStreamFailure = drawDigest((await readingState(pageA, readingId)).draw);
