@@ -183,15 +183,37 @@ async function inspectTarget(
   return summary;
 }
 
+async function assertSyntheticRehearsalScope(sql: DatabaseClient): Promise<void> {
+  const [scope] = await sql<{ total_users: number; outside_users: number }[]>`
+    select
+      count(*)::integer as total_users,
+      count(*) filter (
+        where email not like 'sg-verify-%@starguidance.test'
+      )::integer as outside_users
+    from users`;
+  if ((scope?.total_users ?? 0) === 0)
+    throw new Error("Synthetic-only key rotation requires at least one application user");
+  if ((scope?.outside_users ?? 0) > 0)
+    throw new Error("Synthetic-only key rotation refused because non-synthetic users exist");
+}
+
 async function main(): Promise<void> {
   const rotationMode = mode();
   const { current, previous } = keys();
   const sql = createDatabaseClient(required("DATABASE_URL"));
+  let total = 0;
+  let currentTotal = 0;
   let previousTotal = 0;
+  let changedTotal = 0;
   try {
+    if (process.env.KEY_ROTATION_SYNTHETIC_ONLY === "true")
+      await assertSyntheticRehearsalScope(sql);
     for (const target of targets) {
       const summary = await inspectTarget(sql, target, rotationMode, current, previous);
+      total += summary.total;
+      currentTotal += summary.current;
       previousTotal += summary.previous;
+      changedTotal += summary.changed;
       process.stdout.write(
         `${target.name}: ${summary.total} checked, ${summary.current} current, ` +
           `${summary.previous} previous, ${summary.changed} changed\n`,
@@ -200,8 +222,16 @@ async function main(): Promise<void> {
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);
   }
+  if (process.env.KEY_ROTATION_REQUIRE_ROWS === "true" && total === 0)
+    throw new Error("Key rotation rehearsal found no encrypted rows and would be vacuous");
+  if (process.env.KEY_ROTATION_REQUIRE_CHANGES === "true" && changedTotal === 0)
+    throw new Error("Key rotation rehearsal changed no rows");
   if (rotationMode === "verify-current" && previousTotal > 0)
     throw new Error(`${previousTotal} encrypted row(s) still require a previous key`);
+  process.stdout.write(
+    `Key rotation: ${total} checked, ${currentTotal} current, ` +
+      `${previousTotal} previous, ${changedTotal} changed.\n`,
+  );
 }
 
 await main();

@@ -27,6 +27,7 @@ const SECTION_ORDER = [
   "Cross-user isolation",
   "Export",
   "Deletion",
+  "Key rotation",
   "Cleanup",
   "Pipeline",
   "Hosted log review",
@@ -149,8 +150,9 @@ lines.push(
   "- Automated scanning is not a human WCAG 2.2 AA certification.",
   "- A positive magic-link `?code=` exchange still requires the owner's one-time real-inbox",
   "  smoke test; this run verifies passwordless initiation and the fail-closed callback paths.",
-  "- Live AI, Stripe, observability, backup/restore, key rotation, Western astrology, BaZi,",
-  "  Dreamspell, legal/pricing/retention policy, and artwork distribution remain separate gates.",
+  "- Live AI, Stripe, observability, provider-managed backup/restore and secret-store cutover,",
+  "  Western astrology, BaZi, Dreamspell, legal/pricing/retention policy, and artwork",
+  "  distribution remain separate gates.",
   "",
 );
 

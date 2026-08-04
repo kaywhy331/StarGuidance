@@ -190,11 +190,15 @@ test.beforeAll(async ({ browser }, testInfo) => {
 });
 
 test.afterAll(async () => {
-  // Belt-and-braces: the workflow also runs a verified cleanup in always().
+  // The protected workflow can retain user B briefly so its real encrypted
+  // rows exercise forward key rotation and rollback. Its verified always-run
+  // cleanup remains authoritative. Local and ordinary staging runs still use
+  // this belt-and-braces deletion immediately.
   await Promise.all([
     contextA?.close().catch(() => undefined),
     contextB?.close().catch(() => undefined),
   ]);
+  if (process.env.PRESERVE_SYNTHETIC_FOR_POSTCHECK === "true") return;
   if (userA) await deleteSyntheticIdentity(userA);
   if (userB) await deleteSyntheticIdentity(userB);
 });

@@ -261,7 +261,39 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
+          # Keep the surviving synthetic subject only until the database-side
+          # key rotation and rollback below finish. The always-run cleanup is
+          # still responsible for proving that nothing remains.
+          PRESERVE_SYNTHETIC_FOR_POSTCHECK: "true"
         run: .github/scripts/stage.sh browser-verification "Deployed browser verification" corepack pnpm --filter @starguidance/web test:staging
+
+      - name: Generate an ephemeral key for the rotation rehearsal
+        id: rotation-material
+        run: |
+          node <<'NODE'
+          const { randomBytes } = require('node:crypto');
+          const { appendFileSync } = require('node:fs');
+          const key = randomBytes(32).toString('base64');
+          process.stdout.write(`::add-mask::${key}\n`);
+          appendFileSync(process.env.GITHUB_ENV, `ROTATION_REHEARSAL_KEY=${key}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, 'ready=true\n');
+          NODE
+          echo "Ephemeral rotation material prepared without publishing it."
+
+      - name: Rehearse forward encryption-key rotation
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ORIGINAL_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+          KEY_ROTATION_REHEARSAL_CONFIRM: SYNTHETIC_DISPOSABLE_STAGING
+        run: .github/scripts/stage.sh key-rotation-forward "Forward encryption-key rotation" bash .github/scripts/rehearse-key-rotation.sh forward
+
+      - name: Restore every row to the configured staging key
+        if: always() && steps.rotation-material.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ORIGINAL_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+          KEY_ROTATION_REHEARSAL_CONFIRM: SYNTHETIC_DISPOSABLE_STAGING
+        run: .github/scripts/stage.sh key-rotation-rollback "Encryption-key rotation rollback" bash .github/scripts/rehearse-key-rotation.sh rollback
 
       - name: Mark every mandatory stage complete
         run: |

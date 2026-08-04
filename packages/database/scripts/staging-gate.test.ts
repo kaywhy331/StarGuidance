@@ -35,6 +35,8 @@ const CONTRACTED_STAGES = [
   "export-isolation",
   "account-deletion",
   "accessibility",
+  "key-rotation-forward",
+  "key-rotation-rollback",
   "cleanup",
   "summary",
 ] as const;
@@ -55,8 +57,8 @@ function gate(overrides: Partial<GateInput> = {}) {
 describe("staging verification gate", () => {
   it("requires every mandatory stage of the verification contract", () => {
     expect(ALL_STAGES).toEqual([...CONTRACTED_STAGES]);
-    // 26 stages plus the end-of-pipeline success marker.
-    expect(ALL_STAGES).toHaveLength(26);
+    // 28 stages plus the end-of-pipeline success marker.
+    expect(ALL_STAGES).toHaveLength(28);
     expect(SUCCESS_MARKER).toBe("all-mandatory-complete");
   });
 
@@ -137,6 +139,14 @@ describe("staging verification gate", () => {
     });
     expect(verdict.status).toBe("failed");
     expect(verdict.missingStages).toEqual(["cleanup"]);
+  });
+
+  it("fails when the key rotation did not return every row to the deployed key", () => {
+    const verdict = gate({
+      completedStages: ALL_STAGES.filter((stage) => stage !== "key-rotation-rollback"),
+    });
+    expect(verdict.status).toBe("failed");
+    expect(verdict.missingStages).toEqual(["key-rotation-rollback"]);
   });
 
   it("fails when the success marker is absent despite every stage marker existing", () => {

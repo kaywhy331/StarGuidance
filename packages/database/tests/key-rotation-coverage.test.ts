@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const rotation = readFileSync(join(root, "scripts", "rotate-encryption-key.ts"), "utf8");
+const rehearsal = readFileSync(
+  join(root, "..", "..", ".github", "scripts", "rehearse-key-rotation.sh"),
+  "utf8",
+);
 
 describe("key rotation coverage", () => {
   it("covers every persisted encrypted-field location", () => {
@@ -25,5 +29,16 @@ describe("key rotation coverage", () => {
     );
     expect(rotation).toContain("checked");
     expect(rotation).toContain("changed");
+  });
+
+  it("makes the credentialed rehearsal synthetic-only, non-vacuous, and reversible", () => {
+    expect(rotation).toContain("KEY_ROTATION_SYNTHETIC_ONLY");
+    expect(rotation).toContain("KEY_ROTATION_REQUIRE_ROWS");
+    expect(rotation).toContain("KEY_ROTATION_REQUIRE_CHANGES");
+    expect(rehearsal).toContain("SYNTHETIC_DISPOSABLE_STAGING");
+    expect(rehearsal).toContain("forward)");
+    expect(rehearsal).toContain("rollback)");
+    expect(rehearsal).toContain('run_rotation verify-current "$ORIGINAL_ENCRYPTION_KEY"');
+    expect(rehearsal).not.toMatch(/echo.*(ENCRYPTION_KEY|REHEARSAL_KEY)/);
   });
 });

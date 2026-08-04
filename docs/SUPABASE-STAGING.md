@@ -67,6 +67,7 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 11. Force one generation failure, refresh, retry, and submit a follow-up. Compare reading ID, deck/spread/shuffle versions, locked timestamp, positions, card IDs, orientations, and orders byte-for-byte before and after.
 12. Update birth data and confirm the prior reading still references snapshot v1 while only future readings use v2.
 13. Export user A, then delete the account. Confirm all user-A database rows and the Auth identity are gone while user B remains intact.
+    The protected workflow deliberately keeps user B until it has rehearsed application-encryption key rotation against those real synthetic rows. It refuses non-synthetic users and zero encrypted rows, rotates to a fresh masked ephemeral key, verifies current-key-only authentication, always rotates back to the configured staging key, and verifies again before cleanup. Neither key is recorded in evidence.
 14. Inspect Netlify, Supabase, and profile-engine logs for birth data, questions, response bodies, secrets, and authorization headers. Record a redacted pass/fail result only.
 15. Delete the temporary Auth users/project after evidence is captured. Record only non-secret pass/fail results and migration IDs.
 
@@ -90,6 +91,7 @@ An inbox address is not currently available to automation. `MAIL` in a typical r
 - two real Auth subject IDs represented only by non-sensitive aliases in the test report;
 - per-resource RLS pass/fail table;
 - locked-draw equality digest before/after recovery, retry, and follow-up;
+- successful synthetic-only forward key rotation and verified rollback to the configured staging key;
 - profile lineage, export, and deletion results;
 - Netlify Deploy Preview URL and green build/function logs with secrets redacted;
 - confirmation that deploy-preview environment values are scoped away from production.

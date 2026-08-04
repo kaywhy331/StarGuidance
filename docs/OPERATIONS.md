@@ -12,6 +12,10 @@ The server-only `DATABASE_URL` role must be able to `SET LOCAL ROLE starguidance
 
 `DATA_ENCRYPTION_KEY` is the current write key. `DATA_ENCRYPTION_KEYS_PREVIOUS` accepts at most three comma-separated rollback keys during a bounded rotation. Reads try current then previous; all writes use current. Keys must be canonical base64 for exactly 32 random bytes.
 
+The protected staging workflow performs a credentialed database-side rehearsal before cleanup. It keeps one reserved-domain synthetic user, refuses to run if any non-synthetic application user exists, refuses a vacuous zero-row run, generates a masked ephemeral key, re-encrypts every supported envelope, verifies that no row needs the old key, and then runs an `always()` rollback that restores and verifies the configured staging key. Forward and rollback are separate mandatory gate stages, so a partial rotation or failed restoration cannot report `PASSED`. The ephemeral key is never committed, uploaded, or installed in Netlify/GitHub configuration.
+
+That rehearsal proves the data path and rollback against the provider database. It does not rotate the managed deployment secret, approve a rollback window, or prove a production secret-store audit trail; those remain owner-controlled cutover work.
+
 Rehearse on a disposable restored database before staging, and on staging before production:
 
 1. Confirm a fresh provider backup and complete the restore verification below.

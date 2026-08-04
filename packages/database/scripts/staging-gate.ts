@@ -51,6 +51,9 @@ export const REQUIRED_STAGES = [
   "export-isolation",
   "account-deletion",
   "accessibility",
+  // Credentialed database-side rotation and guaranteed restoration before teardown
+  "key-rotation-forward",
+  "key-rotation-rollback",
   // Reporting and teardown
   "cleanup",
   "summary",
