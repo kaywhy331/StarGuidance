@@ -11,7 +11,9 @@ const database = vi.hoisted(() => {
 });
 
 vi.mock("@starguidance/database", () => ({
+  APPLICATION_DATABASE_ROLE: "starguidance_app",
   createDatabaseClient: () => database.client,
+  isValidEncryptionKey: (value: string) => Buffer.from(value, "base64").length === 32,
 }));
 
 import { GET } from "./route";

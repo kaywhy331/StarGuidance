@@ -18,9 +18,9 @@ The reading ritual uses an original responsive cosmic Gothic sanctuary, card-spe
 
 ## Runtime adapters
 
-`RUNTIME_ADAPTER` must explicitly select `supabase` or `local`; there is no implicit fallback. The Supabase adapter uses hosted Auth, user-scoped Postgres repositories, application-level AES-256-GCM encryption, immutable profile snapshots, durable locked readings, export, deletion, orders, entitlements, webhook idempotency, and audit records. Each user-scoped database transaction assumes the `authenticated` role and sets the verified Auth subject so RLS remains active.
+`RUNTIME_ADAPTER` must explicitly select `supabase` or `local`; there is no implicit fallback. The Supabase adapter uses hosted Auth, user-scoped Postgres repositories, application-level AES-256-GCM encryption, immutable profile snapshots, durable locked readings, export, deletion, orders, entitlements, webhook idempotency, and audit records. Each user-scoped database transaction assumes the server-only `starguidance_app` role and sets the verified Auth subject so RLS remains active; browser JWTs have no private-table privileges.
 
-The credential-free adapter remains available only when `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, and the environment is local development/test. It is rejected in Netlify deploy previews and production. Hosted staging migration, Auth-backed two-user verification, and the deploy preview still require owner-managed credentials; see [Supabase staging](docs/SUPABASE-STAGING.md).
+The credential-free adapter remains available only when `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, and the environment is local development/test. It is rejected in Netlify deploy previews and production. Owner-credentialed staging migration and Auth-backed two-user verification have passed; the reproducible procedure remains in [Supabase staging](docs/SUPABASE-STAGING.md).
 
 Western astrology and BaZi return typed unavailable results. Dreamspell is deterministic but remains uncertified pending an approved reference dataset and rights review. No placeholder chart facts are returned.
 
@@ -52,4 +52,4 @@ mypy .
 - [Desktop completed reading](docs/screenshots/completed-reading-desktop-chromium.png)
 - [Mobile completed reading](docs/screenshots/completed-reading-mobile-chromium.png)
 
-See [architecture](docs/ARCHITECTURE.md), [security](docs/SECURITY.md), [calculation status](docs/PROFILE-CALCULATIONS.md), [draw integrity](docs/TAROT-INTEGRITY.md), and [known production gates](docs/KNOWN-GAPS.md).
+See [architecture](docs/ARCHITECTURE.md), [security](docs/SECURITY.md), [operations and recovery](docs/OPERATIONS.md), [commerce verification](docs/COMMERCE.md), [calculation status](docs/PROFILE-CALCULATIONS.md), [draw integrity](docs/TAROT-INTEGRITY.md), and [known production gates](docs/KNOWN-GAPS.md).

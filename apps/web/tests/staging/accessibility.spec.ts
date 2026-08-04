@@ -35,6 +35,7 @@ let identity: SyntheticIdentity;
 let context: BrowserContext;
 let page: Page;
 const findings: { flow: string; violations: Violation[] }[] = [];
+const reflowFindings: { flow: string; overflow: number; clipped: string[] }[] = [];
 
 test.describe.configure({ mode: "serial" });
 
@@ -76,6 +77,29 @@ async function scan(flow: string): Promise<void> {
         .join(" | "),
     })),
   });
+}
+
+async function checkReflow(flow: string): Promise<void> {
+  const evidence = await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+    const viewportWidth = document.documentElement.clientWidth;
+    const overflow =
+      Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - viewportWidth;
+    const clipped = [
+      ...document.querySelectorAll<HTMLElement>("a,button,input,textarea,select,[tabindex]"),
+    ]
+      .filter(
+        (element) => !element.classList.contains("skip-link") && element.offsetParent !== null,
+      )
+      .filter((element) => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.width > 0 && (bounds.left < -1 || bounds.right > viewportWidth + 1);
+      })
+      .slice(0, 10)
+      .map((element) => `${element.tagName.toLowerCase()}#${element.id || "unidentified"}`);
+    return { overflow, clipped };
+  });
+  reflowFindings.push({ flow, ...evidence });
 }
 
 test.beforeAll(async ({ browser }, testInfo) => {
@@ -182,8 +206,12 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();
   await scan("final reflection and follow-up entry point");
 
+  await page.setViewportSize({ width: 320, height: 640 });
+  await checkReflow("completed reading at 320px and 200% text");
+
   await page.goto("/settings/privacy");
   await expect(page.getByRole("heading").first()).toBeVisible({ timeout: 60_000 });
+  await checkReflow("privacy controls at 320px and 200% text");
   await scan("privacy and account");
 
   const blocking = findings.flatMap(({ flow, violations }) =>
@@ -225,6 +253,20 @@ test("critical deployed flows pass automated WCAG rules", async () => {
         : `${frames.sameOrigin} frame(s) belong to the application and must not be excluded`,
   });
   expect(frames.sameOrigin, "the application must not embed frames the scan would skip").toBe(0);
+
+  for (const finding of reflowFindings) {
+    const passed = finding.overflow <= 1 && finding.clipped.length === 0;
+    record({
+      section: "Accessibility",
+      check: `Text resize and reflow — ${finding.flow}`,
+      status: passed ? "pass" : "fail",
+      detail: passed
+        ? "no horizontal document overflow or clipped interactive control"
+        : `overflow ${finding.overflow}px; clipped ${finding.clipped.join(", ") || "none"}`,
+    });
+    expect(finding.overflow, `${finding.flow} must not scroll horizontally`).toBeLessThanOrEqual(1);
+    expect(finding.clipped, `${finding.flow} controls must remain in the viewport`).toEqual([]);
+  }
 
   record({
     section: "Accessibility",

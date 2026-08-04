@@ -125,6 +125,39 @@ def test_hosted_runtime_accepts_strong_shared_secret() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "feature_flag", ["ENABLE_WESTERN_ASTROLOGY", "ENABLE_BAZI"]
+)
+def test_unvalidated_calculation_flag_cannot_activate_fabricated_results(
+    feature_flag: str,
+) -> None:
+    with pytest.raises(RuntimeError, match=feature_flag):
+        validate_runtime_configuration({feature_flag: "true"})
+
+
+def test_disabled_unvalidated_calculation_flags_keep_typed_unavailable_results() -> None:
+    validate_runtime_configuration(
+        {
+            "ENABLE_WESTERN_ASTROLOGY": "false",
+            "ENABLE_BAZI": "false",
+        }
+    )
+
+    payload = TestClient(app).post("/v1/profile/compute", json=profile_request()).json()
+
+    assert payload["western_astrology"] == {
+        "status": "unavailable",
+        "capability": "western_astrology",
+        "reason": "unlicensed_and_unvalidated",
+        "activation_requirements": [
+            "commercially compatible ephemeris license",
+            "approved conventions",
+            "golden reference dataset",
+        ],
+    }
+    assert payload["bazi"]["status"] == "unavailable"
+
+
 def test_profile_request_and_response_are_not_logged(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

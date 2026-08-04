@@ -81,7 +81,7 @@ DATABASE_INTEGRATION_URL=postgresql://... \
 corepack pnpm --filter @starguidance/database test:integration
 ```
 
-The suite creates synthetic users, forces the `authenticated` role/JWT subject, proves two-user RLS isolation and same-draw recovery, tests snapshot history/export scope/deletion, and removes its fixtures. Use only a disposable database.
+The suite creates synthetic users, assumes the non-login `starguidance_app` role with a verified subject, proves the browser `authenticated` role cannot reach private tables, verifies two-user RLS isolation and same-draw recovery, tests snapshot history/export scope/deletion, and removes its fixtures. Use only a disposable database.
 
 ## Deploy-preview screenshots
 

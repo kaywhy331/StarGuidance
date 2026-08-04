@@ -1,49 +1,47 @@
-import { randomUUID } from "node:crypto";
-
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
 import { generateProfileReport } from "@/lib/report";
 import { getServiceRepositories } from "@/lib/runtime";
+import { isStripeTestSecret, processStripeEvent } from "@/lib/stripe-events";
 
 export async function POST(request: Request) {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   const signature = request.headers.get("stripe-signature");
-  if (!secretKey || !webhookSecret || !signature)
+  if (
+    process.env.PAYMENTS_PROVIDER !== "stripe" ||
+    !secretKey ||
+    !isStripeTestSecret(secretKey) ||
+    !webhookSecret ||
+    !signature
+  )
     return NextResponse.json({ error: "Webhook is not configured." }, { status: 503 });
+  let claimedEventId: string | undefined;
+  let repositories: ReturnType<typeof getServiceRepositories> | undefined;
   try {
     const stripe = new Stripe(secretKey);
     const event = stripe.webhooks.constructEvent(await request.text(), signature, webhookSecret);
-    const repositories = getServiceRepositories();
+    if (event.livemode)
+      return NextResponse.json({ error: "Live payment events are disabled." }, { status: 400 });
+    repositories = getServiceRepositories();
     if (!(await repositories.webhookEvents.begin(event.id, event.type)))
       return NextResponse.json({ received: true });
-
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      if (session.payment_status === "paid") {
-        const order = await repositories.orders.getByProviderSession(session.id);
-        if (!order || session.metadata?.orderId !== order.id)
-          return NextResponse.json({ error: "Unknown Checkout order." }, { status: 422 });
-        await repositories.orders.setStatus(order.id, "paid");
-        await repositories.entitlements.grant({
-          id: randomUUID(),
-          userId: order.userId,
-          snapshotId: order.snapshotId,
-          orderId: order.id,
-          status: "active",
-          createdAt: new Date().toISOString(),
-        });
-        await generateProfileReport({
-          userId: order.userId,
-          snapshotId: order.snapshotId,
-          orderId: order.id,
-        });
-      }
-    }
+    claimedEventId = event.id;
+    await processStripeEvent(event, {
+      stripe,
+      repositories,
+      generateReport: generateProfileReport,
+    });
     await repositories.webhookEvents.complete(event.id);
     return NextResponse.json({ received: true });
   } catch {
+    if (claimedEventId && repositories) {
+      await repositories.webhookEvents
+        .fail(claimedEventId, "processing_failed")
+        .catch(() => undefined);
+      return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });
+    }
     return NextResponse.json({ error: "Invalid webhook signature or payload." }, { status: 400 });
   }
 }

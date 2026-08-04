@@ -12,6 +12,8 @@ export async function generateProfileReport(input: {
   orderId: string;
 }): Promise<StoredReport> {
   const persistence = persistenceFor({ id: input.userId });
+  const existing = await persistence.repositories.reports.getByOrder(input.userId, input.orderId);
+  if (existing) return existing;
   const profile = await persistence.repositories.profileSnapshots.get(
     input.userId,
     input.snapshotId,

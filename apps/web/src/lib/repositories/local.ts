@@ -208,13 +208,31 @@ export function createLocalRepositories(): ApplicationRepositories {
   const reports = {
     async get(userId: string, reportId: string) {
       const report = localStore.reports.get(reportId);
-      return report?.userId === userId ? report : undefined;
+      const entitled = [...localStore.entitlements.values()].some(
+        (entitlement) =>
+          entitlement.userId === userId &&
+          entitlement.orderId === report?.orderId &&
+          entitlement.status === "active",
+      );
+      return report?.userId === userId && entitled ? report : undefined;
+    },
+    async getByOrder(userId: string, orderId: string) {
+      const report = [...localStore.reports.values()].find(
+        (candidate) => candidate.userId === userId && candidate.orderId === orderId,
+      );
+      return report ? this.get(userId, report.id) : undefined;
     },
     async create(report: StoredReport) {
       localStore.reports.set(report.id, report);
     },
     async list(userId: string) {
-      return [...localStore.reports.values()].filter((report) => report.userId === userId);
+      const result: StoredReport[] = [];
+      for (const report of localStore.reports.values()) {
+        if (report.userId !== userId) continue;
+        const visible = await this.get(userId, report.id);
+        if (visible) result.push(visible);
+      }
+      return result;
     },
   };
 
@@ -248,7 +266,17 @@ export function createLocalRepositories(): ApplicationRepositories {
 
   const entitlements = {
     async grant(entitlement: StoredEntitlement) {
+      const existing = [...localStore.entitlements.values()].find(
+        ({ orderId }) => orderId === entitlement.orderId,
+      );
+      if (existing) return;
       localStore.entitlements.set(entitlement.id, entitlement);
+    },
+    async revokeByOrder(orderId: string) {
+      const entitlement = [...localStore.entitlements.values()].find(
+        (candidate) => candidate.orderId === orderId,
+      );
+      if (entitlement) entitlement.status = "revoked";
     },
     async list(userId: string) {
       return [...localStore.entitlements.values()].filter(
@@ -333,14 +361,35 @@ export function createLocalRepositories(): ApplicationRepositories {
     orders,
     entitlements,
     webhookEvents: {
-      async begin(providerEventId: string) {
-        const key = `webhook:${providerEventId}`;
-        if (localStore.idempotency.has(key)) return false;
-        localStore.idempotency.set(key, "pending");
+      async begin(providerEventId: string, eventType: string) {
+        const existing = localStore.webhookEvents.get(providerEventId);
+        const now = Date.now();
+        if (
+          existing?.processed ||
+          (existing?.processingStartedAt !== undefined &&
+            existing.processingStartedAt > now - 5 * 60_000)
+        )
+          return false;
+        localStore.webhookEvents.set(providerEventId, {
+          eventType,
+          processingStartedAt: now,
+          attemptCount: (existing?.attemptCount ?? 0) + 1,
+          processed: false,
+        });
         return true;
       },
       async complete(providerEventId: string) {
-        localStore.idempotency.set(`webhook:${providerEventId}`, "complete");
+        const event = localStore.webhookEvents.get(providerEventId);
+        if (!event) throw new Error("WEBHOOK_EVENT_NOT_FOUND");
+        event.processed = true;
+        delete event.processingStartedAt;
+        delete event.lastFailureCode;
+      },
+      async fail(providerEventId: string, failureCode: string) {
+        const event = localStore.webhookEvents.get(providerEventId);
+        if (!event || event.processed) return;
+        delete event.processingStartedAt;
+        event.lastFailureCode = failureCode;
       },
     },
     audit,

@@ -17,7 +17,7 @@ Migration 0002 removes the trigger and its function. Provisioning is now a singl
 3. `repositories.users.ensure()` runs as the `authenticated` role with the verified subject bound to `request.jwt.claim.sub`, so the row it upserts can only ever be the caller's own. Repeats are idempotent and the address is normalised to lower case.
 4. Deleting the `auth.users` row cascades into `public.users` and every owned application table.
 
-Nothing was relaxed to achieve this: no `BYPASSRLS` role, no service-role policy, no trigger-specific exception, no replacement SECURITY DEFINER function, and no temporary disabling of row level security. Migration 0002 fails if the foreign key, its cascade, forced RLS, the ownership policies, or the `authenticated` grants are missing when it runs.
+Nothing was relaxed to achieve this: no `BYPASSRLS` role, no service-role policy, no trigger-specific exception, no replacement SECURITY DEFINER function, and no temporary disabling of row level security. Migration 0002 fails if the foreign key, its cascade, forced RLS, policies, or then-current grants are missing. The later migration 0004 intentionally removes private-table grants from the browser `authenticated` role and gives them to a `NOLOGIN`, `NOBYPASSRLS` server actor that remains subject-scoped by the same policies.
 
 Because that boundary is the only provisioning path, every route that touches a user-owned repository must pass through `requireUser()` first; `apps/web/src/lib/provisioning-boundary.test.ts` enforces this and requires a written justification for each exempt route.
 
@@ -29,6 +29,7 @@ Configure these for the Netlify **Deploy Previews** context:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `DATABASE_URL`
 - `DATA_ENCRYPTION_KEY`
+- `DATA_ENCRYPTION_KEYS_PREVIOUS` only during a bounded key-rotation window
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `PROFILE_ENGINE_URL`
 - `PROFILE_ENGINE_SHARED_SECRET`
@@ -62,11 +63,26 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 
 9. With each user independently authenticated, create synthetic profiles, two snapshots for one user, a reading/follow-up, report entitlement, and order.
 10. Verify user A receives not-found/empty results for user B's profile, snapshots, reading, draw, encrypted question, follow-up, report, order, and export—and vice versa. Verify cross-user insert/update/delete attempts are rejected by RLS.
+    Also prove Supabase's browser `authenticated` role receives `42501` for a direct private-table read even with a valid subject, while the non-login `starguidance_app` role can operate only on that subject through forced RLS.
 11. Force one generation failure, refresh, retry, and submit a follow-up. Compare reading ID, deck/spread/shuffle versions, locked timestamp, positions, card IDs, orientations, and orders byte-for-byte before and after.
 12. Update birth data and confirm the prior reading still references snapshot v1 while only future readings use v2.
 13. Export user A, then delete the account. Confirm all user-A database rows and the Auth identity are gone while user B remains intact.
 14. Inspect Netlify, Supabase, and profile-engine logs for birth data, questions, response bodies, secrets, and authorization headers. Record a redacted pass/fail result only.
 15. Delete the temporary Auth users/project after evidence is captured. Record only non-secret pass/fail results and migration IDs.
+
+## Positive PKCE magic-link smoke test
+
+The automated suite cannot manufacture a successful `?code=` callback. Supabase binds the PKCE verifier to the browser that requested the link, while the link itself must arrive through a deliverable mailbox. An admin-generated link does not contain the browser verifier and is not an equivalent test.
+
+Use this one-time manual procedure only with an owner-controlled staging inbox:
+
+1. Open the exact Deploy Preview #4 URL in a fresh private browser window and confirm `/api/health` reports the expected commit and a healthy staging runtime.
+2. Enter the staging inbox address on `/sign-in` and submit once. Do not put the address in a terminal, test report, screenshot, issue, or PR.
+3. Open the newly delivered message in that inbox and follow its link in the same browser context that initiated sign-in. Do not copy the token or callback URL into evidence.
+4. Confirm the callback lands on `/profile`, the session survives one reload, and sign-out returns the browser to an unauthenticated state.
+5. Record only the date, preview commit, browser family, and pass/fail result. Delete the message and test identity according to the approved email and identity-retention policy.
+
+An inbox address is not currently available to automation. `MAIL` in a typical runner is a local spool path, not an email address, and must not be treated as authorization to send mail.
 
 ## Required evidence before this gate closes
 
@@ -77,5 +93,6 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 - profile lineage, export, and deletion results;
 - Netlify Deploy Preview URL and green build/function logs with secrets redacted;
 - confirmation that deploy-preview environment values are scoped away from production.
+- a redacted positive PKCE result from the owner-inbox procedure above.
 
 If any required variable is absent, stop. Report the variable name and its configuration location only; never request the value in chat.

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
 import { createDatabaseClient, type DatabaseTransaction } from "../src/postgres-client";
 import {
   authSubjectExists,
@@ -25,7 +26,7 @@ import {
  *
  * The replacement is the application boundary: requireUser() validates the
  * Supabase subject and repositories.users.ensure() inserts the row as the
- * `authenticated` role with the verified subject bound to
+ * server-only application role with the verified subject bound to
  * `request.jwt.claim.sub`. These tests exercise exactly that SQL and exactly
  * those policies. Nothing here is granted an exemption from row level security.
  */
@@ -43,19 +44,19 @@ function client() {
   return sql;
 }
 
-/** Runs work exactly as the application does: authenticated, subject bound. */
+/** Runs work exactly as the server does: application role, subject bound. */
 async function asSubject<T>(subjectId: string, work: (tx: DatabaseTransaction) => Promise<T>) {
   return client().begin(async (tx) => {
-    await tx.unsafe("set local role authenticated");
+    await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
     await tx`select set_config('request.jwt.claim.sub', ${subjectId}, true)`;
     return work(tx as DatabaseTransaction);
   });
 }
 
-/** Runs work as `authenticated` with no verified subject at all. */
+/** Runs work as the application role with no verified subject at all. */
 async function asUnidentifiedSession<T>(work: (tx: DatabaseTransaction) => Promise<T>) {
   return client().begin(async (tx) => {
-    await tx.unsafe("set local role authenticated");
+    await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
     return work(tx as DatabaseTransaction);
   });
 }
@@ -139,17 +140,37 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
       where schemaname = 'public' and tablename = 'users' and policyname = 'users_self'`;
     expect(policy?.count).toBe(1);
 
-    const [grants] = await client()<{ complete: boolean }[]>`
+    const [grants] = await client()<
+      {
+        complete: boolean;
+        browser_private_access: boolean;
+        actor_safe: boolean;
+      }[]
+    >`
       select (
-        has_table_privilege('authenticated', 'public.users', 'SELECT') and
-        has_table_privilege('authenticated', 'public.users', 'INSERT') and
-        has_table_privilege('authenticated', 'public.users', 'UPDATE') and
-        has_table_privilege('authenticated', 'public.users', 'DELETE')
-      ) as complete`;
-    expect(grants?.complete, "the authenticated role must keep its grants").toBe(true);
+        has_table_privilege(${APPLICATION_DATABASE_ROLE}, 'public.users', 'SELECT') and
+        has_table_privilege(${APPLICATION_DATABASE_ROLE}, 'public.users', 'INSERT') and
+        has_table_privilege(${APPLICATION_DATABASE_ROLE}, 'public.users', 'UPDATE') and
+        has_table_privilege(${APPLICATION_DATABASE_ROLE}, 'public.users', 'DELETE')
+      ) as complete,
+      (
+        has_table_privilege('authenticated', 'public.users', 'SELECT') or
+        has_table_privilege('authenticated', 'public.reading_draws', 'UPDATE') or
+        has_table_privilege('authenticated', 'public.entitlements', 'INSERT')
+      ) as browser_private_access,
+      exists (
+        select 1 from pg_roles where rolname = ${APPLICATION_DATABASE_ROLE}
+          and not rolcanlogin and not rolsuper and not rolcreaterole
+          and not rolcreatedb and not rolinherit and not rolbypassrls
+      ) as actor_safe`;
+    expect(grants?.complete, "the server actor must have its scoped grants").toBe(true);
+    expect(grants?.browser_private_access, "the browser role must have no private path").toBe(
+      false,
+    );
+    expect(grants?.actor_safe, "the server actor must be non-login and non-privileged").toBe(true);
 
     const [webhook] = await client()<{ granted: boolean }[]>`
-      select has_table_privilege('authenticated', 'public.payment_webhook_events', 'select')
+      select has_table_privilege(${APPLICATION_DATABASE_ROLE}, 'public.payment_webhook_events', 'select')
         as granted`;
     expect(webhook?.granted, "payment_webhook_events stays service-only").toBe(false);
 
@@ -161,6 +182,16 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
         and confrelid = 'auth.users'::regclass
         and confdeltype = 'c'`;
     expect(foreignKey?.count, "the ON DELETE CASCADE auth foreign key must survive").toBe(1);
+  });
+
+  it("blocks a browser JWT role from bypassing the server boundary", async () => {
+    await expect(
+      client().begin(async (tx) => {
+        await tx.unsafe("set local role authenticated");
+        await tx`select set_config('request.jwt.claim.sub', ${userA.id}, true)`;
+        await tx`select id from users where id = ${userA.id}`;
+      }),
+    ).rejects.toMatchObject({ code: "42501" });
   });
 
   it("creates an Auth identity without an error and without an application row", async () => {
@@ -215,7 +246,7 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
         await tx`insert into users (id, email)
           values (${foreignId}, ${`${SYNTHETIC_PREFIX}provision-forged@${SYNTHETIC_EMAIL_DOMAIN}`})`;
       }),
-      "an authenticated caller must not insert an arbitrary user id",
+      "an application subject must not insert an arbitrary user id",
     ).rejects.toMatchObject({ code: "42501" });
 
     await expect(
@@ -224,7 +255,7 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
           values (${userB.id}, ${`${SYNTHETIC_PREFIX}provision-stolen@${SYNTHETIC_EMAIL_DOMAIN}`})
           on conflict (id) do update set email = excluded.email`;
       }),
-      "an authenticated caller must not take over another subject",
+      "an application subject must not take over another subject",
     ).rejects.toMatchObject({ code: "42501" });
 
     // Neither attempt may have changed anything.
@@ -239,14 +270,14 @@ describeDatabase("Auth identity provisioning after migration 0002", () => {
       const [row] = await tx<{ count: number }[]>`select count(*)::integer as count from users`;
       return row?.count ?? -1;
     });
-    expect(rows, "an unidentified authenticated session must see no user rows").toBe(0);
+    expect(rows, "an unidentified application session must see no user rows").toBe(0);
 
     await expect(
       asUnidentifiedSession(async (tx) => {
         await tx`insert into users (id, email)
           values (${randomUUID()}, ${`${SYNTHETIC_PREFIX}provision-anon@${SYNTHETIC_EMAIL_DOMAIN}`})`;
       }),
-      "an unidentified authenticated session must not provision",
+      "an unidentified application session must not provision",
     ).rejects.toMatchObject({ code: "42501" });
 
     if (connectionBypassesRls) {

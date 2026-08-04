@@ -105,6 +105,21 @@ jobs:
       - run: pnpm --filter @starguidance/database exec drizzle-kit migrate
       - run: pnpm db:seed
       - run: pnpm --filter @starguidance/database test:integration
+      - name: Rehearse logical backup and isolated restore
+        env:
+          APP_ENV: test
+          PGPASSWORD: postgres
+          RESTORE_FIXTURE_CONFIRM: SYNTHETIC_DISPOSABLE_DATABASE
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          RESTORE_FIXTURE_ACTION=seed pnpm --filter @starguidance/database restore:fixture
+          pg_dump --host 127.0.0.1 --username postgres --format custom --file "$RUNNER_TEMP/starguidance.dump" starguidance
+          createdb --host 127.0.0.1 --username postgres starguidance_restore
+          pg_restore --host 127.0.0.1 --username postgres --dbname starguidance_restore --exit-on-error "$RUNNER_TEMP/starguidance.dump"
+          DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/starguidance_restore RESTORE_FIXTURE_ACTION=verify pnpm --filter @starguidance/database restore:fixture
+          RESTORE_FIXTURE_ACTION=cleanup pnpm --filter @starguidance/database restore:fixture
+          dropdb --host 127.0.0.1 --username postgres starguidance_restore
 
   secret-scan:
     runs-on: ubuntu-latest

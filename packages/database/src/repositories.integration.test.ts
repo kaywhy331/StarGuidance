@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { APPLICATION_DATABASE_ROLE } from "./database-role";
 import { createDatabaseClient, type DatabaseTransaction } from "./postgres-client";
 import {
   createSubject,
@@ -50,7 +51,7 @@ const ids = {
 async function asUser<T>(userId: string, work: (tx: DatabaseTransaction) => Promise<T>) {
   if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
   return sql.begin(async (tx) => {
-    await tx.unsafe("set local role authenticated");
+    await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
     await tx`select set_config('request.jwt.claim.sub', ${userId}, true)`;
     return work(tx as DatabaseTransaction);
   });
@@ -75,7 +76,7 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       // creates them explicitly. The fixture connection is the migration role,
       // which bypasses row level security (BYPASSRLS on Supabase, superuser in
       // CI) — that is what lets it both seed and later inspect rows it does not
-      // own. Every assertion below runs as `authenticated` instead, so nothing
+      // own. Every assertion below runs as the non-privileged application role, so nothing
       // that is being tested benefits from that exemption.
       await tx`insert into users (id, email) values
         (${ids.userA}, ${subjectA?.email ?? ""}),
@@ -158,7 +159,7 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
     await sql.end();
   });
 
-  it("prevents either authenticated user from selecting every other user's private record", async () => {
+  it("prevents either application subject from selecting every other user's private record", async () => {
     const tables = [
       "user_settings",
       "consents",

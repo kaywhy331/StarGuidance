@@ -22,7 +22,7 @@ Create the profile engine as a Render Web Service using the repository connectio
 | Docker Build Context | `.`                   |
 | Health Check Path    | `/health`             |
 
-Render supplies `PORT` at runtime. The container binds Uvicorn to `0.0.0.0` and uses that value, with `8000` only as a local container fallback. Configure `APP_ENV=staging` and a managed `PROFILE_ENGINE_SHARED_SECRET` in the Render staging environment. Do not configure either `ENABLE_WESTERN_ASTROLOGY` or `ENABLE_BAZI` as enabled; both integrations remain explicitly unavailable.
+Render supplies `PORT` at runtime. The container binds Uvicorn to `0.0.0.0` and uses that value, with `8000` only as a local container fallback. Configure `APP_ENV=staging` and a managed `PROFILE_ENGINE_SHARED_SECRET` in the Render staging environment. Keep `ENABLE_WESTERN_ASTROLOGY=false` and `ENABLE_BAZI=false`; a truthy value now fails startup because neither validated adapter exists. The guard may be removed only with the licensed implementation, approved reference suite, conventions, and expert sign-off defined in [Profile calculations](PROFILE-CALCULATIONS.md).
 
 Hosted startup fails before accepting traffic when the shared secret is blank, shorter than 32 characters, visibly placeholder-like, whitespace-padded, or otherwise trivially weak. The value must match the server-only Netlify Deploy Preview variable, but must never be copied into Git, build output, screenshots, support tickets, or PR text. `/health` remains public and contains only service status/version; `/v1/profile/compute` requires the bearer secret.
 
@@ -44,8 +44,9 @@ Configure secret values in the Netlify UI with the narrowest deploy-context scop
 | `NEXT_PUBLIC_APP_URL`                    | `http://localhost:3000`          | optional; verified request origin is used                | canonical HTTPS URL      | Auth redirect origin; not sensitive                          |
 | `NEXT_PUBLIC_SUPABASE_URL`               | required for local Supabase      | required                                                 | required                 | Project URL; public runtime value                            |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`          | required for local Supabase      | required                                                 | required                 | Publishable/anon project key; RLS remains mandatory          |
-| `DATABASE_URL`                           | optional local Postgres          | required, server-only                                    | required, server-only    | Pooler/direct URL able to `SET LOCAL ROLE authenticated`     |
+| `DATABASE_URL`                           | optional local Postgres          | required, server-only                                    | required, server-only    | Pooler/direct URL able to `SET LOCAL ROLE starguidance_app`  |
 | `DATA_ENCRYPTION_KEY`                    | required for Supabase mode       | required, server-only                                    | required, server-only    | Base64-encoded 32-byte managed key; never stored in Postgres |
+| `DATA_ENCRYPTION_KEYS_PREVIOUS`          | optional rotation rollback keys  | temporary, server-only                                   | temporary, server-only   | At most three prior keys; remove after verified rotation     |
 | `SUPABASE_SERVICE_ROLE_KEY`              | optional except account deletion | required, server-only                                    | required, server-only    | Auth deletion and disposable test-user cleanup only          |
 | `PROFILE_ENGINE_URL`                     | local URL                        | Render staging HTTPS URL                                 | private production URL   | Server-to-server calculator; record hostname only            |
 | `PROFILE_ENGINE_SHARED_SECRET`           | optional                         | required, server-only                                    | required, server-only    | Calculator authentication                                    |
@@ -64,7 +65,20 @@ The repository's Drizzle files in `packages/database/migrations` are the only mi
 5. Run the Auth-backed two-user procedure in [Supabase staging](SUPABASE-STAGING.md).
 6. Record migration IDs and non-secret results; do not copy connection strings or keys into the PR.
 
-Migration `0001_supabase_staging` adds durable reading lenses and order lineage, links hosted Auth identities when `auth.users` exists, forces RLS, revokes public access, and grants only the required authenticated operations. It refuses to invent missing legacy reading lenses or order snapshot lineage.
+Migration `0001_supabase_staging` adds durable reading lenses and order lineage, links hosted Auth identities when `auth.users` exists, and forces RLS. Migration `0002_remove_auth_user_sync_trigger` moves user provisioning to the verified application boundary. Migration `0003_webhook_replay_lease` adds retry-safe webhook claims. Migration `0004_server_actor_role` removes all private-table privileges from browser JWT roles and grants subject-scoped operations only to the non-login server actor. Applied files remain immutable.
+
+## Hosted control-plane review
+
+Application tests can prove that StarGuidance does not intentionally emit private payloads, but they cannot prove provider-side retention settings. Before production, an authorized operator must inspect each dashboard and record only the setting name, effective retention period, region, access roles, deletion/export behavior, and a pass/fail result:
+
+| Service     | Review scope                                                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Netlify     | build/function log retention, deploy access, environment-variable scopes, log drains, and operator audit history             |
+| Supabase    | Postgres/Auth/API log retention, backups/PITR, project region, database access roles, and Auth email logs                    |
+| Render      | build/runtime log retention, service access, environment-secret access, and any log stream integration                       |
+| AI provider | prompt/output retention, training use, abuse-monitoring exceptions, region, subprocessors, deletion, and organization access |
+
+The current execution environment has GitHub access to the protected staging workflow but no authenticated Netlify site context, Supabase management token/CLI, Render management token, or AI-provider administrative console. Consequently the application-level redaction checks are verified, while this dashboard/contract review remains owner-controlled. Never paste dashboard exports, tokens, log bodies, or secret values into the repository or PR.
 
 ## Release gates
 

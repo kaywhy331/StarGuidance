@@ -13,7 +13,7 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className={`min-h-11 rounded-full bg-[#f5efe1] px-5 py-2 font-semibold text-[#171121] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`min-h-11 min-w-0 max-w-full rounded-full bg-[#f5efe1] px-5 py-2 font-semibold whitespace-normal text-[#171121] [overflow-wrap:anywhere] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
       type={type}
       {...props}
     />
@@ -23,7 +23,7 @@ export function Button({
 export function Panel({ className = "", ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl ${className}`}
+      className={`min-w-0 max-w-full rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl [overflow-wrap:anywhere] ${className}`}
       {...props}
     />
   );
@@ -42,13 +42,13 @@ export function Field({
   const id = props.id ?? props.name;
   const descriptionId = `${id}-description`;
   return (
-    <label className="grid gap-2" htmlFor={id}>
+    <label className="grid min-w-0 gap-2" htmlFor={id}>
       <span className="text-sm font-medium text-[#e9e1ef]">{label}</span>
       <input
         {...props}
         aria-describedby={hint || error ? descriptionId : undefined}
         aria-invalid={Boolean(error)}
-        className="min-h-12 rounded-2xl border border-white/15 bg-[#120e20] px-4 text-white placeholder:text-[#786e85]"
+        className="min-h-12 w-full min-w-0 max-w-full rounded-2xl border border-white/15 bg-[#120e20] px-4 text-white placeholder:text-[#786e85]"
         id={id}
       />
       {(hint || error) && (

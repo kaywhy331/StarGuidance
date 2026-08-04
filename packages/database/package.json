@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "db:check": "drizzle-kit check",
-    "test:integration": "vitest run --no-file-parallelism --testTimeout=120000 --hookTimeout=180000 src/repositories.integration.test.ts tests/auth-provisioning.integration.test.ts",
+    "test:integration": "vitest run --no-file-parallelism --testTimeout=120000 --hookTimeout=180000 src/repositories.integration.test.ts tests/auth-provisioning.integration.test.ts tests/webhook-replay.integration.test.ts",
     "db:auth-shim": "tsx scripts/install-auth-shim.ts",
     "staging:migration-history": "drizzle-kit check && vitest run tests/migration-integrity.test.ts",
     "staging:preflight": "tsx scripts/preflight-staging-database.ts",
@@ -19,6 +19,9 @@
     "staging:cleanup": "tsx scripts/cleanup-synthetic.ts",
     "staging:summary": "tsx scripts/render-staging-summary.ts",
     "staging:gate": "tsx scripts/run-staging-gate.ts",
+    "key-rotation": "tsx scripts/rotate-encryption-key.ts",
+    "restore:fixture": "tsx scripts/restore-fixture.ts",
+    "retention": "tsx scripts/apply-retention.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },

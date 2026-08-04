@@ -22,6 +22,20 @@
       "when": 1785709399728,
       "tag": "0002_remove_auth_user_sync_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785865302892,
+      "tag": "0003_webhook_replay_lease",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785866265679,
+      "tag": "0004_server_actor_role",
+      "breakpoints": true
     }
   ]
 }

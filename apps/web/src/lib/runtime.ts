@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { ApplicationRepositories } from "@starguidance/database";
+import { isValidEncryptionKey, type ApplicationRepositories } from "@starguidance/database";
 
 import { isLocalRuntimeAdapterAuthorized } from "./hosted-runtime";
 import { localStore } from "./local-store";
@@ -23,6 +23,26 @@ function required(name: string): string {
   return value;
 }
 
+const MAX_PREVIOUS_ENCRYPTION_KEYS = 3;
+
+function managedEncryptionKeys(): [string, ...string[]] {
+  const current = required("DATA_ENCRYPTION_KEY");
+  const previous = (process.env.DATA_ENCRYPTION_KEYS_PREVIOUS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (previous.length > MAX_PREVIOUS_ENCRYPTION_KEYS)
+    throw new RuntimeConfigurationError(
+      `DATA_ENCRYPTION_KEYS_PREVIOUS accepts at most ${MAX_PREVIOUS_ENCRYPTION_KEYS} managed keys.`,
+    );
+  const keys = [current, ...previous] as [string, ...string[]];
+  if (keys.some((key) => !isValidEncryptionKey(key)))
+    throw new RuntimeConfigurationError(
+      "Every data-encryption key must be canonical base64 for exactly 32 bytes.",
+    );
+  return [...new Set(keys)] as [string, ...string[]];
+}
+
 export function getRuntimeAdapter(): RuntimeAdapter {
   const selected = process.env.RUNTIME_ADAPTER;
   if (selected !== "local" && selected !== "supabase")
@@ -38,11 +58,7 @@ export function getRuntimeAdapter(): RuntimeAdapter {
     required("NEXT_PUBLIC_SUPABASE_URL");
     required("NEXT_PUBLIC_SUPABASE_ANON_KEY");
     required("DATABASE_URL");
-    const key = Buffer.from(required("DATA_ENCRYPTION_KEY"), "base64");
-    if (key.length !== 32)
-      throw new RuntimeConfigurationError(
-        "DATA_ENCRYPTION_KEY must be a base64-encoded 32-byte managed secret.",
-      );
+    managedEncryptionKeys();
   }
   return selected;
 }
@@ -61,4 +77,8 @@ export function getServiceRepositories(): ApplicationRepositories {
 
 export function getEncryptionKey(): string {
   return getRuntimeAdapter() === "local" ? localStore.key : required("DATA_ENCRYPTION_KEY");
+}
+
+export function getDecryptionKeys(): readonly string[] {
+  return getRuntimeAdapter() === "local" ? [localStore.key] : managedEncryptionKeys();
 }

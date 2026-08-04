@@ -45,6 +45,16 @@ export interface LocalStore {
   feedback: Map<string, { userId: string; readingId: string }>;
   profileSnapshots: Map<string, LocalProfileVersion>;
   idempotency: Map<string, string>;
+  webhookEvents: Map<
+    string,
+    {
+      eventType: string;
+      processingStartedAt?: number;
+      attemptCount: number;
+      processed: boolean;
+      lastFailureCode?: string;
+    }
+  >;
   auditEvents: AuditRecord[];
 }
 
@@ -67,6 +77,7 @@ export const localStore: LocalStore =
     feedback: new Map(),
     profileSnapshots: new Map(),
     idempotency: new Map(),
+    webhookEvents: new Map(),
     auditEvents: [],
   });
 

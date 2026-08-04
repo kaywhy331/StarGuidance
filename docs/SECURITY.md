@@ -8,7 +8,7 @@ Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 - Runtime selection fails closed. The local adapter requires `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, a development/test `APP_ENV`, and no hosted Netlify context.
 - Supabase Auth is verified server-side with `auth.getUser()`. Passwordless links terminate at a same-site callback, and account deletion also removes the Supabase Auth identity through a server-only service-role client.
 - The Supabase repository encrypts raw profiles, calculation payloads, questions, follow-ups, and feedback comments with AES-256-GCM before SQL persistence. The managed key remains outside Postgres.
-- User-scoped SQL transactions assume the `authenticated` role and set only the subject obtained from verified Supabase Auth. RLS is forced on every user-owned table; anonymous/public table privileges are revoked.
+- Browser JWTs have no private-table privileges. User-scoped SQL transactions assume the non-login, non-inheriting `starguidance_app` role and set only the subject obtained from verified Supabase Auth. RLS is forced on every user-owned table; anonymous/public access is revoked.
 - Mutating browser routes validate Origin/Host and use bounded in-process rate limits. Stripe webhooks are exempt from Origin checks and require signature verification.
 - Profile-engine bearer authentication is enabled whenever `PROFILE_ENGINE_SHARED_SECRET` is configured. In staging and production, startup rejects a missing or trivially weak secret before serving traffic.
 - The profile-engine container disables Uvicorn access logs, and its application does not log request bodies, response bodies, birth inputs, authorization headers, or derived calculations. `/health` remains public and contains no private data.
@@ -19,18 +19,23 @@ Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 - History previews are decrypted only for an authenticated response; no question preview is stored in plaintext.
 - Authenticated export reads only through user-scoped repositories, then decrypts for that response. Account deletion cascades durable private rows before deleting the hosted Auth identity.
 - Reading session and draw writes are one database transaction. Outputs are separate append-only rows, so failure, retry, refresh recovery, and follow-up cannot replace the locked assignments.
-- Stripe events are signature checked, claimed through a unique durable event row, and resolve user/snapshot ownership from the persisted order rather than trusting webhook metadata.
+- Stripe events are signature checked, claimed with a failure-releasable durable lease, and resolve user/snapshot ownership from the persisted order rather than trusting webhook metadata. Full refunds and disputes revoke the entitlement, and report reads require it to remain active.
 - Oracle streaming emits only schema-validated persisted result phases; the private question is not included in the stream URL or payload.
 - The deploy-preview composition contains synthetic cards and text only, is `noindex`, and is enabled by a Netlify deploy-preview-only flag that defaults off on public production.
 
 ## Production gates
 
-The adapter and isolated-Postgres RLS suite are implemented. This branch has not been connected to an owner-managed Supabase staging project because no credentials are available in the execution environment. A deployment still needs:
+The adapter is connected to the owner-approved disposable Supabase staging project through Netlify Deploy Preview #4. Protected run `30933588147` passed migration/seed rehearsal, forced-RLS and two-user isolation, Auth-backed provisioning, encrypted profile and reading persistence, locked-draw recovery, export, account/Auth deletion, profile-engine authorization, cleanup, redaction, and automated accessibility checks. That evidence is staging-only and does not approve a production deployment.
 
-- managed `DATA_ENCRYPTION_KEY` generation, rotation, and recovery procedures;
-- Supabase staging credentials, migration/seed execution, and Auth-backed adversarial cross-user verification;
-- a key-rotation rehearsal and durable asynchronous report/retention jobs;
-- Stripe test credentials and replay tests against durable order/entitlement storage;
+The remaining security and operations gates are:
+
+- owner-managed key generation/escrow plus a credentialed rehearsal of the implemented dual-read/batched re-encryption procedure;
+- owner-approved private-data durations and scheduling for the guarded retention command;
+- a positive PKCE exchange using an owner-controlled deliverable inbox;
+- hosted Netlify, Supabase, Render, and AI-provider log-retention review by an operator with dashboard access;
+- Stripe test credentials and a public webhook/Checkout/refund rehearsal against durable order and entitlement storage;
 - provider no-retention contracts, redaction verification, privacy-safe telemetry, backup/restore, incident response, and regional crisis resources.
+
+The concrete role boundary, key-rotation commands, CI logical restore, guarded retention tool, telemetry boundary, and incident procedure are documented in [Operations and recovery](OPERATIONS.md).
 
 Never put birth data or questions in URLs, analytics, breadcrumbs, logs, support screenshots, or unauthenticated storage. The committed `.env.example` contains names only and no credentials.

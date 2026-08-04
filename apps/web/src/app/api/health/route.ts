@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createInterpretationProvider } from "@starguidance/ai";
-import { createDatabaseClient } from "@starguidance/database";
+import {
+  APPLICATION_DATABASE_ROLE,
+  createDatabaseClient,
+  isValidEncryptionKey,
+} from "@starguidance/database";
 
 import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
 import { profileEngineBaseUrl } from "@/lib/profile-engine";
@@ -144,6 +148,26 @@ async function probeDatabase(): Promise<DatabaseStatus> {
             where table_schema = 'public' and table_name = 'orders'
               and column_name = 'profile_snapshot_id'
           )
+          and not exists (
+            select required.column_name
+            from unnest(array[
+              'processing_started_at', 'attempt_count', 'last_failure_code'
+            ]) as required(column_name)
+            where not exists (
+              select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'payment_webhook_events'
+                and columns.column_name = required.column_name
+            )
+          )
+          and exists (
+            select 1 from pg_roles where rolname = ${APPLICATION_DATABASE_ROLE}
+              and not rolcanlogin and not rolsuper and not rolbypassrls
+          )
+          and not (
+            has_table_privilege('authenticated', 'public.users', 'select')
+            or has_table_privilege('authenticated', 'public.reading_draws', 'update')
+            or has_table_privilege('authenticated', 'public.entitlements', 'insert')
+          )
         ) as schema_ready,
         not exists (
           select 1
@@ -164,7 +188,7 @@ async function probeDatabase(): Promise<DatabaseStatus> {
     if (readiness?.schema_ready && readiness.rls_ready) {
       try {
         await client.begin(async (tx) => {
-          await tx.unsafe("set local role authenticated");
+          await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
           await tx`select set_config('request.jwt.claim.sub', ${"00000000-0000-4000-8000-000000000000"}, true)`;
           await tx`select id from users limit 1`;
         });
@@ -207,12 +231,16 @@ export async function GET() {
     .map(({ name }) => name);
   const invalidEnvironmentVariables: string[] = [];
   if (configured("DATA_ENCRYPTION_KEY")) {
-    try {
-      if (Buffer.from(process.env.DATA_ENCRYPTION_KEY as string, "base64").length !== 32)
-        invalidEnvironmentVariables.push("DATA_ENCRYPTION_KEY");
-    } catch {
+    if (!isValidEncryptionKey(process.env.DATA_ENCRYPTION_KEY as string))
       invalidEnvironmentVariables.push("DATA_ENCRYPTION_KEY");
-    }
+  }
+  if (configured("DATA_ENCRYPTION_KEYS_PREVIOUS")) {
+    const previous = (process.env.DATA_ENCRYPTION_KEYS_PREVIOUS as string)
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (previous.length > 3 || previous.some((key) => !isValidEncryptionKey(key)))
+      invalidEnvironmentVariables.push("DATA_ENCRYPTION_KEYS_PREVIOUS");
   }
   // A dependency address that is not a base URL is a configuration fault, and
   // reporting it here is the difference between "the engine is down" and "the

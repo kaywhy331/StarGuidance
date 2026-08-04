@@ -255,6 +255,9 @@ export const paymentWebhookEvents = pgTable("payment_webhook_events", {
   id,
   providerEventId: text("provider_event_id").notNull().unique(),
   eventType: text("event_type").notNull(),
+  processingStartedAt: timestamp("processing_started_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  lastFailureCode: text("last_failure_code"),
   processedAt: timestamp("processed_at", { withTimezone: true }),
   createdAt,
 });

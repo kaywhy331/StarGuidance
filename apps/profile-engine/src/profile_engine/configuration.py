@@ -12,12 +12,29 @@ WEAK_SECRET_MARKERS = (
     "secret-value",
     "test-secret",
 )
+UNVALIDATED_CALCULATION_FLAGS = (
+    "ENABLE_WESTERN_ASTROLOGY",
+    "ENABLE_BAZI",
+)
+ENABLED_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
 def validate_runtime_configuration(environment: Mapping[str, str] | None = None) -> None:
-    """Fail closed before serving hosted traffic with a weak service credential."""
+    """Fail closed before serving with unapproved calculations or hosted credentials."""
 
     values = os.environ if environment is None else environment
+    enabled_unvalidated_flags = tuple(
+        flag
+        for flag in UNVALIDATED_CALCULATION_FLAGS
+        if values.get(flag, "").strip().casefold() in ENABLED_VALUES
+    )
+    if enabled_unvalidated_flags:
+        raise RuntimeError(
+            f"{', '.join(enabled_unvalidated_flags)} cannot be enabled until a validated "
+            "calculation adapter, reference suite, licensing approval, and expert sign-off "
+            "are present"
+        )
+
     app_environment = values.get("APP_ENV", "development").strip().lower()
     if app_environment not in HOSTED_ENVIRONMENTS:
         return

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
 import { createDatabaseClient } from "../src/postgres-client";
 import { diagnoseAuthInsert } from "./diagnose-auth-insert";
 import { completeStage, record, requiredEnv } from "./staging-result";
@@ -15,6 +16,8 @@ const EXPECTED_MIGRATIONS = [
   "0000_busy_centennial",
   "0001_supabase_staging",
   "0002_remove_auth_user_sync_trigger",
+  "0003_webhook_replay_lease",
+  "0004_server_actor_role",
 ] as const;
 
 const USER_OWNED_TABLES = [
@@ -160,7 +163,7 @@ async function main(): Promise<void> {
     });
 
     const [webhook] = await sql<{ granted: boolean }[]>`
-      select has_table_privilege('authenticated', 'public.payment_webhook_events', 'select')
+      select has_table_privilege(${APPLICATION_DATABASE_ROLE}, 'public.payment_webhook_events', 'select')
         as granted`;
     const webhookOk = webhook?.granted === false;
     if (!webhookOk) failed = true;
@@ -169,14 +172,37 @@ async function main(): Promise<void> {
       check: "Webhook table withheld from the authenticated role",
       status: webhookOk ? "pass" : "fail",
       detail: webhookOk
-        ? "payment_webhook_events is service-only"
-        : "payment_webhook_events is readable by authenticated",
+        ? "payment_webhook_events is withheld from the application actor"
+        : "payment_webhook_events is readable by the application actor",
+    });
+
+    const [browserRole] = await sql<{ private_access: boolean; actor_ready: boolean }[]>`
+      select
+        has_table_privilege('authenticated', 'public.users', 'select')
+          or has_table_privilege('authenticated', 'public.reading_draws', 'update')
+          or has_table_privilege('authenticated', 'public.entitlements', 'insert')
+          as private_access,
+        exists (
+          select 1 from pg_roles where rolname = ${APPLICATION_DATABASE_ROLE}
+            and not rolcanlogin and not rolsuper and not rolcreaterole
+            and not rolcreatedb and not rolinherit and not rolbypassrls
+        ) as actor_ready`;
+    const roleBoundaryOk =
+      browserRole?.private_access === false && browserRole.actor_ready === true;
+    if (!roleBoundaryOk) failed = true;
+    record({
+      section: "Row level security",
+      check: "Browser role separated from the server application actor",
+      status: roleBoundaryOk ? "pass" : "fail",
+      detail: roleBoundaryOk
+        ? "authenticated has no private-table path; the server actor is non-login and non-privileged"
+        : "the browser/server database-role boundary is not enforced",
     });
 
     let actorOk = false;
     try {
       await sql.begin(async (tx) => {
-        await tx.unsafe("set local role authenticated");
+        await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
         await tx`select set_config('request.jwt.claim.sub', ${"00000000-0000-4000-8000-000000000000"}, true)`;
         await tx`select id from users limit 1`;
       });
@@ -187,13 +213,13 @@ async function main(): Promise<void> {
     if (!actorOk) failed = true;
     record({
       section: "Row level security",
-      check: "Authenticated-role transaction available",
+      check: "Server application-role transaction available",
       status: actorOk ? "pass" : "fail",
       detail: actorOk
-        ? "set local role authenticated with a verified subject succeeded"
-        : "the connection role cannot assume the authenticated role",
+        ? `set local role ${APPLICATION_DATABASE_ROLE} with a verified subject succeeded`
+        : `the connection role cannot assume ${APPLICATION_DATABASE_ROLE}`,
     });
-    forcedRlsProved = tablesOk && rlsOk && policiesOk && webhookOk && actorOk;
+    forcedRlsProved = tablesOk && rlsOk && policiesOk && webhookOk && roleBoundaryOk && actorOk;
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);
   }

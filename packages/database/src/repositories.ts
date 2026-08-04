@@ -100,7 +100,7 @@ export interface StoredOrder {
   provider: "local" | "stripe";
   providerSessionId: string;
   idempotencyKey: string;
-  status: "pending" | "paid" | "failed" | "refunded";
+  status: "pending" | "paid" | "failed" | "refunded" | "disputed";
   createdAt: string;
 }
 
@@ -203,6 +203,7 @@ export interface FeedbackRepository {
 
 export interface ReportRepository {
   get(userId: string, reportId: string): Promise<StoredReport | undefined>;
+  getByOrder(userId: string, orderId: string): Promise<StoredReport | undefined>;
   create(report: StoredReport): Promise<void>;
   list(userId: string): Promise<StoredReport[]>;
 }
@@ -218,12 +219,14 @@ export interface OrderRepository {
 
 export interface EntitlementRepository {
   grant(entitlement: StoredEntitlement): Promise<void>;
+  revokeByOrder(orderId: string): Promise<void>;
   list(userId: string): Promise<StoredEntitlement[]>;
 }
 
 export interface WebhookEventRepository {
   begin(providerEventId: string, eventType: string): Promise<boolean>;
   complete(providerEventId: string): Promise<void>;
+  fail(providerEventId: string, failureCode: string): Promise<void>;
 }
 
 export interface AuditRepository {

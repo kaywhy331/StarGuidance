@@ -12,7 +12,40 @@ Onboarding accepts one optional birth-time value and one independent optional bi
 
 ## Explicitly unavailable
 
-Western astrology, Whole Sign houses, Placidus houses, and BaZi Four Pillars return typed unavailable results. Their feature flags remain off. Activation requires commercially compatible dependencies, explicit boundary/orb/calendar conventions, approved golden reference cases, and domain-expert sign-off. The application does not return placeholder placements, houses, pillars, or fabricated facts.
+Western astrology, Whole Sign houses, Placidus houses, and BaZi Four Pillars return typed unavailable results. `ENABLE_WESTERN_ASTROLOGY=true` or `ENABLE_BAZI=true` makes the profile engine refuse to start; an environment flag cannot turn the current unavailable contracts into data. The guards may be removed only in the same reviewed change that supplies the validated adapter and every artifact below. The application does not return placeholder placements, houses, pillars, or fabricated facts.
+
+### Western astrology activation gate
+
+Activation requires one immutable, reviewable release record containing all of the following:
+
+1. **Licensing approval.** Record the exact ephemeris, geocoder, and historical-timezone datasets and versions; their commercial, hosted-service, caching, attribution, and redistribution terms; the approving reviewer; and the approval date. A dependency being installable or source-available is not sufficient approval.
+2. **Versioned conventions.** Freeze the zodiac/frame, coordinate model, supported bodies and points, ephemeris time scale and Delta-T policy, node policy, sign-boundary rounding, aspect set, per-aspect/per-body orbs, applying/separating policy, Whole Sign rules, Placidus implementation, Ascendant/Midheaven definitions, high-latitude behavior, and uncertainty tolerances. Freeze the place-to-coordinate and historical IANA-timezone resolution rules, ambiguous/nonexistent local-time behavior, and the date-only 24-hour stability algorithm. Do not infer a timezone from a city label with an unreviewed heuristic.
+3. **Independent golden references.** Check at least the PRD's 100 approved charts at 100% within documented numeric tolerances. The set must cover DST and historical offset changes, leap dates, sign/house/aspect boundaries, high latitudes, ambiguous and nonexistent civil times, incomplete location, birth time without place, and date-only cases where the Moon or an aspect changes during the day. Fixtures must name the independent authoritative source, source version, expected output, and dataset digest without including real customer data.
+4. **Contract and failure tests.** Prove that planetary positions, aspects, angles, both house systems, calculation status, uncertainty windows, engine/data versions, and source metadata survive schema validation. Missing or ambiguous context, unsupported latitude, dependency errors, and out-of-tolerance results must return a typed unavailable/uncertain result rather than a guessed placement.
+5. **Expert sign-off.** A named qualified Western-astrology reviewer must approve the convention manifest, reference results, permitted interpretations, and user-facing uncertainty language for the exact calculation release. Any dependency, dataset, convention, or tolerance change creates a new calculation version and repeats approval.
+
+### BaZi Four Pillars activation gate
+
+Activation requires a versioned convention manifest rather than hidden library defaults. It must state the Gregorian/civil input model, sexagenary-cycle reference, Li Chun versus lunar-new-year year boundary, solar-term month boundaries and astronomical source, day-pillar epoch, midnight versus early/late Zi-hour day boundary, hour-pillar rule, historical timezone source, DST treatment, longitude correction, true-solar-time policy, handling of ambiguous/nonexistent local times, and behavior when time or validated location context is absent.
+
+At least the PRD's 100 independently approved cases must match at 100%. The suite must straddle Li Chun, every relevant solar-term boundary, Gregorian leap dates, midnight and 23:00/Zi-hour boundaries, DST/offset changes, longitude edges, time-without-place, place-without-time, and cases where true-solar-time policy changes a pillar. Each fixture records its approved source, convention version, expected pillars/status, and dataset digest and contains no customer data. Unsupported or boundary-ambiguous inputs fail closed.
+
+A named qualified BaZi reviewer must sign the convention manifest, reference results, tolerances, terminology, and user-facing uncertainty behavior for the exact adapter, dependency, and dataset versions. Changing any of those inputs requires a new calculation version and renewed approval.
+
+### Dreamspell certification and content-rights gate
+
+`dreamspell-anchor-1987-07-26-kin34-v1` remains deterministic but `implemented_pending_approved_reference_dataset`; it is not a certified production interpretation source. Certification requires:
+
+1. An approved decoder dataset with at least the PRD's 60 known dates across centuries, Gregorian leap years/century rules, cycle wrap points, and the documented anchor. Every case must match Kin, Galactic Tone, Solar Seal, and color at 100%, and the dataset must carry a stable version and digest.
+2. Source provenance and reviewer approval for the decoder rules. Internal and user-facing language must identify the system as **Dreamspell** and must not present it as the historical Maya calendar or imply institutional/Indigenous endorsement.
+3. A rights register for every seal name, description, prompt, glyph, illustration, and other visual/text asset, identifying original authorship, public-domain basis, or a license that permits commercial web/report use and distribution. Attribution and modification requirements must be implemented before release.
+4. A named domain reviewer and rights approver signing the exact algorithm, dataset, terminology catalog, editorial copy, and asset manifest. Any change creates a new content/calculation version and repeats the affected approval and reference suite.
+
+Until those artifacts exist, Dreamspell-derived traits remain uncertain and excluded from the stable reading lens, and detailed report copy continues to disclose the pending-certification status.
+
+### Activation evidence
+
+The production-change PR must link a non-secret manifest recording adapter and dependency versions, convention/content versions, dataset IDs and SHA-256 digests, test command and 100% result, licensing/rights decision IDs, reviewer names/roles and dates, and rollback behavior. CI must run the approved reference fixtures. A configuration change or dashboard toggle by itself is never activation evidence.
 
 ## Versioning
 

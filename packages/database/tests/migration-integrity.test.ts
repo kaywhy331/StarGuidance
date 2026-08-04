@@ -57,6 +57,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0001_supabase_staging": "c3d16aaa2337cde908ec42da0c73ef3287d3cb3cf83c78822d64972cca678727",
   "0002_remove_auth_user_sync_trigger":
     "f5148ce8cdaaacaede22250f916b0fd9c2c18e116da147adea6398d160452f32",
+  "0003_webhook_replay_lease": "ba0cfa16d9a3256e98c43d2a62b6b5e6cad5bcae328ccec0a61f45088f62b9f9",
+  "0004_server_actor_role": "32dd231cbe55ef316ef71896b1fc9f11af1772c4fdc0722cd58efc3b2fa76aad",
 };
 
 describe("migration history", () => {
@@ -72,6 +74,8 @@ describe("migration history", () => {
       "0000_busy_centennial",
       "0001_supabase_staging",
       "0002_remove_auth_user_sync_trigger",
+      "0003_webhook_replay_lease",
+      "0004_server_actor_role",
     ]);
   });
 
@@ -115,5 +119,15 @@ describe("migration history", () => {
     for (const [pattern, description] of forbidden) {
       expect(sql, `migration 0002 must not introduce ${description}`).not.toMatch(pattern);
     }
+  });
+
+  it("keeps the server actor non-login, non-inheriting, and subject-scoped", () => {
+    const sql = executableSql("0004_server_actor_role");
+    expect(sql).toMatch(/create\s+role\s+starguidance_app\s+nologin/i);
+    expect(sql).toMatch(/noinherit/i);
+    expect(sql).toMatch(/nobypassrls/i);
+    expect(sql).toMatch(/revoke\s+all[\s\S]*from\s+public,\s*authenticated/i);
+    expect(sql).not.toMatch(/\bbypassrls\b(?!\s*\))/i);
+    expect(sql).not.toMatch(/security\s+definer/i);
   });
 });

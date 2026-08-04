@@ -1,4 +1,4 @@
-import { createDatabaseClient } from "@starguidance/database";
+import { APPLICATION_DATABASE_ROLE, createDatabaseClient } from "@starguidance/database";
 import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test, type BrowserContext } from "@playwright/test";
 
@@ -13,7 +13,7 @@ import {
  * Verifies the provisioning path that replaced the auth.users synchronisation
  * trigger removed by migration 0002, end to end on the deployed preview.
  *
- * The database is read as the subject itself — `authenticated` with
+ * The database is read as the subject itself — the server application role with
  * `request.jwt.claim.sub` bound — so "no row" cannot be confused with "a row
  * that forced row level security is hiding". No address, token, or subject is
  * ever recorded in the published evidence.
@@ -37,7 +37,7 @@ async function ownRow(
   subjectId: string,
 ): Promise<{ count: number; email: string | undefined; createdAt: string | undefined }> {
   return sql.begin(async (tx) => {
-    await tx.unsafe("set local role authenticated");
+    await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
     await tx`select set_config('request.jwt.claim.sub', ${subjectId}, true)`;
     const rows = await tx<{ email: string; created_at: Date }[]>`
       select email, created_at from users where id = ${subjectId}`;

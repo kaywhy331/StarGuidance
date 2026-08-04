@@ -26,7 +26,10 @@ export function AppNav() {
         aria-label="Primary navigation"
         className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-2 px-6 py-4"
       >
-        <Link className="mr-auto tracking-[0.18em] uppercase" href="/">
+        <Link
+          className="mr-auto min-w-0 tracking-[0.18em] [overflow-wrap:anywhere] uppercase"
+          href="/"
+        >
           StarGuidance
         </Link>
         {links.map(([label, href]) => (

@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getRuntimeAdapter } from "./runtime";
+import { getDecryptionKeys, getRuntimeAdapter } from "./runtime";
+
+function configureSupabase(): void {
+  vi.stubEnv("RUNTIME_ADAPTER", "supabase");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "synthetic-anon-key");
+  vi.stubEnv("DATABASE_URL", "postgresql://synthetic.invalid/database");
+  vi.stubEnv("DATA_ENCRYPTION_KEY", Buffer.alloc(32, 1).toString("base64"));
+}
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -39,5 +47,25 @@ describe("runtime adapter policy", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
     expect(() => getRuntimeAdapter()).toThrow(/NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+  });
+
+  it("accepts a bounded previous-key window for zero-downtime rotation", () => {
+    configureSupabase();
+    const previous = Buffer.alloc(32, 2).toString("base64");
+    vi.stubEnv("DATA_ENCRYPTION_KEYS_PREVIOUS", previous);
+    expect(getRuntimeAdapter()).toBe("supabase");
+    expect(getDecryptionKeys()).toEqual([Buffer.alloc(32, 1).toString("base64"), previous]);
+  });
+
+  it("rejects malformed or unbounded previous-key configuration", () => {
+    configureSupabase();
+    vi.stubEnv("DATA_ENCRYPTION_KEYS_PREVIOUS", "not-a-key");
+    expect(() => getRuntimeAdapter()).toThrow(/canonical base64/);
+
+    vi.stubEnv(
+      "DATA_ENCRYPTION_KEYS_PREVIOUS",
+      [2, 3, 4, 5].map((value) => Buffer.alloc(32, value).toString("base64")).join(","),
+    );
+    expect(() => getRuntimeAdapter()).toThrow(/at most 3/);
   });
 });

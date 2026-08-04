@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { BirthProfileInput, ProfileSnapshot } from "@starguidance/contracts";
 import { getProfileCompleteness } from "@starguidance/contracts";
 import {
-  decryptSensitive,
+  decryptSensitiveWithKeys,
   encryptSensitive,
   type ApplicationRepositories,
   type RepositoryUser,
@@ -13,7 +13,7 @@ import {
 } from "@starguidance/database";
 
 import type { ProfileCalculation } from "./profile-engine";
-import { getEncryptionKey, getRepositoriesForUser } from "./runtime";
+import { getDecryptionKeys, getEncryptionKey, getRepositoriesForUser } from "./runtime";
 
 export interface RequestPersistence {
   repositories: ApplicationRepositories;
@@ -23,10 +23,11 @@ export interface RequestPersistence {
 
 export function persistenceFor(user: Pick<RepositoryUser, "id">): RequestPersistence {
   const key = getEncryptionKey();
+  const decryptionKeys = getDecryptionKeys();
   return {
     repositories: getRepositoriesForUser(user.id),
     encrypt: (value) => encryptSensitive(value, key),
-    decrypt: (value) => decryptSensitive(value, key),
+    decrypt: (value) => decryptSensitiveWithKeys(value, decryptionKeys),
   };
 }
 

@@ -31,7 +31,7 @@ import type {
   DatabaseRow,
   DatabaseTransaction,
 } from "@starguidance/database";
-import { createDatabaseClient } from "@starguidance/database";
+import { APPLICATION_DATABASE_ROLE, createDatabaseClient } from "@starguidance/database";
 import { TAROT_CONTENT_VERSION } from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
@@ -138,7 +138,7 @@ export function createPostgresRepositories(
   const userTransaction = async <T>(userId: string, work: (tx: Transaction) => Promise<T>) => {
     assertActor(userId);
     return client.begin(async (tx) => {
-      await tx.unsafe("set local role authenticated");
+      await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
       await tx`select set_config('request.jwt.claim.sub', ${userId}, true)`;
       return work(tx as Transaction);
     });
@@ -582,7 +582,7 @@ export function createPostgresRepositories(
         const [report] = await tx`
           select r.*, e.order_id from reports r
           join entitlements e on e.id = r.entitlement_id
-          where r.id = ${reportId} and r.user_id = ${userId}
+          where r.id = ${reportId} and r.user_id = ${userId} and e.status = 'active'
         `;
         if (!report) return undefined;
         const sections = await tx`
@@ -590,6 +590,16 @@ export function createPostgresRepositories(
           where report_id = ${reportId} and user_id = ${userId} order by created_at, id
         `;
         return reportFromRows(report, sections);
+      });
+    },
+    async getByOrder(userId: string, orderId: string) {
+      return userTransaction(userId, async (tx) => {
+        const [row] = await tx`
+          select r.id from reports r
+          join entitlements e on e.id = r.entitlement_id
+          where r.user_id = ${userId} and e.order_id = ${orderId} and e.status = 'active'
+        `;
+        return row ? reports.get(userId, String(row.id)) : undefined;
       });
     },
     async create(report: StoredReport) {
@@ -716,6 +726,13 @@ export function createPostgresRepositories(
       if (options.serviceRole) await serviceTransaction(work);
       else await userTransaction(entitlement.userId, work);
     },
+    async revokeByOrder(orderId: string) {
+      const work = async (tx: Transaction) => {
+        await tx`update entitlements set status = 'revoked' where order_id = ${orderId}`;
+      };
+      if (options.serviceRole) await serviceTransaction(work);
+      else if (options.actorUserId) await userTransaction(options.actorUserId, work);
+    },
     async list(userId: string) {
       return userTransaction(userId, async (tx) => {
         const rows = await tx`
@@ -814,9 +831,20 @@ export function createPostgresRepositories(
       async begin(providerEventId: string, eventType: string) {
         return serviceTransaction(async (tx) => {
           const rows = await tx`
-            insert into payment_webhook_events (provider_event_id, event_type)
-            values (${providerEventId}, ${eventType})
-            on conflict (provider_event_id) do nothing returning id
+            insert into payment_webhook_events (
+              provider_event_id, event_type, processing_started_at, attempt_count
+            ) values (${providerEventId}, ${eventType}, now(), 1)
+            on conflict (provider_event_id) do update set
+              event_type = excluded.event_type,
+              processing_started_at = now(),
+              attempt_count = payment_webhook_events.attempt_count + 1,
+              last_failure_code = null
+            where payment_webhook_events.processed_at is null
+              and (
+                payment_webhook_events.processing_started_at is null
+                or payment_webhook_events.processing_started_at < now() - interval '5 minutes'
+              )
+            returning id
           `;
           return rows.length === 1;
         });
@@ -824,8 +852,18 @@ export function createPostgresRepositories(
       async complete(providerEventId: string) {
         await serviceTransaction(async (tx) => {
           await tx`
-            update payment_webhook_events set processed_at = now()
+            update payment_webhook_events
+            set processed_at = now(), processing_started_at = null, last_failure_code = null
             where provider_event_id = ${providerEventId}
+          `;
+        });
+      },
+      async fail(providerEventId: string, failureCode: string) {
+        await serviceTransaction(async (tx) => {
+          await tx`
+            update payment_webhook_events
+            set processing_started_at = null, last_failure_code = ${failureCode}
+            where provider_event_id = ${providerEventId} and processed_at is null
           `;
         });
       },
