@@ -102,6 +102,10 @@ interface HealthBody {
   localAdapterExplicitlyAllowed?: boolean;
   missingEnvironmentVariables?: string[];
   invalidEnvironmentVariables?: string[];
+  interpretation?: {
+    providerKind?: string;
+    approvedLiveProviderConfigured?: boolean;
+  };
   database?: {
     connection?: boolean;
     schemaReady?: boolean;
@@ -146,6 +150,15 @@ test("the deployed preview runtime is staging, Supabase-backed, and schema ready
       detail: `${body.missingEnvironmentVariables?.length ?? "?"} missing, ${
         body.invalidEnvironmentVariables?.length ?? "?"
       } invalid`,
+    },
+    {
+      check: "Approved live interpretation provider configured",
+      ok:
+        body.interpretation?.providerKind === "groq" &&
+        body.interpretation.approvedLiveProviderConfigured === true,
+      detail:
+        `providerKind=${body.interpretation?.providerKind ?? "absent"}; ` +
+        `approved=${body.interpretation?.approvedLiveProviderConfigured === true}`,
     },
     {
       check: "Application schema present",

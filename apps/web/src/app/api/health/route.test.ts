@@ -24,6 +24,7 @@ const SECRET_VALUES = {
   SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-role-key",
   PROFILE_ENGINE_URL: "https://profile-engine.synthetic.invalid",
   PROFILE_ENGINE_SHARED_SECRET: "synthetic-profile-engine-shared-secret",
+  AI_PROVIDER_API_KEY: "synthetic-ai-provider-key",
 } as const;
 
 function configureStaging() {
@@ -31,6 +32,8 @@ function configureStaging() {
   vi.stubEnv("RUNTIME_ADAPTER", "supabase");
   vi.stubEnv("SITE_ID", "synthetic-netlify-site-id");
   vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "");
+  vi.stubEnv("AI_PROVIDER", "groq");
+  vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-120b");
   for (const [name, value] of Object.entries(SECRET_VALUES)) vi.stubEnv(name, value);
 }
 
@@ -73,6 +76,10 @@ describe("deployment health", () => {
       localAdapterExplicitlyAllowed: false,
       missingEnvironmentVariables: [],
       invalidEnvironmentVariables: [],
+      interpretation: {
+        providerKind: "groq",
+        approvedLiveProviderConfigured: true,
+      },
       profileEngine: {
         healthStatus: 200,
         unauthorizedComputeStatus: 401,
@@ -86,6 +93,31 @@ describe("deployment health", () => {
       },
     });
     for (const value of Object.values(SECRET_VALUES)) expect(serialized).not.toContain(value);
+  });
+
+  it("fails closed without exposing AI configuration when the live provider is unavailable", async () => {
+    configureStaging();
+    vi.stubEnv("AI_PROVIDER_API_KEY", "");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.missingEnvironmentVariables).toContain("AI_PROVIDER_API_KEY");
+    expect(body.interpretation).toEqual({
+      providerKind: "deterministic",
+      approvedLiveProviderConfigured: false,
+    });
+    expect(JSON.stringify(body)).not.toContain(SECRET_VALUES.AI_PROVIDER_API_KEY);
   });
 
   it("reports the build commit in staging and withholds it elsewhere", async () => {

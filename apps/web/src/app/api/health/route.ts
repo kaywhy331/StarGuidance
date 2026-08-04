@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createInterpretationProvider } from "@starguidance/ai";
 import { createDatabaseClient } from "@starguidance/database";
 
 import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
@@ -13,7 +14,12 @@ const REQUIRED_STAGING_ENVIRONMENT = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "PROFILE_ENGINE_URL",
   "PROFILE_ENGINE_SHARED_SECRET",
+  "AI_PROVIDER",
+  "AI_PROVIDER_API_KEY",
+  "AI_PROVIDER_MODEL",
 ] as const;
+
+const APPROVED_STAGING_PROVIDER_ID = "groq:openai/gpt-oss-120b";
 
 type DependencyStatus = {
   healthStatus: number | null;
@@ -187,6 +193,11 @@ async function probeDatabase(): Promise<DatabaseStatus> {
 
 export async function GET() {
   const stagingPreview = process.env.APP_ENV === "staging" && isHostedNetlifyRuntime();
+  const interpretationProviderId = createInterpretationProvider().id;
+  const interpretation = {
+    providerKind: interpretationProviderId.startsWith("groq:") ? "groq" : "deterministic",
+    approvedLiveProviderConfigured: interpretationProviderId === APPROVED_STAGING_PROVIDER_ID,
+  };
   const requiredEnvironment = REQUIRED_STAGING_ENVIRONMENT.map((name) => ({
     name,
     present: configured(name),
@@ -239,6 +250,7 @@ export async function GET() {
     profileEngine.healthStatus === 200 &&
     profileEngine.unauthorizedComputeStatus === 401 &&
     profileEngine.authorizedComputeStatus === 200 &&
+    interpretation.approvedLiveProviderConfigured &&
     database.connection &&
     database.schemaReady &&
     database.rlsReady &&
@@ -259,6 +271,9 @@ export async function GET() {
       requiredEnvironment,
       missingEnvironmentVariables,
       invalidEnvironmentVariables,
+      // Report only a provider class and an approved-contract boolean. The
+      // credential and arbitrary environment values never enter this payload.
+      interpretation,
       profileEngine,
       database,
     },

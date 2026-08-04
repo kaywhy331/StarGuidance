@@ -306,6 +306,26 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b" &&
     reading.outputProvenance.promptVersion === "reader-voice-v1" &&
     reading.outputProvenance.schemaVersion === "reading-result-v1";
+  const providerState =
+    reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b"
+      ? "approved-live"
+      : reading.outputProvenance?.providerId === "deterministic-fallback-v1"
+        ? "deterministic-fallback"
+        : reading.outputProvenance?.providerId
+          ? "other"
+          : "absent";
+  const promptState =
+    reading.outputProvenance?.promptVersion === "reader-voice-v1"
+      ? "approved-live"
+      : reading.outputProvenance?.promptVersion === "deterministic-fallback-v1"
+        ? "deterministic-fallback"
+        : reading.outputProvenance?.promptVersion
+          ? "other"
+          : "absent";
+  const schemaState =
+    reading.outputProvenance?.schemaVersion === "reading-result-v1"
+      ? "approved"
+      : "absent-or-other";
 
   record({
     section: "Reading creation",
@@ -321,7 +341,8 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     status: liveProvenance ? "pass" : "fail",
     detail: liveProvenance
       ? "the persisted output identifies the approved provider model, prompt, and response schema"
-      : "the persisted output did not identify the approved live generation contract",
+      : `classified persisted provenance: provider=${providerState}, prompt=${promptState}, ` +
+        `schema=${schemaState}`,
   });
   expect(created, "a reading is created with a locked draw").toBe(true);
   expect(liveProvenance, "the live generation contract is persisted").toBe(true);
