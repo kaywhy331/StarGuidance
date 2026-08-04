@@ -41,4 +41,11 @@ describe("key rotation coverage", () => {
     expect(rehearsal).toContain('run_rotation verify-current "$ORIGINAL_ENCRYPTION_KEY"');
     expect(rehearsal).not.toMatch(/echo.*(ENCRYPTION_KEY|REHEARSAL_KEY)/);
   });
+
+  it("binds synthetic maintenance work through the forced-RLS application actor", () => {
+    expect(rotation).toContain("from auth.users");
+    expect(rotation).toContain("set local role ${APPLICATION_DATABASE_ROLE}");
+    expect(rotation).toContain("request.jwt.claim.sub");
+    expect(rotation).toContain("Synthetic Auth identity has no application user row");
+  });
 });

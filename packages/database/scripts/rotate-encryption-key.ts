@@ -4,6 +4,7 @@ import {
   encryptSensitive,
   isValidEncryptionKey,
 } from "../src/encryption";
+import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
 import {
   createDatabaseClient,
   type DatabaseClient,
@@ -12,6 +13,7 @@ import {
 
 type RotationMode = "inventory" | "reencrypt" | "verify-current";
 type EncryptedRow = { id: string; envelope: string };
+type RotationSummary = { total: number; current: number; previous: number; changed: number };
 
 const BATCH_SIZE = 100;
 
@@ -156,7 +158,7 @@ async function inspectTarget(
   rotationMode: RotationMode,
   current: string,
   previous: string[],
-): Promise<{ total: number; current: number; previous: number; changed: number }> {
+): Promise<RotationSummary> {
   const summary = { total: 0, current: 0, previous: 0, changed: 0 };
   let afterId: string | null = null;
   for (;;) {
@@ -183,18 +185,27 @@ async function inspectTarget(
   return summary;
 }
 
-async function assertSyntheticRehearsalScope(sql: DatabaseClient): Promise<void> {
+async function syntheticRehearsalSubjects(sql: DatabaseClient): Promise<string[]> {
+  // The user tables are FORCE RLS, so an unscoped maintenance query correctly
+  // sees no rows. Inspect the authoritative Auth identities first, refuse the
+  // entire rehearsal if any identity is not synthetic, then bind each retained
+  // subject through the same server actor role used by the application.
   const [scope] = await sql<{ total_users: number; outside_users: number }[]>`
     select
       count(*)::integer as total_users,
       count(*) filter (
         where email not like 'sg-verify-%@starguidance.test'
       )::integer as outside_users
-    from users`;
+    from auth.users`;
   if ((scope?.total_users ?? 0) === 0)
-    throw new Error("Synthetic-only key rotation requires at least one application user");
+    throw new Error("Synthetic-only key rotation requires at least one Auth identity");
   if ((scope?.outside_users ?? 0) > 0)
-    throw new Error("Synthetic-only key rotation refused because non-synthetic users exist");
+    throw new Error("Synthetic-only key rotation refused because non-synthetic identities exist");
+  const subjects = await sql<{ id: string }[]>`
+    select id::text as id from auth.users
+    where email like 'sg-verify-%@starguidance.test'
+    order by id`;
+  return subjects.map(({ id }) => id);
 }
 
 async function main(): Promise<void> {
@@ -205,15 +216,45 @@ async function main(): Promise<void> {
   let currentTotal = 0;
   let previousTotal = 0;
   let changedTotal = 0;
-  try {
-    if (process.env.KEY_ROTATION_SYNTHETIC_ONLY === "true")
-      await assertSyntheticRehearsalScope(sql);
+  const summaries = new Map<string, RotationSummary>(
+    targets.map(({ name }) => [name, { total: 0, current: 0, previous: 0, changed: 0 }]),
+  );
+
+  const inspectAllTargets = async (client: DatabaseClient): Promise<void> => {
     for (const target of targets) {
-      const summary = await inspectTarget(sql, target, rotationMode, current, previous);
+      const summary = await inspectTarget(client, target, rotationMode, current, previous);
+      const aggregate = summaries.get(target.name);
+      if (!aggregate) throw new Error("Key rotation target inventory is inconsistent");
+      aggregate.total += summary.total;
+      aggregate.current += summary.current;
+      aggregate.previous += summary.previous;
+      aggregate.changed += summary.changed;
       total += summary.total;
       currentTotal += summary.current;
       previousTotal += summary.previous;
       changedTotal += summary.changed;
+    }
+  };
+
+  try {
+    if (process.env.KEY_ROTATION_SYNTHETIC_ONLY === "true") {
+      const subjects = await syntheticRehearsalSubjects(sql);
+      for (const subject of subjects)
+        await sql.begin(async (tx) => {
+          await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
+          await tx`select set_config('request.jwt.claim.sub', ${subject}, true)`;
+          const ownUser = await tx`select id from users where id = ${subject}::uuid`;
+          if (ownUser.length !== 1)
+            throw new Error("Synthetic Auth identity has no application user row");
+          await inspectAllTargets(tx as unknown as DatabaseClient);
+        });
+    } else {
+      await inspectAllTargets(sql);
+    }
+
+    for (const target of targets) {
+      const summary = summaries.get(target.name);
+      if (!summary) throw new Error("Key rotation target inventory is inconsistent");
       process.stdout.write(
         `${target.name}: ${summary.total} checked, ${summary.current} current, ` +
           `${summary.previous} previous, ${summary.changed} changed\n`,
