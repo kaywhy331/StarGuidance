@@ -192,7 +192,7 @@ describe("a person always gets a reading (AI-015)", () => {
     expect(result.directAnswer.length).toBeGreaterThan(0);
     expect(result.cards).toHaveLength(spread.positions.length);
     expect(provenance).toEqual({
-      providerId: "deterministic-fallback-v1",
+      providerId: "deterministic-fallback-v1:after-groq-provider-unavailable",
       promptVersion: "deterministic-fallback-v1",
       schemaVersion: "reading-result-v1",
     });
@@ -207,8 +207,9 @@ describe("a person always gets a reading (AI-015)", () => {
         }),
       ),
     );
-    const result = await provider().generate(input);
+    const { result, provenance } = await provider().generateWithProvenance(input);
     expect(result.cards).toHaveLength(spread.positions.length);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
   });
 
   it("falls back rather than hanging when the provider does not answer", async () => {
@@ -226,8 +227,9 @@ describe("a person always gets a reading (AI-015)", () => {
       model: "test-model",
       timeoutMs: 30,
     });
-    const result = await slow.generate(input);
+    const { result, provenance } = await slow.generateWithProvenance(input);
     expect(result.cards).toHaveLength(spread.positions.length);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-request-timeout");
   });
 });
 

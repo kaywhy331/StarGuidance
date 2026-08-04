@@ -306,14 +306,30 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b" &&
     reading.outputProvenance.promptVersion === "reader-voice-v1" &&
     reading.outputProvenance.schemaVersion === "reading-result-v1";
+  const safeFallbackReasons = [
+    "request-timeout",
+    "authentication",
+    "rate-limited",
+    "provider-unavailable",
+    "request-rejected",
+    "invalid-response",
+    "network-error",
+    "unknown",
+  ] as const;
+  const classifiedFallbackReason = safeFallbackReasons.find(
+    (reason) =>
+      reading.outputProvenance?.providerId === `deterministic-fallback-v1:after-groq-${reason}`,
+  );
   const providerState =
     reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b"
       ? "approved-live"
-      : reading.outputProvenance?.providerId === "deterministic-fallback-v1"
-        ? "deterministic-fallback"
-        : reading.outputProvenance?.providerId
-          ? "other"
-          : "absent";
+      : classifiedFallbackReason
+        ? `deterministic-fallback-after-groq-${classifiedFallbackReason}`
+        : reading.outputProvenance?.providerId === "deterministic-fallback-v1"
+          ? "deterministic-fallback"
+          : reading.outputProvenance?.providerId
+            ? "other"
+            : "absent";
   const promptState =
     reading.outputProvenance?.promptVersion === "reader-voice-v1"
       ? "approved-live"

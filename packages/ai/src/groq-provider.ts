@@ -8,6 +8,7 @@ import {
 import {
   classifyQuestion,
   DeterministicFallbackProvider,
+  FALLBACK_PROVIDER_ID,
   type FollowUpGenerationInput,
   type ReadingGenerationOutcome,
   type ReadingGenerationInput,
@@ -32,6 +33,30 @@ import { answerCard, resolveDraw } from "./interpretation";
 export const PROMPT_VERSION = "reader-voice-v1" as const;
 export const RESPONSE_SCHEMA_VERSION = "reading-result-v1" as const;
 export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v1" as const;
+
+type FallbackReason =
+  | "request-timeout"
+  | "authentication"
+  | "rate-limited"
+  | "provider-unavailable"
+  | "request-rejected"
+  | "invalid-response"
+  | "network-error"
+  | "unknown";
+
+class ProviderRequestError extends Error {
+  constructor(readonly reason: FallbackReason) {
+    super(`AI_PROVIDER_${reason.toUpperCase().replaceAll("-", "_")}`);
+  }
+}
+
+function fallbackReason(error: unknown): FallbackReason {
+  if (error instanceof ProviderRequestError) return error.reason;
+  if (error instanceof SyntaxError) return "invalid-response";
+  if (error instanceof TypeError) return "network-error";
+  if (error instanceof Error && error.name === "ZodError") return "invalid-response";
+  return "unknown";
+}
 
 /** Categories where a confident prediction would do real harm. */
 const GUARDED_CATEGORIES = new Set([
@@ -217,9 +242,19 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
           schemaVersion: RESPONSE_SCHEMA_VERSION,
         },
       };
-    } catch {
+    } catch (error) {
       // A person who asked a question gets a reading either way (AI-015).
-      return this.fallback.generateWithProvenance(input);
+      const generated = await this.fallback.generateWithProvenance(input);
+      return {
+        ...generated,
+        provenance: {
+          ...generated.provenance,
+          // The output remains deterministic, while this fixed identifier says
+          // why the configured live path did not produce it. It contains no
+          // response body, request data, credential, URL or exception text.
+          providerId: `${FALLBACK_PROVIDER_ID}:after-groq-${fallbackReason(error)}`,
+        },
+      };
     }
   }
 
@@ -322,14 +357,27 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
           signal: controller.signal,
         },
       );
-      if (!response.ok) throw new Error(`AI_PROVIDER_STATUS_${response.status}`);
+      if (!response.ok) {
+        const reason: FallbackReason =
+          response.status === 401 || response.status === 403
+            ? "authentication"
+            : response.status === 429
+              ? "rate-limited"
+              : response.status >= 500
+                ? "provider-unavailable"
+                : "request-rejected";
+        throw new ProviderRequestError(reason);
+      }
       const body = (await response.json()) as {
         choices?: { message?: { content?: string } }[];
       };
       const content = body.choices?.[0]?.message?.content;
-      if (!content) throw new Error("AI_PROVIDER_EMPTY_RESPONSE");
+      if (!content) throw new ProviderRequestError("invalid-response");
 
       return JSON.parse(content) as unknown;
+    } catch (error) {
+      if (controller.signal.aborted) throw new ProviderRequestError("request-timeout");
+      throw error;
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
