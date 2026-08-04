@@ -43,8 +43,11 @@ let contextB: BrowserContext;
 let pageA: Page;
 let pageB: Page;
 let baseUrl: string;
+let activeReadingId: string;
+let userBReadingId: string;
 
 const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
+const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60_000;
 
 /** Stable digest of a locked draw for byte-for-byte comparison. */
 function drawDigest(draw: unknown): string {
@@ -169,7 +172,9 @@ async function activeSnapshot(page: Page): Promise<{ id: string; version: number
 
 async function createReading(page: Page, question: string): Promise<string> {
   const { status, body } = await apiPost<{ readingId?: string }>(page, "/api/readings", {
-    spreadId: "direction",
+    // One card is sufficient for persistence/isolation assertions and avoids
+    // burning the live provider's staging quota on content the gate never reads.
+    spreadId: "focus",
     question,
   });
   if (status !== 201 || !body.readingId)
@@ -301,8 +306,24 @@ test("updating birth data appends an immutable snapshot and preserves prior read
 
 test("a reading is created against the active snapshot with a locked draw", async () => {
   const before = await activeSnapshot(pageA);
-  const readingId = await createReading(pageA, "What is worth attending to today?");
-  const reading = await readingState(pageA, readingId);
+  activeReadingId = await createReading(pageA, "What is worth attending to today?");
+  let reading = await readingState(pageA, activeReadingId);
+  const lockedDraw = drawDigest(reading.draw);
+  let providerRetryStatus: number | undefined;
+
+  // Groq's minute quota can be consumed by the earlier deployed checks. Retry
+  // the persisted output once after the reset window, against this exact locked
+  // draw, instead of creating a new reading or weakening the live-provider gate.
+  if (
+    reading.outputProvenance?.providerId === "deterministic-fallback-v1:after-groq-rate-limited"
+  ) {
+    await pageA.waitForTimeout(PROVIDER_RATE_LIMIT_COOLDOWN_MS);
+    providerRetryStatus = (
+      await apiPost(pageA, `/api/readings/${activeReadingId}`, { action: "retry" })
+    ).status;
+    reading = await readingState(pageA, activeReadingId);
+  }
+  const providerRetryPreservedDraw = drawDigest(reading.draw) === lockedDraw;
 
   const assignments = Array.isArray((reading.draw as { assignments?: unknown[] })?.assignments)
     ? ((reading.draw as { assignments: unknown[] }).assignments?.length ?? 0)
@@ -311,7 +332,8 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     Boolean(reading.id) &&
     reading.profileSnapshotId === before.id &&
     assignments > 0 &&
-    reading.generationStatus !== "pending";
+    reading.generationStatus !== "pending" &&
+    providerRetryPreservedDraw;
   const liveProvenance =
     reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b" &&
     reading.outputProvenance.promptVersion === "reader-voice-v1" &&
@@ -366,7 +388,11 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     check: "Live AI model provenance is persisted",
     status: liveProvenance ? "pass" : "fail",
     detail: liveProvenance
-      ? "the persisted output identifies the approved provider model, prompt, and response schema"
+      ? `the persisted output identifies the approved provider model, prompt, and response schema${
+          providerRetryStatus === undefined
+            ? ""
+            : ` after one same-draw quota retry returned ${providerRetryStatus}`
+        }`
       : `classified persisted provenance: provider=${providerState}, prompt=${promptState}, ` +
         `schema=${schemaState}`,
   });
@@ -376,7 +402,7 @@ test("a reading is created against the active snapshot with a locked draw", asyn
 });
 
 test("the locked draw is byte-identical across refresh, stream failure, retry, and follow-up", async () => {
-  const readingId = await createReading(pageA, "What should I understand about this next step?");
+  const readingId = activeReadingId;
   const original = drawDigest((await readingState(pageA, readingId)).draw);
 
   await pageA.goto(`/session/${readingId}`, NAVIGATION_OPTIONS);
@@ -424,8 +450,9 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
 });
 
 test("neither identity can reach the other's resources over the deployed API", async () => {
-  const readingB = await createReading(pageB, "What should I consider about this decision?");
-  const readingA = await createReading(pageA, "What deserves my attention now?");
+  userBReadingId = await createReading(pageB, "What should I consider about this decision?");
+  const readingB = userBReadingId;
+  const readingA = activeReadingId;
 
   const crossReads = [
     { alias: "user A → user B reading", result: await apiGet(pageA, `/api/readings/${readingB}`) },
@@ -472,7 +499,7 @@ test("neither identity can reach the other's resources over the deployed API", a
 });
 
 test("export is scoped to the requesting identity", async () => {
-  const readingB = await createReading(pageB, "A private question that must not leak.");
+  const readingB = userBReadingId;
   const exported = await apiGet<Record<string, unknown>>(pageA, "/api/privacy/export");
   const serialised = JSON.stringify(exported.body);
   const leaksOther = serialised.includes(readingB) || serialised.includes(userB.email);
