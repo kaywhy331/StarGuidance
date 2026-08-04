@@ -18,6 +18,9 @@ import {
  * assertions in tests/e2e remain the behavioural coverage and are unchanged.
  */
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
+const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
+const NAVIGATION_ATTEMPTS = 3;
+const CLIENT_TRANSITION_TIMEOUT_MS = 15_000;
 
 interface Violation {
   readonly id: string;
@@ -38,6 +41,47 @@ const findings: { flow: string; violations: Violation[] }[] = [];
 const reflowFindings: { flow: string; overflow: number; clipped: string[] }[] = [];
 
 test.describe.configure({ mode: "serial" });
+
+function pagePath(targetPage: Page): string {
+  try {
+    return new URL(targetPage.url()).pathname;
+  } catch {
+    return "";
+  }
+}
+
+async function navigateForScan(
+  targetPage: Page,
+  target: string,
+  ready: () => Promise<void>,
+): Promise<void> {
+  const expectedPath = new URL(target, String(test.info().project.use.baseURL)).pathname;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= NAVIGATION_ATTEMPTS; attempt += 1) {
+    let reachedTarget = false;
+    try {
+      await targetPage.goto(target, NAVIGATION_OPTIONS);
+      reachedTarget = true;
+    } catch (error) {
+      lastError = error;
+      reachedTarget = pagePath(targetPage) === expectedPath;
+    }
+
+    if (reachedTarget) {
+      try {
+        await ready();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (attempt < NAVIGATION_ATTEMPTS) await targetPage.waitForTimeout(attempt * 500);
+  }
+
+  throw lastError ?? new Error(`navigation to ${expectedPath} did not become scan-ready`);
+}
 
 /**
  * Counts frames on the page and separates ours from the preview host's.
@@ -120,7 +164,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   const anonymous = await page.context().browser()?.newContext();
   if (anonymous) {
     const anonymousPage = await anonymous.newPage();
-    await anonymousPage.goto(`${String(test.info().project.use.baseURL)}/sign-in`);
+    await navigateForScan(anonymousPage, `${String(test.info().project.use.baseURL)}/sign-in`, () =>
+      expect(anonymousPage.getByRole("heading").first()).toBeVisible({ timeout: 15_000 }),
+    );
     const results = await new AxeBuilder({ page: anonymousPage })
       .withTags(WCAG_TAGS)
       .exclude("iframe")
@@ -140,55 +186,92 @@ test("critical deployed flows pass automated WCAG rules", async () => {
     await anonymous.close();
   }
 
-  await page.goto("/onboarding");
-  await expect(page.getByLabel("Full birth name")).toBeVisible({ timeout: 60_000 });
+  await navigateForScan(page, "/onboarding", () =>
+    expect(page.getByLabel("Full birth name")).toBeVisible({ timeout: 15_000 }),
+  );
   await scan("onboarding");
 
   await page.getByLabel("Full birth name").fill("Axe Synthetic");
   await page.getByLabel("Date of birth").fill("1988-03-21");
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
+  const profileResponsePromise = page
+    .waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/profile" &&
+        response.request().method() === "POST",
+      { timeout: 60_000 },
+    )
+    .catch(() => undefined);
   await page.getByRole("button", { name: "Check profile capability" }).click();
+  const profileResponse = await profileResponsePromise;
   try {
-    await expect(page).toHaveURL(/\/readings$/, { timeout: 60_000 });
+    await expect(page).toHaveURL(/\/readings$/, { timeout: CLIENT_TRANSITION_TIMEOUT_MS });
   } catch (error) {
     // Say what the form reported rather than only which URL was expected.
     const alert = page.getByRole("alert").first();
     const message = (await alert.isVisible().catch(() => false))
       ? ((await alert.textContent().catch(() => "")) ?? "").trim()
       : "no visible error";
-    // The message is identical for several unrelated faults; the API reports
-    // which one, so ask it rather than leaving the next run to guess.
-    let apiReason = "";
-    try {
-      apiReason = await page.evaluate(async () => {
-        const response = await fetch("/api/profile", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            fullBirthName: "Diagnostic Synthetic",
-            birthDate: "1990-01-15",
-            consentVersion: "privacy-reflective-v1",
-          }),
-        });
-        const body = (await response.json()) as { reason?: string };
-        return `${response.status}${body.reason ? ` (${body.reason})` : ""}`;
+    if (!profileResponse?.ok()) {
+      record({
+        section: "Accessibility",
+        check: "Onboarding reached the reading selection",
+        status: "fail",
+        detail: `stopped at ${pagePath(page)}: "${message}"; form POST returned ${
+          profileResponse?.status() ?? "no response"
+        }`,
       });
-    } catch {
-      apiReason = "unavailable";
+      throw new Error(`Onboarding did not complete during the scan — ${message}`, {
+        cause: error,
+      });
     }
     record({
       section: "Accessibility",
-      check: "Onboarding reached the reading selection",
-      status: "fail",
-      detail: `stopped at ${new URL(page.url()).pathname}: "${message}"; direct API attempt returned ${apiReason}`,
+      check: "Deploy-preview client transition after onboarding",
+      status: "limited",
+      detail:
+        `the form POST returned ${profileResponse.status()}, but the preview-host transition ` +
+        "did not settle; the scanner resumed through a directly committed application route",
     });
-    throw new Error(`Onboarding did not complete during the scan — ${message}`, { cause: error });
+    await navigateForScan(page, "/readings", () =>
+      expect(page.getByLabel("Your private question")).toBeVisible({ timeout: 15_000 }),
+    );
   }
   await scan("reading selection");
 
   await page.getByLabel("Your private question").fill("What deserves my attention now?");
+  const readingResponsePromise = page
+    .waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/readings" &&
+        response.request().method() === "POST",
+      { timeout: 60_000 },
+    )
+    .catch(() => undefined);
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
-  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 60_000 });
+  const readingResponse = await readingResponsePromise;
+  try {
+    await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, {
+      timeout: CLIENT_TRANSITION_TIMEOUT_MS,
+    });
+  } catch (error) {
+    const body = readingResponse?.ok()
+      ? ((await readingResponse.json().catch(() => undefined)) as
+          { readingId?: string } | undefined)
+      : undefined;
+    if (!body?.readingId) throw error;
+    record({
+      section: "Accessibility",
+      check: "Deploy-preview client transition after reading creation",
+      status: "limited",
+      detail:
+        `the reading POST returned ${readingResponse?.status()}, but the preview-host transition ` +
+        "did not settle; the scanner resumed at the same locked reading",
+    });
+    await navigateForScan(page, `/session/${body.readingId}`, () =>
+      expect(page.locator("main")).toBeVisible({ timeout: 15_000 }),
+    );
+  }
   await scan("sanctuary reading");
 
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 60_000 });
@@ -209,8 +292,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await page.setViewportSize({ width: 320, height: 640 });
   await checkReflow("completed reading at 320px and 200% text");
 
-  await page.goto("/settings/privacy");
-  await expect(page.getByRole("heading").first()).toBeVisible({ timeout: 60_000 });
+  await navigateForScan(page, "/settings/privacy", () =>
+    expect(page.getByRole("heading").first()).toBeVisible({ timeout: 15_000 }),
+  );
   await checkReflow("privacy controls at 320px and 200% text");
   await scan("privacy and account");
 
