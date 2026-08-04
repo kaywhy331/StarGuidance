@@ -44,7 +44,7 @@ let pageA: Page;
 let pageB: Page;
 let baseUrl: string;
 
-const NAVIGATION_OPTIONS = { waitUntil: "domcontentloaded" as const, timeout: 30_000 };
+const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
 
 /** Stable digest of a locked draw for byte-for-byte comparison. */
 function drawDigest(draw: unknown): string {
@@ -136,9 +136,9 @@ async function completeOnboarding(
   details: { name: string; date: string; city?: string; time?: string },
 ): Promise<void> {
   // Netlify's deploy-preview toolbar can leave a non-application resource
-  // pending indefinitely, so waiting for the full `load` event makes a healthy
-  // page consume the entire test timeout. DOM readiness plus the concrete form
-  // locators below proves the application itself is usable.
+  // pending indefinitely, and its deferred script can also hold DOMContentLoaded
+  // open after the application response has arrived. Response commit plus the
+  // concrete form locators below proves the application itself is usable.
   await page.goto("/onboarding", NAVIGATION_OPTIONS);
   await page.getByLabel("Full birth name").fill(details.name);
   await page.getByLabel("Date of birth").fill(details.date);
