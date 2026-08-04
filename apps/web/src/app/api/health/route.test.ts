@@ -94,6 +94,10 @@ describe("deployment health", () => {
         actorTransactionReady: true,
       },
     });
+    const readinessQuery = database.client.unsafe.mock.calls.at(0)?.at(0);
+    expect(readinessQuery, "the actor role must remain a quoted SQL value").toContain(
+      "rolname = 'starguidance_app'",
+    );
     for (const value of Object.values(SECRET_VALUES)) expect(serialized).not.toContain(value);
   });
 

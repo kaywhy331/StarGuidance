@@ -5,7 +5,7 @@ export default function PrivacyPage() {
   const router = useRouter();
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-6 py-12">
-      <h1 className="text-5xl font-semibold">Privacy controls</h1>
+      <h1 className="text-5xl font-semibold [overflow-wrap:anywhere]">Privacy controls</h1>
       <Panel className="mt-8">
         <h2 className="text-2xl">Export</h2>
         <p className="mt-2 text-[#b8adc8]">

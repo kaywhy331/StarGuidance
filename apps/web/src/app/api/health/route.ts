@@ -160,7 +160,7 @@ async function probeDatabase(): Promise<DatabaseStatus> {
             )
           )
           and exists (
-            select 1 from pg_roles where rolname = ${APPLICATION_DATABASE_ROLE}
+            select 1 from pg_roles where rolname = '${APPLICATION_DATABASE_ROLE}'
               and not rolcanlogin and not rolsuper and not rolbypassrls
           )
           and not (

@@ -81,4 +81,8 @@ test("200% text reflows public, onboarding, and completed-reading controls at 32
   await expect(transcript).toBeFocused();
   await expect(transcript).toHaveCSS("outline-style", "solid");
   await expect(transcript).toHaveCSS("outline-width", "3px");
+
+  await page.goto("/settings/privacy");
+  await applyTwoHundredPercentText(page);
+  await expectHorizontalReflow(page);
 });
