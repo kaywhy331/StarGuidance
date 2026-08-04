@@ -44,6 +44,8 @@ let pageA: Page;
 let pageB: Page;
 let baseUrl: string;
 
+const NAVIGATION_OPTIONS = { waitUntil: "domcontentloaded" as const, timeout: 30_000 };
+
 /** Stable digest of a locked draw for byte-for-byte comparison. */
 function drawDigest(draw: unknown): string {
   return JSON.stringify(draw);
@@ -55,7 +57,7 @@ function drawDigest(draw: unknown): string {
  * Every helper below therefore puts the page on the application origin first.
  */
 async function onAppOrigin(page: Page): Promise<void> {
-  if (!page.url().startsWith("http")) await page.goto("/", { waitUntil: "domcontentloaded" });
+  if (!page.url().startsWith("http")) await page.goto("/", NAVIGATION_OPTIONS);
 }
 
 async function apiGet<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
@@ -133,7 +135,11 @@ async function completeOnboarding(
   page: Page,
   details: { name: string; date: string; city?: string; time?: string },
 ): Promise<void> {
-  await page.goto("/onboarding");
+  // Netlify's deploy-preview toolbar can leave a non-application resource
+  // pending indefinitely, so waiting for the full `load` event makes a healthy
+  // page consume the entire test timeout. DOM readiness plus the concrete form
+  // locators below proves the application itself is usable.
+  await page.goto("/onboarding", NAVIGATION_OPTIONS);
   await page.getByLabel("Full birth name").fill(details.name);
   await page.getByLabel("Date of birth").fill(details.date);
   if (details.city) await page.getByLabel("Birth city / country").fill(details.city);
@@ -235,7 +241,7 @@ test("both identities complete onboarding and the profile survives refresh and r
     detail: `active snapshot version ${created.version} for user A; user B also created`,
   });
 
-  await pageA.reload();
+  await pageA.reload(NAVIGATION_OPTIONS);
   const afterRefresh = await activeSnapshot(pageA);
 
   await signOut(contextA);
@@ -373,14 +379,14 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   const readingId = await createReading(pageA, "What should I understand about this next step?");
   const original = drawDigest((await readingState(pageA, readingId)).draw);
 
-  await pageA.goto(`/session/${readingId}`);
-  await pageA.reload();
+  await pageA.goto(`/session/${readingId}`, NAVIGATION_OPTIONS);
+  await pageA.reload(NAVIGATION_OPTIONS);
   const afterRefresh = drawDigest((await readingState(pageA, readingId)).draw);
 
   // The APP_ENV=test failure hooks are correctly inert in staging, so this
   // interrupts the transcript with a real aborted network request instead.
   await pageA.route("**/api/readings/*/stream", (route) => route.abort());
-  await pageA.goto(`/session/${readingId}`);
+  await pageA.goto(`/session/${readingId}`, NAVIGATION_OPTIONS);
   await pageA.waitForTimeout(2_000);
   await pageA.unroute("**/api/readings/*/stream");
   const afterStreamFailure = drawDigest((await readingState(pageA, readingId)).draw);
