@@ -259,33 +259,25 @@ a {
   color: #bcded8;
 }
 
-.locked-reading-note {
-  position: absolute;
-  z-index: 4;
-  top: 4.15rem;
-  left: 50%;
-  margin: 0;
-  translate: -50% 0;
-  color: rgb(225 234 221 / 0.68);
-  font:
-    0.67rem/1.3 Arial,
-    Helvetica,
-    sans-serif;
-  letter-spacing: 0.14em;
-  text-align: center;
-  text-transform: uppercase;
-}
-
 .sanctuary-stage {
   position: absolute;
   z-index: 5;
-  top: 5.6rem;
+  top: 4.5rem;
   right: 1rem;
   bottom: clamp(20rem, 38vh, 27rem);
   left: 1rem;
   display: grid;
   place-items: center;
   perspective: 1300px;
+}
+
+.sanctuary-stage.has-cinematic-review {
+  z-index: 40;
+}
+
+.sanctuary-stage.has-reading-journey {
+  right: 52%;
+  bottom: 1.5rem;
 }
 
 .ritual-moment {
@@ -312,8 +304,13 @@ a {
     sans-serif;
 }
 
-.ritual-moment button,
-.reveal-all-control,
+.ritual-moment .ritual-status {
+  margin: 1.25rem 0 0;
+  color: #e9dec3;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .generation-recovery button {
   min-height: 2.65rem;
   margin-top: 1rem;
@@ -331,20 +328,13 @@ a {
   letter-spacing: 0.06em;
 }
 
-.ritual-actions {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.sanctuary-shuffle-shells,
-.sanctuary-cut-deck {
+.sanctuary-shuffle-shells {
   position: relative;
   width: 7.5rem;
   aspect-ratio: 2 / 3;
 }
 
 .sanctuary-shuffle-shells span,
-.sanctuary-cut-deck,
 .sanctuary-deal-shells span {
   border: 1px solid rgb(238 210 132 / 0.58);
   border-radius: 0.42rem;
@@ -359,17 +349,6 @@ a {
   animation: sanctuary-shuffle 1.8s ease-in-out infinite alternate;
   animation-delay: calc(var(--shell-index) * -95ms);
   transform: translateX(var(--shell-offset)) rotate(calc((var(--shell-index) - 4) * 1.2deg));
-}
-
-.sanctuary-cut-deck::after {
-  position: absolute;
-  content: "";
-  inset: 0;
-  border: inherit;
-  border-radius: inherit;
-  background: inherit;
-  translate: 1.8rem 1rem;
-  box-shadow: inherit;
 }
 
 .sanctuary-deal-shells {
@@ -387,6 +366,7 @@ a {
 }
 
 .tarot-spread-stage {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, auto);
   align-items: start;
@@ -394,6 +374,25 @@ a {
   gap: clamp(0.5rem, 1.5vw, 1.15rem);
   width: min(100%, 72rem);
   transform: translateY(-1vh);
+}
+
+.cinematic-card-scrim {
+  position: fixed;
+  z-index: 35;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, rgb(9 29 35 / 0.2), rgb(1 5 9 / 0.9) 62%), rgb(1 5 9 / 0.52);
+  opacity: 0;
+  backdrop-filter: blur(0);
+  transition:
+    opacity 320ms ease,
+    backdrop-filter 520ms ease;
+}
+
+.cinematic-card-scrim.is-visible {
+  opacity: 1;
+  backdrop-filter: blur(4px);
 }
 
 .spread-count-1 {
@@ -405,18 +404,45 @@ a {
 }
 
 .physical-card-figure {
+  position: relative;
+  z-index: 0;
   width: clamp(5.25rem, 9.5vw, 8rem);
   margin: 0;
   text-align: center;
-  transition: translate 280ms ease;
+  transform: translate3d(0, 0, 0) scale(1);
+  transform-origin: center center;
+  transition:
+    transform 650ms cubic-bezier(0.2, 0.82, 0.2, 1),
+    filter 420ms ease,
+    opacity 420ms ease;
+  will-change: transform;
 }
 
 .spread-count-1 .physical-card-figure {
   width: clamp(8rem, 13vw, 11rem);
 }
 
-.physical-card-figure:hover {
-  translate: 0 -0.35rem;
+.tarot-spread-stage.is-cinematic-review .physical-card-figure:not(.is-cinematic-subject) {
+  opacity: 0.18;
+  filter: blur(2px) saturate(0.55);
+}
+
+.tarot-spread-stage.is-reading-review .physical-card-figure:not(.is-cinematic-subject) {
+  opacity: 0.1;
+  filter: blur(2px) saturate(0.45);
+}
+
+.physical-card-figure.is-cinematic-subject {
+  z-index: 2;
+}
+
+.physical-card-figure.is-reading-subject {
+  filter: drop-shadow(0 1.6rem 2.8rem rgb(0 0 0 / 0.72));
+}
+
+.physical-card-figure.is-cinematic-positioned {
+  transform: translate3d(var(--cinematic-x), var(--cinematic-y), 10rem)
+    scale(var(--cinematic-scale));
 }
 
 .physical-tarot-card {
@@ -428,13 +454,8 @@ a {
   border-radius: 0.45rem;
   background: transparent;
   color: inherit;
-  cursor: pointer;
+  cursor: default;
   perspective: 1000px;
-}
-
-.physical-tarot-card:focus-visible {
-  outline: 3px solid #f4d98d;
-  outline-offset: 5px;
 }
 
 .physical-card-inner {
@@ -504,8 +525,7 @@ a {
     transform 600ms ease;
 }
 
-.physical-tarot-card:hover .card-sheen,
-.physical-tarot-card:focus-visible .card-sheen {
+.physical-card-figure.is-cinematic-subject .card-sheen {
   opacity: 0.7;
   transform: translateX(35%) rotate(8deg);
 }
@@ -539,13 +559,6 @@ a {
   white-space: nowrap;
 }
 
-.reveal-all-control {
-  position: absolute;
-  bottom: -0.6rem;
-  left: 50%;
-  translate: -50% 0;
-}
-
 .stage-whisper,
 .generation-recovery {
   position: absolute;
@@ -572,54 +585,219 @@ a {
 .oracle-console-stack {
   position: absolute;
   z-index: 20;
-  right: 50%;
+  top: 5rem;
+  right: clamp(1rem, 4vw, 4rem);
   bottom: max(0.75rem, env(safe-area-inset-bottom));
   display: grid;
-  width: min(46rem, calc(100vw - 2rem));
-  translate: 50% 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  width: min(44rem, 46vw);
   filter: drop-shadow(0 1rem 2.5rem rgb(0 0 0 / 0.5));
+}
+
+.oracle-console-stack.is-inactive {
+  pointer-events: none;
 }
 
 .oracle-transcript-shell {
   position: relative;
-  min-height: 9rem;
+  display: grid;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.65rem;
 }
 
 .oracle-transcript {
-  max-height: clamp(9rem, 23vh, 15.5rem);
-  overflow: auto;
-  padding: 2.6rem 1.25rem 1.15rem;
-  border-radius: 1.2rem 1.2rem 0 0;
-  background: linear-gradient(to bottom, transparent, rgb(2 10 15 / 0.52) 28%, rgb(2 10 15 / 0.82));
-  mask-image: linear-gradient(to bottom, transparent, black 20%, black);
-  scrollbar-color: rgb(216 181 109 / 0.5) transparent;
-  scrollbar-width: thin;
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  place-items: center;
+  padding: clamp(1.15rem, 3.2vw, 2.4rem);
+  border: 1px solid rgb(218 192 127 / 0.25);
+  border-radius: 1.5rem;
+  outline: none;
+  background:
+    linear-gradient(145deg, rgb(3 14 19 / 0.9), rgb(11 12 28 / 0.86)),
+    radial-gradient(circle at 20% 0%, rgb(119 214 192 / 0.12), transparent 55%);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.035) inset,
+    0 1.8rem 5rem rgb(0 0 0 / 0.28);
+  backdrop-filter: blur(20px) saturate(1.15);
+  overscroll-behavior: contain;
+  touch-action: pinch-zoom;
+}
+
+.oracle-transcript:focus-visible {
+  border-color: rgb(239 214 143 / 0.72);
+  box-shadow:
+    0 0 0 3px rgb(239 214 143 / 0.13),
+    0 1.8rem 5rem rgb(0 0 0 / 0.28);
 }
 
 .oracle-entry {
-  margin-left: auto;
-  width: min(100%, 42rem);
-  padding: 0.5rem 0;
-  animation: oracle-rise 420ms ease-out both;
+  width: min(100%, 38rem);
+  animation: oracle-rise 520ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
   color: #edf5ec;
   text-shadow: 0 2px 12px #000;
 }
 
 .oracle-entry h2 {
-  margin: 0 0 0.25rem;
+  margin: 0 0 clamp(0.8rem, 2vh, 1.35rem);
+  color: #f0dfae;
+  font:
+    400 clamp(1.65rem, 3.5vw, 3rem) / 1.04 Georgia,
+    "Times New Roman",
+    serif;
+  letter-spacing: 0.015em;
+}
+
+.oracle-entry-text {
+  margin: 0;
+  color: #d9e3df;
+  font:
+    clamp(0.9rem, 1.35vw, 1.06rem) / 1.65 Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.reading-section-eyebrow {
+  margin: 0 0 0.55rem;
+  color: #8fcec0;
+  font:
+    0.65rem/1.4 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.reading-section-copy,
+.card-interpretation-copy {
+  display: grid;
+  gap: clamp(0.65rem, 1.4vh, 1rem);
+  color: #d4dfdb;
+  font:
+    clamp(0.82rem, 1.15vw, 1rem) / 1.55 Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.reading-section-copy p,
+.reading-section-copy ul,
+.card-interpretation-copy p,
+.card-interpretation-copy section {
+  margin: 0;
+}
+
+.reading-section-copy h3,
+.card-interpretation-copy h3 {
+  margin: 0 0 0.22rem;
   color: #d9bc79;
   font:
-    0.64rem Arial,
+    600 0.62rem/1.4 Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
-.oracle-entry-text {
+.reading-section-copy ul,
+.reading-agency-list {
+  display: grid;
+  gap: 0.42rem;
+  padding-left: 1.15rem;
+}
+
+.reading-direct-answer {
+  color: #f4ead0;
+  font:
+    italic clamp(1rem, 1.55vw, 1.25rem) / 1.5 Georgia,
+    "Times New Roman",
+    serif;
+}
+
+.reading-uncertainty {
+  padding-top: 0.65rem;
+  border-top: 1px solid rgb(255 255 255 / 0.09);
+  color: #a9bfba;
+  font-size: 0.82em;
+}
+
+.reading-agency-list {
   margin: 0;
-  font-size: clamp(0.9rem, 1.6vw, 1.08rem);
-  line-height: 1.58;
+  color: #dbe6e1;
+  font:
+    clamp(0.9rem, 1.3vw, 1.08rem) / 1.6 Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.reading-reflection-question {
+  margin: 0;
+  color: #f3e2b5;
+  font:
+    italic clamp(1.15rem, 2.2vw, 1.65rem) / 1.5 Georgia,
+    "Times New Roman",
+    serif;
+}
+
+.reading-journey-controls {
+  display: grid;
+  grid-template-columns: auto minmax(7rem, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.2rem;
+}
+
+.reading-journey-controls button {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 1px solid rgb(232 207 142 / 0.55);
+  border-radius: 50%;
+  background: rgb(4 17 22 / 0.82);
+  box-shadow: 0 0.65rem 1.8rem rgb(0 0 0 / 0.35);
+  color: #f3dfaa;
+  cursor: pointer;
+  font-size: 1.7rem;
+  line-height: 1;
+  backdrop-filter: blur(12px);
+}
+
+.reading-journey-controls button:disabled {
+  border-color: rgb(255 255 255 / 0.12);
+  color: rgb(211 223 217 / 0.3);
+  cursor: default;
+}
+
+.reading-journey-controls > div {
+  display: grid;
+  gap: 0.35rem;
+  color: #afc6c0;
+  font:
+    0.62rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+
+.reading-journey-controls i {
+  position: relative;
+  display: block;
+  height: 1px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.14);
+}
+
+.reading-journey-controls b {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--reading-progress);
+  background: linear-gradient(90deg, #75cdbb, #e5c777);
+  box-shadow: 0 0 0.6rem #9edcca;
+  transition: width 420ms ease;
 }
 
 .oracle-cursor {
@@ -646,28 +824,19 @@ a {
   padding: 1rem 0;
 }
 
-.return-to-latest {
-  position: absolute;
-  z-index: 2;
-  right: 0.85rem;
-  bottom: 0.75rem;
-  padding: 0.4rem 0.65rem;
-  border: 1px solid rgb(216 181 109 / 0.5);
-  border-radius: 999px;
-  background: rgb(3 14 20 / 0.9);
-  color: #f0dfb1;
-  cursor: pointer;
-  font-size: 0.68rem;
-}
-
 .oracle-stream-error,
 .oracle-stream-status {
+  position: absolute;
+  z-index: 2;
+  right: 1rem;
+  bottom: 3.35rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.45rem 0.8rem;
-  background: rgb(3 14 20 / 0.85);
+  padding: 0.4rem 0.65rem;
+  border-radius: 999px;
+  background: rgb(3 14 20 / 0.9);
   color: #c8d6d0;
   font:
     0.68rem Arial,
@@ -684,7 +853,6 @@ a {
 }
 
 .oracle-stream-status {
-  justify-content: flex-end;
   color: #9fc8be;
 }
 
@@ -889,119 +1057,6 @@ a {
   text-shadow: 0 2px 12px #000;
 }
 
-.reading-details-drawer {
-  position: fixed;
-  inset: auto 0 0;
-  width: min(50rem, calc(100vw - 1rem));
-  max-height: min(78dvh, 48rem);
-  margin: auto;
-  padding: 0.8rem clamp(1rem, 4vw, 2rem) max(1.2rem, env(safe-area-inset-bottom));
-  overflow: hidden;
-  border: 1px solid rgb(218 192 127 / 0.42);
-  border-bottom: 0;
-  border-radius: 1.4rem 1.4rem 0 0;
-  background: rgb(4 13 20 / 0.96);
-  box-shadow: 0 -1rem 4rem rgb(0 0 0 / 0.58);
-  color: #eee9dd;
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-.reading-details-drawer::backdrop {
-  background: rgb(0 5 9 / 0.68);
-  backdrop-filter: blur(6px);
-}
-
-.details-drawer-handle {
-  width: 3rem;
-  height: 0.22rem;
-  margin: 0 auto 0.8rem;
-  border-radius: 999px;
-  background: rgb(225 211 170 / 0.42);
-}
-
-.reading-details-drawer > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgb(255 255 255 / 0.1);
-}
-
-.reading-details-drawer header p,
-.reading-details-drawer header h2 {
-  margin: 0;
-}
-
-.reading-details-drawer header p {
-  color: #d8b56d;
-  font-size: 0.65rem;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-}
-
-.reading-details-drawer header h2 {
-  margin-top: 0.18rem;
-  font:
-    1.45rem Georgia,
-    "Times New Roman",
-    serif;
-}
-
-.reading-details-drawer header button {
-  min-height: 2.4rem;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid rgb(255 255 255 / 0.18);
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.details-drawer-scroll {
-  max-height: calc(78dvh - 6.5rem);
-  overflow: auto;
-  padding: 0.8rem 0 2rem;
-  scrollbar-color: rgb(216 181 109 / 0.5) transparent;
-}
-
-.details-drawer-scroll section,
-.details-drawer-scroll details {
-  padding: 1rem 0;
-  border-bottom: 1px solid rgb(255 255 255 / 0.09);
-}
-
-.details-drawer-scroll h3,
-.details-drawer-scroll p {
-  margin-top: 0.55rem;
-  margin-bottom: 0;
-}
-
-.details-drawer-scroll p,
-.details-drawer-scroll li {
-  color: #c4cfcc;
-  line-height: 1.6;
-}
-
-.details-drawer-scroll summary {
-  color: #f0dda8;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.details-drawer-scroll article {
-  margin-top: 0.9rem;
-  padding-left: 0.85rem;
-  border-left: 2px solid rgb(216 181 109 / 0.35);
-}
-
-.details-reflection {
-  color: #f1e2b7 !important;
-  font-family: Georgia, "Times New Roman", serif;
-  font-style: italic;
-}
-
-.details-empty,
 .sanctuary-loading {
   color: #bfd0cc;
   text-align: center;
@@ -1092,9 +1147,7 @@ a {
   }
 
   .sanctuary-control-group {
-    display: grid;
-    grid-template-columns: repeat(2, auto);
-    justify-content: end;
+    justify-content: flex-end;
   }
 
   .sanctuary-control-group button {
@@ -1108,15 +1161,16 @@ a {
     padding: 0.35rem 0.6rem;
   }
 
-  .locked-reading-note {
-    top: 6rem;
-    width: 75vw;
-    font-size: 0.56rem;
+  .sanctuary-stage {
+    top: 4.5rem;
+    bottom: clamp(20.5rem, 43vh, 27rem);
   }
 
-  .sanctuary-stage {
-    top: 7.15rem;
-    bottom: clamp(20.5rem, 43vh, 27rem);
+  .sanctuary-stage.has-reading-journey {
+    top: 3.8rem;
+    right: 0.5rem;
+    bottom: 55dvh;
+    left: 0.5rem;
   }
 
   .tarot-spread-stage {
@@ -1155,19 +1209,59 @@ a {
   }
 
   .oracle-console-stack {
+    top: 45dvh;
+    right: 0.45rem;
     bottom: max(0.45rem, env(safe-area-inset-bottom));
-    width: calc(100vw - 0.9rem);
+    left: 0.45rem;
+    width: auto;
   }
 
   .oracle-transcript {
-    max-height: min(29dvh, 14rem);
-    padding-right: 0.75rem;
-    padding-left: 0.75rem;
+    padding: clamp(0.9rem, 4vw, 1.25rem);
+    border-radius: 1.15rem;
+  }
+
+  .oracle-entry h2 {
+    margin-bottom: 0.65rem;
+    font-size: clamp(1.35rem, 6.4vw, 2rem);
   }
 
   .oracle-entry-text {
-    font-size: 0.86rem;
-    line-height: 1.48;
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .reading-section-copy,
+  .card-interpretation-copy {
+    gap: 0.45rem;
+    font-size: 0.74rem;
+    line-height: 1.42;
+  }
+
+  .reading-section-copy h3,
+  .card-interpretation-copy h3 {
+    margin-bottom: 0.1rem;
+    font-size: 0.53rem;
+  }
+
+  .reading-uncertainty {
+    padding-top: 0.35rem;
+  }
+
+  .reading-agency-list {
+    gap: 0.28rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .reading-reflection-question {
+    font-size: clamp(1rem, 4.8vw, 1.3rem);
+  }
+
+  .reading-journey-controls button {
+    width: 2.35rem;
+    height: 2.35rem;
+    font-size: 1.45rem;
   }
 
   .question-composer {
@@ -1176,12 +1270,6 @@ a {
 
   .question-composer-hint {
     display: none;
-  }
-
-  .reading-details-drawer {
-    width: 100vw;
-    max-height: 88dvh;
-    border-radius: 1.1rem 1.1rem 0 0;
   }
 
   .reading-entry-stage {
@@ -1215,8 +1303,18 @@ a {
     bottom: 17rem;
   }
 
-  .oracle-transcript {
-    max-height: 8rem;
+  .sanctuary-stage.has-reading-journey {
+    bottom: 57dvh;
+  }
+
+  .oracle-console-stack {
+    top: 43dvh;
+  }
+
+  .reading-section-copy,
+  .card-interpretation-copy {
+    font-size: 0.7rem;
+    line-height: 1.35;
   }
 
   .physical-card-figure {
@@ -1229,8 +1327,18 @@ a {
     transform: none;
   }
 
-  .physical-card-figure:hover {
-    translate: none;
+  .physical-card-figure,
+  .cinematic-card-scrim {
+    transition: none;
+  }
+
+  .physical-card-figure.is-cinematic-positioned {
+    transform: none;
+  }
+
+  .cinematic-card-scrim.is-visible {
+    opacity: 0;
+    backdrop-filter: none;
   }
 
   .oracle-entry {

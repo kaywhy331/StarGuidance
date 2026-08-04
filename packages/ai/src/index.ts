@@ -1,6 +1,8 @@
 import {
+  followUpResultSchema,
   oracleStreamEventSchema,
   readingResultSchema,
+  type FollowUpResult,
   type OracleStreamEvent,
   type ProfileTrait,
   type ReadingOutputProvenance,
@@ -43,6 +45,7 @@ export interface ReadingInterpretationProvider extends InterpretationProvider<
     input: ReadingGenerationInput,
     signal?: AbortSignal,
   ): Promise<ReadingGenerationOutcome>;
+  generateFollowUp(input: FollowUpGenerationInput, signal?: AbortSignal): Promise<FollowUpResult>;
 }
 
 export type SafetyCategory =
@@ -113,6 +116,10 @@ export interface ReadingGenerationInput {
   readonly draw: LockedDraw;
   readonly question: string;
   readonly relevantTraitStatements: readonly string[];
+}
+
+export interface FollowUpGenerationInput extends ReadingGenerationInput {
+  readonly originalResult: ReadingResult;
 }
 
 export interface ReadingLens {
@@ -231,6 +238,33 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       },
     };
   }
+
+  async generateFollowUp(input: FollowUpGenerationInput): Promise<FollowUpResult> {
+    const resolved = resolveDraw(input.draw);
+    const answer = answerCard(input.draw, resolved);
+    const originalCard = input.originalResult.cards.find(
+      ({ positionId }) => positionId === answer.position.id,
+    );
+    const profileThread = input.relevantTraitStatements[0]
+      ? `Your profile’s pattern — ${input.relevantTraitStatements[0]} — meets this card through what the original reading named: ${
+          originalCard?.personalizedMeaning ??
+          "your response when this pattern appears in real life"
+        }`
+      : (originalCard?.personalizedMeaning ??
+        "The personal thread is how you respond when this pattern appears in real life.");
+    return followUpResultSchema.parse({
+      response: [
+        `Looking again at ${answer.card.name}${
+          answer.orientation === "reversed" ? " reversed" : ""
+        } in ${answer.position.displayName}, its themes of ${answer.themes.join(" and ")} point toward ${
+          subjectVoices[questionSubject(input.question)].wellPhrase
+        }.`,
+        profileThread,
+        `Within the full spread, ${input.originalResult.centralTheme}`,
+        `Your clearest alignment now is ${input.originalResult.userAgency[0]}.`,
+      ].join(" "),
+    });
+  }
 }
 
 export class ValidatingProvider implements InterpretationProvider<
@@ -249,6 +283,7 @@ export class ValidatingProvider implements InterpretationProvider<
 export interface StreamingInterpretationAdapter {
   readonly id: string;
   streamPersistedResult(result: ReadingResult): AsyncIterable<OracleStreamEvent>;
+  streamPersistedFollowUp(result: FollowUpResult): AsyncIterable<OracleStreamEvent>;
 }
 
 export function createOracleStreamEvents(result: ReadingResult): readonly OracleStreamEvent[] {
@@ -273,35 +308,48 @@ export function createOracleStreamEvents(result: ReadingResult): readonly Oracle
     {
       type: "phase",
       phase: "overallSynthesis",
-      heading: "Overall synthesis",
+      heading: "From the Stars",
       text: validated.synthesis,
     },
     {
       type: "phase",
       phase: "likelyTrajectory",
-      heading: "Likely trajectory",
+      heading: "Fated Path",
       text: `${validated.likelyTrajectory.summary} Conditions: ${validated.likelyTrajectory.conditions.join("; ")}.`,
     },
     {
       type: "phase",
       phase: "alternateTrajectory",
-      heading: "Alternate trajectory",
+      heading: "Divergent Path",
       text: validated.likelyTrajectory.alternateTrajectory,
     },
     {
       type: "phase",
       phase: "userAgency",
-      heading: "Your agency",
+      heading: "Cosmic Alignment",
       text: validated.userAgency.join(" · "),
     },
     {
       type: "phase",
       phase: "reflectionPrompt",
-      heading: "Reflection prompt",
+      heading: "Starlit Reflection",
       text: validated.reflectionQuestion,
     },
   ];
   return phases.map((phase, sequence) => oracleStreamEventSchema.parse({ ...phase, sequence }));
+}
+
+export function createFollowUpStreamEvents(result: FollowUpResult): readonly OracleStreamEvent[] {
+  const validated = followUpResultSchema.parse(result);
+  return [
+    oracleStreamEventSchema.parse({
+      type: "phase",
+      sequence: 0,
+      phase: "followUp",
+      heading: "The Cards Answer",
+      text: validated.response,
+    }),
+  ];
 }
 
 export class PersistedResultStreamAdapter implements StreamingInterpretationAdapter {
@@ -311,11 +359,17 @@ export class PersistedResultStreamAdapter implements StreamingInterpretationAdap
     for (const event of createOracleStreamEvents(result)) yield event;
     yield { type: "complete" };
   }
+
+  async *streamPersistedFollowUp(result: FollowUpResult): AsyncIterable<OracleStreamEvent> {
+    for (const event of createFollowUpStreamEvents(result)) yield event;
+    yield { type: "complete" };
+  }
 }
 
 import { GroqInterpretationProvider } from "./groq-provider";
 
 export {
+  FOLLOW_UP_PROMPT_VERSION,
   GroqInterpretationProvider,
   PROMPT_VERSION,
   RESPONSE_SCHEMA_VERSION,

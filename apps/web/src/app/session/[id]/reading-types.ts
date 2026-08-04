@@ -1,4 +1,8 @@
-import type { ReadingOutputProvenance, ReadingResult } from "@starguidance/contracts";
+import type {
+  FollowUpResult,
+  ReadingOutputProvenance,
+  ReadingResult,
+} from "@starguidance/contracts";
 import type { LockedDraw, TarotArtwork } from "@starguidance/tarot-domain";
 
 export interface DealtCardView {
@@ -19,5 +23,5 @@ export interface ReadingPayload {
   result?: ReadingResult;
   outputProvenance?: ReadingOutputProvenance;
   generationStatus: "pending" | "ready" | "failed";
-  followUps: { id: string; result: ReadingResult }[];
+  followUps: { id: string; result: FollowUpResult }[];
 }

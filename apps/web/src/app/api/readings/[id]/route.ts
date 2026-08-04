@@ -104,13 +104,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         },
         { status: 409 },
       );
+    if (!reading.result)
+      return NextResponse.json(
+        { error: "The original reading must be complete before asking a follow-up." },
+        { status: 409 },
+      );
     const safety = classifyQuestion(input.question);
     if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
     const lens = selectReadingLens(input.question, snapshot?.traits ?? []);
-    const result = await provider.generate({
+    const result = await provider.generateFollowUp({
       draw: reading.draw,
       question: input.question,
       relevantTraitStatements: lens.statements,
+      originalResult: reading.result,
     });
     const followUp = {
       id: crypto.randomUUID(),

@@ -1,4 +1,5 @@
 import type {
+  FollowUpResult,
   ProfileSnapshot,
   ProfileTrait,
   ReadingOutputProvenance,
@@ -55,7 +56,7 @@ export interface ReadingLensRecord {
 export interface StoredFollowUp {
   id: string;
   encryptedQuestion: string;
-  result: ReadingResult;
+  result: FollowUpResult;
   createdAt: string;
 }
 

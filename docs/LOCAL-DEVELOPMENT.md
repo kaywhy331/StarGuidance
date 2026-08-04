@@ -30,7 +30,7 @@ On PowerShell, use `./.venv/Scripts/python.exe -m pip install -e ".[dev]"` if th
 Terminal one, from `apps/profile-engine`:
 
 ```bash
-python -m uvicorn profile_engine.main:app --reload --port 8000
+python3 -m uvicorn profile_engine.main:app --reload --port 8000
 ```
 
 Terminal two, from the repository root:

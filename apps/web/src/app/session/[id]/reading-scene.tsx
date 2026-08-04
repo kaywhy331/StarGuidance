@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMachine } from "@xstate/react";
-import type { ReadingResult } from "@starguidance/contracts";
+import type { FollowUpResult, ReadingResult } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
 import { MysticSanctuaryScene } from "./mystic-sanctuary-scene";
 import { OracleTranscript } from "./oracle-transcript";
 import { QuestionComposer } from "./question-composer";
-import { ReadingDetailsDrawer } from "./reading-details-drawer";
 import type { ReadingPayload } from "./reading-types";
 import { TarotSpreadStage } from "./tarot-spread-stage";
 
@@ -35,16 +34,23 @@ export function ReadingScene({ readingId }: { readingId: string }) {
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  const [skipAnimation, setSkipAnimation] = useState(false);
   const [sound, setSound] = useState(false);
+  const [activeReveal, setActiveReveal] = useState<number | null>(null);
+  const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
   const [error, setError] = useState<string>();
   const [followUp, setFollowUp] = useState("");
   const [followUpLoading, setFollowUpLoading] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [streamTarget, setStreamTarget] = useState("primary");
   const [streamRetryToken, setStreamRetryToken] = useState(0);
+  const [primaryJourneyReady, setPrimaryJourneyReady] = useState(false);
   const bootstrapped = useRef(false);
-  const motionOff = reducedMotion || skipAnimation;
+  const revealRun = useRef(0);
+  const soundEnabled = useRef(sound);
+  const motionOff = reducedMotion;
+
+  useEffect(() => {
+    soundEnabled.current = sound;
+  }, [sound]);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -75,10 +81,60 @@ export function ReadingScene({ readingId }: { readingId: string }) {
   }, [reading, send]);
 
   useEffect(() => {
+    if (!state.matches("shuffling")) return;
+    const timer = window.setTimeout(
+      () => send({ type: "SHUFFLE_COMPLETE" }),
+      motionOff ? 120 : 1_900,
+    );
+    return () => window.clearTimeout(timer);
+  }, [motionOff, send, state]);
+
+  useEffect(() => {
+    if (!state.matches("cuttingDeck")) return;
+    const timer = window.setTimeout(() => send({ type: "SKIP_CUT" }), 0);
+    return () => window.clearTimeout(timer);
+  }, [send, state]);
+
+  useEffect(() => {
     if (!state.matches("dealing")) return;
     const timer = window.setTimeout(() => send({ type: "DEALT" }), motionOff ? 0 : 850);
     return () => window.clearTimeout(timer);
   }, [motionOff, send, state]);
+
+  useEffect(() => {
+    if (!state.matches("awaitingReveal")) return;
+    const timer = window.setTimeout(() => send({ type: "REVEAL" }), motionOff ? 0 : 280);
+    return () => window.clearTimeout(timer);
+  }, [motionOff, send, state]);
+
+  useEffect(() => {
+    if (!reading || !state.matches("revealingCards")) return;
+    const run = ++revealRun.current;
+    let timer: number | undefined;
+    const focusDuration = motionOff ? 90 : 1_250;
+    const settleDuration = motionOff ? 40 : 400;
+    const revealNext = (index: number) => {
+      if (revealRun.current !== run) return;
+      if (index >= reading.draw.assignments.length) {
+        send({ type: "ALL_REVEALED" });
+        return;
+      }
+      setActiveReveal(index);
+      setRevealed((current) => new Set(current).add(index));
+      if (soundEnabled.current) playRevealTone();
+      timer = window.setTimeout(() => {
+        if (revealRun.current !== run) return;
+        setActiveReveal(null);
+        timer = window.setTimeout(() => revealNext(index + 1), settleDuration);
+      }, focusDuration);
+    };
+    revealNext(0);
+
+    return () => {
+      revealRun.current += 1;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [motionOff, reading, send, state]);
 
   useEffect(() => {
     if (!state.matches("generatingSynthesis") || !reading) return;
@@ -92,30 +148,12 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     return () => window.clearTimeout(timer);
   }, [motionOff, send, state]);
 
-  const allRevealed = Boolean(reading && revealed.size === reading.draw.assignments.length);
-  const reveal = (index: number) => {
-    if (!reading) return;
-    if (revealed.has(index)) return;
-    if (state.matches("awaitingReveal")) send({ type: "REVEAL" });
-    if (!state.matches("awaitingReveal") && !state.matches("revealingCards")) return;
-    const next = new Set(revealed).add(index);
-    setRevealed(next);
-    if (sound) playRevealTone();
-    if (next.size === reading.draw.assignments.length)
-      window.setTimeout(() => send({ type: "ALL_REVEALED" }), motionOff ? 0 : 420);
-  };
-  const revealAll = () => {
-    if (!reading) return;
-    if (state.matches("awaitingReveal")) send({ type: "REVEAL" });
-    setRevealed(new Set(reading.draw.assignments.map((_, index) => index)));
-    window.setTimeout(() => send({ type: "ALL_REVEALED" }), motionOff ? 0 : 420);
-  };
-
   const handleStreamState = useCallback(
     (streamState: "idle" | "streaming" | "complete" | "failed") => {
-      if (streamState === "complete" && streamTarget === "primary" && reading?.followUps.at(-1)) {
+      if (streamTarget !== "primary") return;
+      setPrimaryJourneyReady(streamState === "complete");
+      if (streamState === "complete" && reading?.followUps.at(-1))
         setStreamTarget(reading.followUps.at(-1)!.id);
-      }
     },
     [reading, streamTarget],
   );
@@ -131,7 +169,7 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         body: JSON.stringify({ action: "followUp", question: followUp }),
       });
       const payload = (await response.json()) as {
-        followUp?: { id: string; result: ReadingResult };
+        followUp?: { id: string; result: FollowUpResult };
         error?: string;
         safety?: { guidance: string };
       };
@@ -178,9 +216,16 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     state.matches("generationFailed") ||
     state.matches("revealingResult") ||
     state.matches("complete");
+  const focusedCardIndex = activeReveal ?? activeReadingCard;
+  const focusMode =
+    activeReveal !== null ? "reveal" : activeReadingCard !== null ? "reading" : null;
 
   return (
     <MysticSanctuaryScene reducedMotion={motionOff} testId="mystic-sanctuary-scene">
+      <span
+        aria-hidden="true"
+        className={`cinematic-card-scrim ${activeReveal === null ? "" : "is-visible"}`}
+      />
       <header className="sanctuary-controls" aria-label="Reading controls">
         <Link className="sanctuary-exit" href="/readings">
           ← Exit
@@ -189,31 +234,15 @@ export function ReadingScene({ readingId }: { readingId: string }) {
           <button aria-pressed={sound} onClick={() => setSound((value) => !value)} type="button">
             Sound <span>{sound ? "on" : "off"}</span>
           </button>
-          <button
-            aria-pressed={reducedMotion}
-            onClick={() => setReducedMotion((value) => !value)}
-            type="button"
-          >
-            Reduced motion
-          </button>
-          <button
-            aria-pressed={skipAnimation}
-            onClick={() => setSkipAnimation((value) => !value)}
-            type="button"
-          >
-            Skip animation
-          </button>
-          <button onClick={() => setDetailsOpen(true)} type="button">
-            Reading details
-          </button>
         </div>
       </header>
 
-      <p className="locked-reading-note" data-testid="locked-reading-id">
-        Locked draw · profile and question never select cards
-      </p>
-
-      <section className="sanctuary-stage" aria-live="polite">
+      <section
+        className={`sanctuary-stage ${activeReveal === null ? "" : "has-cinematic-review"} ${
+          state.matches("complete") ? "has-reading-journey" : ""
+        }`}
+        aria-live="polite"
+      >
         {state.matches("shuffling") && (
           <div className="ritual-moment">
             <div aria-hidden="true" className="sanctuary-shuffle-shells">
@@ -221,27 +250,9 @@ export function ReadingScene({ readingId }: { readingId: string }) {
                 <span key={index} style={{ "--shell-index": index } as React.CSSProperties} />
               ))}
             </div>
-            <h1>The draw is secured</h1>
-            <p>The ritual cannot alter your already locked cards.</p>
-            <button onClick={() => send({ type: "SHUFFLE_COMPLETE" })} type="button">
-              Finish shuffling
-            </button>
-          </div>
-        )}
-
-        {state.matches("cuttingDeck") && (
-          <div className="ritual-moment">
-            <div aria-hidden="true" className="sanctuary-cut-deck" />
-            <h1>Cut the deck?</h1>
-            <p>This physical gesture does not change the locked draw.</p>
-            <div className="ritual-actions">
-              <button onClick={() => send({ type: "CUT" })} type="button">
-                Cut
-              </button>
-              <button onClick={() => send({ type: "SKIP_CUT" })} type="button">
-                Skip cut
-              </button>
-            </div>
+            <p className="ritual-status" role="status">
+              Shuffling your cards…
+            </p>
           </div>
         )}
 
@@ -261,17 +272,12 @@ export function ReadingScene({ readingId }: { readingId: string }) {
 
         {cardsVisible && (
           <TarotSpreadStage
+            activeIndex={focusedCardIndex}
             cards={reading.cards}
-            onReveal={reveal}
+            focusMode={focusMode}
             reducedMotion={motionOff}
             revealed={revealed}
           />
-        )}
-
-        {(state.matches("awaitingReveal") || state.matches("revealingCards")) && !allRevealed && (
-          <button className="reveal-all-control" onClick={revealAll} type="button">
-            Reveal all
-          </button>
         )}
 
         {state.matches("generatingSynthesis") && (
@@ -303,29 +309,30 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         )}
       </section>
 
-      <div className="oracle-console-stack">
-        {state.matches("complete") && reading.result ? (
+      <div className={`oracle-console-stack ${state.matches("complete") ? "" : "is-inactive"}`}>
+        {state.matches("complete") && reading.result && (
           <OracleTranscript
             active
+            cards={reading.cards}
+            onActiveCardChange={setActiveReadingCard}
             onRetry={() => setStreamRetryToken((token) => token + 1)}
             onStateChange={handleStreamState}
             readingId={readingId}
             reducedMotion={motionOff}
+            result={reading.result}
             retryToken={streamRetryToken}
             target={streamTarget}
           />
-        ) : (
-          <p className="oracle-console-placeholder">
-            Reveal the locked spread to begin the oracle transcript.
-          </p>
         )}
         {state.matches("complete") && (
           <QuestionComposer
-            disabled={reading.followUps.length >= 1}
+            disabled={reading.followUps.length >= 1 || !primaryJourneyReady}
             hint={
               reading.followUps.length >= 1
                 ? "This reading’s follow-up is preserved with the same locked cards."
-                : "Shift+Enter adds a line. Enter sends privately."
+                : !primaryJourneyReady
+                  ? "Let the complete reading arrive before continuing the same thread."
+                  : "Shift+Enter adds a line. Enter sends privately."
             }
             label="Keep the same cards and ask what they add"
             loading={followUpLoading}
@@ -347,12 +354,6 @@ export function ReadingScene({ readingId }: { readingId: string }) {
           </p>
         )}
       </div>
-
-      <ReadingDetailsDrawer
-        onClose={() => setDetailsOpen(false)}
-        open={detailsOpen}
-        result={reading.result}
-      />
     </MysticSanctuaryScene>
   );
 }

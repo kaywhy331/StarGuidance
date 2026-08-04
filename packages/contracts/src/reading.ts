@@ -29,6 +29,33 @@ export const readingResultSchema = z.object({
 
 export type ReadingResult = z.infer<typeof readingResultSchema>;
 
+export const followUpResultSchema = z
+  .object({
+    response: z.string().min(1),
+  })
+  .strict();
+
+export type FollowUpResult = z.infer<typeof followUpResultSchema>;
+
+/**
+ * Converts the former full-reading follow-up payload into the current single
+ * response contract. This keeps existing persisted readings readable while
+ * ensuring every follow-up renders as one cohesive section.
+ */
+export function normalizeFollowUpResult(value: unknown): FollowUpResult {
+  const current = followUpResultSchema.safeParse(value);
+  if (current.success) return current.data;
+  const legacy = readingResultSchema.parse(value);
+  return followUpResultSchema.parse({
+    response: [
+      legacy.directAnswer,
+      legacy.cards.map(({ personalizedMeaning }) => personalizedMeaning).join(" "),
+      legacy.synthesis,
+      legacy.userAgency.join(" "),
+    ].join(" "),
+  });
+}
+
 export const readingOutputProvenanceSchema = z.object({
   providerId: z.string().min(1),
   promptVersion: z.string().min(1),
@@ -45,6 +72,7 @@ export const oraclePhaseSchema = z.enum([
   "alternateTrajectory",
   "userAgency",
   "reflectionPrompt",
+  "followUp",
   "uncertainty",
 ]);
 

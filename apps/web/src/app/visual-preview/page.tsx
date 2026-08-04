@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { createOracleStreamEvents } from "@starguidance/ai";
+import { createFollowUpStreamEvents, createOracleStreamEvents } from "@starguidance/ai";
 import { readingResultSchema } from "@starguidance/contracts";
 import { spreads, tarotCards } from "@starguidance/tarot-content";
 
@@ -59,11 +59,12 @@ export default function VisualPreviewPage() {
     uncertainty: "Tarot is reflective guidance, not factual proof or a guarantee of future events.",
     safetyFlags: [],
   });
-  return (
-    <SanctuaryVisualPreview
-      cards={cards}
-      events={createOracleStreamEvents(result).filter((event) => event.type === "phase")}
-      result={result}
-    />
-  );
+  const events = [
+    ...createOracleStreamEvents(result),
+    ...createFollowUpStreamEvents({
+      response:
+        "Looking again at The Star in Direction, your pattern of leaving room for new evidence supports the original reading: choose one grounded next step without forcing certainty.",
+    }),
+  ].filter((event) => event.type === "phase");
+  return <SanctuaryVisualPreview cards={cards} events={events} result={result} />;
 }

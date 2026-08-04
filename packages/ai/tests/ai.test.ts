@@ -4,6 +4,7 @@ import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
 import { createLockedDraw } from "@starguidance/tarot-domain";
 import {
   classifyQuestion,
+  createFollowUpStreamEvents,
   createOracleStreamEvents,
   DeterministicFallbackProvider,
   PersistedResultStreamAdapter,
@@ -84,6 +85,15 @@ describe("AI boundary", () => {
     });
     const events = createOracleStreamEvents(result);
     expect(events[0]).toMatchObject({ phase: "openingTheme" });
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ heading: "From the Stars" }),
+        expect.objectContaining({ heading: "Fated Path" }),
+        expect.objectContaining({ heading: "Divergent Path" }),
+        expect.objectContaining({ heading: "Cosmic Alignment" }),
+        expect.objectContaining({ heading: "Starlit Reflection" }),
+      ]),
+    );
     // The reading no longer ends on a disclaimer: the standing statement about
     // what tarot is lives in the site terms, linked from every page, so the
     // reading can close on the reflection it offers.
@@ -109,6 +119,39 @@ describe("AI boundary", () => {
       streamed.push(event);
     }
     expect(streamed.at(-1)).toEqual({ type: "complete" });
+  });
+
+  it("answers a follow-up in one card- and profile-aware section", async () => {
+    const provider = new DeterministicFallbackProvider();
+    const trait = "you regain direction by turning reflection into a concrete next step.";
+    const originalResult = await provider.generate({
+      draw,
+      question: "What should I notice?",
+      relevantTraitStatements: [trait],
+    });
+    const followUp = await provider.generateFollowUp({
+      draw,
+      question: "What do I do next?",
+      relevantTraitStatements: [trait],
+      originalResult,
+    });
+    expect(Object.keys(followUp)).toEqual(["response"]);
+    expect(followUp.response).toContain(
+      tarotCards.find(({ id }) => id === draw.assignments[0]!.cardId)!.name,
+    );
+    expect(followUp.response).toContain(trait);
+
+    const events = createFollowUpStreamEvents(followUp);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      phase: "followUp",
+      heading: "The Cards Answer",
+      text: followUp.response,
+    });
+    const streamed: OracleStreamEvent[] = [];
+    for await (const event of new PersistedResultStreamAdapter().streamPersistedFollowUp(followUp))
+      streamed.push(event);
+    expect(streamed).toEqual([...events, { type: "complete" }]);
   });
 });
 

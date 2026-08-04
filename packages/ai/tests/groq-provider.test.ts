@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
+import type { LockedDraw } from "@starguidance/tarot-domain";
 
 import { createInterpretationProvider, GroqInterpretationProvider } from "../src/index";
 
@@ -17,12 +18,43 @@ const draw = {
     orientation: index === 1 ? ("reversed" as const) : ("upright" as const),
     order: index,
   })),
-} as never;
+} satisfies LockedDraw;
 
 const input = {
   draw,
   question: "Should I take the new role at work?",
   relevantTraitStatements: ["you commit quickly once a direction feels right."],
+};
+
+const originalResult = {
+  title: "The direction ahead",
+  directAnswer: "The spread points toward a deliberate next step.",
+  centralTheme: "Structure and courage move together here.",
+  cards: spread.positions.map((position, index) => ({
+    positionId: position.id,
+    cardId: tarotCards[index + 10]!.id,
+    orientation: index === 1 ? ("reversed" as const) : ("upright" as const),
+    traditionalMeaning: `${position.displayName} carries the traditional thread.`,
+    personalizedMeaning: `Your profile pattern meets ${position.displayName}.`,
+    questionConnection: `${position.displayName} clarifies the question.`,
+  })),
+  synthesis: "The cards favor preparation before commitment.",
+  likelyTrajectory: {
+    summary: "Preparation strengthens the path.",
+    conditions: ["Create a workable structure."],
+    alternateTrajectory: "Acting too early scatters the effort.",
+  },
+  userAgency: ["Choose the next concrete milestone."],
+  reflectionQuestion: "What would make you feel ready?",
+  disconfirmingEvidence: ["The structure is already complete."],
+  uncertainty: "Conditions can change.",
+  safetyFlags: [],
+};
+
+const followUpInput = {
+  ...input,
+  question: "What is the next concrete move?",
+  originalResult,
 };
 
 const provider = () =>
@@ -55,6 +87,52 @@ describe("what leaves the machine", () => {
       expect(payload.cards[index]!.positionId).toBe(position.id);
       expect(payload.cards[index]!.positionMeans).toBe(position.interpretiveFunction);
     }
+  });
+
+  it("sends a follow-up only the locked spread, original reading, question, and profile lens", () => {
+    const payload = provider().buildFollowUpPayload(followUpInput);
+    expect(payload.originalReading.synthesis).toBe(originalResult.synthesis);
+    expect(payload.readerLens).toEqual(input.relevantTraitStatements);
+    expect(payload.cards.map(({ cardId }) => cardId)).toEqual(
+      draw.assignments.map(({ cardId }) => cardId),
+    );
+    const serialised = JSON.stringify(payload);
+    for (const forbidden of ["birthDate", "fullBirthName", "birthplace", "userId", "email"])
+      expect(serialised).not.toContain(forbidden);
+  });
+});
+
+describe("one-section follow-ups", () => {
+  it("requests and validates one cohesive response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ response: "One focused answer." }) } }],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(provider().generateFollowUp(followUpInput)).resolves.toEqual({
+      response: "One focused answer.",
+    });
+    const request = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body)) as {
+      response_format: { json_schema: { name: string; schema: { required: string[] } } };
+      messages: { content: string }[];
+    };
+    expect(request.response_format.json_schema).toMatchObject({
+      name: "follow_up",
+      schema: { required: ["response"] },
+    });
+    expect(request.messages[0]!.content).toContain("one cohesive response");
+  });
+
+  it("falls back to a single profile- and card-aware response on provider failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 500 })));
+    const result = await provider().generateFollowUp(followUpInput);
+    expect(Object.keys(result)).toEqual(["response"]);
+    expect(result.response).toContain(input.relevantTraitStatements[0]!);
+    expect(result.response).toContain(tarotCards[12]!.name);
   });
 });
 

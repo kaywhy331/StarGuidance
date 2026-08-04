@@ -3,6 +3,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import {
+  followUpResultSchema,
+  normalizeFollowUpResult,
   profileSnapshotSchema,
   readingOutputProvenanceSchema,
   readingResultSchema,
@@ -451,7 +453,7 @@ export function createPostgresRepositories(
       followUps: followRows.map((follow) => ({
         id: String(follow.id),
         encryptedQuestion: String(follow.encrypted_question),
-        result: readingResultSchema.parse(follow.output),
+        result: normalizeFollowUpResult(follow.output),
         createdAt: iso(follow.created_at as Date),
       })),
       createdAt: iso(row.created_at as Date),
@@ -567,7 +569,7 @@ export function createPostgresRepositories(
             id, user_id, reading_id, encrypted_question, output, created_at
           ) values (
             ${followUp.id}, ${userId}, ${readingId}, ${followUp.encryptedQuestion},
-            ${tx.json(json(readingResultSchema.parse(followUp.result)))}, ${followUp.createdAt}
+            ${tx.json(json(followUpResultSchema.parse(followUp.result)))}, ${followUp.createdAt}
           )
         `;
       });

@@ -59,15 +59,6 @@ export function ReadingChooser({
     <MysticSanctuaryScene reducedMotion={reducedMotion} testId="mystic-sanctuary-scene">
       <header className="sanctuary-controls" aria-label="Reading setup controls">
         <Link href="/profile">← Exit</Link>
-        <div className="sanctuary-control-group">
-          <button
-            aria-pressed={reducedMotion}
-            onClick={() => setReducedMotion((value) => !value)}
-            type="button"
-          >
-            Reduced motion
-          </button>
-        </div>
       </header>
       <section className="reading-entry-stage">
         <p>Choose a ritual</p>

@@ -1,37 +1,101 @@
+"use client";
+
 /* eslint-disable @next/next/no-img-element -- Authored AVIF/WebP/SVG art uses explicit picture sources. */
-import type { CSSProperties } from "react";
+import { useLayoutEffect, useRef, type CSSProperties } from "react";
 
 import type { DealtCardView } from "./reading-types";
 
 export function PhysicalTarotCard({
   card,
+  focusMode,
   index,
   revealed,
   reducedMotion,
-  onReveal,
 }: {
   card: DealtCardView;
+  focusMode: "reveal" | "reading" | null;
   index: number;
   revealed: boolean;
   reducedMotion: boolean;
-  onReveal: () => void;
 }) {
+  const figureRef = useRef<HTMLElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const focalStyle = {
     "--focal-x": `${card.artwork.focalPoint.x * 100}%`,
     "--focal-y": `${card.artwork.focalPoint.y * 100}%`,
     "--card-order": index,
   } as CSSProperties;
+
+  useLayoutEffect(() => {
+    const figureElement = figureRef.current;
+    if (!figureElement) return;
+    figureElement.classList.remove("is-cinematic-positioned");
+    if (!focusMode || reducedMotion) {
+      return;
+    }
+    const cardElement = cardRef.current;
+    if (!cardElement) return;
+    const bounds = cardElement.getBoundingClientRect();
+    const compact = window.innerWidth < 768;
+    const readingFocus = focusMode === "reading";
+    const targetWidth = readingFocus
+      ? compact
+        ? window.innerWidth * 0.38
+        : Math.min(window.innerWidth * 0.24, 19 * 16)
+      : compact
+        ? window.innerWidth * 0.7
+        : window.innerWidth * 0.34;
+    const targetHeight = window.innerHeight * (readingFocus ? (compact ? 0.37 : 0.58) : 0.68);
+    const scale = Math.max(
+      1,
+      Math.min(targetWidth / bounds.width, targetHeight / bounds.height, readingFocus ? 3 : 3.8),
+    );
+    const targetCenter = readingFocus
+      ? {
+          x: compact ? window.innerWidth / 2 : window.innerWidth * 0.27,
+          y: compact ? window.innerHeight * 0.27 : window.innerHeight * 0.45,
+        }
+      : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    figureElement.style.setProperty(
+      "--cinematic-x",
+      `${targetCenter.x - (bounds.left + bounds.width / 2)}px`,
+    );
+    figureElement.style.setProperty(
+      "--cinematic-y",
+      `${targetCenter.y - (bounds.top + bounds.height / 2)}px`,
+    );
+    figureElement.style.setProperty("--cinematic-scale", String(scale));
+    let positionFrame = 0;
+    const measurementFrame = window.requestAnimationFrame(() => {
+      positionFrame = window.requestAnimationFrame(() =>
+        figureElement.classList.add("is-cinematic-positioned"),
+      );
+    });
+    return () => {
+      window.cancelAnimationFrame(measurementFrame);
+      window.cancelAnimationFrame(positionFrame);
+      figureElement.classList.remove("is-cinematic-positioned");
+    };
+  }, [focusMode, reducedMotion]);
+
+  const active = focusMode !== null;
+
   return (
-    <figure className="physical-card-figure" style={focalStyle}>
-      <button
+    <figure
+      className={`physical-card-figure ${active ? "is-cinematic-subject" : ""} ${
+        focusMode === "reading" ? "is-reading-subject" : ""
+      }`}
+      ref={figureRef}
+      style={focalStyle}
+    >
+      <div
         aria-describedby={`card-position-${index}`}
-        aria-label={revealed ? `${card.name}, ${card.orientation}` : `Reveal card ${index + 1}`}
-        aria-pressed={revealed}
+        aria-label={revealed ? `${card.name}, ${card.orientation}` : `Card ${index + 1}, face down`}
         className={`physical-tarot-card ${revealed ? "is-revealed" : ""} ${reducedMotion ? "motion-off" : ""}`}
         data-card-id={card.cardId}
         data-orientation={card.orientation}
-        onClick={onReveal}
-        type="button"
+        ref={cardRef}
+        role="img"
       >
         <span className="physical-card-inner">
           <span className="physical-card-back" aria-hidden="true">
@@ -54,7 +118,7 @@ export function PhysicalTarotCard({
             <span className="card-sheen" aria-hidden="true" />
           </span>
         </span>
-      </button>
+      </div>
       <figcaption className="physical-card-caption" id={`card-position-${index}`}>
         <span>{card.positionName}</span>
         {revealed && (

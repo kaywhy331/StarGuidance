@@ -167,19 +167,20 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 60_000 });
   await scan("sanctuary reading");
 
-  await page.getByRole("button", { name: "Finish shuffling" }).click();
-  await page.getByRole("button", { name: "Skip cut" }).click();
-  await page.getByRole("button", { name: "Reveal all" }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 60_000 });
   await scan("revealed result");
-
-  const details = page.getByRole("button", { name: /details/i }).first();
-  if (await details.isVisible().catch(() => false)) {
-    await details.click();
-    await scan("details drawer");
-  } else {
-    findings.push({ flow: "details drawer", violations: [] });
-  }
+  await expect(page.getByRole("button", { name: "Next reading section" })).toBeEnabled();
+  await page.getByRole("button", { name: "Next reading section" }).click();
+  await scan("card interpretation section");
+  const journey = page.getByTestId("reading-journey");
+  await expect
+    .poll(async () => Number(await journey.getAttribute("data-loaded-section-count")))
+    .toBeGreaterThanOrEqual(9);
+  await page.getByTestId("oracle-transcript").focus();
+  await page.keyboard.press("End");
+  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toBeVisible();
+  await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();
+  await scan("final reflection and follow-up entry point");
 
   await page.goto("/settings/privacy");
   await expect(page.getByRole("heading").first()).toBeVisible({ timeout: 60_000 });
