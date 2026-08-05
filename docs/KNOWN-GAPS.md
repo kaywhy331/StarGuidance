@@ -12,6 +12,8 @@
 - Application users are provisioned only at the `requireUser()` boundary. Migration 0002 removed the `auth.users` synchronisation trigger, which forced RLS made unusable and which made every Supabase Auth signup fail; CI installs an `auth.users` shim so that migration path, the cascade, and the reproduction of the original failure are all exercised without credentials.
 - Four-question profile onboarding: required full birth name and date, plus independent optional birth city/country and birth time fields. No timezone, time-confidence mode, or Latin rendering is requested.
 - Non-Latin names preserve the original input and reduce unsupported name-derived numerology detail instead of blocking the profile or inventing a transliteration.
+- Planetary-angularity mapping now has a versioned fail-closed profile component, persisted component metadata, and an original paid-report status section. It fabricates no chart and calls no third-party calculator.
+- Nine Star Ki now produces versioned Principal, Character, and Lo Shu-derived Energy numbers, persists its convention/certification metadata, and contributes original uncertain traits to the paid report. No third-party guide copy, artwork, or calculator output is used.
 
 ## Credential-backed staging status
 
@@ -37,6 +39,8 @@ Supabase Storage is not used by the current private data path. If future report 
 - Western astrology is startup-guarded against flag activation until its ephemeris/timezone licensing, complete convention manifest, 100-chart independent reference suite, failure contracts, and named expert sign-off are approved.
 - BaZi is startup-guarded against flag activation until its calendar/solar-term/timezone/true-solar-time/Zi-hour convention manifest, 100-case independent reference suite, and named expert sign-off are approved.
 - Dreamspell remains `implemented_pending_approved_reference_dataset` until its 60-date decoder suite, Dreamspell-specific terminology, content/asset rights register, and domain/rights approvals are complete. See [Profile calculations](PROFILE-CALCULATIONS.md) for the exact gates.
+- Planetary-angularity mapping remains unavailable until the Swiss Ephemeris license choice, pinned data, validated geocoder/historical timezone integration, angular-line reference suite, and original conditional interpretation rules are approved.
+- Nine Star Ki remains pending independent certification until its fixed annual/monthly boundary table, the selected Lo Shu third-star derivation, and boundary cases match an approved reference suite. The current result is convention-bound and does not claim minute-level solar-term precision.
 - Pricing, refunds, age policy, legal/privacy copy, launch regions, retention, backup policy, and final artwork distribution approval remain owner decisions.
 
 Automated accessibility scanning excludes frames injected by the deploy-preview host. Those carry `aria-required-children` and `aria-hidden-focus` violations in the host's own toolbar markup, which this project does not ship, cannot repair, and which production does not serve. The application embeds no frames of its own — the suite asserts that, so the exclusion cannot begin hiding our own markup unnoticed.

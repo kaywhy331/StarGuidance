@@ -48,14 +48,45 @@ export async function saveProfileVersion(
     calculationVersions: {
       numerology: calculation.numerology.algorithm_version,
       dreamspell: calculation.dreamspell.algorithm_version,
-      westernAstrology: "unavailable",
-      bazi: "unavailable",
+      nineStarKi: calculation.nine_star_ki.algorithm_version,
+      westernAstrology: calculation.western_astrology.calculation_version,
+      bazi: calculation.bazi.calculation_version,
+      planetaryAngularity: calculation.planetary_angularity.calculation_version,
     },
     createdAt: new Date().toISOString(),
   };
+  const components: NonNullable<StoredProfileVersion["components"]> = [
+    {
+      system: "nine-star-ki",
+      status: "pending-certification",
+      payload: {
+        calculationVersion: calculation.nine_star_ki.algorithm_version,
+        interpretationVersion: calculation.nine_star_ki.interpretation_version,
+        certificationStatus: calculation.nine_star_ki.certification_status,
+        boundaryConvention: calculation.nine_star_ki.boundary_convention,
+        thirdStarConvention: calculation.nine_star_ki.third_star_convention,
+      },
+    },
+    ...(
+      [
+        ["western-astrology", calculation.western_astrology],
+        ["bazi", calculation.bazi],
+        ["planetary-angularity", calculation.planetary_angularity],
+      ] as const
+    ).map(([system, component]) => ({
+      system,
+      status: component.status,
+      payload: {
+        reason: component.reason,
+        calculationVersion: component.calculation_version,
+        activationRequirements: component.activation_requirements,
+      },
+    })),
+  ];
   const profile: StoredProfileVersion = {
     encryptedInput: persistence.encrypt(JSON.stringify(input)),
     encryptedCalculations: persistence.encrypt(JSON.stringify(calculation)),
+    components,
     snapshot,
     maskedName: `${input.fullBirthName.slice(0, 1)}${"•".repeat(Math.min(input.fullBirthName.length - 1, 8))}`,
     birthDate: input.birthDate,

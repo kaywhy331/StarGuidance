@@ -1,6 +1,12 @@
-from profile_engine.models import DreamspellResult, NumerologyResult, ProfileTension, ProfileTrait
+from profile_engine.models import (
+    DreamspellResult,
+    NineStarKiResult,
+    NumerologyResult,
+    ProfileTension,
+    ProfileTrait,
+)
 
-TRAIT_VERSION = "profile-traits-v2"
+TRAIT_VERSION = "profile-traits-v3"
 
 
 def _family(value: int) -> str:
@@ -21,9 +27,23 @@ FAMILY_LANGUAGE = {
     ),
 }
 
+NINE_STAR_LANGUAGE = {
+    1: "patient observation, adaptability, and depth before commitment",
+    2: "receptivity, practical care, and steady support",
+    3: "initiative, quick activation, and direct expression",
+    4: "flexibility, gradual influence, and connection",
+    5: "consolidation, responsibility, and finding the useful center",
+    6: "structure, high standards, and decisive direction",
+    7: "sociability, refinement, and persuasive expression",
+    8: "clear boundaries, focused stillness, and deliberate renewal",
+    9: "visibility, insight, and fast-moving inspiration",
+}
+
 
 def synthesize_traits(
-    numerology: NumerologyResult, dreamspell: DreamspellResult
+    numerology: NumerologyResult,
+    dreamspell: DreamspellResult,
+    nine_star_ki: NineStarKiResult,
 ) -> tuple[tuple[ProfileTrait, ...], tuple[ProfileTension, ...]]:
     motivation_family = _family(numerology.life_path)
     traits: tuple[ProfileTrait, ...] = (
@@ -81,6 +101,52 @@ def synthesize_traits(
             ),
         )
         traits = (traits[0], *name_traits, traits[1])
+    nine_star_traits = (
+        ProfileTrait(
+            domain="coreMotivation",
+            statement=(
+                "Your Nine Star Ki principal pattern emphasizes "
+                f"{NINE_STAR_LANGUAGE[nine_star_ki.principal_star.number]}."
+            ),
+            source_system="nineStarKi",
+            source_rule=(
+                f"{nine_star_ki.interpretation_version}.principal."
+                f"{nine_star_ki.principal_star.number}"
+            ),
+            calculation_version=nine_star_ki.algorithm_version,
+            stability="uncertain",
+        ),
+        ProfileTrait(
+            domain="emotionalProcessing",
+            statement=(
+                "In private or under pressure, the character pattern may emphasize "
+                f"{NINE_STAR_LANGUAGE[nine_star_ki.character_star.number]}."
+            ),
+            source_system="nineStarKi",
+            source_rule=(
+                f"{nine_star_ki.interpretation_version}.character."
+                f"{nine_star_ki.character_star.number}"
+            ),
+            calculation_version=nine_star_ki.algorithm_version,
+            stability="uncertain",
+        ),
+        ProfileTrait(
+            domain="socialOrientation",
+            statement=(
+                "The derived outward pattern may be experienced as "
+                f"{NINE_STAR_LANGUAGE[nine_star_ki.energy_star.number]}."
+            ),
+            source_system="nineStarKi",
+            source_rule=(
+                f"{nine_star_ki.interpretation_version}.energy."
+                f"{nine_star_ki.energy_star.number}"
+            ),
+            calculation_version=nine_star_ki.algorithm_version,
+            stability="uncertain",
+        ),
+    )
+    traits = (*traits, *nine_star_traits)
+
     tensions: tuple[ProfileTension, ...] = ()
     if expression_family is not None and motivation_family != expression_family:
         tensions = (

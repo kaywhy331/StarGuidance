@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { birthProfileInputSchema, getProfileCompleteness } from "../src/profile";
+import {
+  birthProfileInputSchema,
+  getProfileCompleteness,
+  profileTraitSchema,
+} from "../src/profile";
 
 const core = {
   fullBirthName: "Ada Lovelace",
@@ -45,4 +49,22 @@ describe("birth profile contract", () => {
       "李",
     );
   });
+});
+
+describe("optional profile-system provenance", () => {
+  it.each(["planetaryAngularity", "nineStarKi"] as const)(
+    "accepts %s only as explicit versioned trait provenance",
+    (sourceSystem) => {
+      expect(
+        profileTraitSchema.parse({
+          domain: "decisionStyle",
+          statement: "Synthetic original editorial observation.",
+          sourceSystem,
+          sourceRule: "synthetic-reference-rule",
+          calculationVersion: "synthetic-v1",
+          stability: "uncertain",
+        }).sourceSystem,
+      ).toBe(sourceSystem);
+    },
+  );
 });

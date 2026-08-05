@@ -48,12 +48,33 @@ class DreamspellResult(BaseModel):
     certification_status: str
 
 
+class NineStarKiStar(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    number: int = Field(ge=1, le=9)
+    phase: Literal["water", "earth", "wood", "metal", "fire"]
+
+
+class NineStarKiResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    principal_star: NineStarKiStar
+    character_star: NineStarKiStar
+    energy_star: NineStarKiStar
+    boundary_convention: str
+    third_star_convention: str
+    algorithm_version: str
+    interpretation_version: str
+    certification_status: str
+
+
 class UnavailableResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    status: str = "unavailable"
+    status: Literal["unavailable"] = "unavailable"
     capability: str
     reason: str
+    calculation_version: str
     activation_requirements: tuple[str, ...]
 
 
@@ -83,7 +104,9 @@ class ProfileResponse(BaseModel):
     completeness: str
     numerology: NumerologyResult
     dreamspell: DreamspellResult
+    nine_star_ki: NineStarKiResult
     western_astrology: UnavailableResult
     bazi: UnavailableResult
+    planetary_angularity: UnavailableResult
     traits: tuple[ProfileTrait, ...]
     tensions: tuple[ProfileTension, ...]

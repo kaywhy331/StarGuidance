@@ -1,5 +1,18 @@
 import { z } from "zod";
 
+const unavailableCalculationSchema = z.object({
+  status: z.literal("unavailable"),
+  capability: z.string().min(1),
+  reason: z.string().min(1),
+  calculation_version: z.string().min(1),
+  activation_requirements: z.array(z.string().min(1)).min(1),
+});
+
+const nineStarKiStarSchema = z.object({
+  number: z.number().int().min(1).max(9),
+  phase: z.enum(["water", "earth", "wood", "metal", "fire"]),
+});
+
 /**
  * The response contract the application enforces on the profile engine.
  *
@@ -31,18 +44,19 @@ export const calculationSchema = z.object({
     algorithm_version: z.string(),
     certification_status: z.string(),
   }),
-  western_astrology: z.object({
-    status: z.literal("unavailable"),
-    capability: z.string(),
-    reason: z.string(),
-    activation_requirements: z.array(z.string()),
+  nine_star_ki: z.object({
+    principal_star: nineStarKiStarSchema,
+    character_star: nineStarKiStarSchema,
+    energy_star: nineStarKiStarSchema,
+    boundary_convention: z.string().min(1),
+    third_star_convention: z.string().min(1),
+    algorithm_version: z.string().min(1),
+    interpretation_version: z.string().min(1),
+    certification_status: z.string().min(1),
   }),
-  bazi: z.object({
-    status: z.literal("unavailable"),
-    capability: z.string(),
-    reason: z.string(),
-    activation_requirements: z.array(z.string()),
-  }),
+  western_astrology: unavailableCalculationSchema,
+  bazi: unavailableCalculationSchema,
+  planetary_angularity: unavailableCalculationSchema,
   traits: z.array(
     z.object({
       domain: z.enum([
@@ -61,7 +75,14 @@ export const calculationSchema = z.object({
         "growthLever",
       ]),
       statement: z.string(),
-      source_system: z.enum(["numerology", "dreamspell", "westernAstrology", "bazi"]),
+      source_system: z.enum([
+        "numerology",
+        "dreamspell",
+        "westernAstrology",
+        "bazi",
+        "planetaryAngularity",
+        "nineStarKi",
+      ]),
       source_rule: z.string(),
       calculation_version: z.string(),
       stability: z.enum(["stable", "uncertain", "unavailable"]),

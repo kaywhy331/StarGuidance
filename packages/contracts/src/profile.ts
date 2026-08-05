@@ -73,7 +73,14 @@ export const traitDomainSchema = z.enum([
 export const profileTraitSchema = z.object({
   domain: traitDomainSchema,
   statement: z.string().min(1),
-  sourceSystem: z.enum(["numerology", "dreamspell", "westernAstrology", "bazi"]),
+  sourceSystem: z.enum([
+    "numerology",
+    "dreamspell",
+    "westernAstrology",
+    "bazi",
+    "planetaryAngularity",
+    "nineStarKi",
+  ]),
   sourceRule: z.string().min(1),
   calculationVersion: z.string().min(1),
   stability: z.enum(["stable", "uncertain", "unavailable"]),

@@ -310,12 +310,14 @@ export function createPostgresRepositories(
             (${userId}, ${profile.snapshot.id}, 'private-profile-input', 'implemented',
               ${tx.json(json({ envelope: profile.encryptedInput }))}),
             (${userId}, ${profile.snapshot.id}, 'private-calculations', 'implemented',
-              ${tx.json(json({ envelope: profile.encryptedCalculations }))}),
-            (${userId}, ${profile.snapshot.id}, 'western-astrology', 'unavailable',
-              ${tx.json(json({ facts: [], reason: "Validation and licensing gate remains closed." }))}),
-            (${userId}, ${profile.snapshot.id}, 'bazi', 'unavailable',
-              ${tx.json(json({ facts: [], reason: "Convention and validation gate remains closed." }))})
+              ${tx.json(json({ envelope: profile.encryptedCalculations }))})
         `;
+        for (const component of profile.components ?? [])
+          await tx`
+            insert into profile_components (user_id, snapshot_id, system, status, payload)
+            values (${userId}, ${profile.snapshot.id}, ${component.system}, ${component.status},
+              ${tx.json(json(component.payload))})
+          `;
         for (const trait of profile.snapshot.traits)
           await tx`
             insert into profile_traits (user_id, snapshot_id, domain, statement, provenance)

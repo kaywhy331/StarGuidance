@@ -108,6 +108,12 @@ export function createLocalRepositories(): ApplicationRepositories {
           status: "implemented",
           payload: { envelope: profile.encryptedCalculations },
         },
+        ...(profile.components ?? []).map(({ system, status, payload }) => ({
+          snapshotId: profile.snapshot.id,
+          system,
+          status,
+          payload,
+        })),
       ]);
       localStore.profileTraits.set(
         profile.snapshot.id,

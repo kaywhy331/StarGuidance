@@ -4,15 +4,21 @@
 
 `pythagorean-v2` always calculates the date-derived Life Path and Birthday values. It calculates Expression, Soul Urge, and Personality when the entered name can be normalized without transliteration. Master numbers 11, 22, and 33 are preserved. Spaces, punctuation, and Latin diacritics are normalized while the encrypted original name remains unchanged. For unsupported writing systems, name-derived values are typed unavailable; the profile still succeeds and the application never asks for or invents a Latin rendering.
 
-`profile-traits-v2` maps deterministic available numerology observations to the shared trait ontology with source rule, source system, calculation version, and stability. It preserves a motivation/expression tension when their mapped families differ and omits name-derived traits when those calculations are unavailable. `question-trait-lens-v1` deterministically selects at most three stable traits relevant to career, relationship, change, or general questions. It never selects cards and never sends raw numerology values into a base tarot reading.
+`profile-traits-v3` maps deterministic available numerology observations and original Nine Star Ki editorial observations to the shared trait ontology with source rule, source system, calculation version, and stability. It preserves a motivation/expression tension when their mapped families differ and omits name-derived traits when those calculations are unavailable. Nine Star Ki traits remain uncertain until the convention review below is complete. `question-trait-lens-v1` deterministically selects at most three stable traits relevant to career, relationship, change, or general questions. It never selects cards and never sends raw calculation values into a base tarot reading.
 
 `dreamspell-anchor-1987-07-26-kin34-v1` produces Kin, tone, solar seal, color, and version from the Gregorian date. Its trait is marked uncertain and excluded from the stable reading lens. The implementation status is `implemented_pending_approved_reference_dataset`; production certification requires an approved decoder set and terminology/rights review.
+
+`nine-star-ki-fixed-boundaries-lo-shu-v1` deterministically produces a Principal, Character, and derived Energy star from the Gregorian birth date. The annual sequence uses 1963 as the 1 Water cycle anchor and changes on February 4. Monthly stars use the explicit fixed civil-date boundary table encoded in the module. The optional third star uses the named Lo Shu positional derivation; it is not presented as a separate time-of-birth measurement, and other schools may use a different derivation. Each number retains its traditional five-phase association, while every personality sentence is original StarGuidance editorial copy.
+
+The fixed-date convention is intentionally not described as an exact astronomical solar-term calculation. Its status is `implemented_pending_independent_reference_review`. Activation as a certified component requires an approved convention manifest, independent golden cases around every annual/monthly boundary, review of the third-star derivation, and a rights record confirming that only calculation facts and original prose/assets are shipped. The engine does not call or scrape a consumer Nine Star Ki guide or calculator.
 
 Onboarding accepts one optional birth-time value and one independent optional birth city/country value. It does not ask users to classify time confidence or enter an IANA timezone. A time supplied without birthplace is retained, while calculations requiring historical timezone context remain unavailable. Missing data reduces profile capability rather than blocking tarot.
 
 ## Explicitly unavailable
 
 Western astrology, Whole Sign houses, Placidus houses, and BaZi Four Pillars return typed unavailable results. `ENABLE_WESTERN_ASTROLOGY=true` or `ENABLE_BAZI=true` makes the profile engine refuse to start; an environment flag cannot turn the current unavailable contracts into data. The guards may be removed only in the same reviewed change that supplies the validated adapter and every artifact below. The application does not return placeholder placements, houses, pillars, or fabricated facts.
+
+Planetary-angularity mapping is also a versioned, typed component. It currently returns unavailable, with a reason that distinguishes missing birth time, missing validated place context, and an inactive calculation adapter. `ENABLE_PLANETARY_ANGULARITY=true` fails startup until the reviewed adapter is present. The paid report includes this component status but never invents an angular line or place claim.
 
 ### Western astrology activation gate
 
@@ -42,6 +48,16 @@ A named qualified BaZi reviewer must sign the convention manifest, reference res
 4. A named domain reviewer and rights approver signing the exact algorithm, dataset, terminology catalog, editorial copy, and asset manifest. Any change creates a new content/calculation version and repeats the affected approval and reference suite.
 
 Until those artifacts exist, Dreamspell-derived traits remain uncertain and excluded from the stable reading lens, and detailed report copy continues to disclose the pending-certification status.
+
+### Planetary-angularity activation gate
+
+Geographic planetary angularity is astronomical angularity projected onto the Earth, not a promise that a place guarantees luck, romance, hardship, or success. Activation requires an approved Swiss Ephemeris license choice, pinned engine/data files, validated place-to-coordinate and historical-timezone resolution, and independently checked rising, setting, culmination, and anti-culmination lines. The line algorithm must test high declinations, circumpolar gaps, line crossings, antimeridian wrapping, DST and historical offsets. Placidus failure never converts a Whole Sign result into a Placidus result, and no city is assigned to a line through an unreviewed proximity heuristic.
+
+Every map/report statement must retain the body, angle, orb or distance policy, calculation version, map-data version, and original interpretation rule. Interpretations are conditional and written specifically for StarGuidance; third-party map copy, branding, screenshots, and calculator output are not ingested.
+
+### Commercial-use boundary
+
+Historical or public mathematical concepts may be used in paid readings with original editorial treatment, subject to the licenses of the actual code, ephemeris, geocoder, timezone data, map data, and assets used to implement them. Calling the product a reading service does not waive AGPL, professional, trademark, database, content, or hosted-service license terms. A proprietary modern system that forbids the intended use is omitted from the product rather than represented by a dormant adapter or teaser.
 
 ### Activation evidence
 

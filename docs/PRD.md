@@ -33,7 +33,7 @@ Prepared for Kevin
 | Could | Designed for compatibility but not required for MVP launch. | No launch impact unless explicitly promoted. |
 
 ## Executive summary
-The product delivers immersive tarot readings personalized by a private birth profile assembled from Western astrology (Whole Sign and Placidus), Pythagorean numerology, BaZi Four Pillars, and Dreamspell Galactic Signature. The profile is not displayed in the standard tarot experience; it is converted into a compact plain-language personality lens used to emphasize relevant card meanings. Users may later purchase a detailed profile report that reveals the underlying systems and cross-system synthesis.
+The product delivers immersive tarot readings personalized by a private birth profile assembled from Western astrology (Whole Sign and Placidus), Pythagorean numerology, BaZi Four Pillars, Dreamspell Galactic Signature, Nine Star Ki, and planetary-angularity mapping. The profile is not displayed in the standard tarot experience; it is converted into a compact plain-language personality lens used to emphasize relevant card meanings. Users may later purchase a detailed profile report that reveals supported underlying systems and cross-system synthesis.
 
 The user experience remains simple on the surface: create an account, enter minimum birth details, select a reading, ask a question, experience the shuffle/deal/reveal sequence, and receive a structured interpretation. Behind that surface, calculations, random card selection, AI interpretation, privacy controls, content versioning, and payment fulfillment are separated so each can be tested and audited.
 
@@ -156,12 +156,14 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | DEC-010 | MVP launches in English and is architected for localization. | Recommended |
 | DEC-011 | Initial launch assumes adult users; final age policy requires legal/product sign-off. | Open sign-off |
 | DEC-012 | Dreamspell terminology and artwork will be original or properly licensed. | Required |
+| DEC-013 | Paid readings may use public-domain/historical calculation methods with original interpretation, but proprietary modern chart systems, branding, tables, and teaching content require written commercial permission before software activation. | Owner-directed / required |
+| DEC-014 | Systems whose owners forbid the intended hosted/report use are omitted rather than shipped as disabled branded components. Nine Star Ki uses local versioned mathematics, an explicit third-star convention, and original prose/assets only. | Owner-directed / required |
 
 ## 3.2 MVP scope
 | **Included** | **Deferred / future** |
 | --- | --- |
 | Account, consent, private birth profile, profile completeness | Guest personalized readings and anonymous profile storage |
-| Western Whole Sign + Placidus, numerology, BaZi, Dreamspell | Additional astrology forecasting techniques and compatibility |
+| Western Whole Sign + Placidus, planetary angularity, numerology, BaZi, Dreamspell, and Nine Star Ki | Additional forecasting techniques, compatibility, and proprietary modern systems that do not permit the intended use |
 | One deck, four versioned spreads, upright/reversed | Deck marketplace, custom spreads, community decks |
 | Secure random draw, shuffle/deal/reveal, results, one follow-up | Unlimited chat, live readers, multiplayer/social features |
 | History, feedback, optional outcome check-in | Public sharing and social proof systems |
@@ -213,9 +215,9 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 ## 4.3 Profile completeness model
 | **Level** | **Inputs** | **Available profile capabilities** | **Unavailable / uncertain** |
 | --- | --- | --- | --- |
-| Core | Birth name + date | Numerology, Dreamspell, date-stable Western factors, 3-pillar BaZi, compact trait lens | Ascendant, houses, BaZi hour pillar, time-sensitive placements |
-| Location-enhanced | + birthplace | Historical timezone/location normalization and stronger date-boundary handling | Ascendant/houses/hour pillar remain unavailable |
-| Complete | + birthplace + time | Time and place are retained for future validated integrations | Time-sensitive systems remain unavailable until licensing, reference validation, and safe timezone derivation are approved |
+| Core | Birth name + date | Numerology, Dreamspell, Nine Star Ki, date-stable Western factors, 3-pillar BaZi, compact trait lens | Ascendant, houses, BaZi hour pillar, planetary angularity, time-sensitive placements |
+| Location-enhanced | + birthplace | Historical timezone/location normalization and stronger date-boundary handling | Ascendant, houses, hour pillar, and planetary angularity remain unavailable without time |
+| Complete | + birthplace + time | Time and place are retained for validated time-sensitive integrations | Each time-sensitive system remains unavailable until its licensing, reference validation, and safe timezone derivation are approved |
 
 > **User-facing wording**
 >
@@ -293,6 +295,8 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **CAL-014** | Profile snapshots are immutable after use in a completed reading or report. | **Must** | Edits create a new snapshot ID; historical artifacts remain reproducible. |
 | **CAL-015** | Calculation engines have golden-reference tests and boundary cases. | **Must** | Approved reference cases pass at 100%; DST, leap day, sign/house boundary, solar-term boundary, name normalization, and extreme-latitude cases are included. |
 | **CAL-016** | Profile computation meets the latency budget. | **Must** | Cached recomputation completes in under 1 second at p95; uncached full computation completes in under 4 seconds at p95 under expected load. |
+| **CAL-017** | Geographic planetary angularity is implemented as versioned astronomical line calculation rather than deterministic place promises. | **Must before activation** | Rising, setting, culminating, and anti-culminating lines match independent references; map output records ephemeris, coordinate, timezone, line-algorithm, and interpretation versions; place language remains conditional. |
+| **CAL-018** | Nine Star Ki calculates Principal, Character, and derived Energy stars from an explicit versioned convention. | **Must** | The annual anchor/boundary, monthly boundary table, five-phase mapping, and selected Lo Shu third-star derivation are stored with the result; independently approved golden cases match at 100%; alternative-school derivations are not silently substituted; all interpretation prose and visual assets are original or rights-cleared. |
 
 **Epic completion criteria**
 
@@ -302,6 +306,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **[ ]** The same input and version produce identical profile outputs and reading lens. |
 | **[ ]** The reading lens excludes direct identifiers and preserves cross-system contradictions. |
 | **[ ]** Every reading and report references an immutable profile snapshot and calculation version. |
+| **[ ]** Every optional system reports available, uncertain, or unavailable from actual input and activation capability; no external consumer calculator is scraped or queried. |
 
 ## 5.4 Reading catalog and question intake
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
@@ -402,7 +407,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
 | **AI-001** | AI access is isolated behind a provider adapter. | **Must** | Business logic depends on an internal interface and can switch providers/models without changing reading domain code. |
-| **AI-002** | The model receives calculated facts; it never computes astrology, numerology, BaZi, Dreamspell, or card selection. | **Must** | Prompt templates contain only approved structured profile observations, locked draw data, curated meanings, and the user question. |
+| **AI-002** | The model receives calculated facts; it never computes astrology, numerology, BaZi, Dreamspell, Nine Star Ki, or card selection. | **Must** | Prompt templates contain only approved structured profile observations, locked draw data, curated meanings, and the user question. |
 | **AI-003** | The model receives only the minimum relevant profile lens. | **Must** | Raw birth name, exact birth details, account identifiers, and unrelated profile observations are excluded from the normal reading payload. |
 | **AI-004** | Question relevance selects profile observations. | **Must** | Career questions prioritize work/decision traits; relationship questions prioritize communication/attachment traits; selection is deterministic and auditable. |
 | **AI-005** | Interpretations are grounded in versioned tarot content. | **Must** | Every card-position interpretation includes retrieved upright/reversed meanings, position function, domain tags, and relevant combination rules. |
@@ -484,7 +489,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **RPT-002** | A report preview explains included systems and missing-data limitations. | **Must** | The preview shows section titles and profile completeness without revealing the detailed paid interpretation. |
 | **RPT-003** | The report is generated from deterministic calculations plus curated interpretation and AI synthesis. | **Must** | Every report statement is traceable to profile facts/rules or clearly labeled synthesis; AI does not invent chart placements. |
 | **RPT-004** | Report sections adapt to missing birth time or birthplace. | **Must** | Unavailable Ascendant, houses, or hour pillar sections are omitted or marked unavailable with a plain explanation; no placeholders are fabricated. |
-| **RPT-005** | The report covers the agreed systems and cross-system synthesis. | **Must** | Overview, motivations, relationships, communication, decisions, strengths, tensions, growth, Western astrology, numerology, BaZi, Dreamspell, convergence, contradictions, and reflection sections are present as supported. |
+| **RPT-005** | The report covers the agreed systems and cross-system synthesis. | **Must** | Overview, motivations, relationships, communication, decisions, strengths, tensions, growth, Western astrology, planetary angularity, numerology, BaZi, Dreamspell, Nine Star Ki, convergence, contradictions, and reflection sections are present as supported; unavailable components explain why without teasing a fabricated result. |
 | **RPT-006** | The report is stored as structured content and rendered to web and PDF. | **Must** | Web and PDF derive from the same report JSON and pass content parity checks; the PDF is accessible and printable. |
 | **RPT-007** | A purchased report remains tied to its immutable profile snapshot. | **Must** | Updating birth data creates a new profile version without overwriting the purchased report. |
 | **RPT-008** | Checkout uses a hosted, secure payment flow. | **Must** | Successful, canceled, failed, and abandoned states return the user to an appropriate screen without exposing payment details to the app. |
@@ -586,7 +591,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | Data | Supabase Postgres + Row-Level Security | Users, profiles, readings, content, reports, entitlements |
 | Auth/storage | Supabase Auth + Storage | Passwordless identity and protected report/assets |
 | Schema | Drizzle ORM + SQL migrations | Typed data access and versioned migrations |
-| Profile engine | Dockerized FastAPI/Python service | Western astrology, numerology, BaZi, Dreamspell, trait synthesis |
+| Profile engine | Dockerized FastAPI/Python service | Western astrology, planetary angularity, numerology, BaZi, Dreamspell, Nine Star Ki, trait synthesis |
 | Astronomy | Commercially approved ephemeris implementation | Planetary positions, angles, and houses |
 | AI | Provider adapter + structured output | Question classification, reading synthesis, report synthesis |
 | Jobs | Trigger.dev or equivalent durable job runner | Report generation, retries, email, follow-up scheduling, deletion |
@@ -611,6 +616,8 @@ error branches: generation_failed | session_expired | payment_required | safety_
   numerology              content/reports            structured reports
   BaZi                    payments/feedback          moderation/classification
   Dreamspell
+  Nine Star Ki
+  planetary angularity
                               |
                               v
 [Durable Jobs + Payments + Email + Observability]
@@ -760,7 +767,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **Layer** | **Coverage** | **Launch evidence** |
 | --- | --- | --- |
 | Unit | Calculation rules, normalization, trait mapping, shuffle, state transitions, schema validation, entitlement logic | Passing CI suite and agreed critical-module coverage |
-| Golden reference | Western astrology, numerology, BaZi, Dreamspell | 100% match to approved reference dataset |
+| Golden reference | Western astrology, planetary angularity, numerology, BaZi, Dreamspell, and Nine Star Ki | 100% match to approved reference dataset |
 | Property/fuzz | Shuffle uniqueness, idempotency, date/name inputs, state-machine transitions | No invariant violation across configured run count |
 | Integration | Web-to-profile service, DB/RLS, AI adapter, jobs, storage, payment webhooks | Passing environment-level suite |
 | End to end | New user, core/complete profile, each spread, resume, retry, follow-up, purchase, report, deletion | Passing supported-browser matrix |
@@ -777,6 +784,8 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | Numerology | 60 approved names/dates | Master numbers, punctuation, diacritics, suffixes, non-Latin handling |
 | BaZi | 100 approved cases | Li Chun, solar terms, midnight/23:00 boundary, timezone and solar-time policy |
 | Dreamspell | 60 approved dates | Known Kin/tone/seal mappings across centuries and leap dates |
+| Planetary angularity | 100 approved charts/maps | All four angular line types, line crossings, high declinations, polar gaps, antimeridian wrapping, DST, and historical timezone cases |
+| Nine Star Ki | 100 approved dates | Annual and monthly boundaries, nine-year cycles, all five phases, all 81 Principal/Character combinations, and the selected Lo Shu-derived Energy convention |
 | AI reading eval | At least 300 cases | Four spreads x six domains x completeness levels x safety/adversarial cases |
 | Report eval | At least 40 profiles | Core, location-only, time-only, complete, contradictions, non-Latin names |
 | Device/browser | At least 10 representative configurations | iOS/Android mid-tier, desktop browsers, reduced motion, text zoom |
@@ -826,7 +835,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | Full-stack engineering | Web app, API, auth, DB, reading domain, history, admin, observability |
 | Profile-engine engineering | Calculation services, uncertainty, versioning, reference tests, performance |
 | AI/content engineering | Content schemas, retrieval, prompts, structured output, evals, fallback |
-| Domain experts | Tarot, Western astrology, numerology, BaZi, Dreamspell conventions and review |
+| Domain experts | Tarot, Western astrology, numerology, BaZi, Dreamspell, and Nine Star Ki conventions and review |
 | Illustration/motion/sound | Original deck, card back, symbols, animation assets, optional audio |
 | QA/security/privacy | Test strategy, threat model, compliance workflow, launch gates |
 | Operations/support | Content publishing, payment/report exceptions, customer support, incident response |
@@ -841,7 +850,9 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | --- |
 | **[ ]** New users can authenticate, consent, create a Core profile with only birth name/date, and complete every MVP reading. |
 | **[ ]** Users can optionally add birthplace/time, and the correct capability level is applied without invented precision. |
-| **[ ]** Western astrology, numerology, BaZi, and Dreamspell reference suites pass at 100% against approved sources. |
+| **[ ]** Western astrology, numerology, BaZi, Dreamspell, and Nine Star Ki reference suites pass at 100% against approved sources. |
+| **[ ]** Planetary-angularity mapping remains disabled until its ephemeris/license, location, line-math, and reference gates pass; systems that forbid the intended use are absent from runtime contracts and report copy. |
+| **[ ]** Nine Star Ki passes its approved boundary and third-star reference suite, and every shipped interpretation or visual has original-authorship or rights-clearance evidence. |
 | **[ ]** The private profile is not displayed in the base reading and restricted raw system labels do not leak through AI output. |
 | **[ ]** The tarot draw is CSPRNG-based, locked before interpretation, profile-independent, idempotent, and recoverable after refresh/retry. |
 | **[ ]** All four reading experiences pass mobile/desktop, keyboard, screen-reader, reduced-motion, skip, and no-audio testing. |
@@ -891,7 +902,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 - Adult-only launch or broader age policy and corresponding consent/parental requirements.
 - Free reading allowance, paid reading model, and Full Profile Report price.
 - Report-regeneration policy after profile updates.
-- Western astrology aspect/orb set, BaZi boundary conventions, Pythagorean master-number rules, and Dreamspell content scope.
+- Western astrology aspect/orb set, BaZi boundary conventions, Pythagorean master-number rules, Dreamspell content scope, and final Nine Star Ki boundary/reference approval.
 - Whether the paid report includes a rendered natal chart wheel in MVP or a later release.
 - Supported launch countries/currencies and localized crisis/support content.
 - Account sign-in methods and whether a future unpersonalized guest demo is desired.

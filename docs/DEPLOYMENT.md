@@ -86,7 +86,7 @@ The current execution environment has GitHub access to the protected staging wor
 2. Rehearse encryption-key rotation, backup restore, export, deletion, and rollback.
 3. Restrict the profile engine to web-service ingress and rotate its shared secret.
 4. Verify approved AI no-retention/schema handling and Stripe test Checkout/webhook replay separately.
-5. Keep Western astrology and BaZi disabled; keep Dreamspell labeled pending certification.
+5. Keep Western astrology, BaZi, and planetary angularity disabled; keep Dreamspell and Nine Star Ki labeled pending certification.
 6. Obtain owner decisions for retention, crisis resources, telemetry, licensing, payments, and production rollout.
 
 Do not configure or change owner-managed DNS, domains, notifications, production secrets, or a production deploy from this branch.

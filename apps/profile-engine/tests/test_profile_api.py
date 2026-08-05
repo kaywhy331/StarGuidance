@@ -29,6 +29,11 @@ def test_date_only_profile_returns_unavailable_sensitive_systems() -> None:
     assert payload["completeness"] == "core"
     assert payload["western_astrology"]["status"] == "unavailable"
     assert payload["bazi"]["status"] == "unavailable"
+    assert payload["planetary_angularity"]["reason"] == "precise_birth_time_required"
+    assert payload["nine_star_ki"]["principal_star"] == {
+        "number": 5,
+        "phase": "earth",
+    }
 
 
 def test_birth_time_without_place_or_timezone_is_accepted() -> None:
@@ -126,7 +131,12 @@ def test_hosted_runtime_accepts_strong_shared_secret() -> None:
 
 
 @pytest.mark.parametrize(
-    "feature_flag", ["ENABLE_WESTERN_ASTROLOGY", "ENABLE_BAZI"]
+    "feature_flag",
+    [
+        "ENABLE_WESTERN_ASTROLOGY",
+        "ENABLE_BAZI",
+        "ENABLE_PLANETARY_ANGULARITY",
+    ],
 )
 def test_unvalidated_calculation_flag_cannot_activate_fabricated_results(
     feature_flag: str,
@@ -149,6 +159,7 @@ def test_disabled_unvalidated_calculation_flags_keep_typed_unavailable_results()
         "status": "unavailable",
         "capability": "western_astrology",
         "reason": "unlicensed_and_unvalidated",
+        "calculation_version": "western-astrology-contract-v1",
         "activation_requirements": [
             "commercially compatible ephemeris license",
             "approved conventions",
@@ -156,6 +167,22 @@ def test_disabled_unvalidated_calculation_flags_keep_typed_unavailable_results()
         ],
     }
     assert payload["bazi"]["status"] == "unavailable"
+
+
+def test_time_and_place_do_not_activate_unvalidated_new_systems() -> None:
+    payload = TestClient(app).post(
+        "/v1/profile/compute",
+        json={
+            "full_birth_name": "Ada Lovelace",
+            "birth_date": "1815-12-10",
+            "birth_time": "07:00:00",
+            "birthplace": "London, United Kingdom",
+        },
+    ).json()
+
+    assert payload["planetary_angularity"]["reason"] == (
+        "licensed_ephemeris_and_mapping_adapter_required"
+    )
 
 
 def test_profile_request_and_response_are_not_logged(

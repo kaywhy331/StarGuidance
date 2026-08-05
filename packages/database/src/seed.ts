@@ -67,8 +67,10 @@ try {
     for (const [system, version, status] of [
       ["numerology", "pythagorean-v1", "implemented"],
       ["dreamspell", "dreamspell-anchor-1987-07-26-kin34-v1", "pending-certification"],
+      ["nineStarKi", "nine-star-ki-fixed-boundaries-lo-shu-v1", "pending-certification"],
       ["westernAstrology", "unavailable", "unavailable"],
       ["bazi", "unavailable", "unavailable"],
+      ["planetaryAngularity", "planetary-angularity-contract-v1", "unavailable"],
     ] as const) {
       await transaction`
         insert into calculation_versions (system, version, status)

@@ -9,7 +9,9 @@ from profile_engine import __version__
 from profile_engine.configuration import validate_runtime_configuration
 from profile_engine.dreamspell import calculate_dreamspell
 from profile_engine.models import ProfileRequest, ProfileResponse, UnavailableResult
+from profile_engine.nine_star_ki import calculate_nine_star_ki
 from profile_engine.numerology import calculate_numerology
+from profile_engine.planetary_angularity import planetary_angularity_availability
 from profile_engine.traits import synthesize_traits
 
 
@@ -62,15 +64,18 @@ def compute_profile(
 
     numerology = calculate_numerology(request.full_birth_name, request.birth_date)
     dreamspell = calculate_dreamspell(request.birth_date)
-    traits, tensions = synthesize_traits(numerology, dreamspell)
+    nine_star_ki = calculate_nine_star_ki(request.birth_date)
+    traits, tensions = synthesize_traits(numerology, dreamspell, nine_star_ki)
 
     return ProfileResponse(
         completeness=completeness,
         numerology=numerology,
         dreamspell=dreamspell,
+        nine_star_ki=nine_star_ki,
         western_astrology=UnavailableResult(
             capability="western_astrology",
             reason="unlicensed_and_unvalidated",
+            calculation_version="western-astrology-contract-v1",
             activation_requirements=(
                 "commercially compatible ephemeris license",
                 "approved conventions",
@@ -80,12 +85,14 @@ def compute_profile(
         bazi=UnavailableResult(
             capability="bazi_four_pillars",
             reason="unvalidated_conventions",
+            calculation_version="bazi-contract-v1",
             activation_requirements=(
                 "approved year/month/day/hour boundary conventions",
                 "golden reference dataset",
                 "domain expert sign-off",
             ),
         ),
+        planetary_angularity=planetary_angularity_availability(request),
         traits=traits,
         tensions=tensions,
     )

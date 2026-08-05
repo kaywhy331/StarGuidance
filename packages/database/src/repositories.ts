@@ -29,6 +29,7 @@ export interface ConsentRecord {
 export interface StoredProfileVersion {
   encryptedInput: string;
   encryptedCalculations: string;
+  components?: readonly Omit<ProfileComponentRecord, "snapshotId">[];
   snapshot: ProfileSnapshot;
   maskedName: string;
   birthDate: string;

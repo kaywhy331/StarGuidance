@@ -6,6 +6,17 @@ import type { StoredReport } from "@starguidance/database";
 import { persistenceFor, recordAudit } from "./persistence";
 import type { ProfileCalculation } from "./profile-engine";
 
+function planetaryAngularityStatus(calculation: ProfileCalculation): string {
+  switch (calculation.planetary_angularity.reason) {
+    case "precise_birth_time_required":
+      return "Planetary angular lines require a supplied birth time. Without one, StarGuidance does not invent rising, setting, culmination, or anti-culmination locations.";
+    case "validated_birthplace_context_required":
+      return "The birth time is present, but validated coordinates and historical timezone context are not. No city coordinate or UTC instant was guessed.";
+    default:
+      return "Planetary angularity mapping remains unavailable until the ephemeris license, location resolver, and independent line-reference suite are approved. No place is labeled lucky, difficult, or destined without a calculated line.";
+  }
+}
+
 export async function generateProfileReport(input: {
   userId: string;
   snapshotId: string;
@@ -22,6 +33,10 @@ export async function generateProfileReport(input: {
   const calculation = JSON.parse(
     persistence.decrypt(profile.encryptedCalculations),
   ) as ProfileCalculation;
+  const nineStarTraits = profile.snapshot.traits
+    .filter(({ sourceSystem }) => sourceSystem === "nineStarKi")
+    .map(({ statement }) => statement)
+    .join(" ");
   const report: StoredReport = {
     id: randomUUID(),
     userId: input.userId,
@@ -52,6 +67,11 @@ export async function generateProfileReport(input: {
         body: `Kin ${calculation.dreamspell.kin}: ${calculation.dreamspell.tone_name} ${calculation.dreamspell.solar_seal_name} (${calculation.dreamspell.color}). The implementation is deterministic, but production certification remains pending an approved reference dataset and rights review.`,
       },
       {
+        key: "nine-star-ki",
+        title: "Nine Star Ki",
+        body: `Principal ${calculation.nine_star_ki.principal_star.number} ${calculation.nine_star_ki.principal_star.phase}; Character ${calculation.nine_star_ki.character_star.number} ${calculation.nine_star_ki.character_star.phase}; derived Energy ${calculation.nine_star_ki.energy_star.number} ${calculation.nine_star_ki.energy_star.phase}. ${nineStarTraits} This uses the named fixed civil-date and Lo Shu-derived third-star conventions in ${calculation.nine_star_ki.algorithm_version}; it does not claim minute-level astronomical precision, and independent reference review remains pending.`,
+      },
+      {
         key: "traits",
         title: "Recurring patterns",
         body: profile.snapshot.traits
@@ -69,6 +89,12 @@ export async function generateProfileReport(input: {
         key: "bazi",
         title: "BaZi Four Pillars",
         body: "Unavailable until boundary conventions and golden references receive domain-expert approval.",
+        unavailable: true,
+      },
+      {
+        key: "planetary-angularity",
+        title: "Planetary angularity and location",
+        body: planetaryAngularityStatus(calculation),
         unavailable: true,
       },
       {

@@ -171,7 +171,9 @@ test("omitted birth time never fabricates astrology or BaZi", async ({ page }) =
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByText("Western astrology")).toBeVisible();
   await expect(page.getByText("BaZi Four Pillars")).toBeVisible();
-  await expect(page.getByText("Explicitly unavailable")).toHaveCount(2);
+  await expect(page.getByRole("heading", { name: "Nine Star Ki", exact: true })).toBeVisible();
+  await expect(page.getByText("Planetary angularity and location")).toBeVisible();
+  await expect(page.getByText("Explicitly unavailable")).toHaveCount(3);
 });
 
 test("a reading stays pinned to the snapshot it was drawn against", async ({ page }) => {

@@ -22,7 +22,7 @@ The reading ritual uses an original responsive cosmic Gothic sanctuary, card-spe
 
 The credential-free adapter remains available only when `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, and the environment is local development/test. It is rejected in Netlify deploy previews and production. Owner-credentialed staging migration and Auth-backed two-user verification have passed; the reproducible procedure remains in [Supabase staging](docs/SUPABASE-STAGING.md).
 
-Western astrology and BaZi return typed unavailable results. Dreamspell is deterministic but remains uncertified pending an approved reference dataset and rights review. No placeholder chart facts are returned.
+Western astrology, BaZi, and planetary-angularity mapping return typed unavailable results. Dreamspell is deterministic but remains uncertified pending an approved reference dataset and rights review. Nine Star Ki deterministically returns versioned Principal, Character, and Lo Shu-derived Energy numbers with original interpretation copy; its independent convention review remains pending. No placeholder chart facts are returned, and proprietary systems that forbid the intended use are omitted.
 
 ## Run and verify
 

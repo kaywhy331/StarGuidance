@@ -6,13 +6,15 @@ StarGuidance is a modular pnpm monorepo. Next.js owns product orchestration, Fas
 
 1. An authenticated user submits birth facts to the web server; no sensitive field enters a URL.
 2. The web server calls the profile engine over a server-to-server boundary. A shared bearer secret can be required.
-3. The engine returns versioned numerology, Dreamspell, typed unavailable systems, stable/uncertain traits, and explicit tensions.
+3. The engine returns versioned numerology, Dreamspell, Nine Star Ki, typed capability results for Western astrology, BaZi, and planetary angularity, stable/uncertain traits, and explicit tensions. Inactive in-scope systems remain explicit unavailable components rather than fabricating output; proprietary systems that forbid the intended use are omitted.
 4. The web server encrypts raw inputs and calculation payloads and creates an immutable snapshot.
 5. A reading request is safety-classified. Crisis or compulsive-redraw language is interrupted before any draw.
 6. The tarot domain receives only versioned deck and spread data. It uses CSPRNG Fisher–Yates and independent reversal bits; it accepts no profile, question, or AI data.
 7. The complete draw is persisted before interpretation. The reading record separately references its immutable profile snapshot.
 8. A deterministic selector sends at most three stable, question-relevant plain-language traits to the interpretation boundary. Raw birth and calculation data stay out.
 9. Schema-validated structured output is rendered as components, never arbitrary provider HTML. Retries and follow-ups reuse the same draw.
+
+The profile engine never calls consumer chart websites. Geographic planetary angularity will reuse the approved Western ephemeris and normalized UTC/coordinate context. Nine Star Ki is calculated locally from an explicit versioned civil-date and Lo Shu convention; no third-party guide, calculator, prose, or artwork is ingested. Paid-report synthesis consumes only persisted versioned component output and original StarGuidance editorial rules.
 
 ## Immersive reading presentation
 
