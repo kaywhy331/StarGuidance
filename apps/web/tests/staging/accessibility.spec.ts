@@ -70,6 +70,12 @@ async function navigateForScan(
 
     if (reachedTarget) {
       try {
+        // A server-rendered heading can become visible after the document commits
+        // but before the linked Tailwind stylesheet has loaded. Axe would then
+        // measure unstyled controls and report transient target-size failures.
+        // The load event is the browser-owned boundary that guarantees linked
+        // stylesheets have settled without coupling the scan to expected styles.
+        await targetPage.waitForLoadState("load", { timeout: NAVIGATION_OPTIONS.timeout });
         await ready();
         return;
       } catch (error) {
