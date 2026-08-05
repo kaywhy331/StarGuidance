@@ -45,10 +45,12 @@ let pageB: Page;
 let baseUrl: string;
 let activeReadingId: string;
 let userBReadingId: string;
+let profileSnapshotBeforeReentry: string | undefined;
 
 const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
 const NAVIGATION_ATTEMPTS = 3;
 const CLIENT_TRANSITION_TIMEOUT_MS = 15_000;
+const API_REQUEST_TIMEOUT_MS = 60_000;
 const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60_000;
 
 /** Stable digest of a locked draw for byte-for-byte comparison. */
@@ -110,21 +112,12 @@ async function reloadApp(page: Page): Promise<void> {
   throw lastError ?? new Error("application reload did not commit");
 }
 
-/**
- * A page that has never navigated sits on `about:blank`, where a relative URL
- * has no base to resolve against and `fetch` throws before any request is made.
- * Every helper below therefore puts the page on the application origin first.
- */
-async function onAppOrigin(page: Page): Promise<void> {
-  if (!page.url().startsWith("http")) await navigateApp(page, "/");
-}
-
 async function apiGet<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
-  await onAppOrigin(page);
-  return page.evaluate(async (target) => {
-    const response = await fetch(target, { cache: "no-store" });
-    return { status: response.status, body: (await response.json()) as T };
-  }, path);
+  const response = await page.request.get(new URL(path, baseUrl).toString(), {
+    headers: { "cache-control": "no-store" },
+    timeout: API_REQUEST_TIMEOUT_MS,
+  });
+  return { status: response.status(), body: (await response.json()) as T };
 }
 
 async function apiPost<T>(
@@ -132,18 +125,12 @@ async function apiPost<T>(
   path: string,
   payload: unknown,
 ): Promise<{ status: number; body: T }> {
-  await onAppOrigin(page);
-  return page.evaluate(
-    async ({ target, data }) => {
-      const response = await fetch(target, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      return { status: response.status, body: (await response.json()) as T };
-    },
-    { target: path, data: payload },
-  );
+  const response = await page.request.post(new URL(path, baseUrl).toString(), {
+    data: payload,
+    headers: { origin: new URL(baseUrl).origin },
+    timeout: API_REQUEST_TIMEOUT_MS,
+  });
+  return { status: response.status(), body: (await response.json()) as T };
 }
 
 /**
@@ -290,7 +277,7 @@ test("both synthetic identities hold valid authenticated sessions", async () => 
   expect(ok, "both aliases authenticated").toBe(true);
 });
 
-test("both identities complete onboarding and the profile survives refresh and re-entry", async () => {
+test("both identities complete onboarding and the profile survives refresh", async () => {
   // Two live profile calculations run sequentially through a deploy preview.
   // Keep each operation's own bounds while allowing for provider and Function
   // cold starts without exhausting the suite's shorter default test budget.
@@ -314,6 +301,18 @@ test("both identities complete onboarding and the profile survives refresh and r
   await reloadApp(pageA);
   const afterRefresh = await activeSnapshot(pageA);
 
+  profileSnapshotBeforeReentry = created.id;
+  const durable = afterRefresh.id === created.id;
+  record({
+    section: "Profile persistence",
+    check: "Snapshot survives refresh",
+    status: durable ? "pass" : "fail",
+    detail: "the active snapshot remains identical after a committed page refresh",
+  });
+  expect(durable, "profile is durable across refresh").toBe(true);
+});
+
+test("password re-entry restores the same profile snapshot", async () => {
   await signOut(contextA);
   const signedOut = await apiGet<ProfileResponse>(pageA, "/api/profile");
   const passwordSignIn = await pageA.request.post(`${baseUrl}/api/auth`, {
@@ -328,8 +327,8 @@ test("both identities complete onboarding and the profile survives refresh and r
 
   const durable =
     passwordSignIn.status() === 200 &&
-    afterRefresh.id === created.id &&
-    afterReturn.id === created.id;
+    Boolean(profileSnapshotBeforeReentry) &&
+    afterReturn.id === profileSnapshotBeforeReentry;
   record({
     section: "Profile persistence",
     check: "Snapshot survives refresh and sign-out/sign-in",
