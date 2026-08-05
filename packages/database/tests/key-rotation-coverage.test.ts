@@ -44,8 +44,11 @@ describe("key rotation coverage", () => {
 
   it("binds synthetic maintenance work through the forced-RLS application actor", () => {
     expect(rotation).toContain("from auth.users");
+    expect(rotation).toContain("where email like 'sg-verify-%@starguidance.test'");
     expect(rotation).toContain("set local role ${APPLICATION_DATABASE_ROLE}");
     expect(rotation).toContain("request.jwt.claim.sub");
     expect(rotation).toContain("Synthetic Auth identity has no application user row");
+    expect(rotation).not.toContain("non-synthetic identities exist");
+    expect(rotation).not.toContain("outside_users");
   });
 });

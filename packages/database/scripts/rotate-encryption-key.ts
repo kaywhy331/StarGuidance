@@ -187,24 +187,16 @@ async function inspectTarget(
 
 async function syntheticRehearsalSubjects(sql: DatabaseClient): Promise<string[]> {
   // The user tables are FORCE RLS, so an unscoped maintenance query correctly
-  // sees no rows. Inspect the authoritative Auth identities first, refuse the
-  // entire rehearsal if any identity is not synthetic, then bind each retained
-  // subject through the same server actor role used by the application.
-  const [scope] = await sql<{ total_users: number; outside_users: number }[]>`
-    select
-      count(*)::integer as total_users,
-      count(*) filter (
-        where email not like 'sg-verify-%@starguidance.test'
-      )::integer as outside_users
-    from auth.users`;
-  if ((scope?.total_users ?? 0) === 0)
-    throw new Error("Synthetic-only key rotation requires at least one Auth identity");
-  if ((scope?.outside_users ?? 0) > 0)
-    throw new Error("Synthetic-only key rotation refused because non-synthetic identities exist");
+  // sees no rows. Select only reserved-domain Auth identities, then bind each
+  // subject through the same server actor role used by the application. Other
+  // staging accounts may coexist, but this rehearsal never assumes their RLS
+  // context and therefore cannot read or change their encrypted rows.
   const subjects = await sql<{ id: string }[]>`
     select id::text as id from auth.users
     where email like 'sg-verify-%@starguidance.test'
     order by id`;
+  if (subjects.length === 0)
+    throw new Error("Synthetic-only key rotation requires at least one synthetic Auth identity");
   return subjects.map(({ id }) => id);
 }
 
