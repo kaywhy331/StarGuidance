@@ -291,6 +291,10 @@ test("both synthetic identities hold valid authenticated sessions", async () => 
 });
 
 test("both identities complete onboarding and the profile survives refresh and re-entry", async () => {
+  // Two live profile calculations run sequentially through a deploy preview.
+  // Keep each operation's own bounds while allowing for provider and Function
+  // cold starts without exhausting the suite's shorter default test budget.
+  test.setTimeout(300_000);
   await completeOnboarding(pageA, {
     name: "Ada Synthetic",
     date: "1990-01-15",

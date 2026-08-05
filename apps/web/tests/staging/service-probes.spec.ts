@@ -179,10 +179,11 @@ test("the deployed preview runtime is staging, Supabase-backed, and schema ready
   completeStage("netlify-preview-probe");
 });
 
-test("password authentication and account callbacks fail closed", async ({ page, request }) => {
+test("password authentication and account callbacks fail closed", async ({ request }) => {
   const probeAddress = `${SYNTHETIC_EMAIL_PREFIX}${process.env.GITHUB_RUN_ID ?? "local"}-probe@${SYNTHETIC_EMAIL_DOMAIN}`;
-  const rejected = await page.request.post("/api/auth", {
-    headers: { origin: new URL(page.url() || test.info().project.use.baseURL || "/").origin },
+  const appOrigin = new URL(String(test.info().project.use.baseURL)).origin;
+  const rejected = await request.post("/api/auth", {
+    headers: { origin: appOrigin },
     data: {
       action: "sign-in",
       email: probeAddress,

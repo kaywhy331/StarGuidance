@@ -53,10 +53,16 @@ export function SignInForm({ initialError }: { initialError?: string | undefined
         type="password"
       />
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-        <Link className="text-[#d8b56d] underline-offset-4 hover:underline" href="/sign-up">
+        <Link
+          className="inline-flex min-h-11 items-center text-[#d8b56d] underline-offset-4 hover:underline"
+          href="/sign-up"
+        >
           Create an account
         </Link>
-        <Link className="text-[#c9bfd4] underline-offset-4 hover:underline" href="/forgot-password">
+        <Link
+          className="inline-flex min-h-11 items-center text-[#c9bfd4] underline-offset-4 hover:underline"
+          href="/forgot-password"
+        >
           Forgot password?
         </Link>
       </div>
