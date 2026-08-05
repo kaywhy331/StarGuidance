@@ -5,7 +5,7 @@ import { SESSION_COOKIE } from "@/lib/auth";
 import { isHostedNetlifyRuntime } from "@/lib/hosted-runtime";
 import { createLocalSession } from "@/lib/local-store";
 import { getRuntimeAdapter, RuntimeConfigurationError } from "@/lib/runtime";
-import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
+import { assertRateLimit, assertSameOrigin, publicRequestOrigin } from "@/lib/request-security";
 import { createSupabaseServerClient } from "@/lib/supabase";
 
 const requestSchema = z.object({ email: z.email() });
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     }
     const appUrl =
       process.env.APP_ENV === "staging" && isHostedNetlifyRuntime()
-        ? new URL(request.url).origin
+        ? publicRequestOrigin(request)
         : process.env.NEXT_PUBLIC_APP_URL;
     if (!appUrl)
       throw new RuntimeConfigurationError("NEXT_PUBLIC_APP_URL is required for Auth redirects.");

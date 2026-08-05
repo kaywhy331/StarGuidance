@@ -52,6 +52,28 @@ describe("passwordless callback", () => {
     expect(location(response).pathname).toBe("/onboarding");
   });
 
+  it("returns a Netlify callback to the browser-visible preview host", async () => {
+    vi.stubEnv("SITE_NAME", "starguidance");
+    auth.verifyOtp.mockResolvedValue({ error: null });
+    const tokenHash = "c".repeat(64);
+    const browserHost = "deploy-preview-4--starguidance.netlify.app";
+    const response = await GET(
+      new Request(
+        `https://6a7389a677f16700083770ed--starguidance.netlify.app/auth/callback?next=/onboarding&token_hash=${tokenHash}&type=email`,
+        {
+          headers: {
+            host: browserHost,
+            "x-forwarded-host": browserHost,
+            "x-forwarded-proto": "https",
+          },
+        },
+      ),
+    );
+
+    expect(location(response).origin).toBe(`https://${browserHost}`);
+    expect(location(response).pathname).toBe("/onboarding");
+  });
+
   it("explains when the PKCE verifier belongs to another browser", async () => {
     const error = new Error("private provider detail");
     error.name = "AuthPKCECodeVerifierMissingError";

@@ -60,7 +60,7 @@ For a link that works when an email application opens a different browser, the S
 <a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Sign in to StarGuidance</a>
 ```
 
-The callback accepts that portable token-hash form and retains the existing same-browser PKCE `code` exchange during rollout. Do not put `ConfirmationURL`, a raw token, an email address, or a fixed production hostname into the custom link. After changing the template, request a new email—the contents of an already-delivered message cannot change—and verify that its host is the active preview without recording its token-bearing URL.
+The callback accepts that portable token-hash form and retains the existing same-browser PKCE `code` exchange during rollout. On Netlify, auth initiation and callback redirects use the proxy-authenticated browser-visible host rather than the immutable internal deploy host; this keeps the PKCE verifier and resulting session cookies on one origin. Do not put `ConfirmationURL`, a raw token, an email address, or a fixed production hostname into the custom link. After changing the template, request a new email—the contents of an already-delivered message cannot change—and verify that its host is the active preview without recording its token-bearing URL.
 
 ## Database release sequence
 

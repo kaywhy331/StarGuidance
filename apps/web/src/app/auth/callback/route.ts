@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { isAuthPKCECodeVerifierMissingError } from "@supabase/supabase-js";
 
+import { isHostedNetlifyRuntime } from "@/lib/hosted-runtime";
+import { publicRequestOrigin } from "@/lib/request-security";
 import { getRuntimeAdapter } from "@/lib/runtime";
 import { createSupabaseServerClient } from "@/lib/supabase";
 
@@ -16,8 +18,16 @@ function safeNext(url: URL): string {
     : "/onboarding";
 }
 
-function redirect(url: URL, path: string): NextResponse {
-  const response = NextResponse.redirect(new URL(path, url.origin), 303);
+function redirect(request: Request, path: string): NextResponse {
+  const internalOrigin = new URL(request.url).origin;
+  const configuredOrigin = process.env.NEXT_PUBLIC_APP_URL;
+  const origin =
+    process.env.APP_ENV === "staging" && isHostedNetlifyRuntime()
+      ? publicRequestOrigin(request)
+      : configuredOrigin
+        ? new URL(configuredOrigin).origin
+        : internalOrigin;
+  const response = NextResponse.redirect(new URL(path, origin), 303);
   response.headers.set("cache-control", "no-store");
   response.headers.set("referrer-policy", "no-referrer");
   return response;
@@ -36,7 +46,7 @@ export async function GET(request: Request) {
   const tokenHash = url.searchParams.get("token_hash");
   const otpType = url.searchParams.get("type");
   const next = safeNext(url);
-  if (getRuntimeAdapter() !== "supabase") return redirect(url, "/sign-in?error=invalid-link");
+  if (getRuntimeAdapter() !== "supabase") return redirect(request, "/sign-in?error=invalid-link");
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -50,17 +60,17 @@ export async function GET(request: Request) {
         token_hash: tokenHash,
         type: otpType as "email" | "magiclink" | "signup",
       });
-      return redirect(url, error ? "/sign-in?error=expired-link" : next);
+      return redirect(request, error ? "/sign-in?error=expired-link" : next);
     }
 
-    if (!code) return redirect(url, "/sign-in?error=invalid-link");
+    if (!code) return redirect(request, "/sign-in?error=invalid-link");
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return redirect(url, next);
+    if (!error) return redirect(request, next);
     return redirect(
-      url,
+      request,
       isMissingVerifier(error) ? "/sign-in?error=link-browser" : "/sign-in?error=expired-link",
     );
   } catch {
-    return redirect(url, "/sign-in?error=service-unavailable");
+    return redirect(request, "/sign-in?error=service-unavailable");
   }
 }

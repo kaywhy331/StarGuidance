@@ -56,6 +56,37 @@ describe("passwordless sign-in initiation", () => {
     });
   });
 
+  it("keeps Netlify PKCE initiation on the browser-visible preview host", async () => {
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("SITE_NAME", "starguidance");
+    supabase.signInWithOtp.mockResolvedValue({ error: null });
+    const browserHost = "deploy-preview-4--starguidance.netlify.app";
+    const previewRequest = new Request(
+      "https://6a7389a677f16700083770ed--starguidance.netlify.app/api/auth",
+      {
+        method: "POST",
+        headers: {
+          origin: `https://${browserHost}`,
+          host: browserHost,
+          "x-forwarded-host": browserHost,
+          "x-forwarded-proto": "https",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ email: "sg-verify-probe@starguidance.test" }),
+      },
+    );
+
+    expect((await POST(previewRequest)).status).toBe(200);
+    expect(supabase.signInWithOtp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: {
+          emailRedirectTo:
+            "https://deploy-preview-4--starguidance.netlify.app/auth/callback?next=%2Fonboarding",
+        },
+      }),
+    );
+  });
+
   it("reports an exhausted mail quota as retryable, not as a rejected address", async () => {
     supabase.signInWithOtp.mockResolvedValue({
       error: { status: 429, code: "over_email_send_rate_limit", message: "rate limited" },
