@@ -6,6 +6,13 @@ function firstForwardedValue(value: string | null): string | undefined {
   return value?.split(",", 1)[0]?.trim().toLowerCase();
 }
 
+function netlifySiteName(hostname: string): string | undefined {
+  const suffix = ".netlify.app";
+  if (!hostname.endsWith(suffix)) return undefined;
+  const label = hostname.slice(0, -suffix.length);
+  return label.slice(label.lastIndexOf("--") + 2) || undefined;
+}
+
 /**
  * Netlify executes a deploy-preview Function on an immutable deploy hostname,
  * even when the browser used the stable deploy-preview alias. Prefer the
@@ -23,7 +30,13 @@ export function publicRequestOrigin(request: Request): string {
   if (!host || (protocol !== "http" && protocol !== "https")) return internalUrl.origin;
 
   try {
-    return new URL(`${protocol}://${host}`).origin;
+    const candidate = new URL(`${protocol}://${host}`);
+    if (candidate.host !== host) return internalUrl.origin;
+    const expectedNetlifySite =
+      process.env.SITE_NAME?.trim().toLowerCase() ?? netlifySiteName(internalUrl.hostname);
+    if (expectedNetlifySite && netlifySiteName(candidate.hostname) !== expectedNetlifySite)
+      return internalUrl.origin;
+    return candidate.origin;
   } catch {
     return internalUrl.origin;
   }

@@ -74,6 +74,24 @@ describe("passwordless callback", () => {
     expect(location(response).pathname).toBe("/onboarding");
   });
 
+  it("rejects a forwarded callback host outside the current Netlify site", async () => {
+    vi.stubEnv("SITE_NAME", "starguidance");
+    auth.exchangeCodeForSession.mockResolvedValue({ error: null });
+    const internalOrigin = "https://6a7389a677f16700083770ed--starguidance.netlify.app";
+    const response = await GET(
+      new Request(`${internalOrigin}/auth/callback?code=synthetic-code`, {
+        headers: {
+          host: "attacker.invalid",
+          "x-forwarded-host": "attacker.invalid",
+          "x-forwarded-proto": "https",
+        },
+      }),
+    );
+
+    expect(location(response).origin).toBe(internalOrigin);
+    expect(location(response).pathname).toBe("/onboarding");
+  });
+
   it("explains when the PKCE verifier belongs to another browser", async () => {
     const error = new Error("private provider detail");
     error.name = "AuthPKCECodeVerifierMissingError";
