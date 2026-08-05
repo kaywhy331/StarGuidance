@@ -3,7 +3,7 @@
 ## Implemented on this stacked branch
 
 - Explicit `local`/`supabase` runtime selection with no fallback; hosted contexts reject local sessions.
-- Supabase passwordless Auth, callback/session handling, sign-out, and service-role account identity deletion.
+- Supabase email/password registration and sign-in, optional signup-confirmation and recovery callbacks, sign-out, and service-role account identity deletion.
 - User-scoped Postgres repositories for every private MVP entity plus durable export and deletion.
 - AES-256-GCM persistence for raw birth data, calculation payloads, questions, follow-ups, and optional feedback comments.
 - Atomic session/locked-draw persistence, append-only outputs, same-draw retry/follow-up, durable recovery, and immutable profile history.
@@ -19,9 +19,9 @@
 
 Netlify Deploy Preview #4 is active with the staging Supabase adapter. The protected staging workflow has passed against the owner-approved project: authoritative migrations and idempotent seeds, forced RLS and two-user isolation, authenticated profile/snapshot/reading persistence, locked-draw recovery, scoped export, account/Auth deletion, profile-engine authorization, cleanup, redaction, and accessibility checks all completed. The redacted runtime probe confirms that local persistence is disabled and required environment-variable names are present. The profile-engine client retains its eight-second timeout; prefer an always-on staging instance, and treat any bounded transient retry policy as a separately reviewed change.
 
-Passwordless initiation and both fail-closed callback paths are covered, but a positive PKCE magic-link exchange cannot be synthesized safely. An owner-controlled staging inbox is still required for that one-time smoke test. Secret values must never be pasted into chat or recorded in evidence.
+The updated protected workflow exercises a positive password sign-in with an ephemeral Supabase identity and both callback failure paths; it must be rerun for the new authentication commit before that hosted result is treated as current. Signup-confirmation and recovery delivery cannot be synthesized safely, so an owner-controlled staging inbox remains required for that smoke test. Secret values must never be pasted into chat or recorded in evidence.
 
-The current runner exposes no deliverable inbox (its `MAIL` value is a local spool path), Stripe credential names, Supabase or Render management token, or authenticated Netlify site context. Those absences were checked by name/presence only; no values were printed. The owner-inbox PKCE procedure and hosted control-plane review are documented in [Supabase staging](SUPABASE-STAGING.md) and [Deployment](DEPLOYMENT.md).
+The current runner exposes no deliverable inbox (its `MAIL` value is a local spool path), Stripe credential names, Supabase or Render management token, or authenticated Netlify site context. Those absences were checked by name/presence only; no values were printed. The owner-inbox confirmation/recovery procedure and hosted control-plane review are documented in [Supabase staging](SUPABASE-STAGING.md) and [Deployment](DEPLOYMENT.md).
 
 Supabase Storage is not used by the current private data path. If future report artifacts enter Storage, private buckets and object-level RLS require a separate reviewed migration and test.
 

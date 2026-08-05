@@ -32,7 +32,7 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllEnvs());
 
-describe("passwordless callback", () => {
+describe("account callback", () => {
   it("exchanges a same-browser PKCE code and removes callback parameters", async () => {
     auth.exchangeCodeForSession.mockResolvedValue({ error: null });
     const response = await GET(request("?code=synthetic-code&next=/onboarding"));
@@ -50,6 +50,18 @@ describe("passwordless callback", () => {
 
     expect(auth.verifyOtp).toHaveBeenCalledWith({ token_hash: tokenHash, type: "email" });
     expect(location(response).pathname).toBe("/onboarding");
+  });
+
+  it("opens a verified recovery session on the password reset page", async () => {
+    auth.verifyOtp.mockResolvedValue({ error: null });
+    const tokenHash = "r".repeat(64);
+    const response = await GET(
+      request(`?next=/reset-password&token_hash=${tokenHash}&type=recovery`),
+    );
+
+    expect(auth.verifyOtp).toHaveBeenCalledWith({ token_hash: tokenHash, type: "recovery" });
+    expect(location(response).pathname).toBe("/reset-password");
+    expect(location(response).search).toBe("");
   });
 
   it("returns a Netlify callback to the browser-visible preview host", async () => {

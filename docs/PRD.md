@@ -200,7 +200,10 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **Route / screen** | **Purpose** | **Primary completion state** |
 | --- | --- | --- |
 | / | Brand, product explanation, trust, reading preview, report offer | User starts account creation or explores pricing |
-| /sign-in | Passwordless account access | Authenticated session |
+| /sign-in | Email and password account access | Authenticated session |
+| /sign-up | Private account registration | Account created or one-time confirmation pending |
+| /forgot-password | Non-enumerating account recovery request | Recovery email requested |
+| /reset-password | Recovery-session password update | Password replaced and session retained |
 | /onboarding | Consent and private birth profile | Profile snapshot ready |
 | /readings | Reading catalog | Spread selected |
 | /readings/{slug} | Reading details and question entry | Question classified and session created |
@@ -231,12 +234,12 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | --- | --- | --- | --- |
 | **ACC-001** | Public visitors can view marketing pages, product explanations, pricing, and privacy information without an account. | **Must** | Public routes load without authentication and contain no personalized or private data. |
 | **ACC-002** | An authenticated account is required before a user can create a private birth profile, save a reading, or purchase a report. | **Must** | Unauthenticated users are redirected to sign in; no birth data is persisted to an anonymous browser session. |
-| **ACC-003** | MVP authentication supports secure email magic link or one-time code. | **Must** | New and returning users can sign in, sign out, recover access, and receive actionable error states. |
+| **ACC-003** | MVP authentication supports conventional email and password credentials. | **Must** | New users can register, returning users can sign in without an email link, passwords are 12–72 characters, account recovery is non-enumerating, and all flows provide actionable error states. |
 | **ACC-004** | Social sign-in is supported behind a feature flag. | **Should** | Google and/or Apple sign-in can be enabled without changing user or profile schemas. |
 | **ACC-005** | The account display name is separate from the encrypted birth name used for numerology. | **Must** | Reading UI uses the display name; the birth name is never used as the public-facing account label. |
 | **ACC-006** | Age eligibility, Terms, Privacy Notice, and spiritual-entertainment disclosure are accepted before profile creation. | **Must** | Consent versions and timestamps are stored; unchecked required consent blocks continuation. |
 | **ACC-007** | Marketing consent is optional and independent from service consent. | **Must** | Users can complete onboarding without marketing consent and can change it later. |
-| **ACC-008** | Account sessions are protected and revocable. | **Must** | Logout invalidates the active session; passwordless tokens expire; suspicious session events are logged without PII. |
+| **ACC-008** | Account sessions are protected and revocable. | **Must** | Logout invalidates the active session; optional signup-confirmation and password-recovery tokens expire; suspicious session events are logged without PII. |
 
 **Epic completion criteria**
 
@@ -589,7 +592,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | Animation | Motion for React + CSS 3D | Shuffle, deal, flip, presence, progressive transitions |
 | Workflow | XState | Reading state machine, retries, resume, invalid-state prevention |
 | Data | Supabase Postgres + Row-Level Security | Users, profiles, readings, content, reports, entitlements |
-| Auth/storage | Supabase Auth + Storage | Passwordless identity and protected report/assets |
+| Auth/storage | Supabase Auth + Storage | Email/password identity, recovery, and protected report/assets |
 | Schema | Drizzle ORM + SQL migrations | Typed data access and versioned migrations |
 | Profile engine | Dockerized FastAPI/Python service | Western astrology, planetary angularity, numerology, BaZi, Dreamspell, Nine Star Ki, trait synthesis |
 | Astronomy | Commercially approved ephemeris implementation | Planetary positions, angles, and houses |

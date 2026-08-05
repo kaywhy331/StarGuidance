@@ -59,7 +59,7 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 
    Synthetic addresses use the reserved `starguidance.test` domain. RFC 6761 guarantees `.test` can never resolve, so no message can reach a person, and unlike `example.com` it passes Supabase's email validator — Supabase rejects `example.com` outright with `email_address_invalid`, which silently prevented every synthetic identity from being created. `packages/database/tests/synthetic-addresses.test.ts` pins both properties.
 
-   Supabase's built-in SMTP has a low hourly send quota. Passwordless initiation can therefore be refused with `over_email_send_rate_limit` even when the application is correct; `/api/auth` reports that as HTTP 429 with `retryable: true`, and the verification suite records it as a limitation rather than a pass or a defect. Admin-created identities use `email_confirm: true` and send no mail, so they are unaffected.
+   Supabase's built-in SMTP has a low hourly send quota. Optional signup confirmation and password recovery can therefore be refused with `over_email_send_rate_limit` even when the application is correct; `/api/auth` reports that as HTTP 429 with `retryable: true`. Routine password sign-in sends no email. Admin-created synthetic identities use `email_confirm: true` and send no mail, so they are unaffected.
 
 9. With each user independently authenticated, create synthetic profiles, two snapshots for one user, a reading/follow-up, report entitlement, and order.
 10. Verify user A receives not-found/empty results for user B's profile, snapshots, reading, draw, encrypted question, follow-up, report, order, and export—and vice versa. Verify cross-user insert/update/delete attempts are rejected by RLS.
@@ -71,17 +71,17 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 14. Inspect Netlify, Supabase, and profile-engine logs for birth data, questions, response bodies, secrets, and authorization headers. Record a redacted pass/fail result only.
 15. Delete the temporary Auth users/project after evidence is captured. Record only non-secret pass/fail results and migration IDs.
 
-## Positive passwordless-link smoke test
+## Positive credential and recovery smoke test
 
-The callback supports both the legacy same-browser PKCE `?code=` exchange and the portable `token_hash` link documented in [Deployment](DEPLOYMENT.md). The latter removes the hidden same-browser dependency, but requires the owner-managed Supabase Magic Link email template to use the documented `RedirectTo`/`TokenHash` target. An admin-generated link is not equivalent to a delivered template and must not be used as proof.
+The protected suite proves password sign-in using an ephemeral Supabase identity, then checks that the same encrypted profile survives sign-out and password re-entry. Delivered signup-confirmation and recovery messages still require the owner-managed templates documented in [Deployment](DEPLOYMENT.md). Their portable token-hash callbacks remove the hidden same-browser dependency; an admin-generated link is not equivalent to a delivered message and must not be used as proof.
 
 Use this one-time manual procedure only with an owner-controlled staging inbox:
 
 1. Open the exact Deploy Preview #4 URL in a fresh private browser window and confirm `/api/health` reports the expected commit and a healthy staging runtime.
-2. Enter the staging inbox address on `/sign-in` and submit once. Do not put the address in a terminal, test report, screenshot, issue, or PR.
-3. Open the newly delivered message and follow its link. For the legacy `code` template, use the same browser context that initiated sign-in. For the approved `token_hash` template, also repeat once from the mail application's normal browser handoff to prove the loop is gone. Do not copy the token or callback URL into evidence.
-4. Confirm the callback lands on `/onboarding` for a new account, the session survives one reload, a returning account is sent toward `/readings`, and sign-out returns the browser to an unauthenticated state.
-5. Record only the date, preview commit, browser family, and pass/fail result. Delete the message and test identity according to the approved email and identity-retention policy.
+2. Register the staging inbox on `/sign-up` with a unique test password. Do not put the address or password in a terminal, test report, screenshot, issue, or PR. If **Confirm email** is disabled, confirm registration lands directly on `/onboarding`; if enabled, open the delivered confirmation once and confirm the callback lands there.
+3. Sign out, return to `/sign-in`, and authenticate with the password. Confirm no email is sent, the prior profile remains available, the session survives one reload, and sign-out revokes access.
+4. Use `/forgot-password`, open the newly delivered recovery message through the mail application's normal browser handoff, choose a new password, and sign in with it. Do not copy the token or callback URL into evidence.
+5. Record only the date, preview commit, browser family, confirmation setting, and pass/fail result. Delete the messages and test identity according to the approved email and identity-retention policy.
 
 An inbox address is not currently available to automation. `MAIL` in a typical runner is a local spool path, not an email address, and must not be treated as authorization to send mail.
 
@@ -95,6 +95,6 @@ An inbox address is not currently available to automation. `MAIL` in a typical r
 - profile lineage, export, and deletion results;
 - Netlify Deploy Preview URL and green build/function logs with secrets redacted;
 - confirmation that deploy-preview environment values are scoped away from production.
-- a redacted positive PKCE result from the owner-inbox procedure above.
+- a redacted signup-confirmation/recovery result from the owner-inbox procedure above.
 
 If any required variable is absent, stop. Report the variable name and its configuration location only; never request the value in chat.

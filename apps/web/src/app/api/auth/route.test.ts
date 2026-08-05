@@ -1,31 +1,41 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const supabase = vi.hoisted(() => ({ signInWithOtp: vi.fn() }));
+const supabase = vi.hoisted(() => ({
+  resetPasswordForEmail: vi.fn(),
+  signInWithPassword: vi.fn(),
+  signUp: vi.fn(),
+  updateUser: vi.fn(),
+}));
 
 vi.mock("@/lib/supabase", () => ({
-  createSupabaseServerClient: async () => ({ auth: { signInWithOtp: supabase.signInWithOtp } }),
+  createSupabaseServerClient: async () => ({ auth: supabase }),
 }));
 
 import { POST } from "./route";
 
-/**
- * Sign-in initiation must tell the difference between "that address was
- * refused" and "the provider will not send another message just now". Reporting
- * a mail-quota rejection as a generic failure sends someone to correct an
- * address that was never the problem, and it makes staging verification look
- * like an application defect when it is an environment limit.
- */
-function request(email = "sg-verify-probe@starguidance.test"): Request {
-  return new Request("https://synthetic.invalid/api/auth", {
+function request(
+  body: Record<string, unknown>,
+  url = "https://synthetic.invalid/api/auth",
+  browserHost = "synthetic.invalid",
+): Request {
+  return new Request(url, {
     method: "POST",
     headers: {
-      origin: "https://synthetic.invalid",
-      host: "synthetic.invalid",
+      origin: `https://${browserHost}`,
+      host: browserHost,
+      "x-forwarded-host": browserHost,
+      "x-forwarded-proto": "https",
       "content-type": "application/json",
     },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify(body),
   });
 }
+
+const credentials = {
+  action: "sign-in",
+  email: "reader@example.test",
+  password: "a-private-passphrase",
+};
 
 beforeEach(() => {
   vi.stubEnv("APP_ENV", "test");
@@ -39,89 +49,125 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  supabase.signInWithOtp.mockReset();
+  for (const mock of Object.values(supabase)) mock.mockReset();
 });
 
-describe("passwordless sign-in initiation", () => {
-  it("accepts an initiation the provider queued", async () => {
-    supabase.signInWithOtp.mockResolvedValue({ error: null });
-    const response = await POST(request());
+describe("email and password authentication", () => {
+  it("signs in with a password and never returns the credential", async () => {
+    supabase.signInWithPassword.mockResolvedValue({ error: null });
+    const response = await POST(request(credentials));
+
     expect(response.status).toBe(200);
-    expect((await response.json()).pending).toBe(true);
-    expect(supabase.signInWithOtp).toHaveBeenCalledWith({
-      email: "sg-verify-probe@starguidance.test",
-      options: {
-        emailRedirectTo: "https://synthetic.invalid/auth/callback?next=%2Fonboarding",
-      },
+    expect(await response.json()).toEqual({ ok: true, authenticated: true });
+    expect(supabase.signInWithPassword).toHaveBeenCalledWith({
+      email: "reader@example.test",
+      password: "a-private-passphrase",
     });
   });
 
-  it("keeps Netlify PKCE initiation on the browser-visible preview host", async () => {
+  it("keeps a rejected credential generic", async () => {
+    supabase.signInWithPassword.mockResolvedValue({
+      error: { code: "invalid_credentials", message: "reader@example.test was refused" },
+    });
+    const response = await POST(request(credentials));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error).toMatch(/email or password/i);
+    expect(JSON.stringify(body)).not.toContain("reader@example.test");
+  });
+
+  it("creates an immediately authenticated account when confirmation is disabled", async () => {
+    supabase.signUp.mockResolvedValue({
+      data: { session: { access_token: "redacted" } },
+      error: null,
+    });
+    const response = await POST(
+      request({ ...credentials, action: "sign-up", email: "New.Reader@Example.Test" }),
+    );
+
+    expect(await response.json()).toEqual({ ok: true, authenticated: true, pending: false });
+    expect(supabase.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "new.reader@example.test", password: credentials.password }),
+    );
+  });
+
+  it("reports one-time confirmation as pending and uses the browser-visible preview host", async () => {
     vi.stubEnv("APP_ENV", "staging");
     vi.stubEnv("SITE_NAME", "starguidance");
-    supabase.signInWithOtp.mockResolvedValue({ error: null });
+    supabase.signUp.mockResolvedValue({ data: { session: null }, error: null });
     const browserHost = "deploy-preview-4--starguidance.netlify.app";
-    const previewRequest = new Request(
-      "https://6a7389a677f16700083770ed--starguidance.netlify.app/api/auth",
-      {
-        method: "POST",
-        headers: {
-          origin: `https://${browserHost}`,
-          host: browserHost,
-          "x-forwarded-host": browserHost,
-          "x-forwarded-proto": "https",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ email: "sg-verify-probe@starguidance.test" }),
+    const response = await POST(
+      request(
+        { ...credentials, action: "sign-up" },
+        "https://6a7389a677f16700083770ed--starguidance.netlify.app/api/auth",
+        browserHost,
+      ),
+    );
+
+    expect((await response.json()).pending).toBe(true);
+    expect(supabase.signUp).toHaveBeenCalledWith({
+      email: credentials.email,
+      password: credentials.password,
+      options: {
+        emailRedirectTo:
+          "https://deploy-preview-4--starguidance.netlify.app/auth/callback?next=%2Fonboarding",
       },
-    );
-
-    expect((await POST(previewRequest)).status).toBe(200);
-    expect(supabase.signInWithOtp).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: {
-          emailRedirectTo:
-            "https://deploy-preview-4--starguidance.netlify.app/auth/callback?next=%2Fonboarding",
-        },
-      }),
-    );
-  });
-
-  it("reports an exhausted mail quota as retryable, not as a rejected address", async () => {
-    supabase.signInWithOtp.mockResolvedValue({
-      error: { status: 429, code: "over_email_send_rate_limit", message: "rate limited" },
     });
-    const response = await POST(request());
-    const body = await response.json();
-    expect(response.status).toBe(429);
-    expect(body.retryable).toBe(true);
-    expect(body.error).toMatch(/try again shortly/i);
   });
 
-  it("recognises the quota rejection from the provider code alone", async () => {
-    supabase.signInWithOtp.mockResolvedValue({
+  it("starts password recovery without exposing whether an account exists", async () => {
+    supabase.resetPasswordForEmail.mockResolvedValue({ error: null });
+    const response = await POST(
+      request({ action: "request-password-reset", email: credentials.email }),
+    );
+
+    expect(await response.json()).toEqual({ ok: true, pending: true });
+    expect(supabase.resetPasswordForEmail).toHaveBeenCalledWith(credentials.email, {
+      redirectTo: "https://synthetic.invalid/auth/callback?next=%2Freset-password",
+    });
+  });
+
+  it("classifies the recovery mail quota separately from an invalid credential", async () => {
+    supabase.resetPasswordForEmail.mockResolvedValue({
       error: { code: "over_email_send_rate_limit", message: "rate limited" },
     });
-    expect((await POST(request())).status).toBe(429);
+    const response = await POST(
+      request({ action: "request-password-reset", email: credentials.email }),
+    );
+
+    expect(response.status).toBe(429);
+    expect((await response.json()).retryable).toBe(true);
   });
 
-  it("keeps every other provider failure generic", async () => {
-    supabase.signInWithOtp.mockResolvedValue({
-      error: { status: 400, code: "email_address_invalid", message: "invalid" },
+  it("does not expose an account lookup failure during recovery", async () => {
+    supabase.resetPasswordForEmail.mockResolvedValue({
+      error: { code: "user_not_found", message: "reader@example.test does not exist" },
     });
-    const response = await POST(request());
-    expect(response.status).toBe(400);
+    const response = await POST(
+      request({ action: "request-password-reset", email: credentials.email }),
+    );
     const body = await response.json();
-    expect(body.retryable).toBeUndefined();
-    // The provider's wording is never forwarded; it can quote the address.
-    expect(JSON.stringify(body)).not.toContain("invalid");
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, pending: true });
+    expect(JSON.stringify(body)).not.toContain(credentials.email);
   });
 
-  it("never echoes the submitted address", async () => {
-    supabase.signInWithOtp.mockResolvedValue({
-      error: { status: 500, message: "boom for someone@private.test" },
-    });
-    const response = await POST(request("someone@private.test"));
-    expect(JSON.stringify(await response.json())).not.toContain("someone@private.test");
+  it("updates a password only through the authenticated recovery session", async () => {
+    supabase.updateUser.mockResolvedValue({ error: null });
+    const response = await POST(
+      request({ action: "update-password", password: "a-new-private-passphrase" }),
+    );
+
+    expect(await response.json()).toEqual({ ok: true, authenticated: true });
+    expect(supabase.updateUser).toHaveBeenCalledWith({ password: "a-new-private-passphrase" });
+  });
+
+  it("rejects short passwords before calling the provider", async () => {
+    const response = await POST(request({ ...credentials, password: "too-short" }));
+
+    expect(response.status).toBe(422);
+    expect(supabase.signInWithPassword).not.toHaveBeenCalled();
   });
 });

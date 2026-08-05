@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Field } from "@starguidance/design-system";
 
 export function SignInForm({ initialError }: { initialError?: string | undefined }) {
   const router = useRouter();
   const [error, setError] = useState<string | undefined>(initialError);
-  const [notice, setNotice] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   return (
     <form
@@ -15,27 +15,20 @@ export function SignInForm({ initialError }: { initialError?: string | undefined
       onSubmit={async (event) => {
         event.preventDefault();
         setError(undefined);
-        setNotice(undefined);
         setSubmitting(true);
-        const email = new FormData(event.currentTarget).get("email");
+        const form = new FormData(event.currentTarget);
         const response = await fetch("/api/auth", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({
+            action: "sign-in",
+            email: form.get("email"),
+            password: form.get("password"),
+          }),
         });
-        const payload = (await response.json()) as {
-          authenticated?: boolean;
-          pending?: boolean;
-          error?: string;
-        };
+        const payload = (await response.json()) as { authenticated?: boolean; error?: string };
         setSubmitting(false);
         if (!response.ok) return setError(payload.error ?? "Unable to sign in securely.");
-        if (payload.pending) {
-          setNotice(
-            "Link sent. Use the newest email only. If your email app opens another browser, return to this browser before opening the link.",
-          );
-          return;
-        }
         router.push("/onboarding");
         router.refresh();
       }}
@@ -50,13 +43,25 @@ export function SignInForm({ initialError }: { initialError?: string | undefined
         </p>
       ) : null}
       <Field autoComplete="email" label="Email" name="email" required type="email" />
-      {notice ? (
-        <p aria-live="polite" className="text-sm text-emerald-100">
-          {notice}
-        </p>
-      ) : null}
+      <Field
+        autoComplete="current-password"
+        label="Password"
+        maxLength={72}
+        minLength={12}
+        name="password"
+        required
+        type="password"
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <Link className="text-[#d8b56d] underline-offset-4 hover:underline" href="/sign-up">
+          Create an account
+        </Link>
+        <Link className="text-[#c9bfd4] underline-offset-4 hover:underline" href="/forgot-password">
+          Forgot password?
+        </Link>
+      </div>
       <Button disabled={submitting} type="submit">
-        {submitting ? "Preparing private sign-in…" : "Continue privately"}
+        {submitting ? "Signing in…" : "Sign in"}
       </Button>
     </form>
   );

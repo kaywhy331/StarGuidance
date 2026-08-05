@@ -23,7 +23,7 @@ export default function HomePage() {
         <div className="mt-10 flex flex-wrap gap-4">
           <Link
             className="rounded-full bg-[#f5efe1] px-6 py-3 font-semibold text-[#171121]"
-            href="/onboarding"
+            href="/sign-up"
           >
             Begin privately
           </Link>

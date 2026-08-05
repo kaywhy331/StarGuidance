@@ -179,44 +179,31 @@ test("the deployed preview runtime is staging, Supabase-backed, and schema ready
   completeStage("netlify-preview-probe");
 });
 
-test("the passwordless callback initiates and fails closed on an invalid code", async ({
-  page,
-  request,
-}) => {
+test("password authentication and account callbacks fail closed", async ({ page, request }) => {
   const probeAddress = `${SYNTHETIC_EMAIL_PREFIX}${process.env.GITHUB_RUN_ID ?? "local"}-probe@${SYNTHETIC_EMAIL_DOMAIN}`;
-  const initiated = await page.request.post("/api/auth", {
+  const rejected = await page.request.post("/api/auth", {
     headers: { origin: new URL(page.url() || test.info().project.use.baseURL || "/").origin },
-    data: { email: probeAddress },
+    data: {
+      action: "sign-in",
+      email: probeAddress,
+      password: "synthetic-invalid-password",
+    },
   });
-  const initiatedBody = (await initiated.json()) as {
-    pending?: boolean;
-    retryable?: boolean;
+  const rejectedBody = (await rejected.json()) as {
+    authenticated?: boolean;
     error?: string;
   };
-  const initiationOk = initiated.status() === 200 && initiatedBody.pending === true;
-  // Supabase validates deliverability before sending a magic link, so a
-  // reserved `.test` address is refused by design and the project's hourly mail
-  // quota can refuse the rest. Neither is an application defect, and neither
-  // proves initiation works — the owner's real-inbox smoke test does that.
-  // What is verifiable here is that the application relays the provider's
-  // refusal as a well-formed client error rather than a server fault, and
-  // without quoting the address back.
-  const relayedCleanly =
-    initiated.status() >= 400 &&
-    initiated.status() < 500 &&
-    typeof initiatedBody.error === "string" &&
-    !JSON.stringify(initiatedBody).includes(probeAddress);
+  const rejectedCleanly =
+    rejected.status() === 401 &&
+    rejectedBody.authenticated !== true &&
+    typeof rejectedBody.error === "string" &&
+    !JSON.stringify(rejectedBody).includes(probeAddress) &&
+    !JSON.stringify(rejectedBody).includes("synthetic-invalid-password");
   record({
     section: "Auth callback",
-    check: "Passwordless initiation accepted by Supabase",
-    status: initiationOk ? "pass" : relayedCleanly ? "limited" : "fail",
-    detail: initiationOk
-      ? `status ${initiated.status()}; the provider queued a link`
-      : relayedCleanly
-        ? `not verifiable without a deliverable inbox: the provider refused a reserved .test ` +
-          `address with status ${initiated.status()}, and the application relayed that as a ` +
-          `client error without echoing the address. The owner real-inbox smoke test remains required.`
-        : `status ${initiated.status()}; pending=${initiatedBody.pending === true}`,
+    check: "Invalid password fails closed without credential disclosure",
+    status: rejectedCleanly ? "pass" : "fail",
+    detail: `status ${rejected.status()}; authenticated=${rejectedBody.authenticated === true}`,
   });
 
   const invalid = await request.get("/auth/callback?code=invalid-verification-code", {
@@ -241,19 +228,7 @@ test("the passwordless callback initiates and fails closed on an invalid code", 
     detail: `redirected to ${missingClosed ? missingLocation.replace(/^https?:\/\/[^/]+/, "") : "an unexpected destination"}`,
   });
 
-  record({
-    section: "Auth callback",
-    check: "Positive magic-link code exchange",
-    status: "limited",
-    detail:
-      "not automated: the PKCE verifier is bound to the browser that initiated sign-in, so an " +
-      "admin-generated link cannot produce a valid code. Owner inbox smoke test still required.",
-  });
-
-  expect(
-    initiationOk || relayedCleanly,
-    "the application must relay a provider refusal as a clean client error",
-  ).toBe(true);
+  expect(rejectedCleanly, "invalid credentials fail closed without disclosure").toBe(true);
   expect(failsClosed, "invalid code fails closed").toBe(true);
   expect(missingClosed, "absent code fails closed").toBe(true);
 });

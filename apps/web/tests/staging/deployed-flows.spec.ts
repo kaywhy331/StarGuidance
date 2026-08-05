@@ -312,17 +312,28 @@ test("both identities complete onboarding and the profile survives refresh and r
 
   await signOut(contextA);
   const signedOut = await apiGet<ProfileResponse>(pageA, "/api/profile");
-  await authenticate(contextA, userA, baseUrl);
+  const passwordSignIn = await pageA.request.post(`${baseUrl}/api/auth`, {
+    headers: { origin: new URL(baseUrl).origin },
+    data: {
+      action: "sign-in",
+      email: userA.email,
+      password: userA.password,
+    },
+  });
   const afterReturn = await activeSnapshot(pageA);
 
-  const durable = afterRefresh.id === created.id && afterReturn.id === created.id;
+  const durable =
+    passwordSignIn.status() === 200 &&
+    afterRefresh.id === created.id &&
+    afterReturn.id === created.id;
   record({
     section: "Profile persistence",
     check: "Snapshot survives refresh and sign-out/sign-in",
     status: durable ? "pass" : "fail",
-    detail: `identical active snapshot after refresh and re-entry; signed-out request returned ${signedOut.status}`,
+    detail: `identical active snapshot after refresh and password re-entry; signed-out request returned ${signedOut.status}; sign-in returned ${passwordSignIn.status()}`,
   });
   expect(signedOut.status, "signed-out profile request is rejected").toBe(401);
+  expect(passwordSignIn.status(), "email/password sign-in succeeds").toBe(200);
   expect(durable, "profile is durable").toBe(true);
   completeStage("profile-onboarding");
 });

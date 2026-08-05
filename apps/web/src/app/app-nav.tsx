@@ -17,6 +17,10 @@ export function AppNav() {
     pathname === "/" ||
     pathname === "/readings" ||
     pathname === "/visual-preview" ||
+    pathname === "/sign-in" ||
+    pathname === "/sign-up" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
     pathname.startsWith("/session/")
   )
     return null;

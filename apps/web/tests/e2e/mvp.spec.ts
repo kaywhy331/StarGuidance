@@ -7,7 +7,8 @@ type ProfileKind = "date-only" | "all-fields" | "time-only";
 async function signIn(page: Page) {
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(`reader-${randomUUID()}@example.test`);
-  await page.getByRole("button", { name: "Continue privately" }).click();
+  await page.getByLabel("Password").fill("synthetic-private-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
 }
 
@@ -115,11 +116,29 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   }
 });
 
-test("an authenticated session never loops back to the email form", async ({ page }) => {
+test("an authenticated session never loops back to the credential form", async ({ page }) => {
   await signIn(page);
   await page.goto("/sign-in?error=expired-link");
   await expect(page).toHaveURL(/\/onboarding$/);
   await expect(page.getByLabel("Email")).toHaveCount(0);
+});
+
+test("a new user can create an account with email and password", async ({ page }) => {
+  await page.goto("/sign-up");
+  await page.getByLabel("Email").fill(`new-reader-${randomUUID()}@example.test`);
+  await page.getByLabel(/^Password/).fill("synthetic-private-password");
+  await page.getByLabel("Confirm password").fill("synthetic-private-password");
+  await page.getByRole("button", { name: "Create private account" }).click();
+
+  await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
+});
+
+test("password recovery does not reveal whether an email exists", async ({ page }) => {
+  await page.goto("/forgot-password");
+  await page.getByLabel("Email").fill(`unknown-${randomUUID()}@example.test`);
+  await page.getByRole("button", { name: "Email recovery instructions" }).click();
+
+  await expect(page.getByText(/if an account exists/i)).toBeVisible();
 });
 
 test("the ritual advances itself and reviews each card cinematically", async ({ page }) => {

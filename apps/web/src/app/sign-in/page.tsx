@@ -4,11 +4,11 @@ import { requireUser } from "@/lib/auth";
 import { SignInForm } from "./sign-in-form";
 
 const errorMessages: Record<string, string> = {
-  "invalid-link": "That sign-in link is incomplete. Request a new link below.",
-  "expired-link": "That link has expired or was already used. Request the newest link again.",
+  "invalid-link": "That account link is incomplete. Request a new recovery email if needed.",
+  "expired-link": "That account link has expired or was already used. Request a new one.",
   "link-browser":
-    "That link opened outside the browser that requested it. Return to the original browser and open the newest email there, or request a new link.",
-  "service-unavailable": "We could not finish sign-in just now. Please request a fresh link.",
+    "That account link opened outside the browser that requested it. Return to the original browser or request a new recovery email.",
+  "service-unavailable": "We could not finish that account request just now. Please try again.",
 };
 
 export default async function SignInPage({
@@ -33,8 +33,7 @@ export default async function SignInPage({
         <p className="text-sm tracking-[0.2em] text-[#d8b56d] uppercase">Private access</p>
         <h1 className="mt-3 text-4xl font-semibold">Your readings belong to you.</h1>
         <p className="mt-4 leading-7 text-[#c9bfd4]">
-          Enter your email for a private, one-time sign-in link. Use the newest link only; it
-          expires shortly and cannot be reused.
+          Sign in with the email and password for your private StarGuidance account.
         </p>
         <SignInForm initialError={errorCode ? errorMessages[errorCode] : undefined} />
       </Panel>

@@ -6,7 +6,7 @@ Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 
 - AES-256-GCM envelopes use a random 96-bit nonce and authentication tag; tampering fails authentication.
 - Runtime selection fails closed. The local adapter requires `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, a development/test `APP_ENV`, and no hosted Netlify context.
-- Supabase Auth is verified server-side with `auth.getUser()`. Passwordless links terminate at a same-site callback, and account deletion also removes the Supabase Auth identity through a server-only service-role client.
+- Supabase Auth is verified server-side with `auth.getUser()`. Routine access uses email/password credentials; passwords are never persisted or logged by the application. Optional signup-confirmation and password-recovery links terminate at a same-site callback, and account deletion also removes the Supabase Auth identity through a server-only service-role client.
 - The Supabase repository encrypts raw profiles, calculation payloads, questions, follow-ups, and feedback comments with AES-256-GCM before SQL persistence. The managed key remains outside Postgres.
 - Browser JWTs have no private-table privileges. User-scoped SQL transactions assume the non-login, non-inheriting `starguidance_app` role and set only the subject obtained from verified Supabase Auth. RLS is forced on every user-owned table; anonymous/public access is revoked.
 - Mutating browser routes validate Origin/Host and use bounded in-process rate limits. Stripe webhooks are exempt from Origin checks and require signature verification.
@@ -31,7 +31,7 @@ The remaining security and operations gates are:
 
 - owner-managed key generation/escrow plus a credentialed rehearsal of the implemented dual-read/batched re-encryption procedure;
 - owner-approved private-data durations and scheduling for the guarded retention command;
-- a positive PKCE exchange using an owner-controlled deliverable inbox;
+- an owner-inbox rehearsal of optional signup confirmation and password recovery, including a cross-browser token-hash callback;
 - hosted Netlify, Supabase, Render, and AI-provider log-retention review by an operator with dashboard access;
 - Stripe test credentials and a public webhook/Checkout/refund rehearsal against durable order and entitlement storage;
 - provider no-retention contracts, redaction verification, privacy-safe telemetry, backup/restore, incident response, and regional crisis resources.

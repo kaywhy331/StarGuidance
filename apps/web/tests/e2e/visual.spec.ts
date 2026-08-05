@@ -7,7 +7,8 @@ test("capture the completed reading for reviewer evidence", async ({ page }, tes
   test.skip(!process.env.CAPTURE_SCREENSHOTS, "Run explicitly when updating review screenshots.");
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(`screenshot-${randomUUID()}@example.test`);
-  await page.getByRole("button", { name: "Continue privately" }).click();
+  await page.getByLabel("Password").fill("synthetic-private-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByLabel("Full birth name").fill("Ada Lovelace");
   await page.getByLabel("Date of birth").fill("1990-01-15");
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();

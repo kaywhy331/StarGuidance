@@ -32,7 +32,7 @@ const BOUNDARY_EXEMPT: Readonly<Record<string, string>> = {
     "is an unauthenticated provider callback; ownership is resolved from the durable order row, " +
     "which an authenticated request created after requireUser() had already provisioned the user",
   "auth/callback/route.ts":
-    "exchanges the passwordless code for a session and redirects; it holds no repository",
+    "exchanges signup or recovery codes for a session and redirects; it holds no repository",
   "art/tarot/v2/[asset]/route.ts": "serves versioned public artwork and reads no user-owned table",
 };
 

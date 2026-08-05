@@ -12,13 +12,12 @@ import { syntheticPassword } from "./synthetic-credentials";
  * correspond to a real person. Tokens, passwords, cookies, and addresses stay
  * inside this module: nothing here is logged, asserted on, or written to disk.
  *
- * The application's magic-link callback uses the PKCE `?code=` exchange, whose
- * verifier is bound to the browser that initiated `signInWithOtp`. An
- * admin-generated link carries no such verifier, so it cannot drive a positive
- * callback without an inbox. This module therefore establishes the session
- * through the same `@supabase/ssr` cookie contract the application itself
- * writes, which exercises real Supabase JWT validation server-side. The
- * positive `?code=` exchange remains an owner inbox smoke test.
+ * Initial multi-user setup establishes sessions through the same `@supabase/ssr`
+ * cookie contract the application writes, which exercises real Supabase JWT
+ * validation without sending mail to reserved synthetic addresses. The deployed
+ * flow later signs one identity back in through the public email/password API.
+ * Delivered signup-confirmation and recovery callbacks remain owner-inbox smoke
+ * tests because an admin-generated link is not equivalent to a delivered one.
  */
 export const SYNTHETIC_EMAIL_PREFIX = "sg-verify-";
 

@@ -7,7 +7,8 @@ import { getRuntimeAdapter } from "@/lib/runtime";
 import { createSupabaseServerClient } from "@/lib/supabase";
 
 const tokenHashPattern = /^[A-Za-z0-9_-]{20,512}$/;
-const supportedEmailOtpTypes = new Set(["email", "magiclink", "signup"] as const);
+const supportedEmailOtpTypes = new Set(["email", "magiclink", "signup", "recovery"] as const);
+type SupportedEmailOtpType = "email" | "magiclink" | "signup" | "recovery";
 
 function safeNext(url: URL): string {
   const requested = url.searchParams.get("next");
@@ -54,11 +55,11 @@ export async function GET(request: Request) {
       tokenHash &&
       tokenHashPattern.test(tokenHash) &&
       otpType &&
-      supportedEmailOtpTypes.has(otpType as "email" | "magiclink" | "signup")
+      supportedEmailOtpTypes.has(otpType as SupportedEmailOtpType)
     ) {
       const { error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
-        type: otpType as "email" | "magiclink" | "signup",
+        type: otpType as SupportedEmailOtpType,
       });
       return redirect(request, error ? "/sign-in?error=expired-link" : next);
     }

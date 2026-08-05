@@ -36,7 +36,8 @@ async function expectHorizontalReflow(page: Page): Promise<void> {
 async function createReading(page: Page): Promise<void> {
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(`a11y-${randomUUID()}@example.test`);
-  await page.getByRole("button", { name: "Continue privately" }).click();
+  await page.getByLabel("Password").fill("synthetic-private-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/onboarding$/);
   await page.getByLabel("Full birth name").fill("Accessible Synthetic");
   await page.getByLabel("Date of birth").fill("1990-01-15");
