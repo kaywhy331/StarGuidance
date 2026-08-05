@@ -274,7 +274,7 @@ export function OracleTranscript({
           setAnnouncement(
             error instanceof Error
               ? error.message
-              : "The oracle stream paused. Received sections remain available.",
+              : "The oracle stream paused. What has arrived remains available.",
           );
         }
       }
@@ -305,8 +305,7 @@ export function OracleTranscript({
     activeIndexRef.current = nextIndex;
     setActiveIndex(nextIndex);
     const next = currentEntries[nextIndex];
-    if (next)
-      setAnnouncement(`Section ${nextIndex + 1} of ${currentEntries.length}: ${next.heading}`);
+    if (next) setAnnouncement(`${next.heading}. ${nextIndex + 1} of ${currentEntries.length}.`);
   }, []);
   const goPrevious = () => goTo(activeIndexRef.current - 1);
   const goNext = () => goTo(activeIndexRef.current + 1);
@@ -371,7 +370,7 @@ export function OracleTranscript({
       data-testid="reading-journey"
     >
       <div
-        aria-label="Reading sections. Scroll, swipe, or use the arrow keys to move through the reading."
+        aria-label="Your reading. Scroll, swipe, or use the arrow keys to move through it."
         className="oracle-transcript reading-journey-viewport"
         data-active-card-index={activeCardIndex ?? undefined}
         data-testid="oracle-transcript"
@@ -394,13 +393,13 @@ export function OracleTranscript({
             data-phase={activeEntry.phase}
             key={activeEntry.key}
           >
-            <p className="reading-section-eyebrow">
-              {activeCard
-                ? `${activeCard.positionName} · ${activeCard.orientation}`
-                : activeEntry.phase === "followUp"
-                  ? "Same cards · one continuing thread"
-                  : `Section ${boundedIndex + 1}`}
-            </p>
+            {(activeCard || activeEntry.phase === "followUp") && (
+              <p className="reading-section-eyebrow">
+                {activeCard
+                  ? `${activeCard.positionName} · ${activeCard.orientation}`
+                  : "Same cards · one continuing thread"}
+              </p>
+            )}
             <h2>{activeCard?.name ?? activeEntry.heading}</h2>
             {activeEntry.phase !== "followUp" ? (
               <StructuredSection cardIndex={activeCardIndex} entry={activeEntry} result={result} />
@@ -418,9 +417,9 @@ export function OracleTranscript({
         </div>
       </div>
 
-      <nav aria-label="Reading section navigation" className="reading-journey-controls">
+      <nav aria-label="Reading navigation" className="reading-journey-controls">
         <button
-          aria-label="Previous reading section"
+          aria-label="Previous reading passage"
           disabled={boundedIndex === 0}
           onClick={goPrevious}
           type="button"
@@ -444,7 +443,7 @@ export function OracleTranscript({
           </i>
         </div>
         <button
-          aria-label="Next reading section"
+          aria-label="Next reading passage"
           disabled={entries.length === 0 || boundedIndex >= entries.length - 1}
           onClick={goNext}
           type="button"
@@ -455,7 +454,7 @@ export function OracleTranscript({
 
       {streamState === "failed" && (
         <div className="oracle-stream-error" role="status">
-          <span>Stream paused. Received sections and locked cards are safe.</span>
+          <span>Stream paused. Your reading and locked cards are safe.</span>
           <button onClick={onRetry} type="button">
             Retry reading
           </button>
@@ -463,7 +462,7 @@ export function OracleTranscript({
       )}
       {streamState === "streaming" && (
         <span className="oracle-stream-status" data-testid="stream-status">
-          Receiving reading sections
+          Receiving your reading
         </span>
       )}
     </section>

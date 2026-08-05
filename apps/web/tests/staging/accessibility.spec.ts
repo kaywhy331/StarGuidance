@@ -276,8 +276,8 @@ test("critical deployed flows pass automated WCAG rules", async () => {
 
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 60_000 });
   await scan("revealed result");
-  await expect(page.getByRole("button", { name: "Next reading section" })).toBeEnabled();
-  await page.getByRole("button", { name: "Next reading section" }).click();
+  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
+  await page.getByRole("button", { name: "Next reading passage" }).click();
   await scan("card interpretation section");
   const journey = page.getByTestId("reading-journey");
   await expect

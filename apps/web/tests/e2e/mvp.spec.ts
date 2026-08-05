@@ -53,9 +53,20 @@ async function waitForReadingSections(page: Page, minimum = 9) {
 }
 
 async function nextReadingSection(page: Page) {
-  const next = page.getByRole("button", { name: "Next reading section" });
+  const next = page.getByRole("button", { name: "Next reading passage" });
   await expect(next).toBeEnabled();
   await next.click();
+}
+
+async function expectHorizontallyCentered(page: Page, selector: string) {
+  await expect
+    .poll(async () => {
+      const bounds = await page.locator(selector).boundingBox();
+      const viewport = page.viewportSize();
+      if (!bounds || !viewport) return Number.POSITIVE_INFINITY;
+      return Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2);
+    })
+    .toBeLessThanOrEqual(3);
 }
 
 async function currentReading(page: Page) {
@@ -263,6 +274,9 @@ test("reduced-motion preference skips ritual transitions", async ({ page }) => {
     "data-reduced-motion",
     "true",
   );
+  await waitForReadingSections(page);
+  await nextReadingSection(page);
+  await expectHorizontallyCentered(page, ".physical-card-figure.is-reading-subject");
 });
 
 test("a follow-up uses the exact same cards", async ({ page }) => {
@@ -282,9 +296,9 @@ test("a follow-up uses the exact same cards", async ({ page }) => {
     "data-loaded-section-count",
     String(primarySectionCount + 1),
   );
-  await page.getByRole("button", { name: "Previous reading section" }).click();
+  await page.getByRole("button", { name: "Previous reading passage" }).click();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toBeVisible();
-  await page.getByRole("button", { name: "Next reading section" }).click();
+  await page.getByRole("button", { name: "Next reading passage" }).click();
   await expect(page.getByRole("heading", { name: "The Cards Answer" })).toBeVisible();
   const after = (await currentReading(page)).reading.draw;
   expect(after).toEqual(before);
@@ -316,7 +330,7 @@ test("stream interruption preserves received paragraphs and retries the same dra
   await beginReading(page, "What should I understand about this next step?");
   const before = (await currentReading(page)).reading.draw;
   await page.evaluate(() => sessionStorage.setItem("sg:e2e-stream-fail-after", "2"));
-  await expect(page.getByText(/Stream paused\. Received sections/i)).toBeVisible({
+  await expect(page.getByText(/Stream paused\. Your reading/i)).toBeVisible({
     timeout: 20_000,
   });
   const journey = page.getByTestId("reading-journey");

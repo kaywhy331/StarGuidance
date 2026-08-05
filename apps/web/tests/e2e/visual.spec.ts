@@ -15,8 +15,8 @@ test("capture the completed reading for reviewer evidence", async ({ page }, tes
   await page.getByLabel("Your private question").fill("What can support my next grounded step?");
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole("button", { name: "Next reading section" })).toBeEnabled();
-  await page.getByRole("button", { name: "Next reading section" }).click();
+  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
+  await page.getByRole("button", { name: "Next reading passage" }).click();
   await expect(page.locator('.oracle-entry[data-phase="cardInterpretation"]')).toBeVisible();
   await expect(page.locator(".physical-card-figure.is-reading-subject")).toBeVisible();
   await page.screenshot({

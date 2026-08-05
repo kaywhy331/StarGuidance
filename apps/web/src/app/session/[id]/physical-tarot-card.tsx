@@ -30,9 +30,7 @@ export function PhysicalTarotCard({
     const figureElement = figureRef.current;
     if (!figureElement) return;
     figureElement.classList.remove("is-cinematic-positioned");
-    if (!focusMode || reducedMotion) {
-      return;
-    }
+    if (!focusMode) return;
     const cardElement = cardRef.current;
     if (!cardElement) return;
     const bounds = cardElement.getBoundingClientRect();
@@ -40,20 +38,20 @@ export function PhysicalTarotCard({
     const readingFocus = focusMode === "reading";
     const targetWidth = readingFocus
       ? compact
-        ? window.innerWidth * 0.38
-        : Math.min(window.innerWidth * 0.24, 19 * 16)
+        ? Math.min(window.innerWidth * 0.34, 9 * 16)
+        : Math.min(window.innerWidth * 0.15, 10.5 * 16)
       : compact
         ? window.innerWidth * 0.7
         : window.innerWidth * 0.34;
-    const targetHeight = window.innerHeight * (readingFocus ? (compact ? 0.37 : 0.58) : 0.68);
+    const targetHeight = window.innerHeight * (readingFocus ? (compact ? 0.32 : 0.26) : 0.68);
     const scale = Math.max(
-      1,
+      readingFocus ? 0.75 : 1,
       Math.min(targetWidth / bounds.width, targetHeight / bounds.height, readingFocus ? 3 : 3.8),
     );
     const targetCenter = readingFocus
       ? {
-          x: compact ? window.innerWidth / 2 : window.innerWidth * 0.27,
-          y: compact ? window.innerHeight * 0.27 : window.innerHeight * 0.45,
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.25,
         }
       : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     figureElement.style.setProperty(
@@ -65,6 +63,10 @@ export function PhysicalTarotCard({
       `${targetCenter.y - (bounds.top + bounds.height / 2)}px`,
     );
     figureElement.style.setProperty("--cinematic-scale", String(scale));
+    if (reducedMotion) {
+      figureElement.classList.add("is-cinematic-positioned");
+      return () => figureElement.classList.remove("is-cinematic-positioned");
+    }
     let positionFrame = 0;
     const measurementFrame = window.requestAnimationFrame(() => {
       positionFrame = window.requestAnimationFrame(() =>
