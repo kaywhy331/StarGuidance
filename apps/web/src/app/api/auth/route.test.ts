@@ -48,6 +48,12 @@ describe("passwordless sign-in initiation", () => {
     const response = await POST(request());
     expect(response.status).toBe(200);
     expect((await response.json()).pending).toBe(true);
+    expect(supabase.signInWithOtp).toHaveBeenCalledWith({
+      email: "sg-verify-probe@starguidance.test",
+      options: {
+        emailRedirectTo: "https://synthetic.invalid/auth/callback?next=%2Fonboarding",
+      },
+    });
   });
 
   it("reports an exhausted mail quota as retryable, not as a rejected address", async () => {

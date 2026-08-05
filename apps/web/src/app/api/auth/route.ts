@@ -46,10 +46,12 @@ export async function POST(request: Request) {
         : process.env.NEXT_PUBLIC_APP_URL;
     if (!appUrl)
       throw new RuntimeConfigurationError("NEXT_PUBLIC_APP_URL is required for Auth redirects.");
+    const callbackUrl = new URL("/auth/callback", appUrl);
+    callbackUrl.searchParams.set("next", "/onboarding");
     const supabase = await createSupabaseServerClient();
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${appUrl.replace(/\/$/, "")}/auth/callback?next=/onboarding` },
+      options: { emailRedirectTo: callbackUrl.toString() },
     });
     if (error) throw error;
     return NextResponse.json({ ok: true, authenticated: false, pending: true });

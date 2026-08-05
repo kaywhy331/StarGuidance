@@ -71,16 +71,16 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 14. Inspect Netlify, Supabase, and profile-engine logs for birth data, questions, response bodies, secrets, and authorization headers. Record a redacted pass/fail result only.
 15. Delete the temporary Auth users/project after evidence is captured. Record only non-secret pass/fail results and migration IDs.
 
-## Positive PKCE magic-link smoke test
+## Positive passwordless-link smoke test
 
-The automated suite cannot manufacture a successful `?code=` callback. Supabase binds the PKCE verifier to the browser that requested the link, while the link itself must arrive through a deliverable mailbox. An admin-generated link does not contain the browser verifier and is not an equivalent test.
+The callback supports both the legacy same-browser PKCE `?code=` exchange and the portable `token_hash` link documented in [Deployment](DEPLOYMENT.md). The latter removes the hidden same-browser dependency, but requires the owner-managed Supabase Magic Link email template to use the documented `RedirectTo`/`TokenHash` target. An admin-generated link is not equivalent to a delivered template and must not be used as proof.
 
 Use this one-time manual procedure only with an owner-controlled staging inbox:
 
 1. Open the exact Deploy Preview #4 URL in a fresh private browser window and confirm `/api/health` reports the expected commit and a healthy staging runtime.
 2. Enter the staging inbox address on `/sign-in` and submit once. Do not put the address in a terminal, test report, screenshot, issue, or PR.
-3. Open the newly delivered message in that inbox and follow its link in the same browser context that initiated sign-in. Do not copy the token or callback URL into evidence.
-4. Confirm the callback lands on `/profile`, the session survives one reload, and sign-out returns the browser to an unauthenticated state.
+3. Open the newly delivered message and follow its link. For the legacy `code` template, use the same browser context that initiated sign-in. For the approved `token_hash` template, also repeat once from the mail application's normal browser handoff to prove the loop is gone. Do not copy the token or callback URL into evidence.
+4. Confirm the callback lands on `/onboarding` for a new account, the session survives one reload, a returning account is sent toward `/readings`, and sign-out returns the browser to an unauthenticated state.
 5. Record only the date, preview commit, browser family, and pass/fail result. Delete the message and test identity according to the approved email and identity-retention policy.
 
 An inbox address is not currently available to automation. `MAIL` in a typical runner is a local spool path, not an email address, and must not be treated as authorization to send mail.

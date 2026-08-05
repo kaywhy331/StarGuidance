@@ -104,6 +104,13 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   }
 });
 
+test("an authenticated session never loops back to the email form", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/sign-in?error=expired-link");
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByLabel("Email")).toHaveCount(0);
+});
+
 test("the ritual advances itself and reviews each card cinematically", async ({ page }) => {
   test.slow();
   await page.addInitScript(() => {

@@ -4,9 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field } from "@starguidance/design-system";
 
-export function LocalSignInForm() {
+export function SignInForm({ initialError }: { initialError?: string | undefined }) {
   const router = useRouter();
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<string | undefined>(initialError);
   const [notice, setNotice] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   return (
@@ -31,14 +31,25 @@ export function LocalSignInForm() {
         setSubmitting(false);
         if (!response.ok) return setError(payload.error ?? "Unable to sign in securely.");
         if (payload.pending) {
-          setNotice("Check your email for a private sign-in link. You can close this page safely.");
+          setNotice(
+            "Link sent. Use the newest email only. If your email app opens another browser, return to this browser before opening the link.",
+          );
           return;
         }
         router.push("/onboarding");
         router.refresh();
       }}
     >
-      <Field autoComplete="email" error={error} label="Email" name="email" required type="email" />
+      {error ? (
+        <p
+          aria-live="assertive"
+          className="rounded-2xl border border-rose-300/30 bg-rose-950/30 p-3 text-sm text-rose-100"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
+      <Field autoComplete="email" label="Email" name="email" required type="email" />
       {notice ? (
         <p aria-live="polite" className="text-sm text-emerald-100">
           {notice}
