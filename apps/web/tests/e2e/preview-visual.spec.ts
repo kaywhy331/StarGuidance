@@ -34,6 +34,17 @@ async function expectCardAboveReading(page: Page) {
     .toBeGreaterThanOrEqual(2);
 }
 
+async function expectCompactReadingWindow(page: Page) {
+  await expect
+    .poll(async () => {
+      const bounds = await page.getByTestId("oracle-transcript").boundingBox();
+      const viewport = page.viewportSize();
+      if (!bounds || !viewport) return Number.POSITIVE_INFINITY;
+      return bounds.height / viewport.height;
+    })
+    .toBeLessThanOrEqual(0.32);
+}
+
 test("the visual preview follows the streamlined result and continuation sequence", async ({
   page,
 }) => {
@@ -47,6 +58,7 @@ test("the visual preview follows the streamlined result and continuation sequenc
   await expect(page.getByText(/^Section \d+$/)).toHaveCount(0);
   await expectHorizontallyCentered(page, '[data-testid="oracle-transcript"]');
   await expectHorizontallyCentered(page, ".question-composer");
+  await expectCompactReadingWindow(page);
   const titleSize = await page
     .locator(".oracle-entry h2")
     .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));

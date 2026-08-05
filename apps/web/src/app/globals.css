@@ -587,11 +587,12 @@ a {
 .oracle-console-stack {
   position: absolute;
   z-index: 20;
-  top: 45dvh;
+  top: auto;
   right: auto;
   bottom: max(0.75rem, env(safe-area-inset-bottom));
   left: 50%;
   display: grid;
+  height: clamp(23rem, 42dvh, 24rem);
   min-width: 0;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 0.75rem;
@@ -619,7 +620,7 @@ a {
   min-height: 0;
   overflow: hidden;
   place-items: center;
-  padding: clamp(1.15rem, 3.2vw, 2.4rem);
+  padding: clamp(0.9rem, 2vw, 1.35rem);
   border: 1px solid rgb(218 192 127 / 0.25);
   border-radius: 1.5rem;
   outline: none;
@@ -653,10 +654,10 @@ a {
 }
 
 .oracle-entry h2 {
-  margin: 0 0 clamp(0.8rem, 2vh, 1.35rem);
+  margin: 0 0 clamp(0.65rem, 1.2vh, 0.9rem);
   color: #f0dfae;
   font:
-    400 clamp(1.15rem, 1.75vw, 1.55rem) / 1.15 Georgia,
+    400 clamp(1.15rem, 1.6vw, 1.4rem) / 1.15 Georgia,
     "Times New Roman",
     serif;
   letter-spacing: 0.015em;
@@ -685,7 +686,7 @@ a {
 .reading-section-copy,
 .card-interpretation-copy {
   display: grid;
-  gap: clamp(0.65rem, 1.4vh, 1rem);
+  gap: clamp(0.5rem, 1vh, 0.75rem);
   color: #d4dfdb;
   font:
     clamp(0.82rem, 1.15vw, 1rem) / 1.55 Arial,
@@ -1224,7 +1225,7 @@ a {
   }
 
   .oracle-console-stack {
-    top: 45dvh;
+    top: auto;
     right: auto;
     bottom: max(0.45rem, env(safe-area-inset-bottom));
     left: 50%;
@@ -1233,7 +1234,6 @@ a {
   }
 
   .oracle-transcript {
-    padding: clamp(0.9rem, 4vw, 1.25rem);
     border-radius: 1.15rem;
   }
 
@@ -1324,7 +1324,7 @@ a {
   }
 
   .oracle-console-stack {
-    top: 45dvh;
+    top: auto;
   }
 
   .reading-section-copy,
