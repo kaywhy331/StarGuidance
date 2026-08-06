@@ -504,6 +504,11 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   // interrupts the transcript with a real aborted network request instead.
   await pageA.route("**/api/readings/*/stream", (route) => route.abort());
   await navigateApp(pageA, `/session/${readingId}`);
+  // Cut and reveal are intentional user actions (PRD UX-004/UX-006), not
+  // timers — the client never reaches "complete" (and so never attempts the
+  // stream fetch this test aborts) without them.
+  await pageA.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await pageA.getByRole("button", { name: "Reveal all", exact: true }).click();
   await pageA.waitForTimeout(2_000);
   await pageA.unroute("**/api/readings/*/stream");
   const afterStreamFailure = drawDigest((await readingState(pageA, readingId)).draw);

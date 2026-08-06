@@ -280,6 +280,19 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   }
   await scan("sanctuary reading");
 
+  // Cut and reveal are intentional user actions (PRD UX-004/UX-006), not
+  // timers — scan the deck-cut moment itself (new, keyboard/focus-relevant
+  // controls) before driving past it, since nothing auto-advances anymore.
+  await expect(page.getByRole("button", { name: "Cut", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await scan("deck cut");
+  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Reveal all", exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 60_000 });
   await scan("revealed result");
   await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
