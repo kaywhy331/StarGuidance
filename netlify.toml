@@ -7,6 +7,9 @@
   NODE_VERSION = "24"
   PNPM_VERSION = "11.16.0"
 
+[functions]
+  directory = "netlify/functions"
+
 [context.deploy-preview.environment]
   APP_ENV = "staging"
   ENABLE_VISUAL_PREVIEW = "true"

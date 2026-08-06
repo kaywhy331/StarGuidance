@@ -118,6 +118,22 @@ importers:
         specifier: 4.3.3
         version: 4.3.3
 
+  netlify/functions:
+    dependencies:
+      '@starguidance/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@starguidance/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@starguidance/tarot-content':
+        specifier: workspace:*
+        version: link:../../packages/tarot-content
+    devDependencies:
+      '@netlify/functions':
+        specifier: 5.3.0
+        version: 5.3.0
+
   packages/ai:
     dependencies:
       '@starguidance/contracts':
@@ -998,9 +1014,17 @@ packages:
       '@emnapi/core': ^1.7.1
       '@emnapi/runtime': ^1.7.1
 
+  '@netlify/functions@5.3.0':
+    resolution: {integrity: sha512-FP+xCoZMkMOUsKa4UdG/oiK/2md1/TxuXvqqieaMVMgDbFFMaHI8h0oHCViUY73kPbKV6HyzayaSXGYXKpBSoQ==}
+    engines: {node: '>=18.0.0'}
+
   '@netlify/plugin-nextjs@5.15.12':
     resolution: {integrity: sha512-eydPd4gtc/OJOx9IbIJ5CRrC5K3rLxfEQS/S/fRNEAAT0qFvPoQVy23VdK3jRXKFJWXdCRl6ZudWLEZECQPSRQ==}
     engines: {node: '>=18.0.0'}
+
+  '@netlify/types@2.8.0':
+    resolution: {integrity: sha512-8/g0Pt6y6wXj5Ia5eeYLiXhRfWeqZXGXpGFeCiiQdUOem+FPtXdA4+YdGxqzWc7D0AvptKSO01KGeeVWHSu8Kg==}
+    engines: {node: ^18.14.0 || >=20}
 
   '@next/env@16.3.0':
     resolution: {integrity: sha512-o9r1S0BNiNreHP9Vs+Qnqd9kviDkJh8xIACY7UFZSmiGbbQRzPBBosvHzAU4TULHOIuOj/18RSsyz2qrREmIFw==}
@@ -3863,7 +3887,13 @@ snapshots:
       '@tybys/wasm-util': 0.10.3
     optional: true
 
+  '@netlify/functions@5.3.0':
+    dependencies:
+      '@netlify/types': 2.8.0
+
   '@netlify/plugin-nextjs@5.15.12': {}
+
+  '@netlify/types@2.8.0': {}
 
   '@next/env@16.3.0': {}
 
@@ -6105,7 +6135,7 @@ snapshots:
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.5
-      postcss: 8.5.21
+      postcss: 8.5.23
       rolldown: 1.1.5
       tinyglobby: 0.2.17
     optionalDependencies:
