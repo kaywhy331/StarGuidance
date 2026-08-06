@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await requireUser();
-    assertRateLimit(`profile:${user.id}`, 8);
+    await assertRateLimit(`profile:${user.id}`, 8);
     const input = profileRequestSchema.parse(await request.json());
     const calculation = await calculateProfile(input);
     const persistence = persistenceFor(user);
@@ -117,7 +117,7 @@ export async function DELETE(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await requireUser();
-    assertRateLimit(`profile-delete:${user.id}`, 3, 60 * 60 * 1000);
+    await assertRateLimit(`profile-delete:${user.id}`, 3, 60 * 60 * 1000);
     profileDeletionSchema.parse(await request.json());
     const deleted = await persistenceFor(user).repositories.birthProfiles.delete(user.id);
     if (!deleted) return NextResponse.json({ error: "Profile not found." }, { status: 404 });

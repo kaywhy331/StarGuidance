@@ -56,7 +56,7 @@ function isSendRateLimited(error: unknown): boolean {
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    assertRateLimit(
+    await assertRateLimit(
       `auth:${clientRateLimitKey(request)}`,
       process.env.APP_ENV === "test" ? 200 : 12,
     );
@@ -241,7 +241,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     assertSameOrigin(request);
-    assertRateLimit(
+    await assertRateLimit(
       `sign-out:${clientRateLimitKey(request)}`,
       process.env.APP_ENV === "test" ? 200 : 30,
     );

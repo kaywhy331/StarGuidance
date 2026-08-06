@@ -29,6 +29,17 @@ vi.mock("@/lib/supabase", () => ({
   createSupabaseAdminClient: () => ({ auth: { admin } }),
 }));
 
+// The distributed path opens a real Postgres connection (see
+// src/lib/request-security.ts); DATABASE_URL below is a deliberately
+// unreachable placeholder, same as this file's other synthetic hosts, so
+// route logic can be exercised without a database. The Postgres-backed
+// limiter itself is covered by
+// packages/database/src/rate-limits.integration.test.ts against a real one.
+vi.mock("@/lib/request-security", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/request-security")>()),
+  assertRateLimit: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { DELETE, POST } from "./route";
 
 function request(

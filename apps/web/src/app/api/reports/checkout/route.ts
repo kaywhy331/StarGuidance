@@ -18,7 +18,7 @@ export async function POST(request: Request) {
         { status: 404 },
       );
     const user = await requireUser();
-    assertRateLimit(`checkout:${user.id}`, 6);
+    await assertRateLimit(`checkout:${user.id}`, 6);
     const persistence = persistenceFor(user);
     const profile = await persistence.repositories.birthProfiles.getActive(user.id);
     if (!profile) return NextResponse.json({ error: "A profile is required." }, { status: 409 });

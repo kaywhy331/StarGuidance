@@ -1,11 +1,15 @@
 import "server-only";
 
-import { isValidEncryptionKey, type ApplicationRepositories } from "@starguidance/database";
+import {
+  isValidEncryptionKey,
+  type ApplicationRepositories,
+  type DatabaseClient,
+} from "@starguidance/database";
 
 import { isLocalRuntimeAdapterAuthorized } from "./hosted-runtime";
 import { localStore } from "./local-store";
 import { createLocalRepositories } from "./repositories/local";
-import { createPostgresRepositories } from "./repositories/postgres";
+import { clientFor, createPostgresRepositories } from "./repositories/postgres";
 
 export type RuntimeAdapter = "local" | "supabase";
 
@@ -67,6 +71,18 @@ export function getRepositoriesForUser(userId: string): ApplicationRepositories 
   return getRuntimeAdapter() === "local"
     ? createLocalRepositories()
     : createPostgresRepositories({ databaseUrl: required("DATABASE_URL"), actorUserId: userId });
+}
+
+/**
+ * The raw pooled Postgres client, bound to no role or subject by itself —
+ * for operations that aren't a user-scoped repository call, currently just
+ * the distributed rate limiter (request-security.ts uses
+ * @starguidance/database's systemTransaction to bind starguidance_app on
+ * top of this per call). Local runtime has no Postgres to connect to;
+ * callers must branch on getRuntimeAdapter() before reaching here.
+ */
+export function getSystemDatabaseClient(): DatabaseClient {
+  return clientFor(required("DATABASE_URL"));
 }
 
 export function getServiceRepositories(): ApplicationRepositories {

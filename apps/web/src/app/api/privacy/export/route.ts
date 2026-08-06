@@ -6,7 +6,7 @@ import { assertRateLimit, requestSecurityFailure } from "@/lib/request-security"
 export async function GET() {
   try {
     const user = await requireUser();
-    assertRateLimit(`export:${user.id}`, 3, 60 * 60 * 1000);
+    await assertRateLimit(`export:${user.id}`, 3, 60 * 60 * 1000);
     const persistence = persistenceFor(user);
     await recordAudit(user.id, "privacy.export.created", "account", user.id);
     const data = await persistence.repositories.privacy.export(user.id);

@@ -16,7 +16,7 @@ export async function DELETE(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await requireUser();
-    assertRateLimit(`account-delete:${user.id}`, 3, 60 * 60 * 1000);
+    await assertRateLimit(`account-delete:${user.id}`, 3, 60 * 60 * 1000);
     const input = deletionSchema.parse(await request.json());
     if (getRuntimeAdapter() === "supabase") {
       const supabase = await createSupabaseServerClient();

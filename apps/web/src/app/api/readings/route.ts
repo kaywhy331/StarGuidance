@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await requireUser();
-    assertRateLimit(`reading:${user.id}`, 12);
+    await assertRateLimit(`reading:${user.id}`, 12);
     const idempotencyKey = idempotencyKeySchema.parse(request.headers.get("idempotency-key"));
     const persistence = persistenceFor(user);
     const profile = await persistence.repositories.birthProfiles.getActive(user.id);

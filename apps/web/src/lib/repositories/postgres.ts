@@ -50,7 +50,13 @@ const globalDatabase = globalThis as typeof globalThis & {
   __starGuidancePostgresClients?: Map<string, DatabaseClient>;
 };
 
-function clientFor(databaseUrl: string): DatabaseClient {
+/**
+ * Shared across every caller keyed by databaseUrl — including callers
+ * outside this file, e.g. the system-only rate-limit transaction in
+ * ../request-security.ts — so they reuse this process's one bounded
+ * connection pool per URL instead of each opening their own.
+ */
+export function clientFor(databaseUrl: string): DatabaseClient {
   const clients = (globalDatabase.__starGuidancePostgresClients ??= new Map());
   const existing = clients.get(databaseUrl);
   if (existing) return existing;

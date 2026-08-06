@@ -11,4 +11,5 @@ export const EXPECTED_MIGRATIONS = [
   "0003_webhook_replay_lease",
   "0004_server_actor_role",
   "0005_bumpy_moon_knight",
+  "0006_rate_limit_buckets",
 ] as const;

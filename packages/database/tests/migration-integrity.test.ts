@@ -62,6 +62,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0003_webhook_replay_lease": "ba0cfa16d9a3256e98c43d2a62b6b5e6cad5bcae328ccec0a61f45088f62b9f9",
   "0004_server_actor_role": "32dd231cbe55ef316ef71896b1fc9f11af1772c4fdc0722cd58efc3b2fa76aad",
   "0005_bumpy_moon_knight": "e63e5b2af79a8b635292feffe0441a18f22a28fa4700dc1bc58d010a6fc4b794",
+  "0006_rate_limit_buckets": "c4f29725cc7ba2e54f77a24b585e4cb8e596262cbe03b184b7f8dfbe635141c8",
 };
 
 describe("migration history", () => {
@@ -136,5 +137,19 @@ describe("migration history", () => {
     expect(sql).toMatch(/birth_profiles_user_unique/i);
     expect(sql).toMatch(/follow_up_questions_reading_unique/i);
     expect(sql).toMatch(/reading_sessions_user_idempotency_unique/i);
+  });
+
+  it("keeps rate_limit_buckets forced-RLS and reachable only by starguidance_app", () => {
+    const sql = executableSql("0006_rate_limit_buckets");
+    expect(sql).toMatch(/alter\s+table\s+"rate_limit_buckets"\s+enable\s+row\s+level\s+security/i);
+    expect(sql).toMatch(/alter\s+table\s+"rate_limit_buckets"\s+force\s+row\s+level\s+security/i);
+    expect(sql).toMatch(/create\s+policy[\s\S]*on\s+"rate_limit_buckets"/i);
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"rate_limit_buckets"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).toMatch(/grant[\s\S]*on\s+table\s+"rate_limit_buckets"\s+to\s+starguidance_app/i);
+    expect(sql).not.toMatch(/\bbypassrls\b/i);
+    expect(sql).not.toMatch(/security\s+definer/i);
+    expect(sql).not.toMatch(/\bto\s+(anon|service_role)\b/i);
   });
 });

@@ -24,6 +24,12 @@ beforeEach(() => {
   resetRequestSecurityForTests();
   vi.stubEnv("APP_ENV", "test");
   vi.stubEnv("SITE_NAME", "starguidance");
+  // The distributed (Postgres-backed) path is covered by
+  // packages/database/src/rate-limits.integration.test.ts against a real
+  // database; this file exercises the local runtime adapter's in-memory
+  // implementation, same as every other unit test in this workspace.
+  vi.stubEnv("RUNTIME_ADAPTER", "local");
+  vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-05T00:00:00.000Z"));
 });
@@ -60,11 +66,18 @@ describe("request metadata security", () => {
 });
 
 describe("bounded rate limiting", () => {
-  it("returns a consistent 429 description and Retry-After", () => {
-    assertRateLimit("client:a", 1, 60_000);
+  beforeEach(() => {
+    // The outer beforeEach's SITE_NAME stub (for the Netlify-origin tests
+    // above) would otherwise make isHostedNetlifyRuntime() true here, which
+    // blocks the local runtime adapter these tests rely on.
+    vi.stubEnv("SITE_NAME", "");
+  });
+
+  it("returns a consistent 429 description and Retry-After", async () => {
+    await assertRateLimit("client:a", 1, 60_000);
     let failure;
     try {
-      assertRateLimit("client:a", 1, 60_000);
+      await assertRateLimit("client:a", 1, 60_000);
     } catch (error) {
       failure = requestSecurityFailure(error);
     }
@@ -75,8 +88,9 @@ describe("bounded rate limiting", () => {
     });
   });
 
-  it("caps attacker-created bucket keys", () => {
-    for (let index = 0; index < 10_100; index += 1) assertRateLimit(`attacker:${index}`, 1, 60_000);
+  it("caps attacker-created bucket keys", async () => {
+    for (let index = 0; index < 10_100; index += 1)
+      await assertRateLimit(`attacker:${index}`, 1, 60_000);
     expect(rateLimitBucketCountForTests()).toBeLessThanOrEqual(10_000);
   });
 });

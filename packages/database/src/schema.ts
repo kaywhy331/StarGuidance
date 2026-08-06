@@ -1,8 +1,10 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -329,6 +331,24 @@ export const contentVersions = pgTable(
   },
   (table) => [uniqueIndex("content_type_version_unique").on(table.contentType, table.version)],
 );
+// Not user-row-scoped: keyed by an opaque hash rather than a subject, and
+// must be visible/writable by the trusted server role regardless of which
+// (if any) user a request is bound to. See migration 0006 for the RLS
+// rationale shared with interpretation_jobs (migration 0007).
+export const rateLimitBuckets = pgTable(
+  "rate_limit_buckets",
+  {
+    keyHash: text("key_hash").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").default(1).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.keyHash, table.windowStart] }),
+    index("rate_limit_buckets_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
 export const auditEvents = pgTable("audit_events", {
   id,
   userId: userId(),

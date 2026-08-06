@@ -68,7 +68,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
   try {
     assertSameOrigin(request);
     const user = await requireUser();
-    assertRateLimit(`reading-delete:${user.id}`, 20, 60 * 60 * 1000);
+    await assertRateLimit(`reading-delete:${user.id}`, 20, 60 * 60 * 1000);
     const id = (await context.params).id;
     const persistence = persistenceFor(user);
     const deleted = await persistence.repositories.readingSessions.delete(user.id, id);
@@ -94,7 +94,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const owned = await ownedReading((await context.params).id);
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { persistence, reading, user } = owned;
-    assertRateLimit(`reading-action:${reading.userId}`, 15);
+    await assertRateLimit(`reading-action:${reading.userId}`, 15);
     const input = actionSchema.parse(await request.json());
     const provider = createInterpretationProvider();
     const snapshot = (

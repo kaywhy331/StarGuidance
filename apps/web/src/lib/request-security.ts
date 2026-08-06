@@ -1,6 +1,11 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { isIP } from "node:net";
+
+import { checkRateLimit, systemTransaction } from "@starguidance/database";
+
+import { getRuntimeAdapter, getSystemDatabaseClient } from "./runtime";
 
 const MAX_RATE_LIMIT_BUCKETS = 10_000;
 
@@ -129,9 +134,7 @@ function evictBuckets(now: number): void {
   }
 }
 
-export function assertRateLimit(key: string, limit: number, windowMs = 60_000): void {
-  if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(windowMs) || windowMs < 1)
-    throw new TypeError("Rate-limit parameters must be positive integers.");
+function assertRateLimitInMemory(key: string, limit: number, windowMs: number): void {
   const now = Date.now();
   const existing = buckets.get(key);
   const recent = (existing?.timestamps ?? []).filter((timestamp) => timestamp > now - windowMs);
@@ -144,6 +147,51 @@ export function assertRateLimit(key: string, limit: number, windowMs = 60_000): 
   // Reinsert to maintain least-recently-used order for bounded eviction.
   buckets.delete(key);
   buckets.set(key, { timestamps: recent, windowMs });
+}
+
+/** SHA-256 of the full rate-limit key, never the raw key. The table (see
+ * migration 0006) is already unreachable outside the non-login
+ * starguidance_app role, so an unkeyed hash is enough to avoid storing a raw
+ * IP/user-id-derived string at rest without adding a new secret to manage. */
+function hashRateLimitKey(key: string): string {
+  return createHash("sha256").update(key).digest("hex");
+}
+
+async function assertRateLimitDistributed(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<void> {
+  const { allowed, retryAfterSeconds } = await systemTransaction(getSystemDatabaseClient(), (tx) =>
+    checkRateLimit(tx, hashRateLimitKey(key), limit, windowMs),
+  );
+  if (!allowed) throw new RequestSecurityError("RATE_LIMITED", 429, retryAfterSeconds);
+}
+
+/**
+ * Bounded per-instance limiting on the local runtime adapter (used by
+ * playwright.config.ts and vitest — no Postgres to connect to); a shared,
+ * atomic Postgres check (migration 0006) on the supabase adapter, so limits
+ * hold across multiple serverless instances. A distributed-path failure —
+ * a connection error, not just an over-limit result — is treated as
+ * RATE_LIMITED rather than allowed through: this exists to protect
+ * expensive and abuse-sensitive endpoints (AI generation, auth, email), and
+ * a limiter that fails open on its own outage stops being one.
+ */
+export async function assertRateLimit(
+  key: string,
+  limit: number,
+  windowMs = 60_000,
+): Promise<void> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(windowMs) || windowMs < 1)
+    throw new TypeError("Rate-limit parameters must be positive integers.");
+  if (getRuntimeAdapter() === "local") return assertRateLimitInMemory(key, limit, windowMs);
+  try {
+    await assertRateLimitDistributed(key, limit, windowMs);
+  } catch (error) {
+    if (error instanceof RequestSecurityError) throw error;
+    throw new RequestSecurityError("RATE_LIMITED", 429, 60);
+  }
 }
 
 export function resetRequestSecurityForTests(): void {

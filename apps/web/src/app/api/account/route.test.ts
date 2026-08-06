@@ -40,6 +40,15 @@ vi.mock("@/lib/supabase", () => ({
   createSupabaseAdminClient: () => ({ auth: { admin: { deleteUser: mocks.deleteIdentity } } }),
 }));
 
+// The distributed path needs a real getSystemDatabaseClient, which the
+// full @/lib/runtime mock above doesn't provide — this route's rate limit
+// isn't what these tests exercise, so bypass it the same way
+// src/app/api/auth/route.test.ts does.
+vi.mock("@/lib/request-security", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/request-security")>()),
+  assertRateLimit: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { DELETE } from "./route";
 
 function request(body: Record<string, unknown> = {}): Request {
