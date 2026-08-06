@@ -9,6 +9,12 @@
 
 [functions]
   directory = "netlify/functions"
+  # Default bundler failed to resolve `postgres` (a transitive dependency
+  # through the workspace:*-linked @starguidance/database) at runtime under
+  # pnpm's symlinked node_modules — confirmed via a deployed smoke test.
+  # esbuild traces and inlines dependencies into the bundle instead of
+  # relying on a runtime node_modules lookup.
+  node_bundler = "esbuild"
 
 [context.deploy-preview.environment]
   APP_ENV = "staging"
