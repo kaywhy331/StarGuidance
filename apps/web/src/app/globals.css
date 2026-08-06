@@ -243,6 +243,8 @@ a {
 
 .sanctuary-control-group {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.4rem;
 }
 
@@ -329,6 +331,40 @@ a {
     Helvetica,
     sans-serif;
   letter-spacing: 0.06em;
+}
+
+.ritual-action {
+  min-height: 2.65rem;
+  margin-top: 1rem;
+  padding: 0.65rem 1.25rem;
+  border: 1px solid rgb(235 210 146 / 0.65);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgb(9 36 40 / 0.92), rgb(26 25 48 / 0.92));
+  box-shadow: 0 0 26px rgb(104 203 184 / 0.12);
+  color: #f5e7ba;
+  cursor: pointer;
+  font:
+    0.84rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.06em;
+}
+
+.ritual-action-group {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.ritual-action-group .ritual-action {
+  margin-top: 0;
+}
+
+.reveal-all-action {
+  position: relative;
+  z-index: 6;
+  align-self: flex-end;
+  margin: 0.75rem 1rem 0;
 }
 
 .sanctuary-shuffle-shells {
@@ -473,6 +509,15 @@ a {
 
 .physical-tarot-card.is-revealed .physical-card-inner {
   transform: rotateY(180deg);
+}
+
+.physical-tarot-card.is-revealable {
+  cursor: pointer;
+}
+
+.physical-tarot-card.is-revealable:hover .physical-card-inner,
+.physical-tarot-card.is-revealable:focus-visible .physical-card-inner {
+  transform: translateY(-0.35rem);
 }
 
 .physical-card-back,

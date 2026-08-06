@@ -35,6 +35,12 @@ export function ReadingScene({ readingId }: { readingId: string }) {
       window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const [sound, setSound] = useState(false);
+  // Distinct from the OS-detected `reducedMotion` above: this is the explicit,
+  // in-app "Reduced motion" control (PRD UX-009 / KNOWN-GAPS "skip-animation
+  // mode"). It drives the exact same `motionOff` flag as the OS preference, so
+  // it shortens/removes decorative transitions without changing whether the
+  // user still intentionally reveals each card (UX-006 is unconditional).
+  const [manualReducedMotion, setManualReducedMotion] = useState(false);
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
   const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
   const [error, setError] = useState<string>();
@@ -46,7 +52,7 @@ export function ReadingScene({ readingId }: { readingId: string }) {
   const bootstrapped = useRef(false);
   const revealRun = useRef(0);
   const soundEnabled = useRef(sound);
-  const motionOff = reducedMotion;
+  const motionOff = reducedMotion || manualReducedMotion;
 
   useEffect(() => {
     soundEnabled.current = sound;
@@ -89,11 +95,9 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     return () => window.clearTimeout(timer);
   }, [motionOff, send, state]);
 
-  useEffect(() => {
-    if (!state.matches("cuttingDeck")) return;
-    const timer = window.setTimeout(() => send({ type: "SKIP_CUT" }), 0);
-    return () => window.clearTimeout(timer);
-  }, [send, state]);
+  // Cutting the deck is a deliberate PRD UX-004 choice (Cut vs Skip cut), not
+  // a timed transition — both buttons are rendered directly from `cuttingDeck`
+  // state below and send their event on click; there is no auto-advance here.
 
   useEffect(() => {
     if (!state.matches("dealing")) return;
@@ -107,34 +111,53 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     return () => window.clearTimeout(timer);
   }, [motionOff, send, state]);
 
+  // PRD UX-006: cards are revealed by intentional click/tap/keyboard, not a
+  // timer. `revealedRef` mirrors `revealed` synchronously so the async
+  // callbacks below always guard against the latest set, not a stale closure
+  // — matters because "Reveal all" schedules several reveals ahead of time,
+  // and the user can still click an individual not-yet-revealed card while
+  // that schedule is in flight.
+  const revealedRef = useRef<ReadonlySet<number>>(revealed);
   useEffect(() => {
-    if (!reading || !state.matches("revealingCards")) return;
-    const run = ++revealRun.current;
-    let timer: number | undefined;
-    const focusDuration = motionOff ? 90 : 1_250;
-    const settleDuration = motionOff ? 40 : 400;
-    const revealNext = (index: number) => {
-      if (revealRun.current !== run) return;
-      if (index >= reading.draw.assignments.length) {
-        send({ type: "ALL_REVEALED" });
-        return;
-      }
+    revealedRef.current = revealed;
+  }, [revealed]);
+
+  const focusDuration = motionOff ? 90 : 1_250;
+  const settleDuration = motionOff ? 40 : 400;
+
+  const revealCard = useCallback(
+    (index: number) => {
+      if (!reading || !state.matches("revealingCards") || revealedRef.current.has(index)) return;
+      const run = ++revealRun.current;
       setActiveReveal(index);
       setRevealed((current) => new Set(current).add(index));
       if (soundEnabled.current) playRevealTone();
-      timer = window.setTimeout(() => {
+      window.setTimeout(() => {
         if (revealRun.current !== run) return;
         setActiveReveal(null);
-        timer = window.setTimeout(() => revealNext(index + 1), settleDuration);
       }, focusDuration);
-    };
-    revealNext(0);
+    },
+    [focusDuration, reading, state],
+  );
 
-    return () => {
-      revealRun.current += 1;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [motionOff, reading, send, state]);
+  const revealAll = useCallback(() => {
+    if (!reading) return;
+    const remaining = reading.draw.assignments
+      .map((_, index) => index)
+      .filter((index) => !revealedRef.current.has(index));
+    remaining.forEach((index, position) =>
+      window.setTimeout(() => revealCard(index), position * (focusDuration + settleDuration)),
+    );
+  }, [focusDuration, reading, revealCard, settleDuration]);
+
+  // Once every card has been individually revealed — however the user got
+  // there, one at a time or via "Reveal all" — advance the ritual onward.
+  useEffect(() => {
+    if (!reading || !state.matches("revealingCards")) return;
+    if (revealed.size < reading.draw.assignments.length) return;
+    const timer = window.setTimeout(() => send({ type: "ALL_REVEALED" }), settleDuration);
+    return () => window.clearTimeout(timer);
+  }, [reading, revealed, send, settleDuration, state]);
 
   useEffect(() => {
     if (!state.matches("generatingSynthesis") || !reading) return;
@@ -231,6 +254,15 @@ export function ReadingScene({ readingId }: { readingId: string }) {
           ← Exit
         </Link>
         <div className="sanctuary-control-group">
+          {!reducedMotion && (
+            <button
+              aria-pressed={manualReducedMotion}
+              onClick={() => setManualReducedMotion((value) => !value)}
+              type="button"
+            >
+              Reduced motion <span>{manualReducedMotion ? "on" : "off"}</span>
+            </button>
+          )}
           <button aria-pressed={sound} onClick={() => setSound((value) => !value)} type="button">
             Sound <span>{sound ? "on" : "off"}</span>
           </button>
@@ -253,6 +285,33 @@ export function ReadingScene({ readingId }: { readingId: string }) {
             <p className="ritual-status" role="status">
               Shuffling your cards…
             </p>
+            <button
+              className="ritual-action"
+              onClick={() => send({ type: "SHUFFLE_COMPLETE" })}
+              type="button"
+            >
+              Finish shuffling
+            </button>
+          </div>
+        )}
+
+        {state.matches("cuttingDeck") && (
+          <div className="ritual-moment">
+            <p className="ritual-status" role="status">
+              Cut the deck, or continue.
+            </p>
+            <div className="ritual-action-group">
+              <button className="ritual-action" onClick={() => send({ type: "CUT" })} type="button">
+                Cut
+              </button>
+              <button
+                className="ritual-action"
+                onClick={() => send({ type: "SKIP_CUT" })}
+                type="button"
+              >
+                Skip cut
+              </button>
+            </div>
           </div>
         )}
 
@@ -275,9 +334,16 @@ export function ReadingScene({ readingId }: { readingId: string }) {
             activeIndex={focusedCardIndex}
             cards={reading.cards}
             focusMode={focusMode}
+            onReveal={state.matches("revealingCards") ? revealCard : undefined}
             reducedMotion={motionOff}
             revealed={revealed}
           />
+        )}
+
+        {state.matches("revealingCards") && revealed.size < reading.cards.length && (
+          <button className="ritual-action reveal-all-action" onClick={revealAll} type="button">
+            Reveal all
+          </button>
         )}
 
         {state.matches("generatingSynthesis") && (

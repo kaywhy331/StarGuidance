@@ -7,12 +7,17 @@ export function TarotSpreadStage({
   focusMode,
   revealed,
   reducedMotion,
+  onReveal,
 }: {
   activeIndex: number | null;
   cards: readonly DealtCardView[];
   focusMode: "reveal" | "reading" | null;
   revealed: ReadonlySet<number>;
   reducedMotion: boolean;
+  /** Called with a card's index when the user intentionally reveals it
+   * (click/tap/keyboard). Omit to render every card as a static, already-
+   * settled view with no reveal affordance. */
+  onReveal?: ((index: number) => void) | undefined;
 }) {
   const activeCard = activeIndex === null ? undefined : cards[activeIndex];
   return (
@@ -31,6 +36,7 @@ export function TarotSpreadStage({
           focusMode={activeIndex === index ? focusMode : null}
           index={index}
           key={`${card.positionId}-${card.cardId}`}
+          onReveal={onReveal && !revealed.has(index) ? () => onReveal(index) : undefined}
           reducedMotion={reducedMotion}
           revealed={revealed.has(index)}
         />

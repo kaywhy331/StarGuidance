@@ -11,15 +11,27 @@ export function PhysicalTarotCard({
   index,
   revealed,
   reducedMotion,
+  onReveal,
 }: {
   card: DealtCardView;
   focusMode: "reveal" | "reading" | null;
   index: number;
   revealed: boolean;
   reducedMotion: boolean;
+  /** Present only while this specific card is still face down and eligible for
+   * intentional click/tap/keyboard reveal (PRD UX-006). Omitted once revealed. */
+  onReveal?: (() => void) | undefined;
 }) {
   const figureRef = useRef<HTMLElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
+  // The element renders as a real <button> while it's an eligible reveal
+  // target and a static <div role="img"> once revealed, so the ref has to
+  // accept either concrete element; a callback ref keeps each branch's own
+  // `ref` prop correctly typed to its own element instead of fighting
+  // RefObject<T> variance.
+  const cardRef = useRef<HTMLButtonElement | HTMLDivElement>(null);
+  const setCardRef = (node: HTMLButtonElement | HTMLDivElement | null) => {
+    cardRef.current = node;
+  };
   const focalStyle = {
     "--focal-x": `${card.artwork.focalPoint.x * 100}%`,
     "--focal-y": `${card.artwork.focalPoint.y * 100}%`,
@@ -81,6 +93,33 @@ export function PhysicalTarotCard({
   }, [focusMode, reducedMotion]);
 
   const active = focusMode !== null;
+  const revealable = !revealed && Boolean(onReveal);
+  const cardClassName = `physical-tarot-card ${revealed ? "is-revealed" : ""} ${
+    revealable ? "is-revealable" : ""
+  } ${reducedMotion ? "motion-off" : ""}`;
+  const inner = (
+    <span className="physical-card-inner">
+      <span className="physical-card-back" aria-hidden="true">
+        <picture>
+          {card.artwork.backAssetAvif && (
+            <source srcSet={card.artwork.backAssetAvif} type="image/avif" />
+          )}
+          <img alt="" decoding="async" draggable={false} src={card.artwork.backAsset} />
+        </picture>
+        <span className="card-sheen" />
+      </span>
+      <span aria-hidden={!revealed} className="physical-card-front">
+        <img
+          alt={revealed ? card.artwork.altText : ""}
+          className={card.orientation === "reversed" ? "card-art-reversed" : ""}
+          decoding="async"
+          draggable={false}
+          src={card.artwork.frontAsset}
+        />
+        <span className="card-sheen" aria-hidden="true" />
+      </span>
+    </span>
+  );
 
   return (
     <figure
@@ -90,37 +129,34 @@ export function PhysicalTarotCard({
       ref={figureRef}
       style={focalStyle}
     >
-      <div
-        aria-describedby={`card-position-${index}`}
-        aria-label={revealed ? `${card.name}, ${card.orientation}` : `Card ${index + 1}, face down`}
-        className={`physical-tarot-card ${revealed ? "is-revealed" : ""} ${reducedMotion ? "motion-off" : ""}`}
-        data-card-id={card.cardId}
-        data-orientation={card.orientation}
-        ref={cardRef}
-        role="img"
-      >
-        <span className="physical-card-inner">
-          <span className="physical-card-back" aria-hidden="true">
-            <picture>
-              {card.artwork.backAssetAvif && (
-                <source srcSet={card.artwork.backAssetAvif} type="image/avif" />
-              )}
-              <img alt="" decoding="async" draggable={false} src={card.artwork.backAsset} />
-            </picture>
-            <span className="card-sheen" />
-          </span>
-          <span aria-hidden={!revealed} className="physical-card-front">
-            <img
-              alt={revealed ? card.artwork.altText : ""}
-              className={card.orientation === "reversed" ? "card-art-reversed" : ""}
-              decoding="async"
-              draggable={false}
-              src={card.artwork.frontAsset}
-            />
-            <span className="card-sheen" aria-hidden="true" />
-          </span>
-        </span>
-      </div>
+      {revealable ? (
+        <button
+          aria-describedby={`card-position-${index}`}
+          aria-label={`Reveal card ${index + 1}, face down`}
+          className={cardClassName}
+          data-card-id={card.cardId}
+          data-orientation={card.orientation}
+          onClick={onReveal}
+          ref={setCardRef}
+          type="button"
+        >
+          {inner}
+        </button>
+      ) : (
+        <div
+          aria-describedby={`card-position-${index}`}
+          aria-label={
+            revealed ? `${card.name}, ${card.orientation}` : `Card ${index + 1}, face down`
+          }
+          className={cardClassName}
+          data-card-id={card.cardId}
+          data-orientation={card.orientation}
+          ref={setCardRef}
+          role="img"
+        >
+          {inner}
+        </div>
+      )}
       <figcaption className="physical-card-caption" id={`card-position-${index}`}>
         <span>{card.positionName}</span>
         {revealed && (

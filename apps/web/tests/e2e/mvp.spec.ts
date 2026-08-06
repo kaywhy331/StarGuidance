@@ -36,7 +36,18 @@ async function beginReading(page: Page, question = "What should I focus on next?
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
 }
 
+/** Drives the ritual past its intentional, no-longer-automatic checkpoints
+ * (PRD UX-002/004/006): the shuffle still completes on its own, then skip the
+ * deck cut and reveal every card, then wait for the completed reading.
+ * Deliberately doesn't race "Finish shuffling" against the shuffle's own
+ * auto-complete timer — Playwright would keep retrying a click against a
+ * button the shuffle has already removed. Individual tests that care about a
+ * specific control (Finish shuffling, Cut instead of Skip cut, one card at a
+ * time, keyboard activation) drive those steps themselves instead of calling
+ * this helper. */
 async function finishRitual(page: Page) {
+  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Opening theme" })).toBeVisible({
     timeout: 30_000,
@@ -144,7 +155,9 @@ test("password recovery does not reveal whether an email exists", async ({ page 
   await expect(page.getByText(/if an account exists/i)).toBeVisible();
 });
 
-test("the ritual advances itself and reviews each card cinematically", async ({ page }) => {
+test("the ritual waits for intentional cut and reveal, and reviews each card cinematically", async ({
+  page,
+}) => {
   test.slow();
   await page.addInitScript(() => {
     const observed: string[] = [];
@@ -168,12 +181,35 @@ test("the ritual advances itself and reviews each card cinematically", async ({ 
   });
   await createProfile(page);
   await beginReading(page);
-  for (const removedControl of ["Finish shuffling", "Cut", "Skip cut", "Reveal all"])
-    await expect(page.getByRole("button", { name: removedControl, exact: true })).toHaveCount(0);
 
-  await finishRitual(page);
+  // The shuffle can be sped up explicitly instead of waiting out its timer —
+  // but it also completes on its own, so this races the app's own ~1.9s
+  // auto-complete timer under parallel test load. A bounded, caught attempt
+  // proves the control does nothing harmful when clicked without depending on
+  // winning that race: either this click fires SHUFFLE_COMPLETE, or the
+  // timer already did, and cuttingDeck is reached either way.
+  await page
+    .getByRole("button", { name: "Finish shuffling", exact: true })
+    .click({ timeout: 2_000 })
+    .catch(() => {});
+
+  // The deck cut never auto-advances (PRD UX-004) — both choices are offered
+  // and nothing proceeds until one is taken.
+  await expect(page.getByRole("button", { name: "Cut", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Cut", exact: true }).click();
+
+  // Cards arrive face down; reveal never auto-advances either (UX-006).
   const physicalCards = page.locator(".physical-card-figure");
+  await expect(physicalCards).toHaveCount(3, { timeout: 10_000 });
+  await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(0);
+  await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
+
+  await expect(page.getByRole("button", { name: "Reveal all", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+
   await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Reveal all" })).toHaveCount(0);
   const revealOrder = await page.evaluate(
     () => (window as typeof window & { __sgRevealOrder: string[] }).__sgRevealOrder,
   );
@@ -183,6 +219,8 @@ test("the ritual advances itself and reviews each card cinematically", async ({ 
   );
   expect(cinematicScales).toHaveLength(3);
   expect(cinematicScales.every((scale) => scale > 1)).toBe(true);
+
+  await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 });
 
 test("all four birth details reach a completed reading", async ({ page }) => {
@@ -280,6 +318,10 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
   await beginReading(page);
   const before = (await currentReading(page)).reading.draw;
   await page.reload();
+  // The client-side ritual always restarts from idle on a fresh mount, with
+  // or without this reveal-control change — reload it past its own cut gate
+  // again before expecting the cards.
+  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible({ timeout: 20_000 });
   const after = (await currentReading(page)).reading.draw;
   expect(after).toEqual(before);
@@ -343,6 +385,8 @@ test("generation failure retries without a redraw", async ({ page }) => {
   expect(created.generationStatus).toBe("failed");
   await page.goto(`/session/${created.readingId}`);
   const before = (await currentReading(page)).reading.draw;
+  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await page.getByRole("button", { name: "Retry the same draw" }).click({ timeout: 20_000 });
   await expect(page.getByTestId("oracle-transcript")).toBeVisible();
   const after = (await currentReading(page)).reading.draw;
@@ -355,7 +399,12 @@ test("stream interruption preserves received paragraphs and retries the same dra
   await createProfile(page);
   await beginReading(page, "What should I understand about this next step?");
   const before = (await currentReading(page)).reading.draw;
+  // Arm the fault before the cards are revealed — cut/reveal now block on the
+  // user, which conveniently guarantees this lands well before the oracle
+  // stream (which only starts once the ritual reaches "complete") can start.
   await page.evaluate(() => sessionStorage.setItem("sg:e2e-stream-fail-after", "2"));
+  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByText(/Stream paused\. Your reading/i)).toBeVisible({
     timeout: 20_000,
   });
@@ -429,13 +478,27 @@ test("buttons, keyboard, wheel, and touch move sequentially without a text scrol
   await expect(journey).toHaveAttribute("data-active-card-index", "1");
 });
 
-test("keyboard users traverse sections and submit a same-draw follow-up after the automatic reveal", async ({
+test("keyboard users cut and reveal by keyboard, then submit a same-draw follow-up", async ({
   page,
 }) => {
   await createProfile(page);
   await beginReading(page, "What should I practice in this conversation?");
   const before = (await currentReading(page)).reading.draw;
-  await finishRitual(page);
+
+  // PRD UX-006: each card is reachable by keyboard, shows a visible focus
+  // state, and reveals on Enter — not just click/tap.
+  await page
+    .getByRole("button", { name: "Finish shuffling", exact: true })
+    .click({ timeout: 2_000 })
+    .catch(() => {});
+  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  const firstCard = page.locator(".physical-card-figure").first().getByRole("button");
+  await firstCard.focus();
+  await expect(firstCard).toBeFocused();
+  await firstCard.press("Enter");
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
+  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+
   await waitForReadingSections(page);
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   const journey = page.getByTestId("oracle-transcript");
@@ -457,6 +520,7 @@ test("physical card faces are specific illustrated assets with external position
 }) => {
   await createProfile(page);
   await beginReading(page);
+  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
   const cards = page.locator(".physical-card-figure");
   await expect(cards).toHaveCount(3, { timeout: 10_000 });
   for (let index = 0; index < 3; index += 1) {
@@ -464,13 +528,23 @@ test("physical card faces are specific illustrated assets with external position
       "src",
       /\/art\/tarot\/v2\/.+\.svg$/,
     );
-    const ratio = await cards
-      .nth(index)
-      .locator(".physical-tarot-card")
-      .evaluate((element) => {
-        const bounds = element.getBoundingClientRect();
-        return bounds.height / bounds.width;
-      });
+    // The card is now sometimes a <button> (unrevealed, clickable) and
+    // sometimes a <div> (revealed), swapped by React rather than patched in
+    // place around the same moment dealing settles into revealingCards, so a
+    // measurement taken between two separate round trips can land on a
+    // detached node mid-swap and read a permanent 0×0. Re-querying the live
+    // DOM and polling inside a single evaluate call — no round trip for a
+    // swap to land in the middle of — avoids racing it either way.
+    const ratio = await page.evaluate(async (figureIndex) => {
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const figure = document.querySelectorAll(".physical-card-figure")[figureIndex];
+        const card = figure?.querySelector(".physical-tarot-card");
+        const bounds = card?.getBoundingClientRect();
+        if (bounds && bounds.width > 0) return bounds.height / bounds.width;
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+      return Number.NaN;
+    }, index);
     expect(ratio).toBeGreaterThan(1.45);
     expect(ratio).toBeLessThan(1.55);
     await expect(cards.nth(index).locator("figcaption")).toBeVisible();

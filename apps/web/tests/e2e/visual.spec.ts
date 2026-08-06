@@ -15,6 +15,14 @@ test("capture the completed reading for reviewer evidence", async ({ page }, tes
   await page.getByRole("button", { name: "Check profile capability" }).click();
   await page.getByLabel("Your private question").fill("What can support my next grounded step?");
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
+  // Cut and reveal are intentional user actions (PRD UX-004/UX-006), not
+  // timers — drive past them the same way mvp.spec.ts's finishRitual() does.
+  await page
+    .getByRole("button", { name: "Finish shuffling", exact: true })
+    .click({ timeout: 2_000 })
+    .catch(() => {});
+  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
   await page.getByRole("button", { name: "Next reading passage" }).click();

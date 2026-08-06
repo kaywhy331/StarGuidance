@@ -115,6 +115,6 @@ Provider dashboard and contract review is owner-controlled and cannot be inferre
 6. Obtain owner decisions for retention, crisis resources, telemetry, licensing, payments, and production rollout.
 7. Keep profile reports disabled until Stripe test UAT, durable job/status handling, report history, and accessible web/PDF parity pass.
 8. Add distributed rate limiting and privacy-safe production observability/alerts before public traffic. `main` now requires PRs, required checks, and conversation resolution (verified 2026-08-06); an independent approving reviewer is still unassigned.
-9. Close the reading ritual gaps documented in [Known gaps](KNOWN-GAPS.md): background generation after draw lock, intentional card reveal, optional cut behavior, and an explicit animation-skip control.
+9. Intentional card reveal, optional cut behavior, and an explicit skip-animation control are implemented and e2e-covered (2026-08-06); still open per [Known gaps](KNOWN-GAPS.md): background generation after draw lock, and manual keyboard/screen-reader/real-device review of the ritual controls.
 
 Do not configure or change owner-managed DNS, domains, notifications, production secrets, or a production deploy from this branch.
