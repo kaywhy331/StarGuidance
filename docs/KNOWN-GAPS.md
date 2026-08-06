@@ -7,7 +7,7 @@ This branch is a safe-beta candidate, not a public-production approval. The impl
 - Migration `0005_bumpy_moon_knight` must be applied to the non-production Supabase staging project. It scrubs legacy plaintext birth metadata and adds profile-root, follow-up, and reading-idempotency constraints. The protected workflow must then prove schema readiness, two-user isolation, locked-draw recovery, export, deletion, key rotation/rollback, synthetic cleanup, and the deployed commit.
 - Public `/api/health` proves only liveness. The protected HMAC-authorized readiness probe must pass for the exact deploy being promoted; an earlier green run does not transfer to a later commit.
 - Full Node 24 CI, browser E2E, Python 3.12 checks, hashed lock installs, production dependency audit, migration rehearsal, secret scan, and Netlify deployment must all be green at the same head.
-- `main` still requires owner-managed branch protection, required checks, restricted merge authority, and at least one independent approving reviewer. The draft PR must not be merged by this implementation lane.
+- `main` now enforces required status checks (`web`, `profile-engine`, `e2e`, `secret-scan`, `migration`, `guard`, `verify`), PR-only merges, required conversation resolution, and blocked force-push/deletion, including for administrators (applied and verified via the GitHub API 2026-08-06). Required approving reviews remain set to zero: GitHub never counts a PR author's own approval toward that count, and no second reviewer is configured yet. The draft PR must not be merged by this implementation lane until an independent reviewer is assigned.
 
 ## Product-flow gaps
 

@@ -41,7 +41,7 @@ The remaining security and operations gates are:
 - hosted Netlify, Supabase, Render, and AI-provider log-retention review by an operator with dashboard access;
 - Stripe test credentials and a public webhook/Checkout/refund rehearsal against durable order and entitlement storage;
 - provider no-retention contracts, redaction verification, privacy-safe telemetry, backup/restore, incident response, and regional crisis resources;
-- distributed rate limiting for serverless instances, production alerts, protected branches/required checks, and independent review;
+- distributed rate limiting for serverless instances, production alerts, and independent review — `main` branch protection and required checks are enforced (verified 2026-08-06);
 - legal-owner review of the versioned beta Terms, Privacy Notice, age policy, retention schedule, and launch regions.
 
 The concrete role boundary, key-rotation commands, CI logical restore, guarded retention tool, telemetry boundary, and incident procedure are documented in [Operations and recovery](OPERATIONS.md).
