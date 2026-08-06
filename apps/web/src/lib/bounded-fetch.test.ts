@@ -23,9 +23,11 @@ describe("bounded provider fetch", () => {
   });
 
   it("preserves a caller cancellation signal", async () => {
-    const implementation = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      Promise.resolve(new Response(null, { status: 204 })),
-    );
+    const implementation = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void input;
+      void init;
+      return new Response(null, { status: 204 });
+    });
     const controller = new AbortController();
 
     await createBoundedFetch(implementation as unknown as typeof fetch, 1_000)(
