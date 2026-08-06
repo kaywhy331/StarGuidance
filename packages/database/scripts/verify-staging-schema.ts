@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
+import { EXPECTED_MIGRATIONS } from "../src/migration-manifest";
 import { createDatabaseClient } from "../src/postgres-client";
 import { diagnoseAuthInsert } from "./diagnose-auth-insert";
 import { completeStage, record, requiredEnv } from "./staging-result";
@@ -12,14 +13,6 @@ import { completeStage, record, requiredEnv } from "./staging-result";
  * `packages/database/migrations` is the only migration authority; this script
  * asserts the applied state and never creates or alters schema itself.
  */
-const EXPECTED_MIGRATIONS = [
-  "0000_busy_centennial",
-  "0001_supabase_staging",
-  "0002_remove_auth_user_sync_trigger",
-  "0003_webhook_replay_lease",
-  "0004_server_actor_role",
-] as const;
-
 const USER_OWNED_TABLES = [
   "users",
   "user_settings",

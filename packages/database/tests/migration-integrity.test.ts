@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { EXPECTED_MIGRATIONS } from "../src/migration-manifest";
+
 /**
  * Guards the migration history itself.
  *
@@ -71,14 +73,8 @@ describe("migration history", () => {
 
   it("orders the corrective migration after the migration that created the trigger", () => {
     const tags = journal.entries.sort((a, b) => a.idx - b.idx).map(({ tag }) => tag);
-    expect(tags).toEqual([
-      "0000_busy_centennial",
-      "0001_supabase_staging",
-      "0002_remove_auth_user_sync_trigger",
-      "0003_webhook_replay_lease",
-      "0004_server_actor_role",
-      "0005_bumpy_moon_knight",
-    ]);
+    expect(tags).toEqual(EXPECTED_MIGRATIONS);
+    expect(Object.keys(IMMUTABLE_DIGESTS)).toEqual(EXPECTED_MIGRATIONS);
   });
 
   it("never recreates the auth.users synchronisation trigger after 0002", () => {
