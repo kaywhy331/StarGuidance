@@ -112,11 +112,17 @@ async function reloadApp(page: Page): Promise<void> {
 }
 
 async function apiGet<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
-  const response = await page.request.get(new URL(path, baseUrl).toString(), {
-    headers: { "cache-control": "no-store" },
-    timeout: API_REQUEST_TIMEOUT_MS,
-  });
-  return { status: response.status(), body: (await response.json()) as T };
+  try {
+    const response = await page.request.get(new URL(path, baseUrl).toString(), {
+      headers: { "cache-control": "no-store" },
+      timeout: API_REQUEST_TIMEOUT_MS,
+    });
+    return { status: response.status(), body: (await response.json()) as T };
+  } catch {
+    // Playwright's request error includes every cookie and authorization
+    // header. Never let that provider diagnostic reach a public Actions log.
+    throw new Error(`GET ${path} did not complete; request details redacted`);
+  }
 }
 
 async function apiPost<T>(
@@ -124,15 +130,19 @@ async function apiPost<T>(
   path: string,
   payload: unknown,
 ): Promise<{ status: number; body: T }> {
-  const response = await page.request.post(new URL(path, baseUrl).toString(), {
-    data: payload,
-    headers: {
-      origin: new URL(baseUrl).origin,
-      "idempotency-key": crypto.randomUUID(),
-    },
-    timeout: API_REQUEST_TIMEOUT_MS,
-  });
-  return { status: response.status(), body: (await response.json()) as T };
+  try {
+    const response = await page.request.post(new URL(path, baseUrl).toString(), {
+      data: payload,
+      headers: {
+        origin: new URL(baseUrl).origin,
+        "idempotency-key": crypto.randomUUID(),
+      },
+      timeout: API_REQUEST_TIMEOUT_MS,
+    });
+    return { status: response.status(), body: (await response.json()) as T };
+  } catch {
+    throw new Error(`POST ${path} did not complete; request details redacted`);
+  }
 }
 
 async function createProfile(
@@ -267,28 +277,25 @@ test("both identities create profiles and the profile survives refresh", async (
 test("password re-entry restores the same profile snapshot", async () => {
   await signOut(contextA);
   const signedOut = await apiGet<ProfileResponse>(pageA, "/api/profile");
-  const passwordSignIn = await pageA.request.post(`${baseUrl}/api/auth`, {
-    headers: { origin: new URL(baseUrl).origin },
-    data: {
-      action: "sign-in",
-      email: userA.email,
-      password: userA.password,
-    },
+  const passwordSignIn = await apiPost<unknown>(pageA, "/api/auth", {
+    action: "sign-in",
+    email: userA.email,
+    password: userA.password,
   });
   const afterReturn = await activeSnapshot(pageA);
 
   const durable =
-    passwordSignIn.status() === 200 &&
+    passwordSignIn.status === 200 &&
     Boolean(profileSnapshotBeforeReentry) &&
     afterReturn.id === profileSnapshotBeforeReentry;
   record({
     section: "Profile persistence",
     check: "Snapshot survives refresh and sign-out/sign-in",
     status: durable ? "pass" : "fail",
-    detail: `identical active snapshot after refresh and password re-entry; signed-out request returned ${signedOut.status}; sign-in returned ${passwordSignIn.status()}`,
+    detail: `identical active snapshot after refresh and password re-entry; signed-out request returned ${signedOut.status}; sign-in returned ${passwordSignIn.status}`,
   });
   expect(signedOut.status, "signed-out profile request is rejected").toBe(401);
-  expect(passwordSignIn.status(), "email/password sign-in succeeds").toBe(200);
+  expect(passwordSignIn.status, "email/password sign-in succeeds").toBe(200);
   expect(durable, "profile is durable").toBe(true);
   completeStage("profile-onboarding");
 });
