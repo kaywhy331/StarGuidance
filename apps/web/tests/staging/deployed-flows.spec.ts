@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
@@ -36,6 +38,8 @@ interface ReadingResponse {
   };
 }
 
+type InterpretationContract = "approved-live" | "deterministic";
+
 let userA: SyntheticIdentity;
 let userB: SyntheticIdentity;
 let contextA: BrowserContext;
@@ -46,6 +50,7 @@ let baseUrl: string;
 let activeReadingId: string;
 let userBReadingId: string;
 let profileSnapshotBeforeReentry: string | undefined;
+let interpretationContract: InterpretationContract;
 
 const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
 const NAVIGATION_ATTEMPTS = 3;
@@ -191,8 +196,51 @@ async function readingState(page: Page, id: string): Promise<ReadingResponse["re
   return body.reading;
 }
 
+async function configuredInterpretationContract(): Promise<InterpretationContract> {
+  const readinessSecret = process.env.PROFILE_ENGINE_SHARED_SECRET?.trim();
+  if (!readinessSecret) throw new Error("PROFILE_ENGINE_SHARED_SECRET is required");
+  const readinessToken = createHmac("sha256", readinessSecret)
+    .update("starguidance-readiness-v1")
+    .digest("base64url");
+
+  let response: Response;
+  try {
+    response = await fetch(new URL("/api/health?readiness=1", baseUrl), {
+      cache: "no-store",
+      headers: { authorization: `Bearer ${readinessToken}` },
+      signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS),
+    });
+  } catch {
+    throw new Error("interpretation readiness did not complete; request details redacted");
+  }
+  if (!response.ok) {
+    throw new Error(`interpretation readiness returned status ${response.status}`);
+  }
+
+  const body = (await response.json()) as {
+    interpretation?: {
+      providerKind?: string;
+      approvedLiveProviderConfigured?: boolean;
+    };
+  };
+  if (
+    body.interpretation?.providerKind === "groq" &&
+    body.interpretation.approvedLiveProviderConfigured === true
+  ) {
+    return "approved-live";
+  }
+  if (
+    body.interpretation?.providerKind === "deterministic" &&
+    body.interpretation.approvedLiveProviderConfigured !== true
+  ) {
+    return "deterministic";
+  }
+  throw new Error("deployed interpretation readiness is not safely classified");
+}
+
 test.beforeAll(async ({ browser }, testInfo) => {
   baseUrl = String(testInfo.project.use.baseURL);
+  interpretationContract = await configuredInterpretationContract();
   userA = await createSyntheticIdentity("user A");
   userB = await createSyntheticIdentity("user B");
   contextA = await browser.newContext({ baseURL: baseUrl });
@@ -349,6 +397,7 @@ test("a reading is created against the active snapshot with a locked draw", asyn
   // the persisted output once after the reset window, against this exact locked
   // draw, instead of creating a new reading or weakening the live-provider gate.
   if (
+    interpretationContract === "approved-live" &&
     reading.outputProvenance?.providerId === "deterministic-fallback-v1:after-groq-rate-limited"
   ) {
     await pageA.waitForTimeout(PROVIDER_RATE_LIMIT_COOLDOWN_MS);
@@ -372,6 +421,12 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b" &&
     reading.outputProvenance.promptVersion === "reader-voice-v1" &&
     reading.outputProvenance.schemaVersion === "reading-result-v1";
+  const deterministicProvenance =
+    reading.outputProvenance?.providerId === "deterministic-fallback-v1" &&
+    reading.outputProvenance.promptVersion === "deterministic-fallback-v1" &&
+    reading.outputProvenance.schemaVersion === "reading-result-v1";
+  const configuredProvenance =
+    interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
   const safeFallbackReasons = [
     "request-timeout",
     "authentication",
@@ -419,19 +474,21 @@ test("a reading is created against the active snapshot with a locked draw", asyn
   });
   record({
     section: "Reading creation",
-    check: "Live AI model provenance is persisted",
-    status: liveProvenance ? "pass" : "fail",
-    detail: liveProvenance
-      ? `the persisted output identifies the approved provider model, prompt, and response schema${
-          providerRetryStatus === undefined
-            ? ""
-            : ` after one same-draw quota retry returned ${providerRetryStatus}`
-        }`
-      : `classified persisted provenance: provider=${providerState}, prompt=${promptState}, ` +
-        `schema=${schemaState}`,
+    check: "Runtime-selected interpretation provenance is persisted",
+    status: configuredProvenance ? "pass" : "fail",
+    detail: configuredProvenance
+      ? interpretationContract === "approved-live"
+        ? `the persisted output identifies the approved provider model, prompt, and response schema${
+            providerRetryStatus === undefined
+              ? ""
+              : ` after one same-draw quota retry returned ${providerRetryStatus}`
+          }`
+        : "the persisted output identifies the intentionally gated deterministic provider, prompt, and response schema"
+      : `expected=${interpretationContract}; classified persisted provenance: ` +
+        `provider=${providerState}, prompt=${promptState}, schema=${schemaState}`,
   });
   expect(created, "a reading is created with a locked draw").toBe(true);
-  expect(liveProvenance, "the live generation contract is persisted").toBe(true);
+  expect(configuredProvenance, "the runtime-selected generation contract is persisted").toBe(true);
   completeStage("reading-creation");
 });
 
