@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const database = vi.hoisted(() => {
@@ -36,7 +38,21 @@ function configureStaging() {
   vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "");
   vi.stubEnv("AI_PROVIDER", "groq");
   vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-120b");
+  vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
   for (const [name, value] of Object.entries(SECRET_VALUES)) vi.stubEnv(name, value);
+}
+
+function livenessRequest(): Request {
+  return new Request("https://synthetic.invalid/api/health");
+}
+
+function readinessRequest(authorized = true): Request {
+  const token = createHmac("sha256", SECRET_VALUES.PROFILE_ENGINE_SHARED_SECRET)
+    .update("starguidance-readiness-v1")
+    .digest("base64url");
+  return new Request("https://synthetic.invalid/api/health?readiness=1", {
+    headers: authorized ? { authorization: `Bearer ${token}` } : {},
+  });
 }
 
 afterEach(() => {
@@ -64,7 +80,7 @@ describe("deployment health", () => {
         .mockResolvedValueOnce(new Response(null, { status: 200 })),
     );
 
-    const response = await GET();
+    const response = await GET(readinessRequest());
     const body = await response.json();
     const serialized = JSON.stringify(body);
 
@@ -101,7 +117,7 @@ describe("deployment health", () => {
     for (const value of Object.values(SECRET_VALUES)) expect(serialized).not.toContain(value);
   });
 
-  it("fails closed without exposing AI configuration when the live provider is unavailable", async () => {
+  it("stays ready on the deterministic fallback when live AI is unavailable", async () => {
     configureStaging();
     vi.stubEnv("AI_PROVIDER_API_KEY", "");
     database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
@@ -114,11 +130,11 @@ describe("deployment health", () => {
         .mockResolvedValueOnce(new Response(null, { status: 200 })),
     );
 
-    const response = await GET();
+    const response = await GET(readinessRequest());
     const body = await response.json();
 
-    expect(response.status).toBe(503);
-    expect(body.missingEnvironmentVariables).toContain("AI_PROVIDER_API_KEY");
+    expect(response.status).toBe(200);
+    expect(body.missingEnvironmentVariables).toEqual([]);
     expect(body.interpretation).toEqual({
       providerKind: "deterministic",
       approvedLiveProviderConfigured: false,
@@ -139,7 +155,7 @@ describe("deployment health", () => {
         .mockResolvedValueOnce(new Response(null, { status: 200 })),
     );
 
-    const staging = await (await GET()).json();
+    const staging = await (await GET(livenessRequest())).json();
     expect(staging.deployedCommit, "staging verification proves which build it tested").toBe(
       "0123456789abcdef0123456789abcdef01234567",
     );
@@ -147,7 +163,7 @@ describe("deployment health", () => {
     // Outside a hosted staging preview the field must stay null, so a public
     // deployment never advertises the commit it runs.
     vi.stubEnv("APP_ENV", "production");
-    const production = await (await GET()).json();
+    const production = await (await GET(livenessRequest())).json();
     expect(production.deployedCommit).toBeNull();
   });
 
@@ -156,7 +172,7 @@ describe("deployment health", () => {
     vi.stubEnv("DATABASE_URL", "");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("redacted dependency failure")));
 
-    const response = await GET();
+    const response = await GET(readinessRequest());
     const body = await response.json();
 
     expect(response.status).toBe(503);
@@ -190,7 +206,7 @@ describe("deployment health", () => {
         .mockResolvedValueOnce(new Response(null, { status: 200 })),
     );
 
-    const response = await GET();
+    const response = await GET(readinessRequest());
     const body = await response.json();
 
     expect(response.status).toBe(503);
@@ -209,7 +225,7 @@ describe("deployment health", () => {
         .mockResolvedValueOnce(new Response(null, { status: 200 })),
     );
 
-    const response = await GET();
+    const response = await GET(readinessRequest());
     const body = await response.json();
 
     expect(response.status).toBe(503);
@@ -219,5 +235,23 @@ describe("deployment health", () => {
       rlsReady: false,
       actorTransactionReady: false,
     });
+  });
+
+  it("keeps public liveness cheap and protects deep readiness", async () => {
+    configureStaging();
+    vi.stubGlobal("fetch", vi.fn());
+    database.client.unsafe.mockClear();
+
+    const liveness = await GET(livenessRequest());
+    expect(liveness.status).toBe(200);
+    expect(await liveness.json()).toMatchObject({ status: "ok", kind: "liveness" });
+    expect(database.client.unsafe).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+
+    const unauthorized = await GET(readinessRequest(false));
+    expect(unauthorized.status).toBe(401);
+    expect(await unauthorized.json()).toEqual({ status: "unauthorized", kind: "readiness" });
+    expect(database.client.unsafe).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

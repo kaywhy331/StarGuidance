@@ -16,6 +16,7 @@ export function ReadingChooser({
   const [question, setQuestion] = useState("");
   const [message, setMessage] = useState<string>();
   const [loading, setLoading] = useState(false);
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [reducedMotion, setReducedMotion] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -36,7 +37,7 @@ export function ReadingChooser({
     try {
       const response = await fetch("/api/readings", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
         body: JSON.stringify({ spreadId: selected, question }),
       });
       const payload = (await response.json()) as {

@@ -128,6 +128,9 @@ test("a new user can create an account with email and password", async ({ page }
   await page.getByLabel("Email").fill(`new-reader-${randomUUID()}@example.test`);
   await page.getByLabel(/^Password/).fill("synthetic-private-password");
   await page.getByLabel("Confirm password").fill("synthetic-private-password");
+  await page.getByLabel(/I agree to the versioned Terms/i).check();
+  await page.getByLabel(/I have read the versioned Privacy Notice/i).check();
+  await page.getByLabel(/I confirm that I am at least 18/i).check();
   await page.getByRole("button", { name: "Create private account" }).click();
 
   await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
@@ -202,7 +205,7 @@ test("birth time works without birthplace or timezone", async ({ page }) => {
 test("omitted birth time never fabricates astrology or BaZi", async ({ page }) => {
   await createProfile(page);
   await page.goto("/profile");
-  await page.getByRole("button", { name: "Purchase test report" }).click();
+  await page.getByRole("button", { name: "Generate test profile report" }).click();
   // Only the report tests reach the checkout route, so under `next dev` this
   // navigation always pays that route's first-request compilation cost.
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
@@ -328,7 +331,11 @@ test("generation failure retries without a redraw", async ({ page }) => {
   const created = await page.evaluate(async () => {
     const response = await fetch("/api/readings", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-e2e-force-generation-failure": "1" },
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": crypto.randomUUID(),
+        "x-e2e-force-generation-failure": "1",
+      },
       body: JSON.stringify({ spreadId: "direction", question: "What should I consider?" }),
     });
     return (await response.json()) as { readingId: string; generationStatus: string };
@@ -475,6 +482,14 @@ test("mobile sanctuary assets stay within the atmospheric image budget", async (
 }, testInfo) => {
   test.skip(!testInfo.project.name.startsWith("mobile"), "Representative mobile viewport only.");
   await createProfile(page);
+  const background = page.locator(".sanctuary-background img");
+  await expect
+    .poll(
+      () =>
+        background.evaluate((image: HTMLImageElement) => (image.complete ? image.currentSrc : "")),
+      { message: "the responsive mobile sanctuary asset finishes loading" },
+    )
+    .toContain("mobile");
   const assets = await page.evaluate(() =>
     performance
       .getEntriesByType("resource")
@@ -492,7 +507,7 @@ test("Stripe test-mode report entitlement uses the credential-free local adapter
 }) => {
   await createProfile(page);
   await page.goto("/profile");
-  await page.getByRole("button", { name: "Purchase test report" }).click();
+  await page.getByRole("button", { name: "Generate test profile report" }).click();
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByText(/Life Path \d+; Expression \d+/)).toBeVisible();
   await expect(page.getByText(/local test entitlement/i)).toBeVisible();

@@ -10,6 +10,7 @@ export async function POST(request: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   const signature = request.headers.get("stripe-signature");
   if (
+    process.env.ENABLE_PROFILE_REPORTS !== "true" ||
     process.env.PAYMENTS_PROVIDER !== "stripe" ||
     !secretKey ||
     !isStripeTestSecret(secretKey) ||

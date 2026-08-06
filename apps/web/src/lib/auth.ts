@@ -3,6 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import { getLocalUser } from "./local-store";
+import { policyConsentReceiptsFromMetadata } from "./policies";
 import { getRepositoriesForUser, getRuntimeAdapter } from "./runtime";
 import { createSupabaseServerClient } from "./supabase";
 
@@ -20,10 +21,24 @@ export async function requireUser() {
   if (error || !data.user?.email) throw new Error("UNAUTHENTICATED");
   const repositories = getRepositoriesForUser(data.user.id);
   const persisted = await repositories.users.ensure({ id: data.user.id, email: data.user.email });
-  const [profile, consents] = await Promise.all([
+  const [profile, storedConsents] = await Promise.all([
     repositories.birthProfiles.getActive(persisted.id),
     repositories.consents.list(persisted.id),
   ]);
+  const receipts = policyConsentReceiptsFromMetadata(data.user.app_metadata);
+  const existing = new Set(storedConsents.map(({ policy, version }) => `${policy}:${version}`));
+  await Promise.all(
+    receipts
+      .filter(({ policy, version }) => !existing.has(`${policy}:${version}`))
+      .map((receipt) =>
+        repositories.consents.grant(persisted.id, {
+          policy: receipt.policy,
+          version: receipt.version,
+          grantedAt: receipt.acceptedAt,
+        }),
+      ),
+  );
+  const consents = await repositories.consents.list(persisted.id);
   return {
     ...persisted,
     profile,

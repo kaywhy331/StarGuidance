@@ -10,18 +10,20 @@ import type { StoredReading } from "@starguidance/database";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
-import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
+import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 
 const inputSchema = z.object({
   spreadId: z.string().min(1),
   question: z.string().trim().min(1).max(500),
 });
+const idempotencyKeySchema = z.string().uuid();
 
 export async function POST(request: Request) {
   try {
-    const user = await requireUser();
     assertSameOrigin(request);
+    const user = await requireUser();
     assertRateLimit(`reading:${user.id}`, 12);
+    const idempotencyKey = idempotencyKeySchema.parse(request.headers.get("idempotency-key"));
     const persistence = persistenceFor(user);
     const profile = await persistence.repositories.birthProfiles.getActive(user.id);
     if (!profile)
@@ -41,6 +43,7 @@ export async function POST(request: Request) {
     const reading: StoredReading = {
       id: draw.id,
       userId: user.id,
+      idempotencyKey,
       profileSnapshotId: profile.snapshot.id,
       readingLens: {
         version: readingLens.version,
@@ -54,7 +57,17 @@ export async function POST(request: Request) {
       followUps: [],
       createdAt: new Date().toISOString(),
     };
-    await persistence.repositories.readingSessions.createLocked(reading);
+    const persisted = await persistence.repositories.readingSessions.createLocked(reading);
+    if (persisted.id !== reading.id)
+      return NextResponse.json(
+        {
+          readingId: persisted.id,
+          safety,
+          generationStatus: persisted.generationStatus,
+          idempotentReplay: true,
+        },
+        { status: 200 },
+      );
     await recordAudit(user.id, "reading.draw.locked", "reading", reading.id);
     try {
       if (
@@ -92,6 +105,12 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    const security = requestSecurityFailure(error);
+    if (security)
+      return NextResponse.json(
+        { error: security.error },
+        { status: security.status, headers: security.headers },
+      );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
     return NextResponse.json(
       { error: status === 401 ? "Authentication required." : "Invalid reading request." },
@@ -118,7 +137,9 @@ export async function GET() {
       },
     );
     return NextResponse.json({ readings });
-  } catch {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHENTICATED")
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "Reading history could not be loaded." }, { status: 500 });
   }
 }

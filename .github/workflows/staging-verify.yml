@@ -19,8 +19,8 @@ on:
         description: "Deploy preview to verify"
         required: true
         default: "https://deploy-preview-4--starguidance.netlify.app"
-      confirm_disposable:
-        description: "Type DISPOSABLE to confirm the target Supabase project holds no production data"
+      confirm_staging:
+        description: "Type STAGING to confirm the target is non-production and this migration/test run is authorized"
         required: true
         default: ""
 
@@ -39,6 +39,7 @@ jobs:
   # before the owner is ever prompted to approve a deployment.
   guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Refuse any ref other than the stacked staging branch
         run: |
@@ -48,17 +49,18 @@ jobs:
           fi
           echo "Ref accepted: $ALLOWED_REF"
 
-      - name: Require explicit disposable-project confirmation
+      - name: Require explicit non-production staging confirmation
         run: |
-          if [ "${{ inputs.confirm_disposable }}" != "DISPOSABLE" ]; then
-            echo "::error::confirm_disposable must be the literal word DISPOSABLE."
+          if [ "${{ inputs.confirm_staging }}" != "STAGING" ]; then
+            echo "::error::confirm_staging must be the literal word STAGING."
             exit 1
           fi
-          echo "Disposable target confirmed by the operator."
+          echo "Authorized non-production staging target confirmed by the operator."
 
   verify:
     needs: guard
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     environment: starguidance-staging
     env:
       APP_ENV: ${{ vars.APP_ENV || 'staging' }}
@@ -72,9 +74,9 @@ jobs:
     steps:
       # Checkout first so the redaction, summary, and cleanup utilities are always
       # available to the always() steps below.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           package-manager-cache: false
@@ -384,7 +386,7 @@ jobs:
 
       - name: Upload only the redacted summary
         if: always() && hashFiles('staging-verification-summary.md') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: staging-verification-summary
           path: ${{ env.SUMMARY_FILE }}

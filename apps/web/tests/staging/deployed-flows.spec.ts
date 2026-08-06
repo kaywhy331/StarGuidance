@@ -126,7 +126,10 @@ async function apiPost<T>(
 ): Promise<{ status: number; body: T }> {
   const response = await page.request.post(new URL(path, baseUrl).toString(), {
     data: payload,
-    headers: { origin: new URL(baseUrl).origin },
+    headers: {
+      origin: new URL(baseUrl).origin,
+      "idempotency-key": crypto.randomUUID(),
+    },
     timeout: API_REQUEST_TIMEOUT_MS,
   });
   return { status: response.status(), body: (await response.json()) as T };
@@ -142,7 +145,7 @@ async function createProfile(
     birthDate: details.date,
     ...(details.city ? { birthplace: details.city } : {}),
     ...(details.time ? { birthTime: details.time } : {}),
-    consentVersion: "privacy-reflective-v1",
+    consentVersion: "profile-personalization-v1",
   });
   const created = status === 201 && typeof body.snapshot?.id === "string";
   record({
@@ -541,10 +544,14 @@ test("export is scoped to the requesting identity", async () => {
 });
 
 test("account deletion removes application data and the Auth identity, leaving the other intact", async () => {
-  const deletion = await pageA.evaluate(async () => {
-    const response = await fetch("/api/account", { method: "DELETE" });
+  const deletion = await pageA.evaluate(async (password) => {
+    const response = await fetch("/api/account", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmation: "DELETE", password }),
+    });
     return response.status;
-  });
+  }, userA.password);
 
   const afterDeletion = await apiGet<ProfileResponse>(pageA, "/api/profile");
   const identityGone = !(await authIdentityExists(userA));

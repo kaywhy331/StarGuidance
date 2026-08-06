@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-- Node.js 24+
+- Node.js 24 (see `.node-version`)
 - Corepack and pnpm 11.16.0
-- Python 3.10+
+- Python 3.12
 
 ## Install
 
@@ -20,10 +20,13 @@ Create the Python environment:
 ```bash
 cd apps/profile-engine
 python -m venv .venv
-python -m pip install -e ".[dev]"
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install --no-deps -e .
 ```
 
-On PowerShell, use `./.venv/Scripts/python.exe -m pip install -e ".[dev]"` if the environment is not activated.
+On PowerShell, use the corresponding `./.venv/Scripts/python.exe -m pip ...` commands if the environment is not activated. Regenerate either lock only in a reviewed dependency-update change; ordinary installs must keep hash verification enabled.
+
+After changing a direct Python pin, regenerate both lock files and run `python scripts/check_dependency_locks.py`. CI rejects a pyproject/lock mismatch before installing anything.
 
 ## Run
 
@@ -43,9 +46,13 @@ Open `http://localhost:3000`. The example configuration explicitly sets `RUNTIME
 
 The local-only adapter accepts any valid email and 12–72 character password through the production-shaped forms, but deliberately does not persist or validate the password. It exists for deterministic development and E2E flows only. Supabase mode performs the real credential verification.
 
+Detailed report generation is a test adapter, not part of the safe-beta surface. To exercise it locally, set both `ENABLE_PROFILE_REPORTS=true` and `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`; the server flag is the authorization boundary and the public flag controls only button visibility. Keep both false in staging unless running the separately approved commerce rehearsal.
+
 To exercise the durable adapter locally, change only `RUNTIME_ADAPTER` to `supabase` and configure the Supabase variables through an uncommitted `.env.local`. The app will fail closed if any required database, Auth, or encryption setting is absent.
 
 If `PROFILE_ENGINE_SHARED_SECRET` is set for FastAPI, configure the identical value for Next.js. Health remains public at `http://127.0.0.1:8000/health`; calculation requires the bearer secret.
+
+Web `/api/health` is liveness only. Deep `/api/health?readiness=1` probes protected configuration and dependencies and requires a domain-separated HMAC bearer derived from the shared secret as documented in [Deployment](DEPLOYMENT.md). Do not expose deep readiness through a public uptime monitor.
 
 ## Verify
 
@@ -57,6 +64,7 @@ corepack pnpm test
 corepack pnpm db:check
 corepack pnpm build
 corepack pnpm test:e2e
+corepack pnpm audit --prod --audit-level high
 ```
 
 From `apps/profile-engine`:

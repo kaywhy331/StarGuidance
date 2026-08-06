@@ -11,6 +11,7 @@ beforeEach(() => {
   vi.stubEnv("RUNTIME_ADAPTER", "local");
   vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
   vi.stubEnv("PAYMENTS_PROVIDER", "stripe");
+  vi.stubEnv("ENABLE_PROFILE_REPORTS", "true");
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_local_only");
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", webhookSecret);
   localStore.webhookEvents.clear();
@@ -20,6 +21,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Stripe webhook boundary", () => {
+  it("fails closed while profile reports are disabled", async () => {
+    vi.stubEnv("ENABLE_PROFILE_REPORTS", "false");
+
+    const response = await POST(
+      new Request("http://localhost/api/stripe/webhook", {
+        method: "POST",
+        body: "{}",
+        headers: { "stripe-signature": "synthetic" },
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(localStore.webhookEvents.size).toBe(0);
+  });
+
   it("rejects an invalid signature without processing an event", async () => {
     const response = await POST(
       new Request("http://localhost/api/stripe/webhook", {

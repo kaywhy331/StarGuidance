@@ -66,7 +66,7 @@ async function seed(sql: DatabaseClient): Promise<void> {
       id, user_id, profile_id, version, completeness, derived_payload, calculation_versions
     ) values (
       ${IDS.snapshot}, ${IDS.user}, ${IDS.profile}, 1, 'core',
-      ${tx.json({ snapshot: { id: IDS.snapshot, version: 1 }, metadata: { synthetic: true } })},
+      ${tx.json({ snapshot: { id: IDS.snapshot, version: 1 } })},
       ${tx.json({ numerology: "restore-v1" })}
     )`;
     await tx`update birth_profiles set active_snapshot_id = ${IDS.snapshot}
@@ -77,11 +77,13 @@ async function seed(sql: DatabaseClient): Promise<void> {
       (${IDS.user}, ${IDS.snapshot}, 'private-calculations', 'implemented',
         ${tx.json({ envelope: calculationEnvelope })})`;
     await tx`insert into reading_sessions (
-      id, user_id, profile_snapshot_id, spread_id, spread_version, encrypted_question,
+      id, user_id, profile_snapshot_id, spread_id, spread_version, idempotency_key,
+      encrypted_question,
       reading_lens, safety_classification, state
     ) values (
       ${IDS.reading}, ${IDS.user}, ${IDS.snapshot}, ${String(spread.id)},
-      ${String(spread.version)}, ${questionEnvelope}, ${tx.json({ version: "restore-v1" })},
+      ${String(spread.version)}, 'restore-reading-idempotency', ${questionEnvelope},
+      ${tx.json({ version: "restore-v1" })},
       'standard', 'ready'
     )`;
     await tx`insert into reading_draws (

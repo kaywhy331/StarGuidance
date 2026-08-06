@@ -12,6 +12,6 @@ The draw function accepts only card content, deck version, spread configuration,
 
 The server stores the complete card-position-orientation assignment before interpretation generation. A generation failure changes only generation status. Retry and follow-up operations return the original draw; a redraw requires a new reading session. Browser tests compare serialized draws before/after recovery, retry, and follow-up.
 
-The shuffle animation renders nine lightweight shells, not 78 complex cards. Cutting is optional ritual UI and cannot modify the already locked assignment.
+The shuffle animation renders nine lightweight shells, not 78 complex cards. Cutting cannot modify the already locked assignment. In the current safe-beta presentation the cut is skipped automatically and dealt cards reveal in sequence; a user-controlled cut/reveal path and an explicit animation-skip control remain public-MVP experience gates.
 
 Every card has a unique original SVG face. The shared generated back and sanctuary assets are documented in [ARTWORK-PROVENANCE.md](ARTWORK-PROVENANCE.md). Artwork lookup happens after the draw through the locked `cardId`; artwork metadata, asset loading, profile data, and question text never enter the shuffle function.

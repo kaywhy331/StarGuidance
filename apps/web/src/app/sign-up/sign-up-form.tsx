@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Field } from "@starguidance/design-system";
 
+import { POLICY_VERSIONS } from "@/lib/policies";
+
 export function SignUpForm() {
   const router = useRouter();
   const [error, setError] = useState<string>();
@@ -24,11 +26,24 @@ export function SignUpForm() {
           setError("Passwords must match.");
           return;
         }
+        const consents = {
+          termsAccepted: form.get("termsAccepted") === "on",
+          termsVersion: POLICY_VERSIONS.terms,
+          privacyAccepted: form.get("privacyAccepted") === "on",
+          privacyVersion: POLICY_VERSIONS.privacy,
+          ageConfirmed: form.get("ageConfirmed") === "on",
+          ageEligibilityVersion: POLICY_VERSIONS.ageEligibility,
+        };
         setSubmitting(true);
         const response = await fetch("/api/auth", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "sign-up", email: form.get("email"), password }),
+          body: JSON.stringify({
+            action: "sign-up",
+            email: form.get("email"),
+            password,
+            consents,
+          }),
         });
         const payload = (await response.json()) as {
           authenticated?: boolean;
@@ -67,6 +82,25 @@ export function SignUpForm() {
         required
         type="password"
       />
+      <fieldset className="grid gap-3 rounded-2xl border border-white/10 p-4">
+        <legend className="px-2 text-sm text-[#c9bfd4]">Required beta acknowledgements</legend>
+        <label className="flex items-start gap-3 text-sm leading-6">
+          <input className="mt-1" name="termsAccepted" required type="checkbox" />
+          <span>
+            I agree to the versioned <Link href="/terms">Terms</Link>.
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm leading-6">
+          <input className="mt-1" name="privacyAccepted" required type="checkbox" />
+          <span>
+            I have read the versioned <Link href="/privacy">Privacy Notice</Link>.
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm leading-6">
+          <input className="mt-1" name="ageConfirmed" required type="checkbox" />
+          <span>I confirm that I am at least 18 years old.</span>
+        </label>
+      </fieldset>
       <Field
         autoComplete="new-password"
         label="Confirm password"

@@ -1,3 +1,5 @@
+import { POLICY_EFFECTIVE_DATE, POLICY_VERSIONS } from "@/lib/policies";
+
 export const metadata = {
   title: "Terms and how to read a reading · StarGuidance",
 };
@@ -13,6 +15,9 @@ export default function TermsPage() {
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-6 py-12">
       <h1 className="text-5xl font-semibold">Terms and how to read a reading</h1>
+      <p className="mt-4 text-sm text-[#a99db5]">
+        Beta version {POLICY_VERSIONS.terms} · effective {POLICY_EFFECTIVE_DATE}
+      </p>
 
       <section className="mt-10 grid gap-4 text-[#c9bfd4]">
         <h2 className="text-2xl text-white">What a reading is</h2>
@@ -55,8 +60,9 @@ export default function TermsPage() {
       </section>
 
       <p className="mt-10 text-sm text-[#8f86a0]">
-        You must be old enough to enter into these terms in your jurisdiction. Decisions you take
-        after a reading remain yours.
+        This restricted beta is for people aged 18 or older. Decisions you take after a reading
+        remain yours. Pricing, refunds, launch regions, governing terms, and final legal copy
+        require owner approval before public launch.
       </p>
     </main>
   );

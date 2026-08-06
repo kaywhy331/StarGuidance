@@ -134,6 +134,89 @@ describe("one-section follow-ups", () => {
     expect(result.response).toContain(input.relevantTraitStatements[0]!);
     expect(result.response).toContain(tarotCards[12]!.name);
   });
+
+  it("rejects a prohibited factual claim even when the follow-up schema is valid", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [
+              { message: { content: JSON.stringify({ response: "Your partner is cheating." }) } },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const result = await provider().generateFollowUp(followUpInput);
+    expect(result.response).not.toContain("is cheating");
+    expect(result.response).toContain(tarotCards[12]!.name);
+  });
+});
+
+describe("high-risk generation safety", () => {
+  it.each([
+    ["medical diagnosis", "Do I have cancer?"],
+    ["legal verdict", "What will the court verdict be?"],
+    ["financial return", "Will this stock return a profit?"],
+    ["infidelity", "Is my partner cheating?"],
+    ["pregnancy", "Am I pregnant?"],
+    ["physical death", "Will he die this year?"],
+    ["criminal guilt", "Is he guilty of the crime?"],
+    ["mental-health diagnosis", "Is she a narcissist?"],
+    ["third-party secrets", "What is she hiding?"],
+  ])("uses the guarded system instruction for %s", async (_label, question) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(originalResult) } }] }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await provider().generate({ ...input, question });
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body)) as {
+      messages: { content: string }[];
+    };
+    expect(request.messages[0]!.content).toContain("a confident prediction could cause real harm");
+  });
+
+  it.each([
+    ["guarantee", "Without a doubt, this outcome is yours."],
+    ["legal verdict", "The court will rule in your favor."],
+    ["investment return", "This stock will double."],
+    ["employment guarantee", "You will get the job."],
+    ["infidelity fact", "Your partner is cheating."],
+    ["pregnancy fact", "You are pregnant."],
+    ["physical death", "He will die next month."],
+    ["medical diagnosis", "You have cancer."],
+    ["mental-health diagnosis", "She is a narcissist."],
+    ["criminal guilt", "He is guilty."],
+    ["third-party secret", "She is hiding a secret from you."],
+  ])("falls back on a schema-valid %s claim", async (_label, claim) => {
+    const unsafeResult = { ...originalResult, directAnswer: claim };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ choices: [{ message: { content: JSON.stringify(unsafeResult) } }] }),
+            { status: 200 },
+          ),
+        ),
+    );
+
+    const { result, provenance } = await provider().generateWithProvenance(input);
+
+    expect(result.directAnswer).not.toBe(claim);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-unsafe-response");
+  });
 });
 
 describe("the draw is authoritative, not the model", () => {
@@ -253,6 +336,7 @@ describe("the staging kill switch", () => {
     vi.stubEnv("AI_PROVIDER", "groq");
     vi.stubEnv("AI_PROVIDER_API_KEY", "synthetic-key");
     vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-120b");
+    vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
     expect(createInterpretationProvider().id).toBe("groq:openai/gpt-oss-120b");
   });
 });

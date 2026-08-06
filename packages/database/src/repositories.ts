@@ -31,10 +31,6 @@ export interface StoredProfileVersion {
   encryptedCalculations: string;
   components?: readonly Omit<ProfileComponentRecord, "snapshotId">[];
   snapshot: ProfileSnapshot;
-  maskedName: string;
-  birthDate: string;
-  timeKind: "unknown" | "exact" | "approximate";
-  birthplaceLabel?: string;
 }
 
 export interface ProfileComponentRecord {
@@ -64,6 +60,7 @@ export interface StoredFollowUp {
 export interface StoredReading {
   id: string;
   userId: string;
+  idempotencyKey: string;
   profileSnapshotId: string;
   readingLens: ReadingLensRecord;
   spreadId: string;
@@ -141,8 +138,9 @@ export interface ConsentRepository {
 
 export interface BirthProfileRepository {
   getActive(userId: string): Promise<StoredProfileVersion | undefined>;
-  saveVersion(userId: string, profile: StoredProfileVersion): Promise<void>;
+  saveVersion(userId: string, profile: StoredProfileVersion): Promise<ProfileSnapshot>;
   listVersions(userId: string): Promise<StoredProfileVersion[]>;
+  delete(userId: string): Promise<boolean>;
 }
 
 export interface ProfileSnapshotRepository {
@@ -159,9 +157,10 @@ export interface TraitRepository {
 }
 
 export interface ReadingSessionRepository {
-  createLocked(reading: StoredReading): Promise<void>;
+  createLocked(reading: StoredReading): Promise<StoredReading>;
   get(userId: string, readingId: string): Promise<StoredReading | undefined>;
   list(userId: string): Promise<StoredReading[]>;
+  delete(userId: string, readingId: string): Promise<boolean>;
   setGenerationStatus(
     userId: string,
     readingId: string,

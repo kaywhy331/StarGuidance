@@ -73,7 +73,7 @@ export function createLocalRepositories(): ApplicationRepositories {
   const consents = {
     async list(userId: string): Promise<ConsentRecord[]> {
       return (localStore.users.get(userId)?.consentRecords ?? []).map((record) => ({
-        policy: "privacy-reflective",
+        policy: record.policy,
         version: record.version,
         grantedAt: record.grantedAt,
       }));
@@ -81,8 +81,12 @@ export function createLocalRepositories(): ApplicationRepositories {
     async grant(userId: string, consent: ConsentRecord) {
       const user = localStore.users.get(userId);
       if (!user) throw new Error("USER_NOT_FOUND");
-      if (!user.consentRecords.some(({ version }) => version === consent.version))
-        user.consentRecords.push({ version: consent.version, grantedAt: consent.grantedAt });
+      if (
+        !user.consentRecords.some(
+          ({ policy, version }) => policy === consent.policy && version === consent.version,
+        )
+      )
+        user.consentRecords.push(consent);
     },
   };
 
@@ -93,32 +97,39 @@ export function createLocalRepositories(): ApplicationRepositories {
     async saveVersion(userId: string, profile: StoredProfileVersion) {
       const user = localStore.users.get(userId);
       if (!user) throw new Error("USER_NOT_FOUND");
-      user.profile = profile;
-      localStore.profileSnapshots.set(profile.snapshot.id, profile);
-      localStore.profileComponents.set(profile.snapshot.id, [
+      const snapshot = {
+        ...profile.snapshot,
+        profileId: user.profile?.snapshot.profileId ?? profile.snapshot.profileId,
+        version: (user.profile?.snapshot.version ?? 0) + 1,
+      };
+      const storedProfile = { ...profile, snapshot };
+      user.profile = storedProfile;
+      localStore.profileSnapshots.set(snapshot.id, storedProfile);
+      localStore.profileComponents.set(snapshot.id, [
         {
-          snapshotId: profile.snapshot.id,
+          snapshotId: snapshot.id,
           system: "private-profile-input",
           status: "implemented",
           payload: { envelope: profile.encryptedInput },
         },
         {
-          snapshotId: profile.snapshot.id,
+          snapshotId: snapshot.id,
           system: "calculation-envelope",
           status: "implemented",
           payload: { envelope: profile.encryptedCalculations },
         },
         ...(profile.components ?? []).map(({ system, status, payload }) => ({
-          snapshotId: profile.snapshot.id,
+          snapshotId: snapshot.id,
           system,
           status,
           payload,
         })),
       ]);
       localStore.profileTraits.set(
-        profile.snapshot.id,
-        profile.snapshot.traits.map((trait) => ({ snapshotId: profile.snapshot.id, trait })),
+        snapshot.id,
+        snapshot.traits.map((trait) => ({ snapshotId: snapshot.id, trait })),
       );
+      return snapshot;
     },
     async listVersions(userId: string) {
       const profileId = localStore.users.get(userId)?.profile?.snapshot.profileId;
@@ -127,6 +138,29 @@ export function createLocalRepositories(): ApplicationRepositories {
             (profile) => profile.snapshot.profileId === profileId,
           )
         : [];
+    },
+    async delete(userId: string) {
+      const user = localStore.users.get(userId);
+      const profileId = user?.profile?.snapshot.profileId;
+      if (!user || !profileId) return false;
+      for (const collection of [
+        localStore.readings,
+        localStore.reports,
+        localStore.orders,
+        localStore.entitlements,
+      ])
+        for (const [recordId, value] of collection)
+          if (value.userId === userId) collection.delete(recordId);
+      for (const [feedbackId, feedback] of localStore.feedback)
+        if (feedback.userId === userId) localStore.feedback.delete(feedbackId);
+      for (const [snapshotId, profile] of localStore.profileSnapshots)
+        if (profile.snapshot.profileId === profileId) {
+          localStore.profileSnapshots.delete(snapshotId);
+          localStore.profileComponents.delete(snapshotId);
+          localStore.profileTraits.delete(snapshotId);
+        }
+      delete user.profile;
+      return true;
     },
   };
 
@@ -157,13 +191,27 @@ export function createLocalRepositories(): ApplicationRepositories {
 
   const readingSessions = {
     async createLocked(reading: StoredReading) {
+      const existing = [...localStore.readings.values()].find(
+        (candidate) =>
+          candidate.userId === reading.userId &&
+          candidate.idempotencyKey === reading.idempotencyKey,
+      );
+      if (existing) return structuredClone(existing);
       localStore.readings.set(reading.id, structuredClone(reading));
+      return structuredClone(reading);
     },
     async get(userId: string, readingId: string) {
       return ownedReading(userId, readingId);
     },
     async list(userId: string) {
       return [...localStore.readings.values()].filter((reading) => reading.userId === userId);
+    },
+    async delete(userId: string, readingId: string) {
+      if (!ownedReading(userId, readingId)) return false;
+      localStore.readings.delete(readingId);
+      for (const [feedbackId, feedback] of localStore.feedback)
+        if (feedback.readingId === readingId) localStore.feedback.delete(feedbackId);
+      return true;
     },
     async setGenerationStatus(
       userId: string,
@@ -207,6 +255,7 @@ export function createLocalRepositories(): ApplicationRepositories {
     async create(userId: string, readingId: string, followUp: StoredFollowUp) {
       const reading = ownedReading(userId, readingId);
       if (!reading) throw new Error("READING_NOT_FOUND");
+      if (reading.followUps.length > 0) throw new Error("FOLLOW_UP_EXISTS");
       reading.followUps.push(followUp);
     },
   };

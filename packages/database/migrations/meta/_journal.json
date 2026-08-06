@@ -36,6 +36,13 @@
       "when": 1785866265679,
       "tag": "0004_server_actor_role",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785985991643,
+      "tag": "0005_bumpy_moon_knight",
+      "breakpoints": true
     }
   ]
 }

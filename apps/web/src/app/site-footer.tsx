@@ -14,8 +14,8 @@ export function SiteFooter() {
         <Link className="ml-auto underline" href="/terms">
           Terms &amp; how to read a reading
         </Link>
-        <Link className="underline" href="/settings/privacy">
-          Privacy
+        <Link className="underline" href="/privacy">
+          Privacy notice
         </Link>
       </div>
     </footer>

@@ -27,7 +27,7 @@ export type LocalProfileVersion = StoredProfileVersion;
 
 export interface LocalUser extends RepositoryUser {
   profile?: LocalProfileVersion;
-  consentRecords: { version: string; grantedAt: string }[];
+  consentRecords: { policy: string; version: string; grantedAt: string }[];
 }
 
 export interface LocalStore {
@@ -88,7 +88,10 @@ export function assertLocalAdapter(): void {
     );
 }
 
-export function createLocalSession(email: string): { token: string; user: LocalUser } {
+export function createLocalSession(
+  email: string,
+  policyReceipts: readonly { policy: string; version: string; acceptedAt: string }[] = [],
+): { token: string; user: LocalUser } {
   assertLocalAdapter();
   const normalized = email.trim().toLowerCase();
   let userId = localStore.usersByEmail.get(normalized);
@@ -102,9 +105,22 @@ export function createLocalSession(email: string): { token: string; user: LocalU
       consentRecords: [],
     });
   }
+  const user = localStore.users.get(userId);
+  if (!user) throw new Error("USER_NOT_FOUND");
+  for (const receipt of policyReceipts)
+    if (
+      !user.consentRecords.some(
+        ({ policy, version }) => policy === receipt.policy && version === receipt.version,
+      )
+    )
+      user.consentRecords.push({
+        policy: receipt.policy,
+        version: receipt.version,
+        grantedAt: receipt.acceptedAt,
+      });
   const token = randomBytes(32).toString("base64url");
   localStore.sessions.set(token, userId);
-  return { token, user: localStore.users.get(userId) as LocalUser };
+  return { token, user };
 }
 
 export function getLocalUser(token: string | undefined): LocalUser | undefined {

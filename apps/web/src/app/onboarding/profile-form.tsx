@@ -7,6 +7,8 @@ import { birthProfileInputSchema, type BirthProfileInput } from "@starguidance/c
 import { Button, Field, Panel } from "@starguidance/design-system";
 import { useForm } from "react-hook-form";
 
+import { POLICY_VERSIONS } from "@/lib/policies";
+
 export function BirthProfileForm() {
   const [consent, setConsent] = useState(false);
   const [saveError, setSaveError] = useState<string>();
@@ -39,7 +41,10 @@ export function BirthProfileForm() {
             const response = await fetch("/api/profile", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ ...profile, consentVersion: "privacy-reflective-v1" }),
+              body: JSON.stringify({
+                ...profile,
+                consentVersion: POLICY_VERSIONS.profilePersonalization,
+              }),
             });
             if (response.status === 401) return router.push("/sign-in");
             if (!response.ok) {

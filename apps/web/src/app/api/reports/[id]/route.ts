@@ -11,7 +11,9 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     );
     if (!report) return NextResponse.json({ error: "Report not found." }, { status: 404 });
     return NextResponse.json({ report });
-  } catch {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHENTICATED")
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "The report could not be loaded." }, { status: 500 });
   }
 }

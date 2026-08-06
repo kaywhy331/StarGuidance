@@ -44,14 +44,18 @@ export const consents = pgTable(
     ),
   ],
 );
-export const birthProfiles = pgTable("birth_profiles", {
-  id,
-  userId: userId(),
-  encryptedPayload: text("encrypted_payload").notNull(),
-  activeSnapshotId: uuid("active_snapshot_id"),
-  createdAt,
-  updatedAt,
-});
+export const birthProfiles = pgTable(
+  "birth_profiles",
+  {
+    id,
+    userId: userId(),
+    encryptedPayload: text("encrypted_payload").notNull(),
+    activeSnapshotId: uuid("active_snapshot_id"),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [uniqueIndex("birth_profiles_user_unique").on(table.userId)],
+);
 export const profileSnapshots = pgTable(
   "profile_snapshots",
   {
@@ -143,23 +147,30 @@ export const spreadPositions = pgTable(
   },
   (table) => [uniqueIndex("spread_position_unique").on(table.spreadId, table.positionId)],
 );
-export const readingSessions = pgTable("reading_sessions", {
-  id,
-  userId: userId(),
-  profileSnapshotId: uuid("profile_snapshot_id")
-    .notNull()
-    .references(() => profileSnapshots.id),
-  spreadId: text("spread_id")
-    .notNull()
-    .references(() => spreads.id),
-  spreadVersion: text("spread_version").notNull(),
-  encryptedQuestion: text("encrypted_question").notNull(),
-  readingLens: jsonb("reading_lens").notNull(),
-  safetyClassification: text("safety_classification").notNull(),
-  state: text("state").notNull(),
-  createdAt,
-  updatedAt,
-});
+export const readingSessions = pgTable(
+  "reading_sessions",
+  {
+    id,
+    userId: userId(),
+    profileSnapshotId: uuid("profile_snapshot_id")
+      .notNull()
+      .references(() => profileSnapshots.id),
+    spreadId: text("spread_id")
+      .notNull()
+      .references(() => spreads.id),
+    spreadVersion: text("spread_version").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    encryptedQuestion: text("encrypted_question").notNull(),
+    readingLens: jsonb("reading_lens").notNull(),
+    safetyClassification: text("safety_classification").notNull(),
+    state: text("state").notNull(),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex("reading_sessions_user_idempotency_unique").on(table.userId, table.idempotencyKey),
+  ],
+);
 export const readingDraws = pgTable("reading_draws", {
   id,
   userId: userId(),
@@ -188,16 +199,20 @@ export const readingOutputs = pgTable("reading_outputs", {
   payload: jsonb("payload").notNull(),
   createdAt,
 });
-export const followUpQuestions = pgTable("follow_up_questions", {
-  id,
-  userId: userId(),
-  readingId: uuid("reading_id")
-    .notNull()
-    .references(() => readingSessions.id, { onDelete: "cascade" }),
-  encryptedQuestion: text("encrypted_question").notNull(),
-  output: jsonb("output"),
-  createdAt,
-});
+export const followUpQuestions = pgTable(
+  "follow_up_questions",
+  {
+    id,
+    userId: userId(),
+    readingId: uuid("reading_id")
+      .notNull()
+      .references(() => readingSessions.id, { onDelete: "cascade" }),
+    encryptedQuestion: text("encrypted_question").notNull(),
+    output: jsonb("output"),
+    createdAt,
+  },
+  (table) => [uniqueIndex("follow_up_questions_reading_unique").on(table.readingId)],
+);
 export const readingFeedback = pgTable("reading_feedback", {
   id,
   userId: userId(),

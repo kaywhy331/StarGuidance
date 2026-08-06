@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 const links = [
@@ -13,6 +14,7 @@ const links = [
 export function AppNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const [signOutError, setSignOutError] = useState<string>();
   if (
     pathname === "/" ||
     pathname === "/readings" ||
@@ -48,13 +50,24 @@ export function AppNav() {
         <button
           className="rounded-full border border-white/15 px-3 py-1.5 text-sm"
           onClick={async () => {
-            await fetch("/api/auth", { method: "DELETE" });
+            setSignOutError(undefined);
+            const response = await fetch("/api/auth", { method: "DELETE" });
+            if (!response.ok) {
+              const payload = (await response.json()) as { error?: string };
+              setSignOutError(payload.error ?? "Sign-out failed.");
+              return;
+            }
             router.push("/");
             router.refresh();
           }}
         >
           Sign out
         </button>
+        {signOutError ? (
+          <span className="basis-full text-right text-sm text-[#ffb7bd]" role="alert">
+            {signOutError}
+          </span>
+        ) : null}
       </nav>
     </header>
   );

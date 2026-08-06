@@ -27,9 +27,10 @@ export function ResetPasswordForm() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "update-password", password }),
         });
-        const payload = (await response.json()) as { error?: string };
+        const payload = (await response.json()) as { error?: string; passwordUpdated?: boolean };
         setSubmitting(false);
-        if (!response.ok) return setError(payload.error ?? "Unable to update the password.");
+        if (!response.ok && !payload.passwordUpdated)
+          return setError(payload.error ?? "Unable to update the password.");
         router.push("/sign-in");
         router.refresh();
       }}

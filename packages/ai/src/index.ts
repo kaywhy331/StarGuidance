@@ -379,14 +379,16 @@ export {
 /**
  * Chooses the interpretation provider from configuration.
  *
- * `AI_PROVIDER=disabled`, or an absent key, yields the deterministic reader —
- * that is the staging kill switch, and it means a missing credential degrades
- * the reading rather than breaking the product.
+ * `AI_PROVIDER=disabled`, an absent key, or an unapproved safety evaluation
+ * yields the deterministic reader. Live narration is a separately approved
+ * production gate rather than an accidental consequence of adding a key.
  */
 export function createInterpretationProvider(): ReadingInterpretationProvider {
   const selected = process.env.AI_PROVIDER?.trim();
   const apiKey = process.env.AI_PROVIDER_API_KEY?.trim();
-  if (selected !== "groq" || !apiKey) return new DeterministicFallbackProvider();
+  const safetyEvaluationApproved = process.env.AI_SAFETY_EVALUATION_APPROVED === "true";
+  if (selected !== "groq" || !apiKey || !safetyEvaluationApproved)
+    return new DeterministicFallbackProvider();
   const timeout = Number.parseInt(process.env.AI_PROVIDER_TIMEOUT_MS ?? "", 10);
   const maxOutput = Number.parseInt(process.env.AI_PROVIDER_MAX_OUTPUT_TOKENS ?? "", 10);
   return new GroqInterpretationProvider({

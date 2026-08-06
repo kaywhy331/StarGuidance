@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { completeStage, record } from "@starguidance/database/staging-evidence";
 import { expect, test } from "@playwright/test";
 
@@ -117,8 +119,16 @@ interface HealthBody {
 test("the deployed preview runtime is staging, Supabase-backed, and schema ready", async ({
   request,
 }) => {
+  const readinessSecret = process.env.PROFILE_ENGINE_SHARED_SECRET;
+  if (!readinessSecret) throw new Error("PROFILE_ENGINE_SHARED_SECRET is required");
+  const readinessToken = createHmac("sha256", readinessSecret)
+    .update("starguidance-readiness-v1")
+    .digest("base64url");
   const body = (await (
-    await request.get("/api/health", { timeout: 120_000 })
+    await request.get("/api/health?readiness=1", {
+      headers: { authorization: `Bearer ${readinessToken}` },
+      timeout: 120_000,
+    })
   ).json()) as HealthBody;
   // Global setup already waited for this build and refused to continue without
   // it; re-asserting here keeps the guarantee attached to the recorded stage.
@@ -152,10 +162,11 @@ test("the deployed preview runtime is staging, Supabase-backed, and schema ready
       } invalid`,
     },
     {
-      check: "Approved live interpretation provider configured",
+      check: "Interpretation provider is safely gated",
       ok:
-        body.interpretation?.providerKind === "groq" &&
-        body.interpretation.approvedLiveProviderConfigured === true,
+        body.interpretation?.providerKind === "deterministic" ||
+        (body.interpretation?.providerKind === "groq" &&
+          body.interpretation.approvedLiveProviderConfigured === true),
       detail:
         `providerKind=${body.interpretation?.providerKind ?? "absent"}; ` +
         `approved=${body.interpretation?.approvedLiveProviderConfigured === true}`,

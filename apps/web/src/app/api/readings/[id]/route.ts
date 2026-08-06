@@ -8,7 +8,7 @@ import { spreads, tarotCards } from "@starguidance/tarot-content";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
-import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
+import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("retry") }),
@@ -57,8 +57,34 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
         createdAt: reading.createdAt,
       },
     });
-  } catch {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHENTICATED")
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "The reading could not be loaded." }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    assertSameOrigin(request);
+    const user = await requireUser();
+    assertRateLimit(`reading-delete:${user.id}`, 20, 60 * 60 * 1000);
+    const id = (await context.params).id;
+    const persistence = persistenceFor(user);
+    const deleted = await persistence.repositories.readingSessions.delete(user.id, id);
+    if (!deleted) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
+    await recordAudit(user.id, "reading.deleted", "reading", id);
+    return NextResponse.json({ deleted: true });
+  } catch (error) {
+    const security = requestSecurityFailure(error);
+    if (security)
+      return NextResponse.json(
+        { error: security.error },
+        { status: security.status, headers: security.headers },
+      );
+    if (error instanceof Error && error.message === "UNAUTHENTICATED")
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "The reading could not be deleted." }, { status: 500 });
   }
 }
 
@@ -131,6 +157,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       { status: 201 },
     );
   } catch (error) {
+    const security = requestSecurityFailure(error);
+    if (security)
+      return NextResponse.json(
+        { error: security.error },
+        { status: security.status, headers: security.headers },
+      );
+    if (error instanceof Error && error.message === "FOLLOW_UP_EXISTS")
+      return NextResponse.json(
+        {
+          error:
+            "This MVP includes one follow-up per reading. Keep the same cards in view and allow time for reflection.",
+        },
+        { status: 409 },
+      );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
     return NextResponse.json(
       { error: status === 401 ? "Authentication required." : "Invalid follow-up." },

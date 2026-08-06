@@ -74,7 +74,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         "x-content-type-options": "nosniff",
       },
     });
-  } catch {
-    return Response.json({ error: "Authentication required." }, { status: 401 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHENTICATED")
+      return Response.json({ error: "Authentication required." }, { status: 401 });
+    return Response.json(
+      { error: "The persisted interpretation could not be loaded." },
+      { status: 500 },
+    );
   }
 }

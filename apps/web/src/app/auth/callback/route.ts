@@ -3,6 +3,11 @@ import { isAuthPKCECodeVerifierMissingError } from "@supabase/supabase-js";
 
 import { isHostedNetlifyRuntime } from "@/lib/hosted-runtime";
 import { publicRequestOrigin } from "@/lib/request-security";
+import {
+  issueRecoveryReceipt,
+  RECOVERY_SESSION_COOKIE,
+  RECOVERY_SESSION_TTL_SECONDS,
+} from "@/lib/recovery-session";
 import { getRuntimeAdapter } from "@/lib/runtime";
 import { createSupabaseServerClient } from "@/lib/supabase";
 
@@ -61,12 +66,29 @@ export async function GET(request: Request) {
         token_hash: tokenHash,
         type: otpType as SupportedEmailOtpType,
       });
-      return redirect(request, error ? "/sign-in?error=expired-link" : next);
+      if (error) return redirect(request, "/sign-in?error=expired-link");
+      const response = redirect(request, next);
+      if (otpType === "recovery") {
+        const { data, error: userError } = await supabase.auth.getUser();
+        if (userError || !data.user) return redirect(request, "/sign-in?error=expired-link");
+        response.cookies.set(RECOVERY_SESSION_COOKIE, issueRecoveryReceipt(data.user.id), {
+          httpOnly: true,
+          maxAge: RECOVERY_SESSION_TTL_SECONDS,
+          path: "/api/auth",
+          sameSite: "strict",
+          secure: process.env.APP_ENV !== "test",
+        });
+      }
+      return response;
     }
 
     if (!code) return redirect(request, "/sign-in?error=invalid-link");
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return redirect(request, next);
+    if (!error)
+      return redirect(
+        request,
+        next.startsWith("/reset-password") ? "/sign-in?error=invalid-link" : next,
+      );
     return redirect(
       request,
       isMissingVerifier(error) ? "/sign-in?error=link-browser" : "/sign-in?error=expired-link",

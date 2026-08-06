@@ -92,11 +92,11 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       await tx`insert into profile_snapshots
         (id, user_id, profile_id, version, completeness, derived_payload, calculation_versions) values
         (${ids.snapshotA1}, ${ids.userA}, ${ids.profileA}, 1, 'core',
-          ${tx.json({ snapshot: { id: ids.snapshotA1 }, metadata: {} })}, ${tx.json({ numerology: "v1" })}),
+          ${tx.json({ snapshot: { id: ids.snapshotA1 } })}, ${tx.json({ numerology: "v1" })}),
         (${ids.snapshotA2}, ${ids.userA}, ${ids.profileA}, 2, 'complete',
-          ${tx.json({ snapshot: { id: ids.snapshotA2 }, metadata: {} })}, ${tx.json({ numerology: "v1" })}),
+          ${tx.json({ snapshot: { id: ids.snapshotA2 } })}, ${tx.json({ numerology: "v1" })}),
         (${ids.snapshotB}, ${ids.userB}, ${ids.profileB}, 1, 'core',
-          ${tx.json({ snapshot: { id: ids.snapshotB }, metadata: {} })}, ${tx.json({ numerology: "v1" })})`;
+          ${tx.json({ snapshot: { id: ids.snapshotB } })}, ${tx.json({ numerology: "v1" })})`;
       await tx`update birth_profiles set active_snapshot_id = case
         when id = ${ids.profileA} then ${ids.snapshotA2}::uuid else ${ids.snapshotB}::uuid end
         where id in (${ids.profileA}, ${ids.profileB})`;
@@ -107,12 +107,12 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
         (${ids.userA}, ${ids.snapshotA1}, 'decisionStyle', 'synthetic-a', ${tx.json({ source: "test" })}),
         (${ids.userB}, ${ids.snapshotB}, 'decisionStyle', 'synthetic-b', ${tx.json({ source: "test" })})`;
       await tx`insert into reading_sessions
-        (id, user_id, profile_snapshot_id, spread_id, spread_version, encrypted_question,
+        (id, user_id, profile_snapshot_id, spread_id, spread_version, idempotency_key, encrypted_question,
          reading_lens, safety_classification, state) values
         (${ids.readingA}, ${ids.userA}, ${ids.snapshotA1}, ${String(spread.id)}, ${String(spread.version)},
-          '1.question-a.encrypted', ${tx.json({ version: "v1", traitIndexes: [0] })}, 'standard', 'failed'),
+          'reading-a-key', '1.question-a.encrypted', ${tx.json({ version: "v1", traitIndexes: [0] })}, 'standard', 'failed'),
         (${ids.readingB}, ${ids.userB}, ${ids.snapshotB}, ${String(spread.id)}, ${String(spread.version)},
-          '1.question-b.encrypted', ${tx.json({ version: "v1", traitIndexes: [0] })}, 'standard', 'ready')`;
+          'reading-b-key', '1.question-b.encrypted', ${tx.json({ version: "v1", traitIndexes: [0] })}, 'standard', 'ready')`;
       await tx`insert into reading_draws
         (user_id, reading_id, deck_version, shuffle_version, assignments, locked_at) values
         (${ids.userA}, ${ids.readingA}, ${String(deck.version)}, 'secure-fisher-yates-v1',
@@ -279,6 +279,34 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       expect(String(active?.active_snapshot_id)).toBe(ids.snapshotA2);
       expect(String(historical?.profile_snapshot_id)).toBe(ids.snapshotA1);
     });
+  });
+
+  it("enforces one profile root, one follow-up, and one reading per idempotency key", async () => {
+    await expect(
+      asUser(ids.userA, async (tx) => {
+        await tx`insert into birth_profiles (id, user_id, encrypted_payload)
+          values (${randomUUID()}, ${ids.userA}, 'duplicate-root')`;
+      }),
+    ).rejects.toMatchObject({ code: "23505" });
+
+    await expect(
+      asUser(ids.userA, async (tx) => {
+        await tx`insert into follow_up_questions
+          (user_id, reading_id, encrypted_question, output)
+          values (${ids.userA}, ${ids.readingA}, 'duplicate-follow-up', ${tx.json({ response: "duplicate" })})`;
+      }),
+    ).rejects.toMatchObject({ code: "23505" });
+
+    await expect(
+      asUser(ids.userA, async (tx) => {
+        await tx`insert into reading_sessions
+          (id, user_id, profile_snapshot_id, spread_id, spread_version, idempotency_key,
+           encrypted_question, reading_lens, safety_classification, state)
+          select ${randomUUID()}, user_id, profile_snapshot_id, spread_id, spread_version,
+            idempotency_key, 'duplicate-reading', reading_lens, safety_classification, state
+          from reading_sessions where id = ${ids.readingA}`;
+      }),
+    ).rejects.toMatchObject({ code: "23505" });
   });
 
   it("builds an RLS-scoped export and durably deletes only the requesting account", async () => {

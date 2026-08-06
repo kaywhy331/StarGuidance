@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, LoadingState, Panel } from "@starguidance/design-system";
+import { Button, Field, LoadingState, Panel } from "@starguidance/design-system";
 
 interface ProfileView {
   snapshot: { id: string; version: number; completeness: string };
@@ -13,7 +13,10 @@ interface ProfileView {
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileView | null>();
   const [message, setMessage] = useState<string>();
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const router = useRouter();
+  const profileReportsEnabled = process.env.NEXT_PUBLIC_ENABLE_PROFILE_REPORTS === "true";
   useEffect(() => {
     void fetch("/api/profile", { cache: "no-store" }).then(async (response) => {
       if (response.status === 401) return router.push("/sign-in");
@@ -62,7 +65,7 @@ export default function ProfilePage() {
       )}
       <div className="mt-6 flex flex-wrap gap-3">
         <Button onClick={() => router.push("/onboarding")}>Update birth facts</Button>
-        {profile && (
+        {profile && profileReportsEnabled && (
           <Button
             onClick={async () => {
               const response = await fetch("/api/reports/checkout", {
@@ -79,7 +82,7 @@ export default function ProfilePage() {
               else setMessage(payload.error);
             }}
           >
-            Purchase test report
+            Generate test profile report
           </Button>
         )}
       </div>
@@ -88,6 +91,50 @@ export default function ProfilePage() {
           {message}
         </p>
       )}
+      {profile ? (
+        <Panel className="mt-8 border-[#6f3341]">
+          <h2 className="text-2xl">Delete private profile</h2>
+          <p className="mt-2 text-[#b8adc8]">
+            This removes every profile snapshot and all dependent readings, report records, and
+            entitlements. Your login and policy receipts remain so you can start over.
+          </p>
+          <div className="mt-4 max-w-sm">
+            <Field
+              autoComplete="off"
+              label='Type "DELETE PROFILE"'
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              value={deleteConfirmation}
+            />
+          </div>
+          <Button
+            className="mt-4"
+            disabled={deleting || deleteConfirmation !== "DELETE PROFILE"}
+            onClick={async () => {
+              setDeleting(true);
+              setMessage(undefined);
+              try {
+                const response = await fetch("/api/profile", {
+                  method: "DELETE",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ confirmation: deleteConfirmation }),
+                });
+                const payload = (await response.json()) as { error?: string };
+                if (!response.ok) {
+                  setMessage(payload.error ?? "The private profile could not be deleted.");
+                  return;
+                }
+                setProfile(null);
+                setDeleteConfirmation("");
+                setMessage("Your private profile and its dependent records were deleted.");
+              } finally {
+                setDeleting(false);
+              }
+            }}
+          >
+            {deleting ? "Deleting profile…" : "Delete private profile"}
+          </Button>
+        </Panel>
+      ) : null}
     </main>
   );
 }

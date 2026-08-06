@@ -1,6 +1,6 @@
 # Commerce verification
 
-StarGuidance commerce is test-mode only on this branch. Both Checkout and the webhook reject a live Stripe secret, and the webhook rejects `livemode: true` events. Removing that guard requires an approved price, refund/chargeback policy, Terms and Privacy Notice, launch region, support process, and a separate reviewed production change.
+StarGuidance commerce is test-mode only on this branch and is hidden in the safe beta. Checkout and webhook processing both fail closed unless `ENABLE_PROFILE_REPORTS=true`; the UI additionally requires `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`. Both flags default false. When enabled, Checkout and the webhook still reject a live Stripe secret, and the webhook rejects `livemode: true` events. Removing those guards requires an approved price, refund/chargeback policy, Terms and Privacy Notice, launch region, support process, and a separate reviewed production change.
 
 ## Implemented lifecycle
 
@@ -21,7 +21,7 @@ Webhook event claims use a five-minute database lease. Concurrent delivery is ig
 
 Use an owner-controlled Stripe test account and a public staging webhook endpoint. Never place key values, webhook payloads, customer email addresses, Checkout URLs, or dashboard screenshots in GitHub logs or the PR.
 
-1. Configure `PAYMENTS_PROVIDER=stripe` and test values for `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PROFILE_REPORT_PRICE_ID`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` in the narrowest deploy-preview scope.
+1. In an isolated commerce rehearsal only, configure `ENABLE_PROFILE_REPORTS=true`, `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`, `PAYMENTS_PROVIDER=stripe`, and test values for `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PROFILE_REPORT_PRICE_ID`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` in the narrowest deploy-preview scope.
 2. Subscribe the endpoint to the lifecycle events listed above. Confirm the endpoint is HTTPS and the signing secret belongs to that exact endpoint.
 3. Buy the report with a Stripe test card. Confirm one pending order becomes paid, one active entitlement and one ready report exist, and a repeated browser request/event creates no duplicate.
 4. Replay the completed event, deliver two copies concurrently, and force one processing failure before retry. Confirm only the failed attempt is retried and fulfillment remains singular.
@@ -29,4 +29,6 @@ Use an owner-controlled Stripe test account and a public staging webhook endpoin
 6. Exercise partial refund and dispute open/close scenarios. Confirm their audit actions match the table and have an approved operator resolution.
 7. Confirm export includes the commercial record, account deletion removes user-owned commerce rows, and provider/finance retention follows the approved policy.
 
-Automated signature, reconciliation, replay, refund, dispute, and revocation tests exist locally and in CI. The credentialed steps above remain unverified because this environment exposes none of the Stripe credential names or Stripe CLI.
+Automated signature, reconciliation, replay, refund, dispute, and revocation tests exist locally and in CI. Those checks are not a substitute for the credentialed owner-run procedure above; its redacted evidence must be attached to the exact release candidate.
+
+Public launch also requires a durable asynchronous report job with retry/status handling, report access from account history, and an accessible PDF generated from the same structured source as the web report. The current synchronous local/test fulfillment and browser-printable page do not satisfy those requirements and must not be marketed as completed paid fulfillment.

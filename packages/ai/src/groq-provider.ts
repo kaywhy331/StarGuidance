@@ -15,6 +15,7 @@ import {
   type ReadingInterpretationProvider,
 } from "./index";
 import { answerCard, resolveDraw } from "./interpretation";
+import { generatedOutputSafetyViolation } from "./output-safety";
 
 /**
  * A live interpretation provider, spoken in the voice of a reader.
@@ -41,6 +42,7 @@ type FallbackReason =
   | "provider-unavailable"
   | "request-rejected"
   | "invalid-response"
+  | "unsafe-response"
   | "network-error"
   | "unknown";
 
@@ -62,10 +64,13 @@ function fallbackReason(error: unknown): FallbackReason {
 const GUARDED_CATEGORIES = new Set([
   "selfHarmCrisis",
   "medical",
+  "legal",
+  "financial",
   "mentalHealthDiagnosis",
   "physicalDeath",
   "criminalGuilt",
   "pregnancy",
+  "infidelity",
   "thirdPartyPrivateClaim",
 ]);
 
@@ -83,7 +88,8 @@ const READER_VOICE = [
 const GUARDED_VOICE = [
   "This question touches something where a confident prediction could cause real harm.",
   "Do not diagnose, do not predict death, illness, pregnancy, guilt, or a verdict, and do not assert",
-  "private facts about anyone who is not present. Read the cards for what this person can see, decide,",
+  "infidelity, private facts about anyone who is not present, investment returns, guaranteed employment,",
+  "or any guaranteed outcome. Read the cards for what this person can see, decide,",
   "prepare for, and ask about — and point them toward qualified help where that is the honest answer.",
   "Stay warm and direct. This is a redirection, not a refusal.",
 ].join(" ");
@@ -285,6 +291,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
         signal,
       ),
     );
+    if (generatedOutputSafetyViolation(parsed)) throw new ProviderRequestError("unsafe-response");
     // The model may not echo the locked draw faithfully; the draw is
     // authoritative, so card identity and orientation are restored from it.
     const resolved = resolveDraw(input.draw);
@@ -307,7 +314,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     const safety = classifyQuestion(input.question);
     const guarded = GUARDED_CATEGORIES.has(safety.category);
     const system = `${READER_VOICE} ${FOLLOW_UP_VOICE}${guarded ? ` ${GUARDED_VOICE}` : ""}`;
-    return followUpResultSchema.parse(
+    const parsed = followUpResultSchema.parse(
       await this.requestStructured(
         system,
         this.buildFollowUpPayload(input),
@@ -317,6 +324,8 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
         signal,
       ),
     );
+    if (generatedOutputSafetyViolation(parsed)) throw new ProviderRequestError("unsafe-response");
+    return parsed;
   }
 
   private async requestStructured(

@@ -62,6 +62,7 @@ beforeEach(() => {
     email: "private@example.invalid",
   });
   vi.stubEnv("PAYMENTS_PROVIDER", "stripe");
+  vi.stubEnv("ENABLE_PROFILE_REPORTS", "true");
   vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_local_only");
   vi.stubEnv("STRIPE_PROFILE_REPORT_PRICE_ID", "price_test_profile_report");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://staging.invalid");
@@ -78,6 +79,19 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Stripe Checkout boundary", () => {
+  it("fails closed while profile reports are disabled", async () => {
+    vi.stubEnv("ENABLE_PROFILE_REPORTS", "false");
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "Profile reports are not available in this beta.",
+    });
+    expect(mocks.requireUser).not.toHaveBeenCalled();
+    expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("persists the order ID returned by an idempotently replayed Stripe request", async () => {
     const response = await POST(request());
     expect(response.status).toBe(200);

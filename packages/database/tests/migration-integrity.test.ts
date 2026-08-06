@@ -59,6 +59,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
     "f5148ce8cdaaacaede22250f916b0fd9c2c18e116da147adea6398d160452f32",
   "0003_webhook_replay_lease": "ba0cfa16d9a3256e98c43d2a62b6b5e6cad5bcae328ccec0a61f45088f62b9f9",
   "0004_server_actor_role": "32dd231cbe55ef316ef71896b1fc9f11af1772c4fdc0722cd58efc3b2fa76aad",
+  "0005_bumpy_moon_knight": "e63e5b2af79a8b635292feffe0441a18f22a28fa4700dc1bc58d010a6fc4b794",
 };
 
 describe("migration history", () => {
@@ -76,6 +77,7 @@ describe("migration history", () => {
       "0002_remove_auth_user_sync_trigger",
       "0003_webhook_replay_lease",
       "0004_server_actor_role",
+      "0005_bumpy_moon_knight",
     ]);
   });
 
@@ -129,5 +131,14 @@ describe("migration history", () => {
     expect(sql).toMatch(/revoke\s+all[\s\S]*from\s+public,\s*authenticated/i);
     expect(sql).not.toMatch(/\bbypassrls\b(?!\s*\))/i);
     expect(sql).not.toMatch(/security\s+definer/i);
+  });
+
+  it("scrubs legacy plaintext profile metadata and enforces retry-safe cardinality", () => {
+    const sql = executableSql("0005_bumpy_moon_knight");
+    expect(sql).toMatch(/derived_payload"\s*=\s*"derived_payload"\s*-\s*'metadata'/i);
+    expect(sql).toMatch(/set\s+"idempotency_key"\s*=\s*"id"::text/i);
+    expect(sql).toMatch(/birth_profiles_user_unique/i);
+    expect(sql).toMatch(/follow_up_questions_reading_unique/i);
+    expect(sql).toMatch(/reading_sessions_user_idempotency_unique/i);
   });
 });

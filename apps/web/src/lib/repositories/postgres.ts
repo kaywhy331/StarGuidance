@@ -35,6 +35,8 @@ import { APPLICATION_DATABASE_ROLE, createDatabaseClient } from "@starguidance/d
 import { TAROT_CONTENT_VERSION } from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
+import { profileDerivedPayload } from "./profile-storage";
+
 type Transaction = DatabaseTransaction;
 type JsonObject = Record<string, unknown>;
 
@@ -67,15 +69,10 @@ function iso(value: Date | string): string {
 
 function profileFromRow(row: DatabaseRow): StoredProfileVersion {
   const payload = row.derived_payload as JsonObject;
-  const metadata = payload.metadata as JsonObject;
   return {
     encryptedInput: String(row.encrypted_input),
     encryptedCalculations: String(row.encrypted_calculations),
     snapshot: profileSnapshotSchema.parse(payload.snapshot),
-    maskedName: String(metadata.maskedName),
-    birthDate: String(metadata.birthDate),
-    timeKind: metadata.timeKind as StoredProfileVersion["timeKind"],
-    ...(metadata.birthplaceLabel ? { birthplaceLabel: String(metadata.birthplaceLabel) } : {}),
   };
 }
 
@@ -266,62 +263,54 @@ export function createPostgresRepositories(
       return userTransaction(userId, (tx) => loadProfile(tx, userId));
     },
     async saveVersion(userId: string, profile: StoredProfileVersion) {
-      await userTransaction(userId, async (tx) => {
-        const [existing] = await tx`
+      return userTransaction(userId, async (tx) => {
+        await tx`
+          insert into birth_profiles (id, user_id, encrypted_payload)
+          values (${profile.snapshot.profileId}, ${userId}, ${profile.encryptedInput})
+          on conflict (user_id) do nothing
+        `;
+        const [root] = await tx`
           select id from birth_profiles where user_id = ${userId} for update
         `;
-        if (existing && String(existing.id) !== profile.snapshot.profileId)
-          throw new Error("PROFILE_ID_MISMATCH");
-        if (!existing) {
-          await tx`
-            insert into birth_profiles (id, user_id, encrypted_payload)
-            values (${profile.snapshot.profileId}, ${userId}, ${profile.encryptedInput})
-          `;
-        }
+        if (!root) throw new Error("PROFILE_ROOT_NOT_FOUND");
+        const profileId = String(root.id);
         const [versionRow] = await tx`
           select coalesce(max(version), 0)::integer as version
-          from profile_snapshots where profile_id = ${profile.snapshot.profileId}
+          from profile_snapshots where profile_id = ${profileId}
         `;
-        if (Number(versionRow?.version ?? 0) + 1 !== profile.snapshot.version)
-          throw new Error("PROFILE_VERSION_CONFLICT");
+        const snapshot = {
+          ...profile.snapshot,
+          profileId,
+          version: Number(versionRow?.version ?? 0) + 1,
+        };
         await tx`
           insert into profile_snapshots (
             id, user_id, profile_id, version, completeness, derived_payload, calculation_versions, created_at
           ) values (
-            ${profile.snapshot.id}, ${userId}, ${profile.snapshot.profileId}, ${profile.snapshot.version},
-            ${profile.snapshot.completeness},
-            ${tx.json(
-              json({
-                snapshot: profile.snapshot,
-                metadata: {
-                  maskedName: profile.maskedName,
-                  birthDate: profile.birthDate,
-                  timeKind: profile.timeKind,
-                  ...(profile.birthplaceLabel ? { birthplaceLabel: profile.birthplaceLabel } : {}),
-                },
-              }),
-            )},
-            ${tx.json(json(profile.snapshot.calculationVersions))}, ${profile.snapshot.createdAt}
+            ${snapshot.id}, ${userId}, ${snapshot.profileId}, ${snapshot.version},
+            ${snapshot.completeness},
+            ${tx.json(json(profileDerivedPayload(snapshot)))},
+            ${tx.json(json(snapshot.calculationVersions))}, ${snapshot.createdAt}
           )
         `;
         await tx`
           insert into profile_components (user_id, snapshot_id, system, status, payload)
           values
-            (${userId}, ${profile.snapshot.id}, 'private-profile-input', 'implemented',
+            (${userId}, ${snapshot.id}, 'private-profile-input', 'implemented',
               ${tx.json(json({ envelope: profile.encryptedInput }))}),
-            (${userId}, ${profile.snapshot.id}, 'private-calculations', 'implemented',
+            (${userId}, ${snapshot.id}, 'private-calculations', 'implemented',
               ${tx.json(json({ envelope: profile.encryptedCalculations }))})
         `;
         for (const component of profile.components ?? [])
           await tx`
             insert into profile_components (user_id, snapshot_id, system, status, payload)
-            values (${userId}, ${profile.snapshot.id}, ${component.system}, ${component.status},
+            values (${userId}, ${snapshot.id}, ${component.system}, ${component.status},
               ${tx.json(json(component.payload))})
           `;
-        for (const trait of profile.snapshot.traits)
+        for (const trait of snapshot.traits)
           await tx`
             insert into profile_traits (user_id, snapshot_id, domain, statement, provenance)
-            values (${userId}, ${profile.snapshot.id}, ${trait.domain}, ${trait.statement},
+            values (${userId}, ${snapshot.id}, ${trait.domain}, ${trait.statement},
               ${tx.json(
                 json({
                   sourceSystem: trait.sourceSystem,
@@ -334,10 +323,11 @@ export function createPostgresRepositories(
         await tx`
           update birth_profiles set
             encrypted_payload = ${profile.encryptedInput},
-            active_snapshot_id = ${profile.snapshot.id},
+            active_snapshot_id = ${snapshot.id},
             updated_at = now()
-          where id = ${profile.snapshot.profileId} and user_id = ${userId}
+          where id = ${snapshot.profileId} and user_id = ${userId}
         `;
+        return snapshot;
       });
     },
     async listVersions(userId: string) {
@@ -353,6 +343,20 @@ export function createPostgresRepositories(
           order by ps.version
         `;
         return rows.map(profileFromRow);
+      });
+    },
+    async delete(userId: string) {
+      return userTransaction(userId, async (tx) => {
+        const [profile] = await tx`select id from birth_profiles where user_id = ${userId}`;
+        if (!profile) return false;
+        // These records reference profile snapshots without ON DELETE CASCADE,
+        // so remove them from the leaves inward before deleting the root.
+        await tx`delete from reading_sessions where user_id = ${userId}`;
+        await tx`delete from reports where user_id = ${userId}`;
+        await tx`delete from entitlements where user_id = ${userId}`;
+        await tx`delete from orders where user_id = ${userId}`;
+        await tx`delete from birth_profiles where id = ${String(profile.id)} and user_id = ${userId}`;
+        return true;
       });
     },
   };
@@ -435,6 +439,7 @@ export function createPostgresRepositories(
     return {
       id: String(row.id),
       userId: String(row.user_id),
+      idempotencyKey: String(row.idempotency_key),
       profileSnapshotId: String(row.profile_snapshot_id),
       readingLens: row.reading_lens as StoredReading["readingLens"],
       spreadId: String(row.spread_id),
@@ -464,18 +469,29 @@ export function createPostgresRepositories(
 
   const readingSessions = {
     async createLocked(reading: StoredReading) {
-      await userTransaction(reading.userId, async (tx) => {
-        await tx`
+      return userTransaction(reading.userId, async (tx) => {
+        const [created] = await tx`
           insert into reading_sessions (
-            id, user_id, profile_snapshot_id, spread_id, spread_version, encrypted_question,
+            id, user_id, profile_snapshot_id, spread_id, spread_version, idempotency_key,
+            encrypted_question,
             reading_lens, safety_classification, state, created_at
           ) values (
             ${reading.id}, ${reading.userId}, ${reading.profileSnapshotId}, ${reading.spreadId},
-            ${reading.draw.spreadVersion}, ${reading.encryptedQuestion},
+            ${reading.draw.spreadVersion}, ${reading.idempotencyKey}, ${reading.encryptedQuestion},
             ${tx.json(json(reading.readingLens))}, ${reading.safetyClassification}, ${reading.generationStatus},
             ${reading.createdAt}
           )
+          on conflict (user_id, idempotency_key) do nothing
+          returning id
         `;
+        if (!created) {
+          const [existing] = await tx`
+            select * from reading_sessions
+            where user_id = ${reading.userId} and idempotency_key = ${reading.idempotencyKey}
+          `;
+          if (!existing) throw new Error("READING_IDEMPOTENCY_CONFLICT");
+          return hydrateReading(tx, existing);
+        }
         await tx`
           insert into reading_draws (
             user_id, reading_id, deck_version, shuffle_version, assignments, locked_at
@@ -485,6 +501,7 @@ export function createPostgresRepositories(
             ${reading.draw.lockedAt}
           )
         `;
+        return reading;
       });
     },
     async get(userId: string, readingId: string) {
@@ -502,6 +519,15 @@ export function createPostgresRepositories(
           order by created_at desc, id desc
         `;
         return Promise.all(rows.map((row) => hydrateReading(tx, row)));
+      });
+    },
+    async delete(userId: string, readingId: string) {
+      return userTransaction(userId, async (tx) => {
+        const rows = await tx`
+          delete from reading_sessions where id = ${readingId} and user_id = ${userId}
+          returning id
+        `;
+        return rows.length === 1;
       });
     },
     async setGenerationStatus(
@@ -565,16 +591,26 @@ export function createPostgresRepositories(
       return (await readingSessions.get(userId, readingId))?.followUps ?? [];
     },
     async create(userId: string, readingId: string, followUp: StoredFollowUp) {
-      await userTransaction(userId, async (tx) => {
-        await tx`
-          insert into follow_up_questions (
-            id, user_id, reading_id, encrypted_question, output, created_at
-          ) values (
-            ${followUp.id}, ${userId}, ${readingId}, ${followUp.encryptedQuestion},
-            ${tx.json(json(followUpResultSchema.parse(followUp.result)))}, ${followUp.createdAt}
-          )
-        `;
-      });
+      try {
+        await userTransaction(userId, async (tx) => {
+          await tx`
+            insert into follow_up_questions (
+              id, user_id, reading_id, encrypted_question, output, created_at
+            ) values (
+              ${followUp.id}, ${userId}, ${readingId}, ${followUp.encryptedQuestion},
+              ${tx.json(json(followUpResultSchema.parse(followUp.result)))}, ${followUp.createdAt}
+            )
+          `;
+        });
+      } catch (error) {
+        const databaseError = error as { code?: string; constraint_name?: string };
+        if (
+          databaseError.code === "23505" &&
+          databaseError.constraint_name === "follow_up_questions_reading_unique"
+        )
+          throw new Error("FOLLOW_UP_EXISTS");
+        throw error;
+      }
     },
   };
 

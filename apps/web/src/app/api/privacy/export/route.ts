@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
-import { assertRateLimit } from "@/lib/request-security";
+import { assertRateLimit, requestSecurityFailure } from "@/lib/request-security";
 
 export async function GET() {
   try {
@@ -43,7 +43,15 @@ export async function GET() {
       },
       { headers: { "content-disposition": 'attachment; filename="starguidance-export.json"' } },
     );
-  } catch {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  } catch (error) {
+    const security = requestSecurityFailure(error);
+    if (security)
+      return NextResponse.json(
+        { error: security.error },
+        { status: security.status, headers: security.headers },
+      );
+    if (error instanceof Error && error.message === "UNAUTHENTICATED")
+      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: "The data export could not be prepared." }, { status: 500 });
   }
 }

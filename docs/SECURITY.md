@@ -7,25 +7,31 @@ Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 - AES-256-GCM envelopes use a random 96-bit nonce and authentication tag; tampering fails authentication.
 - Runtime selection fails closed. The local adapter requires `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, a development/test `APP_ENV`, and no hosted Netlify context.
 - Supabase Auth is verified server-side with `auth.getUser()`. Routine access uses email/password credentials; passwords are never persisted or logged by the application. Optional signup-confirmation and password-recovery links terminate at a same-site callback, and account deletion also removes the Supabase Auth identity through a server-only service-role client.
+- Signup requires versioned Terms, Privacy Notice, and 18+ acknowledgements. Receipts are first bound to Auth `app_metadata`, then mirrored into the subject-scoped consent table when the application user is provisioned. Profile personalization has its own versioned consent.
+- Password recovery succeeds only after the verified callback issues an encrypted, user-bound, 15-minute receipt. Updating the password consumes that receipt and attempts global session revocation; ordinary sign-out uses explicit local scope and surfaces provider failure.
 - The Supabase repository encrypts raw profiles, calculation payloads, questions, follow-ups, and feedback comments with AES-256-GCM before SQL persistence. The managed key remains outside Postgres.
+- Derived profile snapshots contain only calculation output and trait provenance. Migration 0005 scrubs the legacy plaintext name/date/place metadata copy before adding profile, follow-up, and reading-idempotency constraints.
 - Browser JWTs have no private-table privileges. User-scoped SQL transactions assume the non-login, non-inheriting `starguidance_app` role and set only the subject obtained from verified Supabase Auth. RLS is forced on every user-owned table; anonymous/public access is revoked.
 - Mutating browser routes validate Origin/Host and use bounded in-process rate limits. Stripe webhooks are exempt from Origin checks and require signature verification.
+- Every API response receives `Cache-Control: private, no-store, max-age=0`; sensitive read failures distinguish an expired session from an internal retrieval failure so a database fault does not spuriously redirect the user through login.
 - Profile-engine bearer authentication is enabled whenever `PROFILE_ENGINE_SHARED_SECRET` is configured. In staging and production, startup rejects a missing or trivially weak secret before serving traffic.
 - The profile-engine container disables Uvicorn access logs, and its application does not log request bodies, response bodies, birth inputs, authorization headers, or derived calculations. `/health` remains public and contains no private data.
-- The web `/api/health` route exposes configuration names/presence and dependency status codes only. Tests assert that environment values, dependency errors, request bodies, and response bodies are absent from its output.
+- Public web `/api/health` is dependency-free liveness. Deep readiness requires a domain-separated HMAC bearer token before it probes configuration, Postgres/RLS, or the profile engine. Tests assert that environment values, dependency errors, request bodies, and response bodies are absent from both responses.
 - Safety classification occurs before a draw for crisis and compulsive-redraw language.
 - The draw function accepts no profile snapshot, trait, question, prompt, or AI input.
 - AI input is designed to contain only a locked draw, curated meanings, the private question, and a compact stable trait lens. Birth name/date/time/place, email, and raw calculations are excluded.
+- Live generation requires an explicit model-safety approval flag. A deterministic post-generation validator rejects prohibited factual or guaranteed death, pregnancy, diagnosis, verdict, guilt, infidelity, private-third-party, investment-return, and employment claims even when a provider response is schema-valid; rejection uses the deterministic fallback and never redraws.
 - History previews are decrypted only for an authenticated response; no question preview is stored in plaintext.
-- Authenticated export reads only through user-scoped repositories, then decrypts for that response. Account deletion cascades durable private rows before deleting the hosted Auth identity.
+- Authenticated export reads only through user-scoped repositories, then decrypts for that response. Account deletion verifies the current password, deletes the hosted Auth identity first, and relies on the enforced database cascade so a usable identity is never stranded after a partial two-step deletion.
 - Reading session and draw writes are one database transaction. Outputs are separate append-only rows, so failure, retry, refresh recovery, and follow-up cannot replace the locked assignments.
 - Stripe events are signature checked, claimed with a failure-releasable durable lease, and resolve user/snapshot ownership from the persisted order rather than trusting webhook metadata. Full refunds and disputes revoke the entitlement, and report reads require it to remain active.
 - Oracle streaming emits only schema-validated persisted result phases; the private question is not included in the stream URL or payload.
 - The deploy-preview composition contains synthetic cards and text only, is `noindex`, and is enabled by a Netlify deploy-preview-only flag that defaults off on public production.
+- New report purchases and Stripe webhooks fail closed behind a server-side release flag that defaults off; UI visibility is a separate public flag and cannot authorize commerce.
 
 ## Production gates
 
-The adapter is connected to the owner-approved disposable Supabase staging project through Netlify Deploy Preview #4. Protected run `30933588147` passed migration/seed rehearsal, forced-RLS and two-user isolation, Auth-backed provisioning, encrypted profile and reading persistence, locked-draw recovery, export, account/Auth deletion, profile-engine authorization, cleanup, redaction, and automated accessibility checks. That evidence is staging-only and does not approve a production deployment.
+Netlify Deploy Preview #4 is the credentialed non-production staging lane. A protected run must pass migration/seed rehearsal, forced-RLS and two-user isolation, Auth-backed provisioning, encrypted profile and reading persistence, locked-draw recovery, export, account/Auth deletion, profile-engine authorization, cleanup, redaction, and accessibility checks at the exact commit being promoted. Evidence from an earlier commit does not transfer, and staging evidence does not approve production.
 
 The remaining security and operations gates are:
 
@@ -34,7 +40,9 @@ The remaining security and operations gates are:
 - an owner-inbox rehearsal of optional signup confirmation and password recovery, including a cross-browser token-hash callback;
 - hosted Netlify, Supabase, Render, and AI-provider log-retention review by an operator with dashboard access;
 - Stripe test credentials and a public webhook/Checkout/refund rehearsal against durable order and entitlement storage;
-- provider no-retention contracts, redaction verification, privacy-safe telemetry, backup/restore, incident response, and regional crisis resources.
+- provider no-retention contracts, redaction verification, privacy-safe telemetry, backup/restore, incident response, and regional crisis resources;
+- distributed rate limiting for serverless instances, production alerts, protected branches/required checks, and independent review;
+- legal-owner review of the versioned beta Terms, Privacy Notice, age policy, retention schedule, and launch regions.
 
 The concrete role boundary, key-rotation commands, CI logical restore, guarded retention tool, telemetry boundary, and incident procedure are documented in [Operations and recovery](OPERATIONS.md).
 

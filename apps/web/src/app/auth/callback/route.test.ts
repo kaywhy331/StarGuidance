@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const auth = vi.hoisted(() => ({
   exchangeCodeForSession: vi.fn(),
+  getUser: vi.fn(),
   verifyOtp: vi.fn(),
+}));
+
+vi.mock("@/lib/recovery-session", () => ({
+  issueRecoveryReceipt: () => "signed-recovery-receipt",
+  RECOVERY_SESSION_COOKIE: "starguidance_password_recovery",
+  RECOVERY_SESSION_TTL_SECONDS: 900,
 }));
 
 vi.mock("@/lib/supabase", () => ({
@@ -27,7 +34,12 @@ beforeEach(() => {
   vi.stubEnv("DATABASE_URL", "postgresql://synthetic.invalid/database");
   vi.stubEnv("DATA_ENCRYPTION_KEY", Buffer.alloc(32, 7).toString("base64"));
   auth.exchangeCodeForSession.mockReset();
+  auth.getUser.mockReset();
   auth.verifyOtp.mockReset();
+  auth.getUser.mockResolvedValue({
+    data: { user: { id: "4978a7ef-c4a6-462d-befe-d286a38a772f" } },
+    error: null,
+  });
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -62,6 +74,17 @@ describe("account callback", () => {
     expect(auth.verifyOtp).toHaveBeenCalledWith({ token_hash: tokenHash, type: "recovery" });
     expect(location(response).pathname).toBe("/reset-password");
     expect(location(response).search).toBe("");
+    expect(response.cookies.get("starguidance_password_recovery")?.value).toBe(
+      "signed-recovery-receipt",
+    );
+  });
+
+  it("does not treat an untyped PKCE code as password-recovery proof", async () => {
+    auth.exchangeCodeForSession.mockResolvedValue({ error: null });
+    const response = await GET(request("?code=synthetic-code&next=/reset-password"));
+
+    expect(location(response).pathname).toBe("/sign-in");
+    expect(location(response).searchParams.get("error")).toBe("invalid-link");
   });
 
   it("returns a Netlify callback to the browser-visible preview host", async () => {

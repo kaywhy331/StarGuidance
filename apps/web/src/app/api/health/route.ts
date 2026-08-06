@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createInterpretationProvider } from "@starguidance/ai";
 import {
   APPLICATION_DATABASE_ROLE,
@@ -18,9 +19,6 @@ const REQUIRED_STAGING_ENVIRONMENT = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "PROFILE_ENGINE_URL",
   "PROFILE_ENGINE_SHARED_SECRET",
-  "AI_PROVIDER",
-  "AI_PROVIDER_API_KEY",
-  "AI_PROVIDER_MODEL",
 ] as const;
 
 const APPROVED_STAGING_PROVIDER_ID = "groq:openai/gpt-oss-120b";
@@ -55,6 +53,21 @@ function appEnvironment(): string {
 function runtimeAdapter(): string {
   const value = process.env.RUNTIME_ADAPTER;
   return value === "local" || value === "supabase" ? value : "misconfigured";
+}
+
+const READINESS_TOKEN_CONTEXT = "starguidance-readiness-v1";
+
+function readinessAuthorized(request: Request): boolean {
+  const secret = process.env.PROFILE_ENGINE_SHARED_SECRET;
+  const authorization = request.headers.get("authorization");
+  if (!secret || !authorization?.startsWith("Bearer ")) return false;
+  const received = authorization.slice("Bearer ".length);
+  const expected = createHmac("sha256", secret).update(READINESS_TOKEN_CONTEXT).digest("base64url");
+  const receivedBytes = Buffer.from(received);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    receivedBytes.length === expectedBytes.length && timingSafeEqual(receivedBytes, expectedBytes)
+  );
 }
 
 async function probeProfileEngine(): Promise<DependencyStatus> {
@@ -145,6 +158,14 @@ async function probeDatabase(): Promise<DatabaseStatus> {
           )
           and exists (
             select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'reading_sessions'
+              and column_name = 'idempotency_key'
+          )
+          and to_regclass('public.birth_profiles_user_unique') is not null
+          and to_regclass('public.follow_up_questions_reading_unique') is not null
+          and to_regclass('public.reading_sessions_user_idempotency_unique') is not null
+          and exists (
+            select 1 from information_schema.columns
             where table_schema = 'public' and table_name = 'orders'
               and column_name = 'profile_snapshot_id'
           )
@@ -215,8 +236,28 @@ async function probeDatabase(): Promise<DatabaseStatus> {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const stagingPreview = process.env.APP_ENV === "staging" && isHostedNetlifyRuntime();
+  const deployedCommit = stagingPreview ? (process.env.DEPLOYED_COMMIT_REF ?? null) || null : null;
+  if (new URL(request.url).searchParams.get("readiness") !== "1")
+    return NextResponse.json(
+      {
+        status: "ok",
+        kind: "liveness",
+        stagingPreview,
+        deployedCommit,
+        appEnvironment: appEnvironment(),
+        runtimeAdapter: runtimeAdapter(),
+      },
+      { status: 200, headers: { "cache-control": "no-store" } },
+    );
+
+  if (!readinessAuthorized(request))
+    return NextResponse.json(
+      { status: "unauthorized", kind: "readiness" },
+      { status: 401, headers: { "cache-control": "no-store", "www-authenticate": "Bearer" } },
+    );
+
   const interpretationProviderId = createInterpretationProvider().id;
   const interpretation = {
     providerKind: interpretationProviderId.startsWith("groq:") ? "groq" : "deterministic",
@@ -278,7 +319,6 @@ export async function GET() {
     profileEngine.healthStatus === 200 &&
     profileEngine.unauthorizedComputeStatus === 401 &&
     profileEngine.authorizedComputeStatus === 200 &&
-    interpretation.approvedLiveProviderConfigured &&
     database.connection &&
     database.schemaReady &&
     database.rlsReady &&
@@ -287,11 +327,12 @@ export async function GET() {
   return NextResponse.json(
     {
       status: healthy ? "ok" : "degraded",
+      kind: "readiness",
       stagingPreview,
       // Build provenance, so staging verification can prove the preview it is
       // testing was built from the commit under test. Withheld in production:
       // a public deployment need not advertise which commit it runs.
-      deployedCommit: stagingPreview ? (process.env.DEPLOYED_COMMIT_REF ?? null) || null : null,
+      deployedCommit,
       appEnvironment: appEnvironment(),
       runtimeAdapter: runtimeAdapter(),
       localPersistenceEnabled: isLocalRuntimeAdapterAuthorized(),

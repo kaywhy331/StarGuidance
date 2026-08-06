@@ -11,8 +11,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 export async function POST(request: Request) {
   try {
-    const user = await requireUser();
     assertSameOrigin(request);
+    if (process.env.ENABLE_PROFILE_REPORTS !== "true")
+      return NextResponse.json(
+        { error: "Profile reports are not available in this beta." },
+        { status: 404 },
+      );
+    const user = await requireUser();
     assertRateLimit(`checkout:${user.id}`, 6);
     const persistence = persistenceFor(user);
     const profile = await persistence.repositories.birthProfiles.getActive(user.id);
@@ -116,7 +121,7 @@ export async function POST(request: Request) {
     const reason = error instanceof Error ? error.message : "";
     if (reason === "UNAUTHENTICATED")
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    if (reason === "INVALID_ORIGIN")
+    if (reason === "INVALID_ORIGIN" || reason === "MISSING_ORIGIN")
       return NextResponse.json({ error: "Request origin was rejected." }, { status: 403 });
     if (reason === "RATE_LIMITED")
       return NextResponse.json(
