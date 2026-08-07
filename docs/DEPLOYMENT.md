@@ -122,6 +122,6 @@ Provider dashboard and contract review is owner-controlled and cannot be inferre
 6. Obtain owner decisions for retention, crisis resources, telemetry, licensing, payments, and production rollout.
 7. Keep profile reports disabled until Stripe test UAT, durable job/status handling, report history, and accessible web/PDF parity pass.
 8. Distributed rate limiting is implemented (Postgres-backed, migration `0006_rate_limit_buckets`, verified 2026-08-06); privacy-safe production observability/alerts are still needed before public traffic. `main` now requires PRs, required checks, and conversation resolution (verified 2026-08-06); an independent approving reviewer is still unassigned.
-9. Intentional card reveal, optional cut behavior, and an explicit skip-animation control are implemented and e2e-covered (2026-08-06); still open per [Known gaps](KNOWN-GAPS.md): background generation after draw lock, and manual keyboard/screen-reader/real-device review of the ritual controls.
+9. Intentional card reveal, optional cut behavior, and an explicit skip-animation control are implemented and e2e-covered (2026-08-06). Background interpretation generation after draw lock is implemented as a durable job with a Netlify-scheduled backstop (migration `0007_interpretation_jobs`, verified 2026-08-06); still open per [Known gaps](KNOWN-GAPS.md): manual keyboard/screen-reader/real-device review of the ritual controls.
 
 Do not configure or change owner-managed DNS, domains, notifications, production secrets, or a production deploy from this branch.

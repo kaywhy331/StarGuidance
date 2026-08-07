@@ -1,8 +1,8 @@
 # Profile calculations
 
-## Implemented and tested
+## Implemented, pending reference certification
 
-`pythagorean-v2` always calculates the date-derived Life Path and Birthday values. It calculates Expression, Soul Urge, and Personality when the entered name can be normalized without transliteration. Master numbers 11, 22, and 33 are preserved. Spaces, punctuation, and Latin diacritics are normalized while the encrypted original name remains unchanged. For unsupported writing systems, name-derived values are typed unavailable; the profile still succeeds and the application never asks for or invents a Latin rendering.
+`pythagorean-v2` always calculates the date-derived Life Path and Birthday values. It calculates Expression, Soul Urge, and Personality when the entered name can be normalized without transliteration. Master numbers 11, 22, and 33 are preserved. Spaces, punctuation, and Latin diacritics are normalized while the encrypted original name remains unchanged. For unsupported writing systems, name-derived values are typed unavailable; the profile still succeeds and the application never asks for or invents a Latin rendering. Numerology's letter-reduction convention and reference test cases have not yet had the same independent review applied to Nine Star Ki, Dreamspell, and the astrology/BaZi activation gates below; treat its output as deterministic but not yet independently certified.
 
 `profile-traits-v3` maps deterministic available numerology observations and original Nine Star Ki editorial observations to the shared trait ontology with source rule, source system, calculation version, and stability. It preserves a motivation/expression tension when their mapped families differ and omits name-derived traits when those calculations are unavailable. Nine Star Ki traits remain uncertain until the convention review below is complete. `question-trait-lens-v1` deterministically selects at most three stable traits relevant to career, relationship, change, or general questions. It never selects cards and never sends raw calculation values into a base tarot reading.
 
