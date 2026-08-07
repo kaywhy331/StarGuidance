@@ -22,7 +22,7 @@ const nineStarKiStarSchema = z.object({
  * `server-only` and fails the whole suite at collection.
  */
 export const calculationSchema = z.object({
-  completeness: z.enum(["core", "locationEnhanced", "approximateTime", "complete"]),
+  completeness: z.enum(["core", "locationEnhanced", "complete"]),
   numerology: z.object({
     name_calculation_status: z.enum(["available", "unavailable"]),
     life_path: z.number().int().positive(),

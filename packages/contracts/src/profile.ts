@@ -38,12 +38,7 @@ export const birthProfileInputSchema = z
     }
   });
 
-export const profileCompletenessSchema = z.enum([
-  "core",
-  "locationEnhanced",
-  "approximateTime",
-  "complete",
-]);
+export const profileCompletenessSchema = z.enum(["core", "locationEnhanced", "complete"]);
 
 export type BirthProfileInput = z.infer<typeof birthProfileInputSchema>;
 export type ProfileCompleteness = z.infer<typeof profileCompletenessSchema>;
