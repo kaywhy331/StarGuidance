@@ -9,8 +9,10 @@ import { createLockedDraw } from "@starguidance/tarot-domain";
 import type { StoredReading } from "@starguidance/database";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
+import { getRuntimeAdapter } from "@/lib/runtime";
 
 const inputSchema = z.object({
   spreadId: z.string().min(1),
@@ -69,36 +71,65 @@ export async function POST(request: Request) {
         { status: 200 },
       );
     await recordAudit(user.id, "reading.draw.locked", "reading", reading.id);
-    try {
-      if (
-        process.env.APP_ENV === "test" &&
-        request.headers.get("x-e2e-force-generation-failure") === "1"
-      )
-        throw new Error("TEST_GENERATION_FAILURE");
-      const generated = await createInterpretationProvider().generateWithProvenance({
-        draw,
-        question: input.question,
-        relevantTraitStatements: readingLens.statements,
-      });
-      await persistence.repositories.outputs.save(
-        user.id,
-        reading.id,
-        generated.result,
-        generated.provenance,
-      );
-      reading.generationStatus = "ready";
-      await persistence.repositories.readingSessions.setGenerationStatus(
-        user.id,
-        reading.id,
-        "ready",
-      );
-    } catch {
-      reading.generationStatus = "failed";
+    if (
+      process.env.APP_ENV === "test" &&
+      request.headers.get("x-e2e-force-generation-failure") === "1"
+    ) {
+      // Synthetic-only: simulate a job that exhausted its retries, without
+      // running the real provider or touching the job row, so nothing
+      // reprocesses it later during the same test.
       await persistence.repositories.readingSessions.setGenerationStatus(
         user.id,
         reading.id,
         "failed",
       );
+      reading.generationStatus = "failed";
+    } else if (getRuntimeAdapter() !== "supabase") {
+      // The local runtime adapter has no interpretation_jobs table (see
+      // apps/web/src/lib/repositories/local.ts) and never runs on Netlify, so
+      // it keeps generating synchronously exactly as before.
+      try {
+        const generated = await createInterpretationProvider().generateWithProvenance({
+          draw,
+          question: input.question,
+          relevantTraitStatements: readingLens.statements,
+        });
+        await persistence.repositories.outputs.save(
+          user.id,
+          reading.id,
+          generated.result,
+          generated.provenance,
+        );
+        reading.generationStatus = "ready";
+        await persistence.repositories.readingSessions.setGenerationStatus(
+          user.id,
+          reading.id,
+          "ready",
+        );
+      } catch {
+        reading.generationStatus = "failed";
+        await persistence.repositories.readingSessions.setGenerationStatus(
+          user.id,
+          reading.id,
+          "failed",
+        );
+      }
+    } else {
+      // createLocked already enqueued this reading's interpretation job in
+      // the same transaction (see insertInterpretationJob). Draining it here
+      // keeps today's near-synchronous latency in the common case; if this
+      // attempt is interrupted or the provider fails transiently, the job
+      // stays durably claimable and the Netlify-scheduled sweep
+      // (/api/internal/interpretation-jobs) finishes it later — the
+      // "survives serverless interruption" property docs/KNOWN-GAPS.md
+      // called out.
+      try {
+        await runInterpretationJobs(1);
+      } catch {
+        // Best-effort inline attempt; the durable job row survives regardless.
+      }
+      const current = await persistence.repositories.readingSessions.get(user.id, reading.id);
+      reading.generationStatus = current?.generationStatus ?? reading.generationStatus;
     }
     return NextResponse.json(
       { readingId: reading.id, safety, generationStatus: reading.generationStatus },

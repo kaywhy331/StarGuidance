@@ -31,7 +31,11 @@ import type {
   DatabaseRow,
   DatabaseTransaction,
 } from "@starguidance/database";
-import { APPLICATION_DATABASE_ROLE, createDatabaseClient } from "@starguidance/database";
+import {
+  APPLICATION_DATABASE_ROLE,
+  createDatabaseClient,
+  insertInterpretationJob,
+} from "@starguidance/database";
 import { TAROT_CONTENT_VERSION } from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
@@ -507,6 +511,10 @@ export function createPostgresRepositories(
             ${reading.draw.lockedAt}
           )
         `;
+        // Same transaction as the reading it belongs to (see
+        // insertInterpretationJob's doc comment) — "reading persisted but its
+        // job never was" is structurally impossible, not just unlikely.
+        await insertInterpretationJob(tx, { userId: reading.userId, readingId: reading.id });
         return reading;
       });
     },

@@ -4,11 +4,14 @@ import {
   classifyQuestion,
   selectReadingLens,
 } from "@starguidance/ai";
+import { reenqueueInterpretationJob, systemTransaction } from "@starguidance/database";
 import { spreads, tarotCards } from "@starguidance/tarot-content";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
+import { getRuntimeAdapter, getSystemDatabaseClient } from "@/lib/runtime";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("retry") }),
@@ -101,26 +104,54 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
     )?.snapshot;
     if (input.action === "retry") {
-      const generated = await provider.generateWithProvenance({
-        draw: reading.draw,
-        question: persistence.decrypt(reading.encryptedQuestion),
-        relevantTraitStatements: snapshot
-          ? reading.readingLens.traitIndexes.map((index) => snapshot.traits[index]?.statement ?? "")
-          : [],
-      });
-      await persistence.repositories.outputs.save(
-        user.id,
-        reading.id,
-        generated.result,
-        generated.provenance,
+      // The local runtime adapter has no interpretation_jobs table (see
+      // apps/web/src/lib/repositories/local.ts) and never runs on Netlify,
+      // so it keeps the original direct, synchronous retry.
+      if (getRuntimeAdapter() !== "supabase") {
+        const generated = await provider.generateWithProvenance({
+          draw: reading.draw,
+          question: persistence.decrypt(reading.encryptedQuestion),
+          relevantTraitStatements: snapshot
+            ? reading.readingLens.traitIndexes.map((index) => snapshot.traits[index]?.statement ?? "")
+            : [],
+        });
+        await persistence.repositories.outputs.save(
+          user.id,
+          reading.id,
+          generated.result,
+          generated.provenance,
+        );
+        await persistence.repositories.readingSessions.setGenerationStatus(
+          user.id,
+          reading.id,
+          "ready",
+        );
+        await recordAudit(user.id, "reading.generation.retried", "reading", reading.id);
+        return NextResponse.json({
+          generationStatus: "ready",
+          result: generated.result,
+          draw: reading.draw,
+        });
+      }
+      // Re-enqueues (reading.generationStatus back to a claimable job — see
+      // reenqueueInterpretationJob's doc comment) then makes the same
+      // best-effort inline attempt POST /api/readings makes on creation. If
+      // it doesn't land immediately, the Netlify-scheduled sweep will.
+      await systemTransaction(getSystemDatabaseClient(), (tx) =>
+        reenqueueInterpretationJob(tx, reading.id),
       );
-      await persistence.repositories.readingSessions.setGenerationStatus(
-        user.id,
-        reading.id,
-        "ready",
-      );
+      try {
+        await runInterpretationJobs(1);
+      } catch {
+        // Best-effort inline attempt; the durable job row survives regardless.
+      }
+      const current = await persistence.repositories.readingSessions.get(user.id, reading.id);
       await recordAudit(user.id, "reading.generation.retried", "reading", reading.id);
-      return NextResponse.json({ result: generated.result, draw: reading.draw });
+      return NextResponse.json({
+        generationStatus: current?.generationStatus ?? "pending",
+        result: current?.result,
+        draw: reading.draw,
+      });
     }
     if (reading.followUps.length >= 1)
       return NextResponse.json(
