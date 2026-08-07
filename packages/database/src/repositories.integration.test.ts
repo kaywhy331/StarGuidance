@@ -232,7 +232,20 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       ["users", "id", ids.userB],
     ] as const;
 
+    // Migration 0009 removed the app role's DELETE privilege on the snapshot
+    // lineage tables entirely, so those reject with permission denied rather
+    // than RLS-filtering to zero rows — a strictly stronger refusal.
+    const lineageTables = new Set(["profile_snapshots", "profile_components", "profile_traits"]);
     for (const [table, column, value] of targets) {
+      if (lineageTables.has(table)) {
+        await expect(
+          asUser(ids.userA, async (tx) => {
+            await tx.unsafe(`delete from public.${table} where ${column} = $1`, [value]);
+          }),
+          `${table} must reject any app-role delete outright`,
+        ).rejects.toMatchObject({ code: "42501" });
+        continue;
+      }
       await asUser(ids.userA, async (tx) => {
         const rows = await tx.unsafe<{ deleted: string }[]>(
           `delete from public.${table} where ${column} = $1 returning ${column} as deleted`,
@@ -307,6 +320,36 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
           from reading_sessions where id = ${ids.readingA}`;
       }),
     ).rejects.toMatchObject({ code: "23505" });
+  });
+
+  it("rejects snapshot updates from every role and withholds lineage UPDATE/DELETE from the app role", async () => {
+    // Migration 0009: the app role lost UPDATE/DELETE on the lineage tables
+    // outright, so even the owner's own subject gets permission denied.
+    await expect(
+      asUser(
+        ids.userA,
+        (tx) =>
+          tx`update profile_snapshots set completeness = 'complete' where id = ${ids.snapshotA1}`,
+      ),
+    ).rejects.toMatchObject({ code: "42501" });
+    await expect(
+      asUser(ids.userA, (tx) => tx`delete from profile_snapshots where id = ${ids.snapshotA1}`),
+    ).rejects.toMatchObject({ code: "42501" });
+    await expect(
+      asUser(
+        ids.userA,
+        (tx) =>
+          tx`update profile_components set status = 'unavailable' where snapshot_id = ${ids.snapshotA1}`,
+      ),
+    ).rejects.toMatchObject({ code: "42501" });
+    // The guard trigger stops the owning connection role too: snapshots
+    // version forward, they are never edited (restrict_violation).
+    if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+    await expect(
+      sql`update profile_snapshots set completeness = 'complete' where id = ${ids.snapshotA1}`,
+    ).rejects.toMatchObject({ code: "23001" });
+    // The FK cascade path stays open — proven by the account-deletion test
+    // below, which removes user A's snapshots through the users cascade.
   });
 
   it("builds an RLS-scoped export and durably deletes only the requesting account", async () => {

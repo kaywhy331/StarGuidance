@@ -66,6 +66,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0007_interpretation_jobs": "ca141a5257796e0e3c23caba1413cf8bb606fcb499eb39c5d94655c5831e4bee",
   "0008_interpretation_jobs_subject_rls":
     "d5aecc953a81ec0a4a42b4876593248969144d53f3099ccdcc89f5a413340557",
+  "0009_profile_snapshot_immutability":
+    "81a3228d7e2eaf57fdb0bf77a4eef6a040e9d932de376beda8d4fde9da5fb1e4",
 };
 
 describe("migration history", () => {
@@ -197,5 +199,26 @@ describe("migration history", () => {
     expect(sql).not.toMatch(/security\s+definer/i);
     expect(sql).not.toMatch(/\bto\s+(anon|service_role|public|authenticated)\b/i);
     expect(sql).not.toMatch(/\bgrant\b/i);
+  });
+
+  it("makes profile snapshots immutable with a guard trigger and narrowed grants (0009)", () => {
+    const sql = executableSql("0009_profile_snapshot_immutability");
+    expect(sql).toMatch(
+      /create\s+trigger\s+profile_snapshots_immutable\s+before\s+update\s+on\s+profile_snapshots/i,
+    );
+    expect(sql).toMatch(/raise\s+exception/i);
+    for (const table of ["profile_snapshots", "profile_components", "profile_traits"]) {
+      expect(sql).toMatch(
+        new RegExp(
+          String.raw`revoke\s+update,\s*delete\s+on\s+table\s+${table}\s+from\s+starguidance_app`,
+          "i",
+        ),
+      );
+    }
+    expect(sql).not.toMatch(/security\s+definer/i);
+    expect(sql).not.toMatch(/\bgrant\b/i);
+    // The trigger must not touch DELETE — rows leave via the enforced FK
+    // cascades (user/profile deletion), and a delete trigger would block them.
+    expect(sql).not.toMatch(/before\s+delete/i);
   });
 });

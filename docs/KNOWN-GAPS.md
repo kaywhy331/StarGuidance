@@ -1,6 +1,6 @@
 # Known gaps and production gates
 
-This branch is a safe-beta candidate, not a public-production approval. The implemented security boundaries are useful now: conventional email/password Auth, versioned consent receipts, encrypted profile/question storage, forced-RLS user isolation, application-enforced immutable-snapshot and draw lineage, deterministic AI fallback, output safety validation, scoped export/deletion, security headers, and fail-closed runtime selection. The gates below are deliberately explicit so a green build cannot be mistaken for business, legal, operational, or provider approval.
+This branch is a safe-beta candidate, not a public-production approval. The implemented security boundaries are useful now: conventional email/password Auth, versioned consent receipts, encrypted profile/question storage, forced-RLS user isolation, database-enforced snapshot immutability (guard trigger plus narrowed grants, migration 0009) with application-enforced draw lineage, deterministic AI fallback, output safety validation, scoped export/deletion, security headers, and fail-closed runtime selection. The gates below are deliberately explicit so a green build cannot be mistaken for business, legal, operational, or provider approval.
 
 ## Exact-commit release evidence
 

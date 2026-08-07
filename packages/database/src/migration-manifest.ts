@@ -14,4 +14,5 @@ export const EXPECTED_MIGRATIONS = [
   "0006_rate_limit_buckets",
   "0007_interpretation_jobs",
   "0008_interpretation_jobs_subject_rls",
+  "0009_profile_snapshot_immutability",
 ] as const;

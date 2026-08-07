@@ -64,6 +64,13 @@
       "when": 1786139113506,
       "tag": "0008_interpretation_jobs_subject_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786139113507,
+      "tag": "0009_profile_snapshot_immutability",
+      "breakpoints": true
     }
   ]
 }
