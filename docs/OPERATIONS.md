@@ -64,14 +64,17 @@ Production remains blocked until an owner approves backup/PITR frequency, retent
 
 No duration is silently selected in code. The approved policy must assign an owner, purpose, legal basis, cutoff, deletion behavior, backup lag, and exception process to each class:
 
-| Data class                                              | Current deletion behavior                                                             | Automation status                                 |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Raw birth data and derived snapshots                    | Account deletion cascades; profile/history deletion is user-scoped                    | Duration awaits owner/privacy approval            |
-| Reading questions, draws, outputs, follow-ups, feedback | Reading/account deletion is user-scoped; locked draw remains immutable while retained | Duration awaits owner/privacy approval            |
-| Orders, entitlements, reports                           | Account deletion cascades in the MVP; provider records remain external                | Finance/refund retention awaits approval          |
-| Audit events                                            | Account deletion cascades                                                             | Explicit-cutoff inventory/delete tool implemented |
-| Completed webhook claims                                | Never exposed to users; unprocessed claims are never retention-deleted                | Explicit-cutoff inventory/delete tool implemented |
-| Hosted logs and backups                                 | Provider-controlled                                                                   | Dashboard/contract approval required              |
+| Data class                                              | Current deletion behavior                                                             | Automation status                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Raw birth data and derived snapshots                    | Account deletion cascades; profile/history deletion is user-scoped                    | Duration awaits owner/privacy approval             |
+| Reading questions, draws, outputs, follow-ups, feedback | Reading/account deletion is user-scoped; locked draw remains immutable while retained | Duration awaits owner/privacy approval             |
+| Orders, entitlements, reports                           | Account deletion cascades in the MVP; provider records remain external                | Finance/refund retention awaits approval           |
+| Audit events                                            | Account deletion cascades                                                             | Explicit-cutoff inventory/delete tool implemented  |
+| Completed webhook claims                                | Never exposed to users; unprocessed claims are never retention-deleted                | Explicit-cutoff inventory/delete tool implemented  |
+| Completed interpretation jobs                           | Result lives in reading outputs; the job row is operational residue                   | Pruned by the scheduled drain after 24 hours       |
+| Expired rate-limit buckets                              | Garbage past their own `expires_at`                                                   | Pruned by the scheduled drain; tool clears backlog |
+| Failed interpretation jobs (dead letter)                | Only record of a job that gave up; never pruned automatically                         | Explicit-cutoff inventory/delete tool implemented  |
+| Hosted logs and backups                                 | Provider-controlled                                                                   | Dashboard/contract approval required               |
 
 The retention tool defaults to inventory. It can delete only audit events and completed webhook claims; a test prevents it from targeting profiles, readings, reports, orders, or entitlements. Use exact past UTC cutoffs and a non-sensitive approved policy identifier:
 
@@ -83,7 +86,7 @@ RETENTION_DELETE_CONFIRM=DELETE_BEFORE_APPROVED_CUTOFFS \
 pnpm --filter @starguidance/database retention
 ```
 
-`RETENTION_POLICY_VERSION`, `RETENTION_AUDIT_BEFORE`, and `RETENTION_WEBHOOK_BEFORE` must already be configured. Run inventory, review its counts, take/verify the required backup, then execute. Never delete an unprocessed webhook claim.
+`RETENTION_POLICY_VERSION`, `RETENTION_AUDIT_BEFORE`, `RETENTION_WEBHOOK_BEFORE`, and `RETENTION_FAILED_JOBS_BEFORE` must already be configured. Run inventory, review its counts, take/verify the required backup, then execute. Never delete an unprocessed webhook claim; failed interpretation jobs are the queue's dead-letter record, so review them (or their fixed error classes) before approving their cutoff.
 
 ## Telemetry and hosted logs
 

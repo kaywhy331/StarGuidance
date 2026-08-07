@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   runInterpretationJobs: vi.fn(),
   getInterpretationQueueStats: vi.fn(),
+  pruneExpiredSystemRows: vi.fn(),
 }));
 
 vi.mock("@/lib/interpretation-worker", () => ({
@@ -22,6 +23,7 @@ vi.mock("@/lib/runtime", () => ({
 
 vi.mock("@starguidance/database", () => ({
   getInterpretationQueueStats: mocks.getInterpretationQueueStats,
+  pruneExpiredSystemRows: mocks.pruneExpiredSystemRows,
 }));
 
 import { POST } from "./route";
@@ -49,6 +51,10 @@ beforeEach(() => {
   vi.stubEnv("INTERPRETATION_WORKER_SECRET", STRONG_SECRET);
   mocks.runInterpretationJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0 });
   mocks.getInterpretationQueueStats.mockResolvedValue({ depth: 0, oldestPendingAgeSeconds: null });
+  mocks.pruneExpiredSystemRows.mockResolvedValue({
+    expiredRateLimitBuckets: 0,
+    completedInterpretationJobs: 0,
+  });
 });
 
 afterEach(() => {
@@ -91,6 +97,10 @@ describe("POST /api/internal/interpretation-jobs", () => {
   it("drains a batch and reports the summary plus queue depth for the correct token", async () => {
     mocks.runInterpretationJobs.mockResolvedValue({ claimed: 3, succeeded: 2, failed: 1 });
     mocks.getInterpretationQueueStats.mockResolvedValue({ depth: 5, oldestPendingAgeSeconds: 42 });
+    mocks.pruneExpiredSystemRows.mockResolvedValue({
+      expiredRateLimitBuckets: 7,
+      completedInterpretationJobs: 2,
+    });
     const response = await POST(request(`Bearer ${tokenFor(STRONG_SECRET)}`));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -100,8 +110,16 @@ describe("POST /api/internal/interpretation-jobs", () => {
       failed: 1,
       queueDepth: 5,
       oldestPendingAgeSeconds: 42,
+      pruned: { expiredRateLimitBuckets: 7, completedInterpretationJobs: 2 },
     });
     expect(mocks.runInterpretationJobs).toHaveBeenCalledWith(10);
+    expect(mocks.pruneExpiredSystemRows).toHaveBeenCalledWith("synthetic-system-client");
+  });
+
+  it("does not prune when the drain is rejected as unauthorized", async () => {
+    const response = await POST(request());
+    expect(response.status).toBe(401);
+    expect(mocks.pruneExpiredSystemRows).not.toHaveBeenCalled();
   });
 
   it("reports a 500 without leaking details when claiming itself throws", async () => {

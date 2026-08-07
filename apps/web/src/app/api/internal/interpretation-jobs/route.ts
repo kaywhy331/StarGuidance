@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { getInterpretationQueueStats } from "@starguidance/database";
+import { getInterpretationQueueStats, pruneExpiredSystemRows } from "@starguidance/database";
 import { INTERPRETATION_WORKER_TOKEN_CONTEXT } from "@starguidance/contracts";
 
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
@@ -46,6 +46,11 @@ export async function POST(request: Request) {
     );
   try {
     const summary = await runInterpretationJobs(BATCH_LIMIT);
+    // Opportunistic garbage collection rides the same every-minute schedule
+    // (gap G12): expired rate-limit buckets and completed jobs past their
+    // observability window. Failed jobs are never touched here — they are
+    // the dead-letter record, removed only by the guarded retention command.
+    const pruned = await pruneExpiredSystemRows(getSystemDatabaseClient());
     // Counted on the same connection role the worker's cross-user claim path
     // uses (interpretation_jobs_system, migration 0008) — the app role's own
     // policy is subject-bound and a subject-less transaction would count
@@ -59,6 +64,7 @@ export async function POST(request: Request) {
         ...summary,
         queueDepth: stats.depth,
         oldestPendingAgeSeconds: stats.oldestPendingAgeSeconds,
+        pruned,
       },
       { status: 200, headers: { "cache-control": "no-store" } },
     );

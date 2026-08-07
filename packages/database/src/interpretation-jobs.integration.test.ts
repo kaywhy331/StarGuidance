@@ -14,6 +14,7 @@ import {
   type ClaimedInterpretationJob,
 } from "./interpretation-jobs";
 import { createDatabaseClient, type DatabaseTransaction } from "./postgres-client";
+import { pruneExpiredSystemRows } from "./system-prune";
 import { actorTransaction, systemTransaction } from "./system-transaction";
 import {
   createSubject,
@@ -309,6 +310,47 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     const stats = await getInterpretationQueueStats(sql!);
     expect(stats.oldestPendingAgeSeconds).not.toBeNull();
     expect(stats.oldestPendingAgeSeconds!).toBeGreaterThanOrEqual(90);
+  });
+
+  it("prunes expired buckets and stale completed jobs, never failed or fresh rows", async () => {
+    if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const staleReading = await createReading();
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId: staleReading }));
+    const staleJob = await claimReading(staleReading);
+    await asWorker((tx) => completeInterpretationJob(tx, staleJob.id));
+    await asWorker(
+      (tx) => tx`
+        update interpretation_jobs set completed_at = now() - interval '25 hours'
+        where id = ${staleJob.id}`,
+    );
+    const freshReading = await createReading();
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId: freshReading }));
+    const freshJob = await claimReading(freshReading);
+    await asWorker((tx) => completeInterpretationJob(tx, freshJob.id));
+    await sql`insert into rate_limit_buckets (key_hash, window_start, count, expires_at) values
+      ('prune-test-expired', now() - interval '2 hours', 1, now() - interval '1 hour'),
+      ('prune-test-live', now(), 1, now() + interval '1 hour')`;
+    try {
+      const summary = await pruneExpiredSystemRows(sql);
+      expect(summary.completedInterpretationJobs).toBeGreaterThanOrEqual(1);
+      expect(summary.expiredRateLimitBuckets).toBeGreaterThanOrEqual(1);
+      const [stale] = await sql`
+        select count(*)::int as count from interpretation_jobs where id = ${staleJob.id}`;
+      expect(stale?.count).toBe(0);
+      const [fresh] = await sql`
+        select count(*)::int as count from interpretation_jobs where id = ${freshJob.id}`;
+      expect(fresh?.count).toBe(1);
+      // The terminal failure the backoff test left behind is the dead-letter
+      // record — pruning must never touch status='failed'.
+      const [failed] = await sql`
+        select count(*)::int as count from interpretation_jobs where status = 'failed'`;
+      expect(failed?.count).toBeGreaterThanOrEqual(1);
+      const buckets = await sql`
+        select key_hash from rate_limit_buckets where key_hash like 'prune-test-%'`;
+      expect(buckets.map((row) => row.key_hash)).toEqual(["prune-test-live"]);
+    } finally {
+      await sql`delete from rate_limit_buckets where key_hash like 'prune-test-%'`;
+    }
   });
 
   it("hides and protects one subject's jobs from an actor bound to another subject", async () => {
