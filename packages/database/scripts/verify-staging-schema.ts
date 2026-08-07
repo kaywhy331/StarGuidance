@@ -21,7 +21,7 @@ import { completeStage, record, requiredEnv } from "./staging-result";
  * interpretation_jobs' application-role policy must be subject-bound
  * (migration 0008) rather than permissive.
  */
-const APP_ONLY_TABLES = ["interpretation_jobs", "rate_limit_buckets"] as const;
+const APP_ONLY_TABLES = ["interpretation_jobs", "rate_limit_buckets", "deletion_receipts"] as const;
 
 const USER_OWNED_TABLES = [
   "users",

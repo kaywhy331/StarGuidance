@@ -71,6 +71,13 @@
       "when": 1786139113507,
       "tag": "0009_profile_snapshot_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786139931822,
+      "tag": "0010_deletion_receipts",
+      "breakpoints": true
     }
   ]
 }

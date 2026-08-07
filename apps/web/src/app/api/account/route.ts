@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
+import { actorTransaction, recordDeletionReceipt } from "@starguidance/database";
 import { SESSION_COOKIE, requireUser } from "@/lib/auth";
 import { persistenceFor } from "@/lib/persistence";
+import { POLICY_VERSIONS } from "@/lib/policies";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
-import { getRuntimeAdapter, RuntimeConfigurationError } from "@/lib/runtime";
+import {
+  getRuntimeAdapter,
+  getSystemDatabaseClient,
+  RuntimeConfigurationError,
+} from "@/lib/runtime";
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase";
 
 const deletionSchema = z.object({
@@ -29,6 +35,14 @@ export async function DELETE(request: Request) {
           { error: "Enter your current password to authorize account deletion." },
           { status: 403 },
         );
+      // The tombstone precedes the erasure (migration 0010): audit_events
+      // cascade away with the user, so the durable evidence of an authorized
+      // deletion is a user-less receipt written while the subject still
+      // exists. If it cannot be written, deletion aborts (fail closed) — an
+      // unrecorded erasure is the failure mode the receipt exists to prevent.
+      await actorTransaction(getSystemDatabaseClient(), user.id, (tx) =>
+        recordDeletionReceipt(tx, { userId: user.id, policyVersion: POLICY_VERSIONS.privacy }),
+      );
       const { error } = await createSupabaseAdminClient().auth.admin.deleteUser(user.id);
       if (error)
         return NextResponse.json(

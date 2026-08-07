@@ -14,6 +14,7 @@ const recovery = vi.hoisted(() => ({
   cookieGet: vi.fn(),
   verify: vi.fn(),
 }));
+const security = vi.hoisted(() => ({ recordSecurityAudit: vi.fn() }));
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ delete: recovery.cookieDelete, get: recovery.cookieGet }),
@@ -22,6 +23,13 @@ vi.mock("next/headers", () => ({
 vi.mock("@/lib/recovery-session", () => ({
   RECOVERY_SESSION_COOKIE: "starguidance_password_recovery",
   verifyRecoveryReceipt: recovery.verify,
+}));
+
+// recordSecurityAudit is best-effort by contract (it swallows its own
+// failures); mocked here so these tests assert when it is invoked without
+// the real implementation reaching for a database.
+vi.mock("@/lib/persistence", () => ({
+  recordSecurityAudit: security.recordSecurityAudit,
 }));
 
 vi.mock("@/lib/supabase", () => ({
@@ -104,6 +112,7 @@ beforeEach(() => {
     error: null,
   });
   supabase.signOut.mockResolvedValue({ error: null });
+  security.recordSecurityAudit.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -111,15 +120,23 @@ afterEach(() => {
   for (const mock of Object.values(supabase)) mock.mockReset();
   for (const mock of Object.values(admin)) mock.mockReset();
   for (const mock of Object.values(recovery)) mock.mockReset();
+  security.recordSecurityAudit.mockReset();
 });
 
 describe("email and password authentication", () => {
   it("signs in with a password and never returns the credential", async () => {
-    supabase.signInWithPassword.mockResolvedValue({ error: null });
+    supabase.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "4978a7ef-c4a6-462d-befe-d286a38a772f" } },
+      error: null,
+    });
     const response = await POST(request(credentials));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, authenticated: true });
+    expect(security.recordSecurityAudit).toHaveBeenCalledWith(
+      "4978a7ef-c4a6-462d-befe-d286a38a772f",
+      "auth.signed_in",
+    );
     expect(supabase.signInWithPassword).toHaveBeenCalledWith({
       email: "reader@example.test",
       password: "a-private-passphrase",
@@ -249,6 +266,10 @@ describe("email and password authentication", () => {
     expect(supabase.updateUser).toHaveBeenCalledWith({ password: "a-new-private-passphrase" });
     expect(supabase.signOut).toHaveBeenCalledWith({ scope: "global" });
     expect(recovery.cookieDelete).toHaveBeenCalledWith("starguidance_password_recovery");
+    expect(security.recordSecurityAudit).toHaveBeenCalledWith(
+      "4978a7ef-c4a6-462d-befe-d286a38a772f",
+      "auth.password_changed",
+    );
   });
 
   it("rejects a password update outside a verified recovery callback", async () => {
@@ -323,6 +344,10 @@ describe("email and password authentication", () => {
 
     expect(response.status).toBe(200);
     expect(supabase.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(security.recordSecurityAudit).toHaveBeenCalledWith(
+      "4978a7ef-c4a6-462d-befe-d286a38a772f",
+      "auth.signed_out",
+    );
   });
 
   it("does not report sign-out success when the provider rejects it", async () => {
@@ -331,5 +356,6 @@ describe("email and password authentication", () => {
 
     expect(response.status).toBe(502);
     expect((await response.json()).error).toMatch(/could not end/i);
+    expect(security.recordSecurityAudit).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { isHostedNetlifyRuntime } from "@/lib/hosted-runtime";
 import { createLocalSession } from "@/lib/local-store";
+import { recordSecurityAudit } from "@/lib/persistence";
 import {
   POLICY_CONSENT_METADATA_KEY,
   POLICY_VERSIONS,
@@ -82,12 +83,13 @@ export async function POST(request: Request) {
     }
     const supabase = await createSupabaseServerClient();
     if (input.action === "sign-in") {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: input.email,
         password: input.password,
       });
       if (error)
         return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
+      await recordSecurityAudit(data?.user?.id, "auth.signed_in");
       return NextResponse.json({ ok: true, authenticated: true });
     }
 
@@ -110,6 +112,7 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       jar.delete(RECOVERY_SESSION_COOKIE);
+      await recordSecurityAudit(userData.user.id, "auth.password_changed");
       const { error: revocationError } = await supabase.auth.signOut({ scope: "global" });
       if (revocationError)
         return NextResponse.json(
@@ -251,12 +254,16 @@ export async function DELETE(request: Request) {
       return response;
     }
     const supabase = await createSupabaseServerClient();
+    // Resolve who is signing out before the session is gone; recorded only
+    // after the provider confirms the sign-out actually happened.
+    const { data: sessionUser } = await supabase.auth.getUser();
     const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error)
       return NextResponse.json(
         { error: "The provider could not end this browser session." },
         { status: 502 },
       );
+    await recordSecurityAudit(sessionUser?.user?.id, "auth.signed_out");
     return response;
   } catch (error) {
     const security = requestSecurityFailure(error);

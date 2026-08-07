@@ -68,6 +68,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
     "d5aecc953a81ec0a4a42b4876593248969144d53f3099ccdcc89f5a413340557",
   "0009_profile_snapshot_immutability":
     "81a3228d7e2eaf57fdb0bf77a4eef6a040e9d932de376beda8d4fde9da5fb1e4",
+  "0010_deletion_receipts": "c493ef6415cfbbf7625a17654f46303494c7bf25c219bb76713144f571fe9178",
 };
 
 describe("migration history", () => {
@@ -220,5 +221,30 @@ describe("migration history", () => {
     // The trigger must not touch DELETE — rows leave via the enforced FK
     // cascades (user/profile deletion), and a delete trigger would block them.
     expect(sql).not.toMatch(/before\s+delete/i);
+  });
+
+  it("creates cascade-proof, append-only deletion receipts (0010)", () => {
+    const sql = executableSql("0010_deletion_receipts");
+    // User-less by construction: no user_id column, no foreign keys at all —
+    // a cascade that can reach this table would defeat its purpose.
+    expect(sql).not.toMatch(/user_id/i);
+    expect(sql).not.toMatch(/references/i);
+    expect(sql).toMatch(/"subject_hash"\s+text\s+not\s+null/i);
+    expect(sql).toMatch(/"policy_version"\s+text\s+not\s+null/i);
+    expect(sql).toMatch(/alter\s+table\s+"deletion_receipts"\s+enable\s+row\s+level\s+security/i);
+    expect(sql).toMatch(/alter\s+table\s+"deletion_receipts"\s+force\s+row\s+level\s+security/i);
+    // The application role may only append; reads are the connection role's.
+    expect(sql).toMatch(
+      /create\s+policy\s+"deletion_receipts_append"[\s\S]*for\s+insert\s+to\s+starguidance_app/i,
+    );
+    expect(sql).toMatch(/create\s+policy\s+"deletion_receipts_system"[\s\S]*to\s+current_user/i);
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"deletion_receipts"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+insert\s+on\s+table\s+"deletion_receipts"\s+to\s+starguidance_app/i,
+    );
+    expect(sql).not.toMatch(/grant\s+(select|update|delete)[\s\S]*starguidance_app/i);
+    expect(sql).not.toMatch(/security\s+definer/i);
   });
 });

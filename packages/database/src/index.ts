@@ -1,3 +1,4 @@
+export * from "./deletion-receipts";
 export * from "./encryption";
 export * from "./database-role";
 export * from "./interpretation-jobs";

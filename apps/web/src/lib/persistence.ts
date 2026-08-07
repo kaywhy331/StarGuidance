@@ -106,3 +106,25 @@ export async function recordAudit(
     metadata: {},
   });
 }
+
+/**
+ * Best-effort security-event audit rows (PRD ACC-008): sign-in, sign-out,
+ * password change. Never blocks the auth action itself — an identity that
+ * signs in before it was ever provisioned has no users row for the audit
+ * foreign key, and failing authentication because an audit row could not be
+ * written would turn an audit hiccup into a lockout. Account deletion is
+ * deliberately NOT recorded here: audit_events cascade away with the user,
+ * so its durable record is the deletion receipt (migration 0010).
+ */
+export async function recordSecurityAudit(
+  userId: string | undefined,
+  action: "auth.signed_in" | "auth.signed_out" | "auth.password_changed",
+): Promise<void> {
+  if (!userId) return;
+  try {
+    await recordAudit(userId, action, "account", userId);
+  } catch {
+    // Not yet provisioned, or the audit write failed — the auth action must
+    // proceed either way; this helper is the only intentionally lossy writer.
+  }
+}

@@ -349,9 +349,10 @@ export const rateLimitBuckets = pgTable(
   ],
 );
 
-// Not user-row-scoped, same reasoning as rate_limit_buckets (migration
-// 0006): the worker's claim query is inherently cross-user, so there is no
-// single subject to bind for RLS. See migration 0007.
+// Subject-bound for the application role (migration 0008): the request path
+// reaches only its own subject's rows, while the worker's inherently
+// cross-user claim sweep runs as the owning connection role under the
+// explicit interpretation_jobs_system policy.
 export const interpretationJobs = pgTable(
   "interpretation_jobs",
   {
@@ -390,4 +391,16 @@ export const auditEvents = pgTable("audit_events", {
   targetId: text("target_id").notNull(),
   metadata: jsonb("metadata").notNull(),
   createdAt,
+});
+
+// Deliberately user-less (migration 0010): audit_events cascade away with the
+// user they belong to, so the evidence that a deletion happened must live in
+// a row no cascade can reach. subject_hash is a domain-separated SHA-256 of
+// the user id — enough to answer "was this subject deleted, when, under which
+// policy" given the id, without retaining the id itself.
+export const deletionReceipts = pgTable("deletion_receipts", {
+  id,
+  subjectHash: text("subject_hash").notNull(),
+  policyVersion: text("policy_version").notNull(),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
 });

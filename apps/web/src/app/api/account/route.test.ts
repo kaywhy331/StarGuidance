@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   deleteIdentity: vi.fn(),
   cookieDelete: vi.fn(),
   cookieGetAll: vi.fn(),
+  recordDeletionReceipt: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({
@@ -31,6 +32,16 @@ vi.mock("@/lib/persistence", () => ({
 vi.mock("@/lib/runtime", () => ({
   RuntimeConfigurationError: class RuntimeConfigurationError extends Error {},
   getRuntimeAdapter: mocks.getRuntimeAdapter,
+  getSystemDatabaseClient: () => "synthetic-system-client",
+}));
+
+// The deletion receipt runs inside an actor-bound transaction; both are
+// stubbed so the route's ordering (receipt before identity delete, abort on
+// receipt failure) is what's under test, not the database layer.
+vi.mock("@starguidance/database", () => ({
+  actorTransaction: (_client: unknown, _userId: string, work: (tx: unknown) => unknown) =>
+    work("synthetic-actor-tx"),
+  recordDeletionReceipt: mocks.recordDeletionReceipt,
 }));
 
 vi.mock("@/lib/supabase", () => ({
@@ -126,6 +137,39 @@ describe("account deletion", () => {
     expect(await response.json()).toEqual({ deleted: true });
     expect(mocks.deleteIdentity).toHaveBeenCalledOnce();
     expect(mocks.cookieDelete).toHaveBeenCalledWith("sb-synthetic-auth-token");
+  });
+
+  it("writes the deletion receipt after re-authentication and before the identity delete", async () => {
+    const response = await DELETE(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.recordDeletionReceipt).toHaveBeenCalledWith("synthetic-actor-tx", {
+      userId: expect.any(String),
+      policyVersion: expect.any(String),
+    });
+    // The tombstone must exist while the subject still does: receipt strictly
+    // precedes the cascade-triggering identity delete.
+    expect(mocks.recordDeletionReceipt.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.deleteIdentity.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("aborts deletion entirely when the receipt cannot be written", async () => {
+    mocks.recordDeletionReceipt.mockRejectedValue(new Error("receipt table unavailable"));
+
+    const response = await DELETE(request());
+
+    expect(response.status).toBe(500);
+    expect((await response.json()).error).toMatch(/no success was recorded/i);
+    expect(mocks.deleteIdentity).not.toHaveBeenCalled();
+    expect(mocks.deleteApplicationAccount).not.toHaveBeenCalled();
+  });
+
+  it("does not write a receipt when re-authentication fails", async () => {
+    mocks.signInWithPassword.mockResolvedValue({ error: { code: "invalid_credentials" } });
+    await DELETE(request());
+
+    expect(mocks.recordDeletionReceipt).not.toHaveBeenCalled();
   });
 
   it("uses the application deletion path only for the explicit local adapter", async () => {
