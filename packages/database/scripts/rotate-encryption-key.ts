@@ -2,6 +2,7 @@ import {
   decryptSensitive,
   decryptSensitiveWithKeys,
   encryptSensitive,
+  isLegacyEnvelope,
   isValidEncryptionKey,
 } from "../src/encryption";
 import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
@@ -12,7 +13,7 @@ import {
 } from "../src/postgres-client";
 
 type RotationMode = "inventory" | "reencrypt" | "verify-current";
-type EncryptedRow = { id: string; envelope: string };
+type EncryptedRow = { id: string; envelope: string; aadContext: string };
 type RotationSummary = { total: number; current: number; previous: number; changed: number };
 
 const BATCH_SIZE = 100;
@@ -56,8 +57,17 @@ interface Target {
   replace(sql: DatabaseClient, row: EncryptedRow, envelope: string): Promise<boolean>;
 }
 
-function rows(result: DatabaseRow[]): EncryptedRow[] {
-  return result.map((row) => ({ id: String(row.id), envelope: String(row.envelope) }));
+/**
+ * Envelope AAD context per row: `<data-class>:<owner user id>`, matching
+ * apps/web/src/lib/persistence.ts's encryptionAadContext. Legacy v1 rows
+ * decrypt regardless; re-encryption always writes the bound v2 form.
+ */
+function rows(result: DatabaseRow[], dataClass: (row: DatabaseRow) => string): EncryptedRow[] {
+  return result.map((row) => ({
+    id: String(row.id),
+    envelope: String(row.envelope),
+    aadContext: `${dataClass(row)}:${String(row.user_id)}`,
+  }));
 }
 
 const targets: Target[] = [
@@ -66,9 +76,10 @@ const targets: Target[] = [
     async load(sql, afterId) {
       return rows(
         await sql`
-          select id, encrypted_payload as envelope from birth_profiles
+          select id, user_id, encrypted_payload as envelope from birth_profiles
           where (${afterId}::uuid is null or id > ${afterId}::uuid)
           order by id limit ${BATCH_SIZE}`,
+        () => "profile-input",
       );
     },
     async replace(sql, row, envelope) {
@@ -83,11 +94,13 @@ const targets: Target[] = [
     async load(sql, afterId) {
       return rows(
         await sql`
-          select id, payload->>'envelope' as envelope from profile_components
+          select id, user_id, system, payload->>'envelope' as envelope from profile_components
           where system in ('private-profile-input', 'private-calculations')
             and payload ? 'envelope'
             and (${afterId}::uuid is null or id > ${afterId}::uuid)
           order by id limit ${BATCH_SIZE}`,
+        (row) =>
+          String(row.system) === "private-profile-input" ? "profile-input" : "profile-calculations",
       );
     },
     async replace(sql, row, envelope) {
@@ -103,9 +116,10 @@ const targets: Target[] = [
     async load(sql, afterId) {
       return rows(
         await sql`
-          select id, encrypted_question as envelope from reading_sessions
+          select id, user_id, encrypted_question as envelope from reading_sessions
           where (${afterId}::uuid is null or id > ${afterId}::uuid)
           order by id limit ${BATCH_SIZE}`,
+        () => "reading-question",
       );
     },
     async replace(sql, row, envelope) {
@@ -120,9 +134,10 @@ const targets: Target[] = [
     async load(sql, afterId) {
       return rows(
         await sql`
-          select id, encrypted_question as envelope from follow_up_questions
+          select id, user_id, encrypted_question as envelope from follow_up_questions
           where (${afterId}::uuid is null or id > ${afterId}::uuid)
           order by id limit ${BATCH_SIZE}`,
+        () => "follow-up-question",
       );
     },
     async replace(sql, row, envelope) {
@@ -137,10 +152,11 @@ const targets: Target[] = [
     async load(sql, afterId) {
       return rows(
         await sql`
-          select id, encrypted_comment as envelope from reading_feedback
+          select id, user_id, encrypted_comment as envelope from reading_feedback
           where encrypted_comment is not null
             and (${afterId}::uuid is null or id > ${afterId}::uuid)
           order by id limit ${BATCH_SIZE}`,
+        () => "feedback-comment",
       );
     },
     async replace(sql, row, envelope) {
@@ -167,17 +183,26 @@ async function inspectTarget(
     for (const row of batch) {
       summary.total += 1;
       let plaintext: string;
+      let needsRewrite: boolean;
       try {
-        plaintext = decryptSensitive(row.envelope, current);
+        plaintext = decryptSensitive(row.envelope, current, row.aadContext);
         summary.current += 1;
+        // A legacy v1 envelope under the current key carries no AAD binding
+        // yet — rewriting it here is what migrates the fleet to v2.
+        needsRewrite = isLegacyEnvelope(row.envelope);
       } catch {
-        plaintext = decryptSensitiveWithKeys(row.envelope, previous);
+        plaintext = decryptSensitiveWithKeys(row.envelope, previous, row.aadContext);
         summary.previous += 1;
-        if (rotationMode === "reencrypt") {
-          const replaced = await target.replace(sql, row, encryptSensitive(plaintext, current));
-          if (!replaced) throw new Error(`Concurrent update blocked ${target.name} rotation`);
-          summary.changed += 1;
-        }
+        needsRewrite = true;
+      }
+      if (needsRewrite && rotationMode === "reencrypt") {
+        const replaced = await target.replace(
+          sql,
+          row,
+          encryptSensitive(plaintext, current, row.aadContext),
+        );
+        if (!replaced) throw new Error(`Concurrent update blocked ${target.name} rotation`);
+        summary.changed += 1;
       }
     }
     afterId = batch.at(-1)?.id ?? null;

@@ -31,7 +31,7 @@ export async function generateProfileReport(input: {
   );
   if (!profile) throw new Error("PROFILE_SNAPSHOT_NOT_FOUND");
   const calculation = JSON.parse(
-    persistence.decrypt(profile.encryptedCalculations),
+    persistence.decrypt(profile.encryptedCalculations, "profile-calculations"),
   ) as ProfileCalculation;
   const nineStarTraits = profile.snapshot.traits
     .filter(({ sourceSystem }) => sourceSystem === "nineStarKi")

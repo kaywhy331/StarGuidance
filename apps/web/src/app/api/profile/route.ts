@@ -87,7 +87,9 @@ export async function GET() {
     const persistence = persistenceFor(user);
     const profile = await persistence.repositories.birthProfiles.getActive(user.id);
     const input = profile
-      ? birthProfileInputSchema.parse(JSON.parse(persistence.decrypt(profile.encryptedInput)))
+      ? birthProfileInputSchema.parse(
+          JSON.parse(persistence.decrypt(profile.encryptedInput, "profile-input")),
+        )
       : undefined;
     return NextResponse.json({
       profile:

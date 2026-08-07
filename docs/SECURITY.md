@@ -4,7 +4,7 @@ Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 
 ## Implemented controls
 
-- AES-256-GCM envelopes use a random 96-bit nonce and authentication tag; tampering fails authentication.
+- AES-256-GCM envelopes use a random 96-bit nonce and authentication tag; tampering fails authentication. Envelopes are additionally bound to an associated-data context (`<data-class>:<owner user id>`), so a database-level splice of one user's ciphertext into another user's row — or a question into a profile column — fails the tag check instead of decrypting. Pre-binding envelopes remain readable until the next key rotation rewrites them; the residual boundary is that same-class, same-owner envelopes remain interchangeable, since several classes are encrypted before their row exists.
 - Runtime selection fails closed. The local adapter requires `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, a development/test `APP_ENV`, and no hosted Netlify context.
 - Supabase Auth is verified server-side with `auth.getUser()`. Routine access uses email/password credentials; passwords are never persisted or logged by the application. Optional signup-confirmation and password-recovery links terminate at a same-site callback, and account deletion also removes the Supabase Auth identity through a server-only service-role client.
 - Signup requires versioned Terms, Privacy Notice, and 18+ acknowledgements. Receipts are first bound to Auth `app_metadata`, then mirrored into the subject-scoped consent table when the application user is provisioned. Profile personalization has its own versioned consent.

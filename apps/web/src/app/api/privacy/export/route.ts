@@ -16,14 +16,18 @@ export async function GET() {
         account: { ...data.user, settings: data.settings, consentRecords: data.consents },
         profiles: data.profiles.map((profile) => ({
           snapshot: profile.snapshot,
-          birthDetails: JSON.parse(persistence.decrypt(profile.encryptedInput)) as unknown,
-          calculations: JSON.parse(persistence.decrypt(profile.encryptedCalculations)) as unknown,
+          birthDetails: JSON.parse(
+            persistence.decrypt(profile.encryptedInput, "profile-input"),
+          ) as unknown,
+          calculations: JSON.parse(
+            persistence.decrypt(profile.encryptedCalculations, "profile-calculations"),
+          ) as unknown,
         })),
         readings: data.readings.map((reading) => ({
           id: reading.id,
           profileSnapshotId: reading.profileSnapshotId,
           spreadId: reading.spreadId,
-          question: persistence.decrypt(reading.encryptedQuestion),
+          question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
           safetyClassification: reading.safetyClassification,
           draw: reading.draw,
           result: reading.result,
@@ -31,7 +35,7 @@ export async function GET() {
           generationStatus: reading.generationStatus,
           followUps: reading.followUps.map((followUp) => ({
             id: followUp.id,
-            question: persistence.decrypt(followUp.encryptedQuestion),
+            question: persistence.decrypt(followUp.encryptedQuestion, "follow-up-question"),
             result: followUp.result,
           })),
           createdAt: reading.createdAt,

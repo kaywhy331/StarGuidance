@@ -26,7 +26,7 @@ Rehearse on a disposable restored database before staging, and on staging before
    KEY_ROTATION_MODE=inventory pnpm --filter @starguidance/database key-rotation
    ```
 
-4. Re-encrypt rows in bounded batches. The command compares the prior ciphertext during update and fails on a concurrent change:
+4. Re-encrypt rows in bounded batches. The command compares the prior ciphertext during update and fails on a concurrent change. It also rewrites any remaining pre-AAD (v1) envelope into the context-bound v2 form even when the row already uses the current key, so a completed rotation leaves every envelope bound to its data class and owner:
 
    ```bash
    KEY_ROTATION_MODE=reencrypt \

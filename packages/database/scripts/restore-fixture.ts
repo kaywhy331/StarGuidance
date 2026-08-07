@@ -51,9 +51,24 @@ async function seed(sql: DatabaseClient): Promise<void> {
   const [spread] = await sql`select id, version from spreads order by id limit 1`;
   if (!deck || !spread) throw new Error("Reference seed data is required before restore fixture");
 
-  const profileEnvelope = encryptSensitive("synthetic restore profile", TEST_KEY);
-  const calculationEnvelope = encryptSensitive("synthetic restore calculation", TEST_KEY);
-  const questionEnvelope = encryptSensitive("synthetic restore question", TEST_KEY);
+  // Contexts match the application's encryptionAadContext convention
+  // (apps/web/src/lib/persistence.ts) so the restored envelopes verify the
+  // same binding production rows carry.
+  const profileEnvelope = encryptSensitive(
+    "synthetic restore profile",
+    TEST_KEY,
+    `profile-input:${IDS.user}`,
+  );
+  const calculationEnvelope = encryptSensitive(
+    "synthetic restore calculation",
+    TEST_KEY,
+    `profile-calculations:${IDS.user}`,
+  );
+  const questionEnvelope = encryptSensitive(
+    "synthetic restore question",
+    TEST_KEY,
+    `reading-question:${IDS.user}`,
+  );
 
   await sql.begin(async (tx) => {
     const [auth] = await tx<{ present: boolean }[]>`
@@ -155,8 +170,10 @@ async function verify(sql: DatabaseClient): Promise<void> {
   if (lineage.entitlement_status !== "active" || lineage.section_count !== 1)
     throw new Error("The restored entitlement or report structure is incomplete");
   if (
-    decryptSensitive(lineage.profile_envelope, TEST_KEY) !== "synthetic restore profile" ||
-    decryptSensitive(lineage.question_envelope, TEST_KEY) !== "synthetic restore question"
+    decryptSensitive(lineage.profile_envelope, TEST_KEY, `profile-input:${IDS.user}`) !==
+      "synthetic restore profile" ||
+    decryptSensitive(lineage.question_envelope, TEST_KEY, `reading-question:${IDS.user}`) !==
+      "synthetic restore question"
   )
     throw new Error("The restored encrypted payloads failed authentication");
 }

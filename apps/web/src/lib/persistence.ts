@@ -15,10 +15,30 @@ import {
 import type { ProfileCalculation } from "./profile-engine";
 import { getDecryptionKeys, getEncryptionKey, getRepositoriesForUser } from "./runtime";
 
+/**
+ * The classes of sensitive data this application encrypts. Envelope AAD is
+ * `<class>:<owner user id>` (migration-free — the binding lives in the
+ * ciphertext, see @starguidance/database's encryption module), so a
+ * database-level splice across users or across classes fails authentication.
+ * Classes are purposes, not physical columns, because the profile-input
+ * envelope is deliberately stored in both birth_profiles and the
+ * private-profile-input component row.
+ */
+export type SensitiveDataClass =
+  | "profile-input"
+  | "profile-calculations"
+  | "reading-question"
+  | "follow-up-question"
+  | "feedback-comment";
+
+export function encryptionAadContext(dataClass: SensitiveDataClass, userId: string): string {
+  return `${dataClass}:${userId}`;
+}
+
 export interface RequestPersistence {
   repositories: ApplicationRepositories;
-  encrypt(value: string): string;
-  decrypt(value: string): string;
+  encrypt(value: string, dataClass: SensitiveDataClass): string;
+  decrypt(value: string, dataClass: SensitiveDataClass): string;
 }
 
 export function persistenceFor(user: Pick<RepositoryUser, "id">): RequestPersistence {
@@ -26,8 +46,10 @@ export function persistenceFor(user: Pick<RepositoryUser, "id">): RequestPersist
   const decryptionKeys = getDecryptionKeys();
   return {
     repositories: getRepositoriesForUser(user.id),
-    encrypt: (value) => encryptSensitive(value, key),
-    decrypt: (value) => decryptSensitiveWithKeys(value, decryptionKeys),
+    encrypt: (value, dataClass) =>
+      encryptSensitive(value, key, encryptionAadContext(dataClass, user.id)),
+    decrypt: (value, dataClass) =>
+      decryptSensitiveWithKeys(value, decryptionKeys, encryptionAadContext(dataClass, user.id)),
   };
 }
 
@@ -84,8 +106,8 @@ export async function saveProfileVersion(
     })),
   ];
   const profile: StoredProfileVersion = {
-    encryptedInput: persistence.encrypt(JSON.stringify(input)),
-    encryptedCalculations: persistence.encrypt(JSON.stringify(calculation)),
+    encryptedInput: persistence.encrypt(JSON.stringify(input), "profile-input"),
+    encryptedCalculations: persistence.encrypt(JSON.stringify(calculation), "profile-calculations"),
     components,
     snapshot,
   };

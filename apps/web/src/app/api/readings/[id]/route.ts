@@ -111,7 +111,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (getRuntimeAdapter() !== "supabase") {
         const generated = await provider.generateWithProvenance({
           draw: reading.draw,
-          question: persistence.decrypt(reading.encryptedQuestion),
+          question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
           relevantTraitStatements: snapshot
             ? reading.readingLens.traitIndexes.map(
                 (index) => snapshot.traits[index]?.statement ?? "",
@@ -183,7 +183,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
     const followUp = {
       id: crypto.randomUUID(),
-      encryptedQuestion: persistence.encrypt(input.question),
+      encryptedQuestion: persistence.encrypt(input.question, "follow-up-question"),
       result,
       createdAt: new Date().toISOString(),
     };

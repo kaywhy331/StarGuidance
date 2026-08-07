@@ -42,7 +42,7 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
       : [];
     const generated = await createInterpretationProvider().generateWithProvenance({
       draw: reading.draw,
-      question: persistence.decrypt(reading.encryptedQuestion),
+      question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
       relevantTraitStatements,
     });
     await actorTransaction(sql, job.userId, (tx) =>

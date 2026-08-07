@@ -52,7 +52,7 @@ export async function POST(request: Request) {
         traitIndexes: readingLens.traitIndexes,
       },
       spreadId: spread.id,
-      encryptedQuestion: persistence.encrypt(input.question),
+      encryptedQuestion: persistence.encrypt(input.question, "reading-question"),
       safetyClassification: safety.category,
       draw,
       generationStatus: "pending",
@@ -156,7 +156,7 @@ export async function GET() {
     const persistence = persistenceFor(user);
     const readings = (await persistence.repositories.history.listReadings(user.id)).map(
       ({ id, spreadId, encryptedQuestion, draw, generationStatus, createdAt }) => {
-        const question = persistence.decrypt(encryptedQuestion);
+        const question = persistence.decrypt(encryptedQuestion, "reading-question");
         return {
           id,
           spreadId,

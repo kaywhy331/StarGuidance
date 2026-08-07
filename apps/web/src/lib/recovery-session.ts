@@ -14,6 +14,14 @@ const receiptSchema = z.object({
   expiresAt: z.number().int().positive(),
 });
 
+// The receipt's user binding is enforced twice: the payload's userId is
+// compared on verify, and the envelope's AAD binds the ciphertext to the
+// same subject, so one user's recovery cookie cannot even be decrypted in
+// another user's verification.
+function recoveryAadContext(userId: string): string {
+  return `recovery-session:${userId}`;
+}
+
 export function issueRecoveryReceipt(userId: string, now = Date.now()): string {
   return encryptSensitive(
     JSON.stringify({
@@ -22,6 +30,7 @@ export function issueRecoveryReceipt(userId: string, now = Date.now()): string {
       expiresAt: now + RECOVERY_SESSION_TTL_SECONDS * 1000,
     }),
     getEncryptionKey(),
+    recoveryAadContext(userId),
   );
 }
 
@@ -33,7 +42,7 @@ export function verifyRecoveryReceipt(
   if (!value) return false;
   try {
     const receipt = receiptSchema.parse(
-      JSON.parse(decryptSensitiveWithKeys(value, getDecryptionKeys())),
+      JSON.parse(decryptSensitiveWithKeys(value, getDecryptionKeys(), recoveryAadContext(userId))),
     );
     return receipt.userId === userId && receipt.expiresAt >= now;
   } catch {
