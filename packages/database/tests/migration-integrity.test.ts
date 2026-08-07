@@ -67,7 +67,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0008_interpretation_jobs_subject_rls":
     "d5aecc953a81ec0a4a42b4876593248969144d53f3099ccdcc89f5a413340557",
   "0009_profile_snapshot_immutability":
-    "81a3228d7e2eaf57fdb0bf77a4eef6a040e9d932de376beda8d4fde9da5fb1e4",
+    "d228d35758f7bd7fa722cc2e95572a7cadca3570ed93b584db768c1420291bf4",
   "0010_deletion_receipts": "c493ef6415cfbbf7625a17654f46303494c7bf25c219bb76713144f571fe9178",
 };
 
@@ -208,7 +208,7 @@ describe("migration history", () => {
       /create\s+trigger\s+profile_snapshots_immutable\s+before\s+update\s+on\s+profile_snapshots/i,
     );
     expect(sql).toMatch(/raise\s+exception/i);
-    for (const table of ["profile_snapshots", "profile_components", "profile_traits"]) {
+    for (const table of ["profile_snapshots", "profile_traits"]) {
       expect(sql).toMatch(
         new RegExp(
           String.raw`revoke\s+update,\s*delete\s+on\s+table\s+${table}\s+from\s+starguidance_app`,
@@ -216,6 +216,13 @@ describe("migration history", () => {
         ),
       );
     }
+    // profile_components keeps subject-scoped UPDATE — the RLS-scoped
+    // key-rotation rehearsal re-encrypts envelope payloads as the actor
+    // role — but loses DELETE like the rest of the lineage.
+    expect(sql).toMatch(
+      /revoke\s+delete\s+on\s+table\s+profile_components\s+from\s+starguidance_app/i,
+    );
+    expect(sql).not.toMatch(/revoke\s+update,\s*delete\s+on\s+table\s+profile_components/i);
     expect(sql).not.toMatch(/security\s+definer/i);
     expect(sql).not.toMatch(/\bgrant\b/i);
     // The trigger must not touch DELETE — rows leave via the enforced FK

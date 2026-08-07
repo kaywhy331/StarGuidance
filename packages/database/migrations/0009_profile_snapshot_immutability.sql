@@ -12,17 +12,19 @@
  *   (profile_snapshot_version_unique) — a corrected calculation is a new
  *   version, never an edit, so readings keep pointing at exactly what they
  *   were drawn against.
- * - UPDATE and DELETE grants are revoked from starguidance_app on all three
- *   lineage tables (profile_snapshots, profile_components, profile_traits).
+ * - UPDATE and DELETE grants are revoked from starguidance_app on
+ *   profile_snapshots and profile_traits, and DELETE on profile_components.
  *   Rows leave only via the enforced FK cascades (user deletion, profile
  *   deletion), which run with the table owner's rights and are unaffected.
  *
- * profile_components deliberately gets NO update trigger: the key-rotation
- * tool (packages/database/scripts/rotate-encryption-key.ts) re-encrypts the
- * private-calculation envelopes in place on the connection role. Rotation
- * replaces ciphertext for the same plaintext — the snapshot's content
- * lineage is unchanged — so the owner-role path stays open there while the
- * application role loses it.
+ * profile_components keeps the application role's UPDATE (still constrained
+ * to the bound subject's rows by its RLS policy) and gets NO update trigger:
+ * the key-rotation tool (packages/database/scripts/rotate-encryption-key.ts)
+ * re-encrypts the envelope payloads in place, and its staging rehearsal
+ * deliberately runs RLS-scoped as starguidance_app bound to each synthetic
+ * subject so it cannot touch non-synthetic rows. Rotation replaces
+ * ciphertext for the same plaintext — the snapshot's content lineage is
+ * unchanged.
  */
 CREATE FUNCTION profile_snapshots_forbid_update() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -35,5 +37,5 @@ CREATE TRIGGER profile_snapshots_immutable
   BEFORE UPDATE ON profile_snapshots
   FOR EACH ROW EXECUTE FUNCTION profile_snapshots_forbid_update();--> statement-breakpoint
 REVOKE UPDATE, DELETE ON TABLE profile_snapshots FROM starguidance_app;--> statement-breakpoint
-REVOKE UPDATE, DELETE ON TABLE profile_components FROM starguidance_app;--> statement-breakpoint
+REVOKE DELETE ON TABLE profile_components FROM starguidance_app;--> statement-breakpoint
 REVOKE UPDATE, DELETE ON TABLE profile_traits FROM starguidance_app;

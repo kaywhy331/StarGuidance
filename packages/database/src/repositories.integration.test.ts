@@ -322,8 +322,8 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
     ).rejects.toMatchObject({ code: "23505" });
   });
 
-  it("rejects snapshot updates from every role and withholds lineage UPDATE/DELETE from the app role", async () => {
-    // Migration 0009: the app role lost UPDATE/DELETE on the lineage tables
+  it("rejects snapshot updates from every role and withholds lineage writes from the app role", async () => {
+    // Migration 0009: the app role lost UPDATE/DELETE on profile_snapshots
     // outright, so even the owner's own subject gets permission denied.
     await expect(
       asUser(
@@ -335,13 +335,21 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
     await expect(
       asUser(ids.userA, (tx) => tx`delete from profile_snapshots where id = ${ids.snapshotA1}`),
     ).rejects.toMatchObject({ code: "42501" });
+    // profile_components keeps subject-scoped UPDATE (the RLS-scoped key
+    // rotation rehearsal rewrites envelope payloads as the actor role), but
+    // deletes are withheld and another subject's rows stay invisible.
     await expect(
       asUser(
         ids.userA,
-        (tx) =>
-          tx`update profile_components set status = 'unavailable' where snapshot_id = ${ids.snapshotA1}`,
+        (tx) => tx`delete from profile_components where snapshot_id = ${ids.snapshotA1}`,
       ),
     ).rejects.toMatchObject({ code: "42501" });
+    await asUser(ids.userA, async (tx) => {
+      const crossSubject = await tx`
+        update profile_components set status = status
+        where snapshot_id = ${ids.snapshotB} returning id`;
+      expect(crossSubject).toHaveLength(0);
+    });
     // The guard trigger stops the owning connection role too: snapshots
     // version forward, they are never edited (restrict_violation).
     if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
