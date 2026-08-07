@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMachine } from "@xstate/react";
+import { GUARDED_CATEGORIES, type SafetyCategory } from "@starguidance/ai";
 import type { FollowUpResult, ReadingResult } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
@@ -10,6 +11,7 @@ import { MysticSanctuaryScene } from "./mystic-sanctuary-scene";
 import { OracleTranscript } from "./oracle-transcript";
 import { QuestionComposer } from "./question-composer";
 import type { ReadingPayload } from "./reading-types";
+import { SafetyInterruptContent } from "./safety-interrupt-panel";
 import { TarotSpreadStage } from "./tarot-spread-stage";
 
 function playRevealTone() {
@@ -44,6 +46,10 @@ export function ReadingScene({ readingId }: { readingId: string }) {
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
   const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
   const [error, setError] = useState<string>();
+  const [safetyInterrupt, setSafetyInterrupt] = useState<{
+    category: SafetyCategory;
+    guidance: string;
+  }>();
   const [followUp, setFollowUp] = useState("");
   const [followUpLoading, setFollowUpLoading] = useState(false);
   const [streamTarget, setStreamTarget] = useState("primary");
@@ -82,6 +88,15 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     bootstrapped.current = true;
     send({ type: "START" });
     send({ type: "SELECT" });
+    // The nine categories in GUARDED_CATEGORIES pause here instead of
+    // shuffling straight in (see the highStakesQuestion ritual-moment below).
+    // classifyQuestion's `interrupt: true` categories (selfHarmCrisis,
+    // compulsiveReading) never reach this component at all: creation itself
+    // is refused for those, before a reading or its draw exist.
+    if (reading.safetyClassification && GUARDED_CATEGORIES.has(reading.safetyClassification)) {
+      send({ type: "HIGH_STAKES" });
+      return;
+    }
     send({ type: "QUESTION_ACCEPTED" });
     send({ type: "DECK_READY" });
   }, [reading, send]);
@@ -231,6 +246,7 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     if (!reading || !followUp.trim()) return;
     setFollowUpLoading(true);
     setError(undefined);
+    setSafetyInterrupt(undefined);
     try {
       const response = await fetch(`/api/readings/${readingId}`, {
         method: "POST",
@@ -240,8 +256,15 @@ export function ReadingScene({ readingId }: { readingId: string }) {
       const payload = (await response.json()) as {
         followUp?: { id: string; result: FollowUpResult };
         error?: string;
-        safety?: { guidance: string };
+        safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
       };
+      if (payload.safety?.interrupt) {
+        setSafetyInterrupt({
+          category: payload.safety.category,
+          guidance: payload.safety.guidance,
+        });
+        return;
+      }
       if (!response.ok || !payload.followUp)
         throw new Error(payload.safety?.guidance ?? payload.error ?? "Unable to answer follow-up.");
       setReading({ ...reading, followUps: [...reading.followUps, payload.followUp] });
@@ -321,6 +344,27 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         }`}
         aria-live="polite"
       >
+        {state.matches("highStakesQuestion") && (
+          <div className="ritual-moment">
+            <p className="ritual-status" role="status">
+              This question touches something the cards can’t answer as fact. They can still offer a
+              reflection — on your terms.
+            </p>
+            <div className="ritual-action-group">
+              <button
+                className="ritual-action"
+                onClick={() => send({ type: "CONTINUE_AS_REFLECTION" })}
+                type="button"
+              >
+                Continue as reflection
+              </button>
+              <Link className="ritual-action" href="/readings">
+                Ask something else
+              </Link>
+            </div>
+          </div>
+        )}
+
         {state.matches("shuffling") && (
           <div className="ritual-moment">
             <div aria-hidden="true" className="sanctuary-shuffle-shells">
@@ -447,7 +491,13 @@ export function ReadingScene({ readingId }: { readingId: string }) {
             target={streamTarget}
           />
         )}
-        {state.matches("complete") && (
+        {state.matches("complete") && safetyInterrupt && (
+          <SafetyInterruptContent
+            category={safetyInterrupt.category}
+            guidance={safetyInterrupt.guidance}
+          />
+        )}
+        {state.matches("complete") && !safetyInterrupt && (
           <QuestionComposer
             disabled={reading.followUps.length >= 1 || !primaryJourneyReady}
             hint={
@@ -471,6 +521,14 @@ export function ReadingScene({ readingId }: { readingId: string }) {
             value={followUp}
           />
         )}
+        {state.matches("complete") &&
+          reading.safetyClassification &&
+          GUARDED_CATEGORIES.has(reading.safetyClassification) && (
+            <p className="safety-flags-banner" role="note">
+              This reading offers reflection rather than a factual answer, given the kind of
+              question it was.
+            </p>
+          )}
         {error && (
           <p className="sanctuary-error" role="alert">
             {error}

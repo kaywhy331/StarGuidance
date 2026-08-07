@@ -60,8 +60,13 @@ function fallbackReason(error: unknown): FallbackReason {
   return "unknown";
 }
 
-/** Categories where a confident prediction would do real harm. */
-const GUARDED_CATEGORIES = new Set([
+/**
+ * Categories where a confident prediction would do real harm. Exported so
+ * apps/web's reading UI can pause for the same categories before the deck is
+ * even shuffled (see reading-scene.tsx), rather than only shaping the voice
+ * of a result that already exists.
+ */
+export const GUARDED_CATEGORIES = new Set([
   "selfHarmCrisis",
   "medical",
   "legal",

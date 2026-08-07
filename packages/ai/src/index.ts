@@ -15,6 +15,8 @@ import {
   answerCard,
   disconfirmingFrom,
   drawShape,
+  guardedDirectAnswer,
+  guardedQuestionConnection,
   personalEmphasis,
   positionalReading,
   questionSubject,
@@ -191,7 +193,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       questionConnection:
         safety.category === "ordinary"
           ? `${entry.card.reflectivePrompt} Hold that as a perspective on the question, not a verdict on it.`
-          : safety.guidance,
+          : guardedQuestionConnection(safety.category, index, safety.guidance),
     }));
 
     // AI-007: answer first, then elaborate.
@@ -202,7 +204,11 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
               ? `${answer.card.name} appears reversed`
               : answer.card.name
           } speaks to ${answer.themes.join(" and ")}. Under current conditions that points toward ${voice.wellPhrase}.`
-        : `On ${voice.about}: this reading will not answer that as a matter of fact. ${safety.guidance}`;
+        : guardedDirectAnswer(
+            safety.category,
+            voice.about,
+            `On ${voice.about}: this reading will not answer that as a matter of fact. ${safety.guidance}`,
+          );
 
     return readingResultSchema.parse({
       title: `${answer.card.name} in ${answer.position.displayName}`,
@@ -370,6 +376,7 @@ import { GroqInterpretationProvider } from "./groq-provider";
 
 export {
   FOLLOW_UP_PROMPT_VERSION,
+  GUARDED_CATEGORIES,
   GroqInterpretationProvider,
   PROMPT_VERSION,
   RESPONSE_SCHEMA_VERSION,

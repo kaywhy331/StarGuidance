@@ -39,7 +39,8 @@ export const readingMachine = setup({
       | { type: "RETRY_GENERATION" }
       | { type: "RESULT_REVEALED" }
       | { type: "EXPIRE" }
-      | { type: "RESTART" },
+      | { type: "RESTART" }
+      | { type: "CONTINUE_AS_REFLECTION" },
   },
 }).createMachine({
   id: "reading",
@@ -51,7 +52,9 @@ export const readingMachine = setup({
     enteringQuestion: {
       on: { QUESTION_ACCEPTED: "preparingDeck", HIGH_STAKES: "highStakesQuestion" },
     },
-    highStakesQuestion: { on: { RESTART: "enteringQuestion" } },
+    highStakesQuestion: {
+      on: { RESTART: "enteringQuestion", CONTINUE_AS_REFLECTION: "shuffling" },
+    },
     preparingDeck: { on: { DECK_READY: "shuffling" } },
     shuffling: { on: { SHUFFLE_COMPLETE: "cuttingDeck" } },
     cuttingDeck: { on: { CUT: "dealing", SKIP_CUT: "dealing" } },

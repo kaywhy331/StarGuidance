@@ -1,3 +1,4 @@
+import type { SafetyCategory } from "@starguidance/ai";
 import type {
   FollowUpResult,
   ReadingOutputProvenance,
@@ -23,5 +24,7 @@ export interface ReadingPayload {
   result?: ReadingResult;
   outputProvenance?: ReadingOutputProvenance;
   generationStatus: "pending" | "ready" | "failed";
+  /** The category `classifyQuestion()` (@starguidance/ai) assigned at creation. */
+  safetyClassification?: SafetyCategory;
   followUps: { id: string; result: FollowUpResult }[];
 }

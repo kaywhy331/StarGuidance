@@ -56,6 +56,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
         result: reading.result,
         outputProvenance: reading.outputProvenance,
         generationStatus: reading.generationStatus,
+        safetyClassification: reading.safetyClassification,
         followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
         createdAt: reading.createdAt,
       },

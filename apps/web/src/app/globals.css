@@ -1010,6 +1010,77 @@ a {
     sans-serif;
 }
 
+.safety-flags-banner {
+  margin: 0.4rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgb(235 210 146 / 0.35);
+  border-radius: 0.75rem;
+  background: rgb(26 25 48 / 0.85);
+  color: #e9dec3;
+  font:
+    0.75rem Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.safety-interrupt-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(90vw, 30rem);
+  padding: 1.4rem 1.6rem;
+  border: 1px solid rgb(235 210 146 / 0.4);
+  border-radius: 1rem;
+  translate: -50% -50%;
+  background: rgb(72 23 42 / 0.92);
+  text-align: center;
+}
+
+.safety-interrupt-panel h2 {
+  margin: 0 0 0.6rem;
+  color: #f5e7ba;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.3rem;
+}
+
+.safety-interrupt-panel p {
+  margin: 0;
+  color: #f7f1df;
+  font:
+    0.85rem Arial,
+    Helvetica,
+    sans-serif;
+  line-height: 1.5;
+}
+
+.safety-interrupt-resources {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgb(235 210 146 / 0.25);
+}
+
+.safety-interrupt-resources h3 {
+  margin: 0 0 0.5rem;
+  color: #e9cd84;
+  font-size: 0.85rem;
+}
+
+.safety-interrupt-resources ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  font:
+    0.8rem Arial,
+    Helvetica,
+    sans-serif;
+  list-style: none;
+}
+
+.safety-interrupt-resources a {
+  color: #9fd8ff;
+}
+
 .reading-entry-stage {
   position: absolute;
   z-index: 5;

@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { SafetyCategory } from "@starguidance/ai";
 
 import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { QuestionComposer } from "../session/[id]/question-composer";
+import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
 
 export function ReadingChooser({
   spreads,
@@ -15,6 +17,10 @@ export function ReadingChooser({
   const [selected, setSelected] = useState(spreads[1]?.id ?? spreads[0]?.id ?? "");
   const [question, setQuestion] = useState("");
   const [message, setMessage] = useState<string>();
+  const [safetyInterrupt, setSafetyInterrupt] = useState<{
+    category: SafetyCategory;
+    guidance: string;
+  }>();
   const [loading, setLoading] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [reducedMotion, setReducedMotion] = useState(
@@ -33,6 +39,7 @@ export function ReadingChooser({
 
   const beginReading = async () => {
     setMessage(undefined);
+    setSafetyInterrupt(undefined);
     setLoading(true);
     try {
       const response = await fetch("/api/readings", {
@@ -43,9 +50,14 @@ export function ReadingChooser({
       const payload = (await response.json()) as {
         readingId?: string;
         error?: string;
-        safety?: { guidance: string };
+        safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
       };
       if (response.status === 401) return router.push("/sign-in");
+      if (payload.safety?.interrupt)
+        return setSafetyInterrupt({
+          category: payload.safety.category,
+          guidance: payload.safety.guidance,
+        });
       if (!response.ok || !payload.readingId)
         return setMessage(
           payload.safety?.guidance ?? payload.error ?? "Unable to begin the reading.",
@@ -55,6 +67,14 @@ export function ReadingChooser({
       setLoading(false);
     }
   };
+
+  if (safetyInterrupt)
+    return (
+      <SafetyInterruptPanel
+        category={safetyInterrupt.category}
+        guidance={safetyInterrupt.guidance}
+      />
+    );
 
   return (
     <MysticSanctuaryScene reducedMotion={reducedMotion} testId="mystic-sanctuary-scene">

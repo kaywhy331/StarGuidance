@@ -303,4 +303,113 @@ export function disconfirmingFrom(resolved: readonly ResolvedCard[]): string[] {
   return evidence;
 }
 
+/**
+ * Category-specific reframing for the nine SafetyCategory values where
+ * classifyQuestion() sets `interrupt: false` but flags that a confident
+ * answer would do real harm (see GUARDED_CATEGORIES in groq-provider.ts).
+ *
+ * Before this, every one of these categories rendered the exact same
+ * `safety.guidance` sentence verbatim — a legal question and a pregnancy
+ * question reframed identically, repeated under every card of the same
+ * reading. `selfHarmCrisis` and `compulsiveReading` have no entry here: both
+ * set `interrupt: true`, so classifyQuestion() never lets a reading reach
+ * this function for them at all.
+ */
+export interface GuardedReframe {
+  /** Two card-side phrasings, rotated by index so a multi-card spread doesn't repeat itself. */
+  readonly questionConnection: readonly [string, string];
+  /** The reading's opening line. Receives `voice.about`, same as the ordinary branch. */
+  readonly directAnswer: (about: string) => string;
+}
+
+export const GUARDED_REFRAMES: Record<string, GuardedReframe> = {
+  medical: {
+    questionConnection: [
+      "This card speaks to what you can prepare, ask, and track — not to a diagnosis or a medical outcome.",
+      "Read this as a prompt for the conversation to have with a clinician, not as the result of one.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards can't diagnose or predict a medical outcome, and won't try to. What they can do is point at what's within reach — the question to ask, the appointment to make, the symptom worth tracking.`,
+  },
+  legal: {
+    questionConnection: [
+      "This card points to what's documented, prepared, or worth asking counsel about — not to how a case resolves.",
+      "Take this as a cue about your own record and preparation, not a forecast of a verdict.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards won't forecast a verdict or a legal outcome. They point instead at what's in your hands — documentation, timing, and the value of qualified counsel.`,
+  },
+  financial: {
+    questionConnection: [
+      "This card is about your own risk tolerance and habits, not a signal to buy, sell, or hold.",
+      "Read this as a prompt to examine your reasoning, not as investment guidance.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards won't predict a return or tell you what to buy or sell. They're better read as a mirror on your own risk tolerance and the homework still worth doing.`,
+  },
+  mentalHealthDiagnosis: {
+    questionConnection: [
+      "This card reflects a pattern worth naming for yourself, not a label to place on anyone.",
+      "Take this as an invitation to notice the pattern, not to diagnose it.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards can't diagnose a person or a condition — a label like that belongs to a qualified professional, not a reading. What they can do is name a pattern worth paying attention to.`,
+  },
+  physicalDeath: {
+    questionConnection: [
+      "This card speaks to what's within your control now, not to a date or a certainty about an ending.",
+      "Read this as a prompt to attend to what matters now, not a prediction of when.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards don't predict a death or a timeline, and won't claim to. What they can offer is a nudge toward what's within reach right now — a conversation, a visit, a piece of care that doesn't need to wait.`,
+  },
+  criminalGuilt: {
+    questionConnection: [
+      "This card points to the evidence and process worth following, not to a verdict on anyone's guilt.",
+      "Take this as a cue about what's yours to look into, not an assertion about someone's innocence or guilt.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards won't assert anyone's guilt or innocence — that's a question for evidence and process, not a reading. What they can point to is what's worth looking into, and who's worth asking.`,
+  },
+  pregnancy: {
+    questionConnection: [
+      "This card speaks to what you can plan for and ask about, not to a confirmation either way.",
+      "Read this as a nudge toward the test or the conversation, not a substitute for either.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards can't confirm or predict a pregnancy, and won't try to. A test and a clinician answer that question — what the cards can speak to is how you're meeting the waiting itself.`,
+  },
+  infidelity: {
+    questionConnection: [
+      "This card speaks to what you've actually observed, not to a claim about anyone's faithfulness.",
+      "Take this as a prompt for a direct conversation, not a verdict on someone you can't ask here.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards won't assert whether someone has been faithful — that isn't theirs to say. What they can speak to is what you've directly observed, and whether a direct conversation is the piece still missing.`,
+  },
+  thirdPartyPrivateClaim: {
+    questionConnection: [
+      "This card reflects what's visible to you, not a claim about what someone else is privately thinking.",
+      "Read this as a prompt to ask directly, not a substitute for what only they could tell you.",
+    ],
+    directAnswer: (about) =>
+      `On ${about}: the cards can't tell you what's in someone else's head — that's private, and not this reading's to claim. What they can speak to is what's visible from where you stand, and what's worth asking outright.`,
+  },
+};
+
+export function guardedQuestionConnection(
+  category: string,
+  index: number,
+  fallback: string,
+): string {
+  const reframe = GUARDED_REFRAMES[category];
+  if (!reframe) return fallback;
+  return reframe.questionConnection[index % reframe.questionConnection.length]!;
+}
+
+export function guardedDirectAnswer(category: string, about: string, fallback: string): string {
+  const reframe = GUARDED_REFRAMES[category];
+  return reframe ? reframe.directAnswer(about) : fallback;
+}
+
 export { subjectVoices };

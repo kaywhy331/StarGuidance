@@ -267,6 +267,31 @@ describe("readings answer the question that was asked", () => {
   it("reframes rather than answering a high-stakes question (AI-013)", async () => {
     const result = await generate("Is my partner cheating on me?");
     expect(result.safetyFlags).toContain("infidelity");
-    expect(result.directAnswer).toMatch(/will not answer that as a matter of fact/i);
+    expect(result.directAnswer).toMatch(/isn't theirs to say/i);
+  });
+
+  it("gives each guarded category its own reframing, not one generic sentence (G3)", async () => {
+    // Both fall to the "general" subject (neither contains a work/relationship/
+    // change trigger word), so `voice.about` is identical for both — isolating
+    // the difference below to the safety category, not incidental subject drift
+    // (that's AI-004's job, above).
+    const medical = await generate("What is this diagnosis?");
+    const financial = await generate("Will this stock go up?");
+    expect(medical.safetyFlags).toContain("medical");
+    expect(financial.safetyFlags).toContain("financial");
+    expect(medical.directAnswer).not.toBe(financial.directAnswer);
+    expect(medical.cards[0]?.questionConnection).not.toBe(financial.cards[0]?.questionConnection);
+    // Neither reframe is classifyQuestion()'s raw, category-agnostic guidance
+    // string verbatim — the bug this fixed.
+    const guidance = classifyQuestion("Will this stock go up?").guidance;
+    expect(financial.directAnswer).not.toContain(guidance);
+    expect(financial.cards[0]?.questionConnection).not.toBe(guidance);
+  });
+
+  it("rotates a guarded category's card-level reframing rather than repeating one sentence (G3)", async () => {
+    const result = await generate("What is this diagnosis?");
+    expect(result.safetyFlags).toContain("medical");
+    const connections = result.cards.map((card) => card.questionConnection);
+    expect(connections[0]).not.toBe(connections[1]);
   });
 });

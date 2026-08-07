@@ -36,4 +36,22 @@ describe("reading state machine", () => {
     actor.send({ type: "HIGH_STAKES" });
     expect(actor.getSnapshot().value).toBe("highStakesQuestion");
   });
+
+  it("restarts a high-stakes question back to the question step", () => {
+    const actor = createActor(readingMachine).start();
+    actor.send({ type: "START" });
+    actor.send({ type: "SELECT" });
+    actor.send({ type: "HIGH_STAKES" });
+    actor.send({ type: "RESTART" });
+    expect(actor.getSnapshot().value).toBe("enteringQuestion");
+  });
+
+  it("continues a high-stakes question as reflection, skipping deck preparation", () => {
+    const actor = createActor(readingMachine).start();
+    actor.send({ type: "START" });
+    actor.send({ type: "SELECT" });
+    actor.send({ type: "HIGH_STAKES" });
+    actor.send({ type: "CONTINUE_AS_REFLECTION" });
+    expect(actor.getSnapshot().value).toBe("shuffling");
+  });
 });
