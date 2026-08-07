@@ -1,3 +1,4 @@
+export * from "./calculation-version-registry";
 export * from "./deletion-receipts";
 export * from "./encryption";
 export * from "./database-role";

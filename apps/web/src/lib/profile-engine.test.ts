@@ -134,7 +134,7 @@ describe("a service that was only waking up", () => {
         birthday: 6,
         name_rendering: null,
         transformation: "steady",
-        algorithm_version: "v1",
+        algorithm_version: "pythagorean-v2",
       },
       dreamspell: {
         kin: 12,
@@ -143,7 +143,7 @@ describe("a service that was only waking up", () => {
         solar_seal: 12,
         solar_seal_name: "Human",
         color: "blue",
-        algorithm_version: "v1",
+        algorithm_version: "dreamspell-anchor-1987-07-26-kin34-v1",
         certification_status: "pending",
       },
       nine_star_ki: {
@@ -152,7 +152,7 @@ describe("a service that was only waking up", () => {
         energy_star: { number: 7, phase: "metal" },
         boundary_convention: "fixed-civil-date-v1",
         third_star_convention: "lo-shu-position-derived",
-        algorithm_version: "nine-star-ki-v1",
+        algorithm_version: "nine-star-ki-fixed-boundaries-lo-shu-v1",
         interpretation_version: "nine-star-ki-editorial-v1",
         certification_status: "pending",
       },
@@ -160,14 +160,14 @@ describe("a service that was only waking up", () => {
         status: "unavailable",
         capability: "western_astrology",
         reason: "pending",
-        calculation_version: "western-v1",
+        calculation_version: "western-astrology-contract-v1",
         activation_requirements: ["reference suite"],
       },
       bazi: {
         status: "unavailable",
         capability: "bazi",
         reason: "pending",
-        calculation_version: "bazi-v1",
+        calculation_version: "bazi-contract-v1",
         activation_requirements: ["reference suite"],
       },
       planetary_angularity: {

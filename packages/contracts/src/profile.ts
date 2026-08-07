@@ -65,6 +65,31 @@ export const traitDomainSchema = z.enum([
   "growthLever",
 ]);
 
+/**
+ * The single authoritative map of calculation-system versions (gap G26).
+ * Everything that names a version derives from here: the profile engine's
+ * response contract pins these exact literals at the web boundary
+ * (apps/web/src/lib/profile-engine-contract.ts), and the seed registers
+ * exactly these rows into calculation_versions
+ * (packages/database/src/calculation-version-registry.ts) — so every version
+ * a snapshot can ever record is guaranteed to exist in the registry, and a
+ * version bump that edits only one side fails loudly instead of silently
+ * breaking the snapshot↔registry join (CAL-014 reproducibility).
+ *
+ * The values must match what apps/profile-engine actually emits
+ * (numerology.py, dreamspell.py, nine_star_ki.py, planetary_angularity.py,
+ * main.py's unavailable envelopes); the pinned contract turns any divergence
+ * into an immediate 502 in staging rather than a quietly unjoined snapshot.
+ */
+export const CALCULATION_SYSTEM_VERSIONS = {
+  numerology: "pythagorean-v2",
+  dreamspell: "dreamspell-anchor-1987-07-26-kin34-v1",
+  nineStarKi: "nine-star-ki-fixed-boundaries-lo-shu-v1",
+  westernAstrology: "western-astrology-contract-v1",
+  bazi: "bazi-contract-v1",
+  planetaryAngularity: "planetary-angularity-contract-v1",
+} as const;
+
 export const profileTraitSchema = z.object({
   domain: traitDomainSchema,
   statement: z.string().min(1),

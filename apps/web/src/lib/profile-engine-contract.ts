@@ -1,12 +1,18 @@
+import { CALCULATION_SYSTEM_VERSIONS } from "@starguidance/contracts";
 import { z } from "zod";
 
-const unavailableCalculationSchema = z.object({
-  status: z.literal("unavailable"),
-  capability: z.string().min(1),
-  reason: z.string().min(1),
-  calculation_version: z.string().min(1),
-  activation_requirements: z.array(z.string().min(1)).min(1),
-});
+// Version literals are pinned to the shared registry constants (gap G26):
+// an engine that starts emitting a version the registry doesn't know fails
+// this contract immediately instead of persisting an unjoinable snapshot.
+function unavailableCalculationSchema(calculationVersion: string) {
+  return z.object({
+    status: z.literal("unavailable"),
+    capability: z.string().min(1),
+    reason: z.string().min(1),
+    calculation_version: z.literal(calculationVersion),
+    activation_requirements: z.array(z.string().min(1)).min(1),
+  });
+}
 
 const nineStarKiStarSchema = z.object({
   number: z.number().int().min(1).max(9),
@@ -32,7 +38,7 @@ export const calculationSchema = z.object({
     birthday: z.number().int().positive(),
     name_rendering: z.string().nullable(),
     transformation: z.string(),
-    algorithm_version: z.string(),
+    algorithm_version: z.literal(CALCULATION_SYSTEM_VERSIONS.numerology),
   }),
   dreamspell: z.object({
     kin: z.number().int().min(1).max(260),
@@ -41,7 +47,7 @@ export const calculationSchema = z.object({
     solar_seal: z.number().int().min(1).max(20),
     solar_seal_name: z.string(),
     color: z.string(),
-    algorithm_version: z.string(),
+    algorithm_version: z.literal(CALCULATION_SYSTEM_VERSIONS.dreamspell),
     certification_status: z.string(),
   }),
   nine_star_ki: z.object({
@@ -50,13 +56,15 @@ export const calculationSchema = z.object({
     energy_star: nineStarKiStarSchema,
     boundary_convention: z.string().min(1),
     third_star_convention: z.string().min(1),
-    algorithm_version: z.string().min(1),
+    algorithm_version: z.literal(CALCULATION_SYSTEM_VERSIONS.nineStarKi),
     interpretation_version: z.string().min(1),
     certification_status: z.string().min(1),
   }),
-  western_astrology: unavailableCalculationSchema,
-  bazi: unavailableCalculationSchema,
-  planetary_angularity: unavailableCalculationSchema,
+  western_astrology: unavailableCalculationSchema(CALCULATION_SYSTEM_VERSIONS.westernAstrology),
+  bazi: unavailableCalculationSchema(CALCULATION_SYSTEM_VERSIONS.bazi),
+  planetary_angularity: unavailableCalculationSchema(
+    CALCULATION_SYSTEM_VERSIONS.planetaryAngularity,
+  ),
   traits: z.array(
     z.object({
       domain: z.enum([
