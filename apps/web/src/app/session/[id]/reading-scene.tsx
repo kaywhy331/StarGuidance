@@ -159,11 +159,57 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     return () => window.clearTimeout(timer);
   }, [reading, revealed, send, settleDuration, state]);
 
+  // Interpretation generation now happens through a durable job (see
+  // docs/KNOWN-GAPS.md): the reading fetched on mount may still say
+  // "pending" here even after the ritual's own animation delays. Poll until
+  // it settles instead of assuming the one-time fetch above is still
+  // current — recovering from a Netlify-scheduled backstop run, not just a
+  // synchronous response, is the whole point of the job queue.
   useEffect(() => {
     if (!state.matches("generatingSynthesis") || !reading) return;
-    if (reading.generationStatus === "ready") send({ type: "GENERATION_READY" });
-    if (reading.generationStatus === "failed") send({ type: "GENERATION_FAILED" });
-  }, [reading, send, state]);
+    if (reading.generationStatus === "ready") {
+      send({ type: "GENERATION_READY" });
+      return;
+    }
+    if (reading.generationStatus === "failed") {
+      send({ type: "GENERATION_FAILED" });
+      return;
+    }
+    let cancelled = false;
+    let attempts = 0;
+    const POLL_INTERVAL_MS = 2_000;
+    // ~80s: past AI_PROVIDER_TIMEOUT_MS (20s) plus one exponential-backoff
+    // retry. Timing out here doesn't mean the job failed — it may still
+    // complete via the scheduled backstop; a fresh page load will show it.
+    const MAX_ATTEMPTS = 40;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const response = await fetch(`/api/readings/${readingId}`, { cache: "no-store" });
+        if (response.ok) {
+          const payload = (await response.json()) as { reading: ReadingPayload };
+          if (cancelled) return;
+          if (payload.reading.generationStatus !== "pending") {
+            setReading(payload.reading);
+            return;
+          }
+        }
+      } catch {
+        // Transient — retry on the next tick.
+      }
+      if (cancelled) return;
+      if (attempts >= MAX_ATTEMPTS) {
+        setReading({ ...reading, generationStatus: "failed" });
+        return;
+      }
+      timer = window.setTimeout(poll, POLL_INTERVAL_MS);
+    };
+    let timer = window.setTimeout(poll, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [reading, readingId, send, state]);
 
   useEffect(() => {
     if (!state.matches("revealingResult")) return;
@@ -363,8 +409,19 @@ export function ReadingScene({ readingId }: { readingId: string }) {
                   body: JSON.stringify({ action: "retry" }),
                 });
                 if (!response.ok) return setError("Unable to retry the interpretation.");
-                const payload = (await response.json()) as { result: ReadingResult };
-                setReading({ ...reading, result: payload.result, generationStatus: "ready" });
+                const payload = (await response.json()) as {
+                  generationStatus: ReadingPayload["generationStatus"];
+                  result?: ReadingResult;
+                };
+                // A retry now re-enqueues a durable job rather than always
+                // generating synchronously (docs/KNOWN-GAPS.md), so this may
+                // report "pending" — the generatingSynthesis effect's poll
+                // loop picks it up from there, same as initial generation.
+                setReading({
+                  ...reading,
+                  ...(payload.result ? { result: payload.result } : {}),
+                  generationStatus: payload.generationStatus,
+                });
                 send({ type: "RETRY_GENERATION" });
               }}
               type="button"
