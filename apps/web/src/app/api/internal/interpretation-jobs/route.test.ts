@@ -1,13 +1,29 @@
 import { createHmac } from "node:crypto";
 
+import { INTERPRETATION_WORKER_TOKEN_CONTEXT } from "@starguidance/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   runInterpretationJobs: vi.fn(),
+  getInterpretationQueueStats: vi.fn(),
 }));
 
 vi.mock("@/lib/interpretation-worker", () => ({
   runInterpretationJobs: mocks.runInterpretationJobs,
+}));
+
+// This route only reaches @/lib/runtime for the raw pooled client and
+// @starguidance/database for systemTransaction's role-scoping — neither is
+// meaningful against a real database in a unit test, so systemTransaction is
+// stubbed to just invoke its callback directly, and the client it "passes
+// through" is an opaque placeholder no assertion here inspects.
+vi.mock("@/lib/runtime", () => ({
+  getSystemDatabaseClient: () => "synthetic-system-client",
+}));
+
+vi.mock("@starguidance/database", () => ({
+  systemTransaction: (_client: unknown, work: (tx: unknown) => unknown) => work("synthetic-tx"),
+  getInterpretationQueueStats: mocks.getInterpretationQueueStats,
 }));
 
 import { POST } from "./route";
@@ -16,10 +32,11 @@ import { POST } from "./route";
 // covers — a realistic strong secret, matching what INTERPRETATION_WORKER_SECRET
 // is documented to require.
 const STRONG_SECRET = "k8mZ3q7wLxJb4hR9nP2sT6vY0cD5fG1e";
-const TOKEN_CONTEXT = "starguidance-interpretation-worker-v1";
 
 function tokenFor(secret: string): string {
-  return createHmac("sha256", secret).update(TOKEN_CONTEXT).digest("base64url");
+  return createHmac("sha256", secret)
+    .update(INTERPRETATION_WORKER_TOKEN_CONTEXT)
+    .digest("base64url");
 }
 
 function request(authorization?: string): Request {
@@ -33,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("INTERPRETATION_WORKER_SECRET", STRONG_SECRET);
   mocks.runInterpretationJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0 });
+  mocks.getInterpretationQueueStats.mockResolvedValue({ depth: 0, oldestPendingAgeSeconds: null });
 });
 
 afterEach(() => {
@@ -72,16 +90,31 @@ describe("POST /api/internal/interpretation-jobs", () => {
     expect(response.status).toBe(401);
   });
 
-  it("drains a batch and reports the summary for the correct token", async () => {
+  it("drains a batch and reports the summary plus queue depth for the correct token", async () => {
     mocks.runInterpretationJobs.mockResolvedValue({ claimed: 3, succeeded: 2, failed: 1 });
+    mocks.getInterpretationQueueStats.mockResolvedValue({ depth: 5, oldestPendingAgeSeconds: 42 });
     const response = await POST(request(`Bearer ${tokenFor(STRONG_SECRET)}`));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok", claimed: 3, succeeded: 2, failed: 1 });
+    expect(await response.json()).toEqual({
+      status: "ok",
+      claimed: 3,
+      succeeded: 2,
+      failed: 1,
+      queueDepth: 5,
+      oldestPendingAgeSeconds: 42,
+    });
     expect(mocks.runInterpretationJobs).toHaveBeenCalledWith(10);
   });
 
   it("reports a 500 without leaking details when claiming itself throws", async () => {
     mocks.runInterpretationJobs.mockRejectedValue(new Error("connection refused"));
+    const response = await POST(request(`Bearer ${tokenFor(STRONG_SECRET)}`));
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ status: "error" });
+  });
+
+  it("reports a 500 without leaking details when the queue-depth query itself throws", async () => {
+    mocks.getInterpretationQueueStats.mockRejectedValue(new Error("connection refused"));
     const response = await POST(request(`Bearer ${tokenFor(STRONG_SECRET)}`));
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ status: "error" });

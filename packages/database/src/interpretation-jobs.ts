@@ -86,6 +86,37 @@ export async function claimInterpretationJobs(
   return rows.map(fromRow);
 }
 
+export interface InterpretationQueueStats {
+  depth: number;
+  oldestPendingAgeSeconds: number | null;
+}
+
+/**
+ * Reports how much claimable backlog exists right now, using the exact same
+ * predicate claimInterpretationJobs() uses to decide what's eligible —
+ * counted rather than claimed. Surfaced through the drain route's response
+ * so the scheduled trigger (netlify/functions/process-interpretation-jobs.mts)
+ * can alert when the backlog is growing across cycles rather than draining.
+ * `oldestPendingAgeSeconds` is null when the queue is empty (depth 0).
+ */
+export async function getInterpretationQueueStats(
+  client: DatabaseClient | DatabaseTransaction,
+): Promise<InterpretationQueueStats> {
+  const [row] = await client<{ depth: number; oldest_pending_age_seconds: number | null }[]>`
+    select
+      count(*)::integer as depth,
+      extract(epoch from (now() - min(available_at))) as oldest_pending_age_seconds
+    from interpretation_jobs
+    where (status = 'pending' and available_at <= now())
+       or (status = 'processing' and lock_expires_at < now())
+  `;
+  return {
+    depth: row?.depth ?? 0,
+    oldestPendingAgeSeconds:
+      row?.oldest_pending_age_seconds == null ? null : Math.floor(row.oldest_pending_age_seconds),
+  };
+}
+
 export async function completeInterpretationJob(
   client: DatabaseClient | DatabaseTransaction,
   jobId: string,

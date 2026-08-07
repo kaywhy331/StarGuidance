@@ -6,6 +6,7 @@ import {
   claimInterpretationJobs,
   completeInterpretationJob,
   failInterpretationJob,
+  getInterpretationQueueStats,
   insertInterpretationJob,
   markReadingGenerationFailed,
   reenqueueInterpretationJob,
@@ -249,6 +250,50 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     expect(row?.attempt_count).toBe(0);
     expect(row?.last_error).toBeNull();
     expect(new Date(row!.available_at as string).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  // Every test in this file shares one interpretation_jobs table (see
+  // claimReading's own comment above), so these assert deltas/floors around
+  // one known mutation rather than absolute counts — an absolute `toBe(1)`
+  // would be flaky against whatever earlier tests left claimable.
+  it("counts a newly inserted job in the queue depth", async () => {
+    const before = await getInterpretationQueueStats(sql!);
+    const readingId = await createReading();
+    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    const after = await getInterpretationQueueStats(sql!);
+    expect(after.depth).toBe(before.depth + 1);
+  });
+
+  it("excludes a job that is processing with an unexpired lease", async () => {
+    const readingId = await createReading();
+    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    const before = await getInterpretationQueueStats(sql!);
+    expect(before.depth).toBeGreaterThanOrEqual(1);
+    // claimReading claims up to 50 — everything currently claimable in the
+    // shared table, not just this test's row — and moves each into
+    // `processing` with a 2-minute lease. With well under 50 rows in play,
+    // that exhaustively drains the claimable set, so depth lands at exactly
+    // zero rather than merely one less than `before`.
+    await claimReading(readingId);
+    const after = await getInterpretationQueueStats(sql!);
+    expect(after.depth).toBe(0);
+  });
+
+  it("reports how long the oldest claimable job has been waiting", async () => {
+    const readingId = await createReading();
+    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    // Backdate this job so it is unambiguously the oldest claimable row,
+    // regardless of whatever else earlier tests left in the shared table:
+    // the table-wide minimum can only be at or before this timestamp.
+    await asApp(
+      (tx) => tx`
+        update interpretation_jobs set available_at = now() - interval '90 seconds'
+        where reading_id = ${readingId}
+      `,
+    );
+    const stats = await getInterpretationQueueStats(sql!);
+    expect(stats.oldestPendingAgeSeconds).not.toBeNull();
+    expect(stats.oldestPendingAgeSeconds!).toBeGreaterThanOrEqual(90);
   });
 
   it("is unreachable from the browser-facing authenticated role", async () => {

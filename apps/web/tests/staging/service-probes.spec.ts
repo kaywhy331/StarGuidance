@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 
 import { completeStage, record } from "@starguidance/database/staging-evidence";
+import { INTERPRETATION_WORKER_TOKEN_CONTEXT } from "@starguidance/contracts";
 import { expect, test } from "@playwright/test";
 
 import { calculationSchema } from "../../src/lib/profile-engine-contract";
@@ -243,4 +244,57 @@ test("password authentication and account callbacks fail closed", async ({ reque
   expect(rejectedCleanly, "invalid credentials fail closed without disclosure").toBe(true);
   expect(failsClosed, "invalid code fails closed").toBe(true);
   expect(missingClosed, "absent code fails closed").toBe(true);
+});
+
+test("the interpretation-jobs drain route rejects bad tokens and reports queue depth for a good one", async ({
+  request,
+}) => {
+  const secret = process.env.INTERPRETATION_WORKER_SECRET?.trim();
+  expect(secret, "INTERPRETATION_WORKER_SECRET must be provided").toBeTruthy();
+
+  const missing = await request.post("/api/internal/interpretation-jobs");
+  record({
+    section: "Interpretation worker",
+    check: "Missing bearer token is rejected",
+    status: missing.status() === 401 ? "pass" : "fail",
+    detail: `status ${missing.status()}`,
+  });
+
+  // A token derived from the wrong secret, not the raw secret itself — proves
+  // the route is actually comparing an HMAC rather than, say, always failing
+  // open on a malformed header.
+  const wrongToken = createHmac("sha256", "a-completely-different-secret-value!")
+    .update(INTERPRETATION_WORKER_TOKEN_CONTEXT)
+    .digest("base64url");
+  const wrong = await request.post("/api/internal/interpretation-jobs", {
+    headers: { authorization: `Bearer ${wrongToken}` },
+  });
+  record({
+    section: "Interpretation worker",
+    check: "Incorrect bearer token is rejected",
+    status: wrong.status() === 401 ? "pass" : "fail",
+    detail: `status ${wrong.status()}`,
+  });
+
+  const token = createHmac("sha256", secret!)
+    .update(INTERPRETATION_WORKER_TOKEN_CONTEXT)
+    .digest("base64url");
+  const authorized = await request.post("/api/internal/interpretation-jobs", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const authorizedBody = authorized.ok()
+    ? ((await authorized.json()) as { queueDepth?: unknown })
+    : undefined;
+  const reportsDepth = typeof authorizedBody?.queueDepth === "number";
+  record({
+    section: "Interpretation worker",
+    check: "Correct bearer token drains the queue and reports its depth",
+    status: authorized.status() === 200 && reportsDepth ? "pass" : "fail",
+    detail: `status ${authorized.status()}; queueDepth ${reportsDepth ? "reported" : "absent"}`,
+  });
+
+  expect(missing.status(), "missing token").toBe(401);
+  expect(wrong.status(), "incorrect token").toBe(401);
+  expect(authorized.status(), "correct token").toBe(200);
+  expect(reportsDepth, "the drain route reports a numeric queue depth").toBe(true);
 });

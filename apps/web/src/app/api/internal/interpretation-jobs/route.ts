@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { getInterpretationQueueStats, systemTransaction } from "@starguidance/database";
+import { INTERPRETATION_WORKER_TOKEN_CONTEXT } from "@starguidance/contracts";
+
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
+import { getSystemDatabaseClient } from "@/lib/runtime";
 import { isWeakSharedSecret } from "@/lib/shared-secret";
 
 /**
@@ -14,11 +18,12 @@ import { isWeakSharedSecret } from "@/lib/shared-secret";
  * the already-proven Next.js/Postgres path, sidesteps that bug rather than
  * fighting it. The scheduled function is a trivial, dependency-free fetch.
  */
-const TOKEN_CONTEXT = "starguidance-interpretation-worker-v1";
 const BATCH_LIMIT = 10;
 
 function expectedToken(secret: string): string {
-  return createHmac("sha256", secret).update(TOKEN_CONTEXT).digest("base64url");
+  return createHmac("sha256", secret)
+    .update(INTERPRETATION_WORKER_TOKEN_CONTEXT)
+    .digest("base64url");
 }
 
 // Same shape as /api/health's readinessAuthorized: the raw secret is never
@@ -41,8 +46,22 @@ export async function POST(request: Request) {
     );
   try {
     const summary = await runInterpretationJobs(BATCH_LIMIT);
+    // Same non-subject-bound role every other system-scoped access to this
+    // RLS-forced table uses (runInterpretationJobs itself, request-security's
+    // rate limiter) — interpretation_jobs grants nothing to the raw pooled
+    // client's own connection role. Reported here so the scheduled trigger
+    // (netlify/functions/process-interpretation-jobs.mts) can alert when the
+    // backlog is growing across cycles rather than draining.
+    const stats = await systemTransaction(getSystemDatabaseClient(), (tx) =>
+      getInterpretationQueueStats(tx),
+    );
     return NextResponse.json(
-      { status: "ok", ...summary },
+      {
+        status: "ok",
+        ...summary,
+        queueDepth: stats.depth,
+        oldestPendingAgeSeconds: stats.oldestPendingAgeSeconds,
+      },
       { status: 200, headers: { "cache-control": "no-store" } },
     );
   } catch {

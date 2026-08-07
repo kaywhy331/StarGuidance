@@ -9,6 +9,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
-    "@netlify/functions": "5.3.0"
+    "@netlify/functions": "5.3.0",
+    "@starguidance/contracts": "workspace:*"
   }
 }

@@ -10,6 +10,7 @@ import {
 import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
 import { profileEngineBaseUrl } from "@/lib/profile-engine";
 import { findServiceUrlProblem } from "@/lib/service-url";
+import { isWeakSharedSecret } from "@/lib/shared-secret";
 
 const REQUIRED_STAGING_ENVIRONMENT = [
   "NEXT_PUBLIC_SUPABASE_URL",
@@ -19,6 +20,13 @@ const REQUIRED_STAGING_ENVIRONMENT = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "PROFILE_ENGINE_URL",
   "PROFILE_ENGINE_SHARED_SECRET",
+  // Load-bearing since migration 0007: the drain route
+  // (api/internal/interpretation-jobs) rejects every request when this is
+  // absent or weak, and NEXT_PUBLIC_APP_URL is what the Netlify-scheduled
+  // trigger targets. Neither is new to production — this closes a
+  // pre-existing readiness-gate gap rather than gating a new feature.
+  "INTERPRETATION_WORKER_SECRET",
+  "NEXT_PUBLIC_APP_URL",
 ] as const;
 
 const APPROVED_STAGING_PROVIDER_ID = "groq:openai/gpt-oss-120b";
@@ -282,6 +290,14 @@ export async function GET(request: Request) {
       .filter(Boolean);
     if (previous.length > 3 || previous.some((key) => !isValidEncryptionKey(key)))
       invalidEnvironmentVariables.push("DATA_ENCRYPTION_KEYS_PREVIOUS");
+  }
+  // Same helper the drain route's own authorized() check uses. This only
+  // proves the Next.js app's copy of the secret is strong — it cannot
+  // confirm the separately-configured Netlify Function has a matching value
+  // in its own runtime environment; that remains an owner action item.
+  if (configured("INTERPRETATION_WORKER_SECRET")) {
+    if (isWeakSharedSecret(process.env.INTERPRETATION_WORKER_SECRET))
+      invalidEnvironmentVariables.push("INTERPRETATION_WORKER_SECRET");
   }
   // A dependency address that is not a base URL is a configuration fault, and
   // reporting it here is the difference between "the engine is down" and "the

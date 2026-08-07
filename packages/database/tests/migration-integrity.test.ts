@@ -153,4 +153,24 @@ describe("migration history", () => {
     expect(sql).not.toMatch(/security\s+definer/i);
     expect(sql).not.toMatch(/\bto\s+(anon|service_role)\b/i);
   });
+
+  it("keeps interpretation_jobs forced-RLS and reachable only by starguidance_app", () => {
+    const sql = executableSql("0007_interpretation_jobs");
+    expect(sql).toMatch(/alter\s+table\s+"interpretation_jobs"\s+enable\s+row\s+level\s+security/i);
+    expect(sql).toMatch(/alter\s+table\s+"interpretation_jobs"\s+force\s+row\s+level\s+security/i);
+    expect(sql).toMatch(/create\s+policy[\s\S]*on\s+"interpretation_jobs"/i);
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"interpretation_jobs"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).not.toMatch(/\bbypassrls\b/i);
+    expect(sql).not.toMatch(/security\s+definer/i);
+    expect(sql).not.toMatch(/\bto\s+(anon|service_role)\b/i);
+    // Unlike payment_webhook_events (migration 0004), starguidance_app
+    // deliberately keeps INSERT here too: POST /api/readings enqueues a job in
+    // the same actor-bound transaction as the reading it belongs to (see this
+    // migration's own inline comment).
+    expect(sql).toMatch(
+      /grant\s+select,\s*insert,\s*update,\s*delete\s+on\s+table\s+"interpretation_jobs"\s+to\s+starguidance_app/i,
+    );
+  });
 });

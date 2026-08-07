@@ -29,6 +29,8 @@ const SECRET_VALUES = {
   PROFILE_ENGINE_URL: "https://profile-engine.synthetic.invalid",
   PROFILE_ENGINE_SHARED_SECRET: "synthetic-profile-engine-shared-secret",
   AI_PROVIDER_API_KEY: "synthetic-ai-provider-key",
+  INTERPRETATION_WORKER_SECRET: "synthetic-interpretation-worker-shared-secret",
+  NEXT_PUBLIC_APP_URL: "https://app.synthetic.invalid",
 } as const;
 
 function configureStaging() {

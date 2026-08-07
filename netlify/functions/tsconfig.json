@@ -1,7 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    // process-interpretation-jobs.test.ts imports its sibling .mts file by
+    // its literal source extension (the noEmit + Bundler resolution this
+    // package inherits doesn't do Node's usual .mts-source -> .mjs-specifier
+    // remapping); this is the standard opt-in for that under `tsc --noEmit`.
+    "allowImportingTsExtensions": true
   },
-  "include": ["*.mts", "**/*.mts"]
+  "include": ["*.mts", "**/*.mts", "*.test.ts", "**/*.test.ts"]
 }
