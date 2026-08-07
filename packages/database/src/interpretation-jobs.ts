@@ -58,6 +58,12 @@ export async function insertInterpretationJob(
  * FOR UPDATE SKIP LOCKED means concurrent callers (a background invocation
  * racing the scheduled sweep's own kick, or two overlapping invocations)
  * never claim the same row twice.
+ *
+ * Cross-user by design, so run this — like completeInterpretationJob,
+ * failInterpretationJob, and getInterpretationQueueStats — on the connection
+ * role directly (the interpretation_jobs_system policy, migration 0008), not
+ * inside systemTransaction: the starguidance_app policy is subject-bound and
+ * a subject-less app-role transaction sees no rows at all.
  */
 export async function claimInterpretationJobs(
   client: DatabaseClient | DatabaseTransaction,

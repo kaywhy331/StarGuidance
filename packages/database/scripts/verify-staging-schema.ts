@@ -13,6 +13,16 @@ import { completeStage, record, requiredEnv } from "./staging-result";
  * `packages/database/migrations` is the only migration authority; this script
  * asserts the applied state and never creates or alters schema itself.
  */
+/**
+ * App-only tables carry a user_id-free or cross-user workload (rate-limit
+ * buckets keyed by opaque hash; the interpretation-job queue's claim sweep),
+ * so they are absent from USER_OWNED_TABLES' per-subject policy shape — but
+ * they must still be forced-RLS and unreachable from any browser role, and
+ * interpretation_jobs' application-role policy must be subject-bound
+ * (migration 0008) rather than permissive.
+ */
+const APP_ONLY_TABLES = ["interpretation_jobs", "rate_limit_buckets"] as const;
+
 const USER_OWNED_TABLES = [
   "users",
   "user_settings",
@@ -169,6 +179,45 @@ async function main(): Promise<void> {
         : "payment_webhook_events is readable by the application actor",
     });
 
+    const appOnlyRows = await sql<{ name: string; forced: boolean; browser_reachable: boolean }[]>`
+      select required.name,
+        exists (
+          select 1 from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'public' and c.relname = required.name
+            and c.relrowsecurity and c.relforcerowsecurity
+        ) as forced,
+        (
+          has_table_privilege('authenticated', 'public.' || quote_ident(required.name), 'SELECT')
+          or has_table_privilege('authenticated', 'public.' || quote_ident(required.name), 'INSERT')
+          or has_table_privilege('authenticated', 'public.' || quote_ident(required.name), 'UPDATE')
+          or has_table_privilege('authenticated', 'public.' || quote_ident(required.name), 'DELETE')
+        ) as browser_reachable
+      from unnest(${sql.array(APP_ONLY_TABLES as unknown as string[])}::text[]) as required(name)
+      where to_regclass('public.' || quote_ident(required.name)) is not null`;
+    const appOnlyStructureOk =
+      appOnlyRows.length === APP_ONLY_TABLES.length &&
+      appOnlyRows.every((row) => row.forced && !row.browser_reachable);
+    const [jobsPolicy] = await sql<{ subject_bound: boolean }[]>`
+      select exists (
+        select 1 from pg_policies
+        where schemaname = 'public' and tablename = 'interpretation_jobs'
+          and policyname = 'interpretation_jobs_subject'
+          and roles = array[${APPLICATION_DATABASE_ROLE}]::name[]
+          and qual like '%request.jwt.claim.sub%'
+          and with_check like '%request.jwt.claim.sub%'
+      ) as subject_bound`;
+    const appOnlyOk = appOnlyStructureOk && jobsPolicy?.subject_bound === true;
+    if (!appOnlyOk) failed = true;
+    record({
+      section: "Row level security",
+      check: "App-only tables forced, browser-unreachable, and subject-bound for the actor",
+      status: appOnlyOk ? "pass" : "fail",
+      detail: appOnlyOk
+        ? `${APP_ONLY_TABLES.length} app-only table(s) verified; interpretation_jobs actor policy is subject-bound`
+        : "an app-only table is missing forced RLS, is browser-reachable, or lacks the subject-bound actor policy",
+    });
+
     const [browserRole] = await sql<{ private_access: boolean; actor_ready: boolean }[]>`
       select
         has_table_privilege('authenticated', 'public.users', 'select')
@@ -212,7 +261,8 @@ async function main(): Promise<void> {
         ? `set local role ${APPLICATION_DATABASE_ROLE} with a verified subject succeeded`
         : `the connection role cannot assume ${APPLICATION_DATABASE_ROLE}`,
     });
-    forcedRlsProved = tablesOk && rlsOk && policiesOk && webhookOk && roleBoundaryOk && actorOk;
+    forcedRlsProved =
+      tablesOk && rlsOk && policiesOk && webhookOk && appOnlyOk && roleBoundaryOk && actorOk;
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);
   }

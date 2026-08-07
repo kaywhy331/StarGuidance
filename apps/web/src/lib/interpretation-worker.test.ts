@@ -14,9 +14,6 @@ const mocks = vi.hoisted(() => ({
   actorTransaction: vi.fn((_client: unknown, _userId: string, work: (tx: unknown) => unknown) =>
     work("synthetic-actor-tx"),
   ),
-  systemTransaction: vi.fn((_client: unknown, work: (tx: unknown) => unknown) =>
-    work("synthetic-system-tx"),
-  ),
 }));
 
 vi.mock("./runtime", () => ({
@@ -37,7 +34,6 @@ vi.mock("@starguidance/ai", () => ({
 // wholesale above so their real implementations (and real imports) never run.
 vi.mock("@starguidance/database", () => ({
   actorTransaction: mocks.actorTransaction,
-  systemTransaction: mocks.systemTransaction,
   claimInterpretationJobs: mocks.claimInterpretationJobs,
   completeInterpretationJob: mocks.completeInterpretationJob,
   failInterpretationJob: mocks.failInterpretationJob,
@@ -120,9 +116,6 @@ beforeEach(() => {
     (_client: unknown, _userId: string, work: (tx: unknown) => unknown) =>
       work("synthetic-actor-tx"),
   );
-  mocks.systemTransaction.mockImplementation((_client: unknown, work: (tx: unknown) => unknown) =>
-    work("synthetic-system-tx"),
-  );
   mocks.getRuntimeAdapter.mockReturnValue("supabase");
   mocks.getSystemDatabaseClient.mockReturnValue("synthetic-system-client");
   mocks.failInterpretationJob.mockResolvedValue({ terminal: false });
@@ -157,7 +150,7 @@ describe("runInterpretationJobs", () => {
     const summary = await runInterpretationJobs(10);
 
     expect(summary).toEqual({ claimed: 1, succeeded: 1, failed: 0 });
-    expect(mocks.claimInterpretationJobs).toHaveBeenCalledWith("synthetic-system-tx", 10);
+    expect(mocks.claimInterpretationJobs).toHaveBeenCalledWith("synthetic-system-client", 10);
     expect(generateWithProvenance).toHaveBeenCalledWith(
       expect.objectContaining({ question: "what does the future hold?" }),
     );
@@ -172,7 +165,7 @@ describe("runInterpretationJobs", () => {
       result: { cards: [] },
       provenance: { providerId: "synthetic-provider", promptVersion: "v1", schemaVersion: "v1" },
     });
-    expect(mocks.completeInterpretationJob).toHaveBeenCalledWith("synthetic-system-tx", JOB.id);
+    expect(mocks.completeInterpretationJob).toHaveBeenCalledWith("synthetic-system-client", JOB.id);
     expect(mocks.failInterpretationJob).not.toHaveBeenCalled();
     expect(mocks.markReadingGenerationFailed).not.toHaveBeenCalled();
   });
@@ -187,7 +180,7 @@ describe("runInterpretationJobs", () => {
 
     expect(summary).toEqual({ claimed: 1, succeeded: 0, failed: 1 });
     expect(mocks.failInterpretationJob).toHaveBeenCalledWith(
-      "synthetic-system-tx",
+      "synthetic-system-client",
       JOB,
       "provider unavailable",
     );
@@ -221,7 +214,7 @@ describe("runInterpretationJobs", () => {
     expect(summary).toEqual({ claimed: 1, succeeded: 0, failed: 1 });
     expect(mocks.createInterpretationProvider).not.toHaveBeenCalled();
     expect(mocks.failInterpretationJob).toHaveBeenCalledWith(
-      "synthetic-system-tx",
+      "synthetic-system-client",
       JOB,
       "INTERPRETATION_JOB_READING_MISSING",
     );

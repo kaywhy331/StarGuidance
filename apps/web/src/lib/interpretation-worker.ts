@@ -6,7 +6,6 @@ import {
   completeInterpretationJob,
   failInterpretationJob,
   markReadingGenerationFailed,
-  systemTransaction,
   writeInterpretationResult,
   type ClaimedInterpretationJob,
   type DatabaseClient,
@@ -54,13 +53,11 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
         provenance: generated.provenance,
       }),
     );
-    await systemTransaction(sql, (tx) => completeInterpretationJob(tx, job.id));
+    await completeInterpretationJob(sql, job.id);
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown interpretation job failure.";
-    const { terminal } = await systemTransaction(sql, (tx) =>
-      failInterpretationJob(tx, job, message),
-    );
+    const { terminal } = await failInterpretationJob(sql, job, message);
     if (terminal)
       await actorTransaction(sql, job.userId, (tx) =>
         markReadingGenerationFailed(tx, { userId: job.userId, readingId: job.readingId }),
@@ -84,8 +81,14 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
  */
 export async function runInterpretationJobs(limit: number): Promise<InterpretationJobsRunSummary> {
   if (getRuntimeAdapter() !== "supabase") return { claimed: 0, succeeded: 0, failed: 0 };
+  // Claim/complete/fail run directly on the connection role, not through
+  // systemTransaction: migration 0008 subject-bound the starguidance_app
+  // policy on interpretation_jobs, so a subject-less app-role transaction
+  // sees no rows. The cross-user sweep belongs to the same trusted role the
+  // payment-webhook lease already uses (interpretation_jobs_system policy);
+  // per-user writes below still go through actorTransaction.
   const sql = getSystemDatabaseClient();
-  const claimed = await systemTransaction(sql, (tx) => claimInterpretationJobs(tx, limit));
+  const claimed = await claimInterpretationJobs(sql, limit);
   let succeeded = 0;
   let failed = 0;
   for (const job of claimed) {

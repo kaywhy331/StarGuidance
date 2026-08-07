@@ -33,9 +33,24 @@ let userId: string = randomUUID();
 let snapshotId: string = randomUUID();
 let spread: { id: string; version: string } | undefined;
 
-async function asApp<T>(work: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+/**
+ * The worker's path: the connection role, matching interpretation-worker.ts
+ * after migration 0008 (the interpretation_jobs_system policy). Claim,
+ * complete, fail, and test-only row surgery all run here — a subject-less
+ * starguidance_app transaction deliberately sees no rows anymore.
+ */
+async function asWorker<T>(work: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
   if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
-  return systemTransaction(sql, work);
+  return sql.begin((tx) => work(tx as DatabaseTransaction)) as Promise<T>;
+}
+
+/**
+ * The request path: starguidance_app bound to this suite's subject, exactly
+ * how POST /api/readings enqueues and how the retry route re-enqueues.
+ */
+async function asUser<T>(work: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+  if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+  return actorTransaction(sql, userId, work);
 }
 
 /** A fresh reading_sessions row per test, so dedup/claim state never leaks across tests. */
@@ -54,7 +69,7 @@ async function createReading(): Promise<string> {
 }
 
 async function claim(limit = 1): Promise<ClaimedInterpretationJob[]> {
-  return asApp((tx) => claimInterpretationJobs(tx, limit));
+  return asWorker((tx) => claimInterpretationJobs(tx, limit));
 }
 
 /**
@@ -104,15 +119,15 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
   it("enforces one job per reading via the dedup unique index", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     await expect(
-      asApp((tx) => insertInterpretationJob(tx, { userId, readingId })),
+      asUser((tx) => insertInterpretationJob(tx, { userId, readingId })),
     ).rejects.toMatchObject({ code: "23505" });
   });
 
   it("claims a pending job exactly once and leaves it unclaimable again immediately", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const claimed = await claimReading(readingId);
     expect(claimed.attemptCount).toBe(1);
     const secondAttempt = await claim(50);
@@ -121,7 +136,7 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
   it("serializes concurrent claims so exactly one caller gets a given job (FOR UPDATE SKIP LOCKED)", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const results = await Promise.all(Array.from({ length: 5 }, () => claim(1)));
     const winners = results.filter((jobs) => jobs.some((job) => job.readingId === readingId));
     expect(winners).toHaveLength(1);
@@ -129,9 +144,9 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
   it("reclaims a job whose lease expired without a completion", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     await claimReading(readingId);
-    await asApp(
+    await asWorker(
       (tx) => tx`
       update interpretation_jobs set lock_expires_at = now() - interval '1 second'
       where reading_id = ${readingId}
@@ -143,14 +158,14 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
   it("returns a failed job to pending with capped exponential backoff until max_attempts, then terminates it", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     let job = await claimReading(readingId);
     expect(job.maxAttempts).toBe(5);
     for (let attempt = job.attemptCount; attempt < job.maxAttempts; attempt += 1) {
       const before = Date.now();
-      const outcome = await asApp((tx) => failInterpretationJob(tx, job, `attempt-${attempt}`));
+      const outcome = await asWorker((tx) => failInterpretationJob(tx, job, `attempt-${attempt}`));
       expect(outcome.terminal).toBe(false);
-      const [row] = await asApp(
+      const [row] = await asWorker(
         (tx) =>
           tx`select status, available_at, last_error from interpretation_jobs where id = ${job.id}`,
       );
@@ -163,14 +178,14 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
       expect(actualDelayMs).toBeLessThanOrEqual(expectedBackoffMs + 2000);
       // Test-only: skip the wait so the loop can exercise the next attempt
       // immediately rather than sleeping out a real (possibly 300s) backoff.
-      await asApp(
+      await asWorker(
         (tx) => tx`update interpretation_jobs set available_at = now() where id = ${job.id}`,
       );
       job = await claimReading(readingId);
     }
-    const finalOutcome = await asApp((tx) => failInterpretationJob(tx, job, "final-failure"));
+    const finalOutcome = await asWorker((tx) => failInterpretationJob(tx, job, "final-failure"));
     expect(finalOutcome.terminal).toBe(true);
-    const [row] = await asApp(
+    const [row] = await asWorker(
       (tx) => tx`select status from interpretation_jobs where id = ${job.id}`,
     );
     expect(row?.status).toBe("failed");
@@ -179,7 +194,7 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
   it("writes the interpretation result and completes the job in one lifecycle", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const job = await claimReading(readingId);
     await actorTransaction(sql!, userId, (tx) =>
       writeInterpretationResult(tx, {
@@ -214,15 +229,15 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
         provenance: { providerId: "test", promptVersion: "v1", schemaVersion: "reading-result-v1" },
       }),
     );
-    await asApp((tx) => completeInterpretationJob(tx, job.id));
-    const [jobRow] = await asApp(
+    await asWorker((tx) => completeInterpretationJob(tx, job.id));
+    const [jobRow] = await asWorker(
       (tx) => tx`select status, completed_at from interpretation_jobs where id = ${job.id}`,
     );
     expect(jobRow?.status).toBe("completed");
     expect(jobRow?.completed_at).not.toBeNull();
-    // Raw superuser connection, not asApp/systemTransaction: reading_sessions'
-    // RLS is subject-bound (unlike interpretation_jobs), so a role with no
-    // request.jwt.claim.sub set would see zero rows here regardless of grants.
+    // Raw connection-role query: reading_sessions' RLS is subject-bound, so a
+    // starguidance_app transaction with no request.jwt.claim.sub set would see
+    // zero rows here regardless of grants.
     const [reading] = await sql!`select state from reading_sessions where id = ${readingId}`;
     expect(reading?.state).toBe("ready");
   });
@@ -238,11 +253,11 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
   it("reenqueues a job for immediate retry, resetting attempts and clearing the error", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const job = await claimReading(readingId);
-    await asApp((tx) => failInterpretationJob(tx, job, "transient"));
-    await asApp((tx) => reenqueueInterpretationJob(tx, readingId));
-    const [row] = await asApp(
+    await asWorker((tx) => failInterpretationJob(tx, job, "transient"));
+    await asUser((tx) => reenqueueInterpretationJob(tx, readingId));
+    const [row] = await asWorker(
       (tx) =>
         tx`select status, attempt_count, last_error, available_at from interpretation_jobs where reading_id = ${readingId}`,
     );
@@ -259,14 +274,14 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
   it("counts a newly inserted job in the queue depth", async () => {
     const before = await getInterpretationQueueStats(sql!);
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const after = await getInterpretationQueueStats(sql!);
     expect(after.depth).toBe(before.depth + 1);
   });
 
   it("excludes a job that is processing with an unexpired lease", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const before = await getInterpretationQueueStats(sql!);
     expect(before.depth).toBeGreaterThanOrEqual(1);
     // claimReading claims up to 50 — everything currently claimable in the
@@ -281,11 +296,11 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
   it("reports how long the oldest claimable job has been waiting", async () => {
     const readingId = await createReading();
-    await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     // Backdate this job so it is unambiguously the oldest claimable row,
     // regardless of whatever else earlier tests left in the shared table:
     // the table-wide minimum can only be at or before this timestamp.
-    await asApp(
+    await asWorker(
       (tx) => tx`
         update interpretation_jobs set available_at = now() - interval '90 seconds'
         where reading_id = ${readingId}
@@ -294,6 +309,52 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     const stats = await getInterpretationQueueStats(sql!);
     expect(stats.oldestPendingAgeSeconds).not.toBeNull();
     expect(stats.oldestPendingAgeSeconds!).toBeGreaterThanOrEqual(90);
+  });
+
+  it("hides and protects one subject's jobs from an actor bound to another subject", async () => {
+    if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const readingId = await createReading();
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    const other = await createSubject(sql, mode, "interp-jobs-other");
+    await sql`insert into users (id, email) values (${other.id}, ${other.email})`;
+    try {
+      const visible = await actorTransaction(
+        sql,
+        other.id,
+        (tx) => tx`select id from interpretation_jobs where reading_id = ${readingId}`,
+      );
+      expect(visible).toHaveLength(0);
+      const updated = await actorTransaction(
+        sql,
+        other.id,
+        (tx) =>
+          tx`update interpretation_jobs set status = 'failed'
+             where reading_id = ${readingId} returning id`,
+      );
+      expect(updated).toHaveLength(0);
+      // Nor can an actor forge a job attributed to someone else: WITH CHECK
+      // rejects the cross-subject insert outright.
+      await expect(
+        actorTransaction(sql, other.id, (tx) => insertInterpretationJob(tx, { userId, readingId })),
+      ).rejects.toMatchObject({ code: "42501" });
+    } finally {
+      await sql`delete from users where id = ${other.id}`;
+      await deleteSubject(sql, mode, other).catch(() => undefined);
+    }
+  });
+
+  it("shows a subject-less app-role transaction no job rows at all", async () => {
+    if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const readingId = await createReading();
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    const rows = await systemTransaction(sql, (tx) => tx`select id from interpretation_jobs`);
+    expect(rows).toHaveLength(0);
+    const orphanReading = await createReading();
+    await expect(
+      systemTransaction(sql, (tx) =>
+        insertInterpretationJob(tx, { userId, readingId: orphanReading }),
+      ),
+    ).rejects.toMatchObject({ code: "42501" });
   });
 
   it("is unreachable from the browser-facing authenticated role", async () => {

@@ -12,17 +12,15 @@ vi.mock("@/lib/interpretation-worker", () => ({
   runInterpretationJobs: mocks.runInterpretationJobs,
 }));
 
-// This route only reaches @/lib/runtime for the raw pooled client and
-// @starguidance/database for systemTransaction's role-scoping — neither is
-// meaningful against a real database in a unit test, so systemTransaction is
-// stubbed to just invoke its callback directly, and the client it "passes
-// through" is an opaque placeholder no assertion here inspects.
+// This route only reaches @/lib/runtime for the raw pooled client, which the
+// queue-stats query runs on directly (the connection-role path, migration
+// 0008) — not meaningful against a real database in a unit test, so the
+// client is an opaque placeholder no assertion here inspects.
 vi.mock("@/lib/runtime", () => ({
   getSystemDatabaseClient: () => "synthetic-system-client",
 }));
 
 vi.mock("@starguidance/database", () => ({
-  systemTransaction: (_client: unknown, work: (tx: unknown) => unknown) => work("synthetic-tx"),
   getInterpretationQueueStats: mocks.getInterpretationQueueStats,
 }));
 

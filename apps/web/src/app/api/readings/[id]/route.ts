@@ -4,7 +4,7 @@ import {
   classifyQuestion,
   selectReadingLens,
 } from "@starguidance/ai";
-import { reenqueueInterpretationJob, systemTransaction } from "@starguidance/database";
+import { actorTransaction, reenqueueInterpretationJob } from "@starguidance/database";
 import { spreads, tarotCards } from "@starguidance/tarot-content";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
@@ -140,7 +140,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       // reenqueueInterpretationJob's doc comment) then makes the same
       // best-effort inline attempt POST /api/readings makes on creation. If
       // it doesn't land immediately, the Netlify-scheduled sweep will.
-      await systemTransaction(getSystemDatabaseClient(), (tx) =>
+      // Runs subject-bound (migration 0008): the user retrying can reset
+      // exactly their own job row, the same RLS scope the original enqueue
+      // had inside the reading's creating transaction.
+      await actorTransaction(getSystemDatabaseClient(), user.id, (tx) =>
         reenqueueInterpretationJob(tx, reading.id),
       );
       try {

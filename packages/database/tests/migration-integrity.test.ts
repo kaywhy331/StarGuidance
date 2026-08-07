@@ -64,6 +64,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0005_bumpy_moon_knight": "e63e5b2af79a8b635292feffe0441a18f22a28fa4700dc1bc58d010a6fc4b794",
   "0006_rate_limit_buckets": "c4f29725cc7ba2e54f77a24b585e4cb8e596262cbe03b184b7f8dfbe635141c8",
   "0007_interpretation_jobs": "ca141a5257796e0e3c23caba1413cf8bb606fcb499eb39c5d94655c5831e4bee",
+  "0008_interpretation_jobs_subject_rls":
+    "d5aecc953a81ec0a4a42b4876593248969144d53f3099ccdcc89f5a413340557",
 };
 
 describe("migration history", () => {
@@ -172,5 +174,28 @@ describe("migration history", () => {
     expect(sql).toMatch(
       /grant\s+select,\s*insert,\s*update,\s*delete\s+on\s+table\s+"interpretation_jobs"\s+to\s+starguidance_app/i,
     );
+  });
+
+  it("subject-binds the interpretation_jobs actor policy and names the system path (0008)", () => {
+    const sql = executableSql("0008_interpretation_jobs_subject_rls");
+    expect(sql).toMatch(/drop\s+policy\s+"interpretation_jobs_app_only"/i);
+    // The request path: scoped to the app role and bound to the verified
+    // subject in both directions (visibility and new rows).
+    expect(sql).toMatch(
+      /create\s+policy\s+"interpretation_jobs_subject"[\s\S]*to\s+starguidance_app[\s\S]*using\s*\("user_id"\s*=\s*nullif\(current_setting\('request\.jwt\.claim\.sub',\s*true\),\s*''\)::uuid\)[\s\S]*with\s+check\s*\("user_id"\s*=\s*nullif\(current_setting\('request\.jwt\.claim\.sub',\s*true\),\s*''\)::uuid\)/i,
+    );
+    // The claim path: an explicit policy for the owning connection role, so
+    // cross-user maintenance is a named, reviewable grant rather than the
+    // absence of RLS (contrast payment_webhook_events).
+    expect(sql).toMatch(
+      /create\s+policy\s+"interpretation_jobs_system"[\s\S]*to\s+current_user[\s\S]*using\s*\(true\)/i,
+    );
+    // No RLS weakening while re-cutting the policies.
+    expect(sql).not.toMatch(/no\s+force\s+row\s+level\s+security/i);
+    expect(sql).not.toMatch(/disable\s+row\s+level\s+security/i);
+    expect(sql).not.toMatch(/\bbypassrls\b/i);
+    expect(sql).not.toMatch(/security\s+definer/i);
+    expect(sql).not.toMatch(/\bto\s+(anon|service_role|public|authenticated)\b/i);
+    expect(sql).not.toMatch(/\bgrant\b/i);
   });
 });

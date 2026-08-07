@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { getInterpretationQueueStats, systemTransaction } from "@starguidance/database";
+import { getInterpretationQueueStats } from "@starguidance/database";
 import { INTERPRETATION_WORKER_TOKEN_CONTEXT } from "@starguidance/contracts";
 
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
@@ -46,15 +46,13 @@ export async function POST(request: Request) {
     );
   try {
     const summary = await runInterpretationJobs(BATCH_LIMIT);
-    // Same non-subject-bound role every other system-scoped access to this
-    // RLS-forced table uses (runInterpretationJobs itself, request-security's
-    // rate limiter) — interpretation_jobs grants nothing to the raw pooled
-    // client's own connection role. Reported here so the scheduled trigger
+    // Counted on the same connection role the worker's cross-user claim path
+    // uses (interpretation_jobs_system, migration 0008) — the app role's own
+    // policy is subject-bound and a subject-less transaction would count
+    // nothing. Reported here so the scheduled trigger
     // (netlify/functions/process-interpretation-jobs.mts) can alert when the
     // backlog is growing across cycles rather than draining.
-    const stats = await systemTransaction(getSystemDatabaseClient(), (tx) =>
-      getInterpretationQueueStats(tx),
-    );
+    const stats = await getInterpretationQueueStats(getSystemDatabaseClient());
     return NextResponse.json(
       {
         status: "ok",

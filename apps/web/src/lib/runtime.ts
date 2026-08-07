@@ -75,11 +75,13 @@ export function getRepositoriesForUser(userId: string): ApplicationRepositories 
 
 /**
  * The raw pooled Postgres client, bound to no role or subject by itself —
- * for operations that aren't a user-scoped repository call, currently just
- * the distributed rate limiter (request-security.ts uses
- * @starguidance/database's systemTransaction to bind starguidance_app on
- * top of this per call). Local runtime has no Postgres to connect to;
- * callers must branch on getRuntimeAdapter() before reaching here.
+ * for operations that aren't a user-scoped repository call: the distributed
+ * rate limiter (request-security.ts binds starguidance_app on top of this
+ * per call via systemTransaction) and the interpretation-job worker's
+ * claim/complete/fail path (interpretation-worker.ts, which deliberately
+ * stays on the connection role — see migration 0008). Local runtime has no
+ * Postgres to connect to; callers must branch on getRuntimeAdapter() before
+ * reaching here.
  */
 export function getSystemDatabaseClient(): DatabaseClient {
   return clientFor(required("DATABASE_URL"));

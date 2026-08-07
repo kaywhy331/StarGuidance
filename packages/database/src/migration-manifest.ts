@@ -13,4 +13,5 @@ export const EXPECTED_MIGRATIONS = [
   "0005_bumpy_moon_knight",
   "0006_rate_limit_buckets",
   "0007_interpretation_jobs",
+  "0008_interpretation_jobs_subject_rls",
 ] as const;
