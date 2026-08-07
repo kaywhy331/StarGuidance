@@ -8,14 +8,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": {
-    "@starguidance/ai": "workspace:*",
-    "@starguidance/database": "workspace:*",
-    "@starguidance/tarot-content": "workspace:*",
-    "drizzle-orm": "0.45.2",
-    "postgres": "3.4.9",
-    "zod": "4.4.3"
-  },
   "devDependencies": {
     "@netlify/functions": "5.3.0"
   }

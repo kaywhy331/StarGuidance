@@ -9,17 +9,15 @@
 
 [functions]
   directory = "netlify/functions"
-  # Neither the default bundler nor node_bundler = "esbuild" alone resolved
-  # `postgres` at runtime — confirmed by two separate deployed smoke tests,
-  # both failing identically with "Cannot find package 'postgres'" despite
-  # it being a direct dependency with a correct local pnpm symlink. This
-  # matches a known category of zip-it-and-ship-it auto-detection bug
-  # (netlify/zip-it-and-ship-it#869) that reproduces only on Netlify's
-  # remote build, not local tooling. external_node_modules sidesteps
-  # automatic dependency tracing entirely: these are copied into the
-  # deployed bundle's node_modules explicitly rather than detected.
-  node_bundler = "esbuild"
-  external_node_modules = ["postgres", "drizzle-orm"]
+  # No node_bundler/external_node_modules override: netlify/zip-it-and-ship-it#869
+  # (zip-it-and-ship-it cannot resolve `postgres` at runtime for a standalone
+  # Netlify Function — confirmed here across three bundler configurations)
+  # never gets triggered in the first place, because no function in this
+  # directory imports `postgres`/`drizzle-orm`/any workspace package. The
+  # actual job-processing work runs behind the Next.js/Postgres path instead
+  # (@netlify/plugin-nextjs below, a separate, already-proven bundling path);
+  # see apps/web/src/app/api/internal/interpretation-jobs/route.ts and
+  # netlify/functions/process-interpretation-jobs.mts.
 
 [context.deploy-preview.environment]
   APP_ENV = "staging"
