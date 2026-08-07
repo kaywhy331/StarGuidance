@@ -12,8 +12,8 @@ import { getRuntimeAdapter } from "@/lib/runtime";
 import { createSupabaseServerClient } from "@/lib/supabase";
 
 const tokenHashPattern = /^[A-Za-z0-9_-]{20,512}$/;
-const supportedEmailOtpTypes = new Set(["email", "magiclink", "signup", "recovery"] as const);
-type SupportedEmailOtpType = "email" | "magiclink" | "signup" | "recovery";
+const supportedEmailOtpTypes = new Set(["email", "signup", "recovery"] as const);
+type SupportedEmailOtpType = "email" | "signup" | "recovery";
 
 function safeNext(url: URL): string {
   const requested = url.searchParams.get("next");

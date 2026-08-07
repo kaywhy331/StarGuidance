@@ -156,9 +156,17 @@ describe("account callback", () => {
 
   it("keeps provider failures private and asks for a fresh link", async () => {
     auth.verifyOtp.mockResolvedValue({ error: new Error("sensitive provider response") });
-    const response = await GET(request(`?token_hash=${"b".repeat(64)}&type=magiclink`));
+    const response = await GET(request(`?token_hash=${"b".repeat(64)}&type=email`));
 
     expect(location(response).searchParams.get("error")).toBe("expired-link");
     expect(location(response).toString()).not.toContain("sensitive provider response");
+  });
+
+  it("rejects a magiclink token type now that no flow issues one", async () => {
+    const response = await GET(request(`?token_hash=${"m".repeat(64)}&type=magiclink`));
+
+    expect(auth.verifyOtp).not.toHaveBeenCalled();
+    expect(location(response).pathname).toBe("/sign-in");
+    expect(location(response).searchParams.get("error")).toBe("invalid-link");
   });
 });
