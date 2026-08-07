@@ -112,7 +112,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           draw: reading.draw,
           question: persistence.decrypt(reading.encryptedQuestion),
           relevantTraitStatements: snapshot
-            ? reading.readingLens.traitIndexes.map((index) => snapshot.traits[index]?.statement ?? "")
+            ? reading.readingLens.traitIndexes.map(
+                (index) => snapshot.traits[index]?.statement ?? "",
+              )
             : [],
         });
         await persistence.repositories.outputs.save(

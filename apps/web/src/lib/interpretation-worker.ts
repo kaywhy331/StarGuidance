@@ -58,7 +58,9 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown interpretation job failure.";
-    const { terminal } = await systemTransaction(sql, (tx) => failInterpretationJob(tx, job, message));
+    const { terminal } = await systemTransaction(sql, (tx) =>
+      failInterpretationJob(tx, job, message),
+    );
     if (terminal)
       await actorTransaction(sql, job.userId, (tx) =>
         markReadingGenerationFailed(tx, { userId: job.userId, readingId: job.readingId }),

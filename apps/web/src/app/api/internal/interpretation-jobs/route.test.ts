@@ -47,7 +47,9 @@ describe("POST /api/internal/interpretation-jobs", () => {
   });
 
   it("rejects the wrong bearer token", async () => {
-    const response = await POST(request(`Bearer ${tokenFor("a-completely-different-secret-value!")}`));
+    const response = await POST(
+      request(`Bearer ${tokenFor("a-completely-different-secret-value!")}`),
+    );
     expect(response.status).toBe(401);
     expect(mocks.runInterpretationJobs).not.toHaveBeenCalled();
   });

@@ -21,7 +21,9 @@ async function handler(): Promise<Response> {
   const target = process.env.NEXT_PUBLIC_APP_URL;
   const secret = process.env.INTERPRETATION_WORKER_SECRET;
   if (!target || !secret) {
-    console.error("process-interpretation-jobs: missing NEXT_PUBLIC_APP_URL or INTERPRETATION_WORKER_SECRET");
+    console.error(
+      "process-interpretation-jobs: missing NEXT_PUBLIC_APP_URL or INTERPRETATION_WORKER_SECRET",
+    );
     return new Response(null, { status: 500 });
   }
   const token = createHmac("sha256", secret).update(TOKEN_CONTEXT).digest("base64url");
@@ -30,7 +32,8 @@ async function handler(): Promise<Response> {
       method: "POST",
       headers: { authorization: `Bearer ${token}` },
     });
-    if (!response.ok) console.error(`process-interpretation-jobs: trigger responded ${response.status}`);
+    if (!response.ok)
+      console.error(`process-interpretation-jobs: trigger responded ${response.status}`);
     return new Response(null, { status: response.ok ? 202 : 502 });
   } catch (error) {
     console.error("process-interpretation-jobs: trigger request failed", error);

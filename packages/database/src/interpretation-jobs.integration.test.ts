@@ -130,10 +130,12 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     const readingId = await createReading();
     await asApp((tx) => insertInterpretationJob(tx, { userId, readingId }));
     await claimReading(readingId);
-    await asApp((tx) => tx`
+    await asApp(
+      (tx) => tx`
       update interpretation_jobs set lock_expires_at = now() - interval '1 second'
       where reading_id = ${readingId}
-    `);
+    `,
+    );
     const reclaimed = await claimReading(readingId);
     expect(reclaimed.attemptCount).toBe(2);
   });
@@ -148,7 +150,8 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
       const outcome = await asApp((tx) => failInterpretationJob(tx, job, `attempt-${attempt}`));
       expect(outcome.terminal).toBe(false);
       const [row] = await asApp(
-        (tx) => tx`select status, available_at, last_error from interpretation_jobs where id = ${job.id}`,
+        (tx) =>
+          tx`select status, available_at, last_error from interpretation_jobs where id = ${job.id}`,
       );
       expect(row?.status).toBe("pending");
       expect(row?.last_error).toBe(`attempt-${attempt}`);
@@ -166,7 +169,9 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     }
     const finalOutcome = await asApp((tx) => failInterpretationJob(tx, job, "final-failure"));
     expect(finalOutcome.terminal).toBe(true);
-    const [row] = await asApp((tx) => tx`select status from interpretation_jobs where id = ${job.id}`);
+    const [row] = await asApp(
+      (tx) => tx`select status from interpretation_jobs where id = ${job.id}`,
+    );
     expect(row?.status).toBe("failed");
     expect((await claim(50)).find((candidate) => candidate.id === job.id)).toBeUndefined();
   });
