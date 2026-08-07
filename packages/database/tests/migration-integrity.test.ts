@@ -63,6 +63,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0004_server_actor_role": "32dd231cbe55ef316ef71896b1fc9f11af1772c4fdc0722cd58efc3b2fa76aad",
   "0005_bumpy_moon_knight": "e63e5b2af79a8b635292feffe0441a18f22a28fa4700dc1bc58d010a6fc4b794",
   "0006_rate_limit_buckets": "c4f29725cc7ba2e54f77a24b585e4cb8e596262cbe03b184b7f8dfbe635141c8",
+  "0007_interpretation_jobs": "ca141a5257796e0e3c23caba1413cf8bb606fcb499eb39c5d94655c5831e4bee",
 };
 
 describe("migration history", () => {

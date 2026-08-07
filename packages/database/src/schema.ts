@@ -349,6 +349,39 @@ export const rateLimitBuckets = pgTable(
   ],
 );
 
+// Not user-row-scoped, same reasoning as rate_limit_buckets (migration
+// 0006): the worker's claim query is inherently cross-user, so there is no
+// single subject to bind for RLS. See migration 0007.
+export const interpretationJobs = pgTable(
+  "interpretation_jobs",
+  {
+    id,
+    userId: userId(),
+    readingId: uuid("reading_id")
+      .notNull()
+      .references(() => readingSessions.id, { onDelete: "cascade" }),
+    deduplicationKey: text("deduplication_key").notNull(),
+    status: text("status").notNull().default("pending"),
+    availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockExpiresAt: timestamp("lock_expires_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    maxAttempts: integer("max_attempts").default(5).notNull(),
+    lastError: text("last_error"),
+    createdAt,
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("interpretation_jobs_dedup_unique").on(table.deduplicationKey),
+    index("interpretation_jobs_claimable_idx").on(
+      table.status,
+      table.availableAt,
+      table.lockExpiresAt,
+    ),
+  ],
+);
+
 export const auditEvents = pgTable("audit_events", {
   id,
   userId: userId(),
