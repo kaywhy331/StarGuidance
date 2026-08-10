@@ -69,6 +69,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0009_profile_snapshot_immutability":
     "d228d35758f7bd7fa722cc2e95572a7cadca3570ed93b584db768c1420291bf4",
   "0010_deletion_receipts": "c493ef6415cfbbf7625a17654f46303494c7bf25c219bb76713144f571fe9178",
+  "0011_reading_flow_controls": "07de96da150bacd6f3e028165508ddcc4d94c49b420fc5d5985f303b4f54c823",
 };
 
 describe("migration history", () => {
@@ -253,5 +254,18 @@ describe("migration history", () => {
     );
     expect(sql).not.toMatch(/grant\s+(select|update|delete)[\s\S]*starguidance_app/i);
     expect(sql).not.toMatch(/security\s+definer/i);
+  });
+
+  it("adds active content controls and removes singleton follow-ups (0011)", () => {
+    const sql = executableSql("0011_reading_flow_controls");
+    expect(sql).toMatch(/drop\s+index\s+"follow_up_questions_reading_unique"/i);
+    expect(sql).toMatch(/create\s+index\s+"follow_up_questions_reading_idx"[\s\S]*"reading_id"/i);
+    for (const table of ["decks", "spreads"])
+      expect(sql).toMatch(
+        new RegExp(
+          String.raw`alter\s+table\s+"${table}"\s+add\s+column\s+"active"\s+boolean\s+default\s+true\s+not\s+null`,
+          "i",
+        ),
+      );
   });
 });

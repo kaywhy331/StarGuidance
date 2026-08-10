@@ -1,6 +1,6 @@
 # StarGuidance
 
-StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The safe beta supports email/password accounts, private onboarding, immutable profile snapshots, four reading types, a locked ritual flow, deterministic interpretation fallback, same-draw follow-ups, history, and privacy controls. Paid profile reports remain present behind a default-off release gate until their public-launch requirements are complete.
+StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The safe beta supports email/password accounts, private onboarding, immutable profile snapshots, four reading types, recoverable locked rituals, direct finished-reading views, deterministic interpretation fallback, configurable same-draw follow-ups, repeat-reading cooldowns, private feedback, history, and privacy controls. Paid profile reports remain present behind a default-off release gate until their public-launch requirements are complete.
 
 The reading ritual uses an original responsive cosmic Gothic sanctuary, card-specific illustrated faces, a physical 3D card system, and an authenticated streaming oracle transcript. See [artwork provenance](docs/ARTWORK-PROVENANCE.md) for sources, prompts, rights boundaries, hashes, and performance budgets.
 

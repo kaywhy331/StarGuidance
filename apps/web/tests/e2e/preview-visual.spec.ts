@@ -50,7 +50,9 @@ test("the visual preview follows the streamlined result and continuation sequenc
 }) => {
   await page.goto("/visual-preview");
   const journey = page.getByTestId("oracle-transcript");
-  await expect(page.getByRole("heading", { name: "Opening theme" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "The quiet architecture of change" }),
+  ).toBeVisible();
   await expect(page.getByTestId("reading-journey")).toHaveAttribute(
     "data-loaded-section-count",
     "10",

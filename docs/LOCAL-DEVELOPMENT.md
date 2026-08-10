@@ -46,6 +46,8 @@ Open `http://localhost:3000`. The example configuration explicitly sets `RUNTIME
 
 The local-only adapter accepts any valid email and 12–72 character password through the production-shaped forms, but deliberately does not persist or validate the password. It exists for deterministic development and E2E flows only. Supabase mode performs the real credential verification.
 
+`READING_FOLLOW_UP_LIMIT` defaults to `1` and is bounded to 0–10. `READING_REREAD_COOLDOWN_MINUTES` defaults to `30` and is bounded to 0–1440; `0` disables only the same-question cooldown. The repeat check normalizes Unicode, case, whitespace, and punctuation, then links to the retained reading without drawing new cards. Browser motion/sound preferences use local storage; ritual cut/reveal progress uses per-reading session storage.
+
 Detailed report generation is a test adapter, not part of the safe-beta surface. To exercise it locally, set both `ENABLE_PROFILE_REPORTS=true` and `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`; the server flag is the authorization boundary and the public flag controls only button visibility. Keep both false in staging unless running the separately approved commerce rehearsal.
 
 To exercise the durable adapter locally, change only `RUNTIME_ADAPTER` to `supabase` and configure the Supabase variables through an uncommitted `.env.local`. The app will fail closed if any required database, Auth, or encryption setting is absent.

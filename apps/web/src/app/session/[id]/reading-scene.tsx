@@ -7,6 +7,9 @@ import { GUARDED_CATEGORIES, type SafetyCategory } from "@starguidance/ai";
 import type { FollowUpResult, ReadingResult } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
+import { useReadingPreferences } from "@/lib/reading-preferences";
+import { readRitualProgress, writeRitualProgress } from "@/lib/ritual-progress";
+
 import { MysticSanctuaryScene } from "./mystic-sanctuary-scene";
 import { OracleTranscript } from "./oracle-transcript";
 import { QuestionComposer } from "./question-composer";
@@ -31,18 +34,7 @@ export function ReadingScene({ readingId }: { readingId: string }) {
   const [state, send] = useMachine(readingMachine);
   const [reading, setReading] = useState<ReadingPayload>();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  const [reducedMotion, setReducedMotion] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
-  const [sound, setSound] = useState(false);
-  // Distinct from the OS-detected `reducedMotion` above: this is the explicit,
-  // in-app "Reduced motion" control (PRD UX-009 / KNOWN-GAPS "skip-animation
-  // mode"). It drives the exact same `motionOff` flag as the OS preference, so
-  // it shortens/removes decorative transitions without changing whether the
-  // user still intentionally reveals each card (UX-006 is unconditional).
-  const [manualReducedMotion, setManualReducedMotion] = useState(false);
+  const [cutTaken, setCutTaken] = useState<boolean>();
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
   const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
   const [error, setError] = useState<string>();
@@ -57,25 +49,32 @@ export function ReadingScene({ readingId }: { readingId: string }) {
   const [primaryJourneyReady, setPrimaryJourneyReady] = useState(false);
   const bootstrapped = useRef(false);
   const revealRun = useRef(0);
+  const {
+    reducedMotion: motionOff,
+    sound,
+    toggleReducedMotion,
+    toggleSound,
+  } = useReadingPreferences();
   const soundEnabled = useRef(sound);
-  const motionOff = reducedMotion || manualReducedMotion;
 
   useEffect(() => {
     soundEnabled.current = sound;
   }, [sound]);
 
   useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const handleChange = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
-    query.addEventListener("change", handleChange);
-    return () => query.removeEventListener("change", handleChange);
-  }, []);
-
-  useEffect(() => {
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Unable to recover this reading.");
         const payload = (await response.json()) as { reading: ReadingPayload };
+        const progress = readRitualProgress(
+          window.sessionStorage,
+          readingId,
+          payload.reading.cards.length,
+        );
+        if (progress) {
+          setRevealed(new Set(progress.revealedIndexes));
+          setCutTaken(progress.cutTaken);
+        }
         setReading(payload.reading);
       })
       .catch((cause: unknown) =>
@@ -105,14 +104,15 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     if (!state.matches("shuffling")) return;
     const timer = window.setTimeout(
       () => send({ type: "SHUFFLE_COMPLETE" }),
-      motionOff ? 120 : 1_900,
+      cutTaken !== undefined ? 0 : motionOff ? 120 : 1_900,
     );
     return () => window.clearTimeout(timer);
-  }, [motionOff, send, state]);
+  }, [cutTaken, motionOff, send, state]);
 
-  // Cutting the deck is a deliberate PRD UX-004 choice (Cut vs Skip cut), not
-  // a timed transition — both buttons are rendered directly from `cuttingDeck`
-  // state below and send their event on click; there is no auto-advance here.
+  useEffect(() => {
+    if (!state.matches("cuttingDeck") || cutTaken === undefined) return;
+    send({ type: cutTaken ? "CUT" : "SKIP_CUT" });
+  }, [cutTaken, send, state]);
 
   useEffect(() => {
     if (!state.matches("dealing")) return;
@@ -145,14 +145,22 @@ export function ReadingScene({ readingId }: { readingId: string }) {
       if (!reading || !state.matches("revealingCards") || revealedRef.current.has(index)) return;
       const run = ++revealRun.current;
       setActiveReveal(index);
-      setRevealed((current) => new Set(current).add(index));
+      setRevealed((current) => {
+        const next = new Set(current).add(index);
+        if (cutTaken !== undefined)
+          writeRitualProgress(window.sessionStorage, readingId, {
+            cutTaken,
+            revealedIndexes: [...next],
+          });
+        return next;
+      });
       if (soundEnabled.current) playRevealTone();
       window.setTimeout(() => {
         if (revealRun.current !== run) return;
         setActiveReveal(null);
       }, focusDuration);
     },
-    [focusDuration, reading, state],
+    [cutTaken, focusDuration, reading, readingId, state],
   );
 
   const revealAll = useCallback(() => {
@@ -267,7 +275,11 @@ export function ReadingScene({ readingId }: { readingId: string }) {
       }
       if (!response.ok || !payload.followUp)
         throw new Error(payload.safety?.guidance ?? payload.error ?? "Unable to answer follow-up.");
-      setReading({ ...reading, followUps: [...reading.followUps, payload.followUp] });
+      setReading({
+        ...reading,
+        followUps: [...reading.followUps, payload.followUp],
+        followUpsRemaining: Math.max(0, reading.followUpsRemaining - 1),
+      });
       setFollowUp("");
       setStreamTarget(payload.followUp.id);
       setStreamRetryToken(0);
@@ -323,16 +335,10 @@ export function ReadingScene({ readingId }: { readingId: string }) {
           ← Exit
         </Link>
         <div className="sanctuary-control-group">
-          {!reducedMotion && (
-            <button
-              aria-pressed={manualReducedMotion}
-              onClick={() => setManualReducedMotion((value) => !value)}
-              type="button"
-            >
-              Reduced motion <span>{manualReducedMotion ? "on" : "off"}</span>
-            </button>
-          )}
-          <button aria-pressed={sound} onClick={() => setSound((value) => !value)} type="button">
+          <button aria-pressed={motionOff} onClick={toggleReducedMotion} type="button">
+            Reduced motion <span>{motionOff ? "on" : "off"}</span>
+          </button>
+          <button aria-pressed={sound} onClick={toggleSound} type="button">
             Sound <span>{sound ? "on" : "off"}</span>
           </button>
         </div>
@@ -391,12 +397,28 @@ export function ReadingScene({ readingId }: { readingId: string }) {
               Cut the deck, or continue.
             </p>
             <div className="ritual-action-group">
-              <button className="ritual-action" onClick={() => send({ type: "CUT" })} type="button">
+              <button
+                className="ritual-action"
+                onClick={() => {
+                  setCutTaken(true);
+                  writeRitualProgress(window.sessionStorage, readingId, {
+                    cutTaken: true,
+                    revealedIndexes: [...revealed],
+                  });
+                }}
+                type="button"
+              >
                 Cut
               </button>
               <button
                 className="ritual-action"
-                onClick={() => send({ type: "SKIP_CUT" })}
+                onClick={() => {
+                  setCutTaken(false);
+                  writeRitualProgress(window.sessionStorage, readingId, {
+                    cutTaken: false,
+                    revealedIndexes: [...revealed],
+                  });
+                }}
                 type="button"
               >
                 Skip cut
@@ -499,22 +521,22 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         )}
         {state.matches("complete") && !safetyInterrupt && (
           <QuestionComposer
-            disabled={reading.followUps.length >= 1 || !primaryJourneyReady}
+            disabled={reading.followUpsRemaining <= 0 || !primaryJourneyReady}
             hint={
-              reading.followUps.length >= 1
-                ? "This reading’s follow-up is preserved with the same locked cards."
+              reading.followUpsRemaining <= 0
+                ? `This reading’s ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? " is" : "s are"} preserved with the same locked cards.`
                 : !primaryJourneyReady
                   ? "Let the complete reading arrive before continuing the same thread."
-                  : "Shift+Enter adds a line. Enter sends privately."
+                  : `${reading.followUpsRemaining} follow-up${reading.followUpsRemaining === 1 ? "" : "s"} remaining. Shift+Enter adds a line.`
             }
             label="Keep the same cards and ask what they add"
             loading={followUpLoading}
             onChange={setFollowUp}
             onSubmit={submitFollowUp}
             placeholder={
-              reading.followUps.length >= 1
+              reading.followUpsRemaining <= 0
                 ? "Follow-up complete"
-                : "Ask one follow-up about the same cards…"
+                : "Ask a follow-up about the same cards…"
             }
             submitLabel="Reflect on the same cards"
             testId="follow-up-composer"

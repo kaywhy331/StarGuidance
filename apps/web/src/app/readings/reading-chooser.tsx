@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { SafetyCategory } from "@starguidance/ai";
+
+import { useReadingPreferences } from "@/lib/reading-preferences";
 
 import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { QuestionComposer } from "../session/[id]/question-composer";
@@ -17,28 +19,19 @@ export function ReadingChooser({
   const [selected, setSelected] = useState(spreads[1]?.id ?? spreads[0]?.id ?? "");
   const [question, setQuestion] = useState("");
   const [message, setMessage] = useState<string>();
+  const [retained, setRetained] = useState<{ readingId: string; availableAt: string }>();
   const [safetyInterrupt, setSafetyInterrupt] = useState<{
     category: SafetyCategory;
     guidance: string;
   }>();
   const [loading, setLoading] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const [reducedMotion, setReducedMotion] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
+  const { reducedMotion, sound, toggleReducedMotion, toggleSound } = useReadingPreferences();
   const router = useRouter();
-
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const handleChange = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
-    query.addEventListener("change", handleChange);
-    return () => query.removeEventListener("change", handleChange);
-  }, []);
 
   const beginReading = async () => {
     setMessage(undefined);
+    setRetained(undefined);
     setSafetyInterrupt(undefined);
     setLoading(true);
     try {
@@ -50,6 +43,9 @@ export function ReadingChooser({
       const payload = (await response.json()) as {
         readingId?: string;
         error?: string;
+        cooldownActive?: boolean;
+        retainedReadingId?: string;
+        availableAt?: string;
         safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
       };
       if (response.status === 401) return router.push("/sign-in");
@@ -58,6 +54,10 @@ export function ReadingChooser({
           category: payload.safety.category,
           guidance: payload.safety.guidance,
         });
+      if (payload.cooldownActive && payload.retainedReadingId && payload.availableAt) {
+        setRetained({ readingId: payload.retainedReadingId, availableAt: payload.availableAt });
+        return setMessage(payload.error ?? "This question already has a recent reading.");
+      }
       if (!response.ok || !payload.readingId)
         return setMessage(
           payload.safety?.guidance ?? payload.error ?? "Unable to begin the reading.",
@@ -80,6 +80,14 @@ export function ReadingChooser({
     <MysticSanctuaryScene reducedMotion={reducedMotion} testId="mystic-sanctuary-scene">
       <header className="sanctuary-controls" aria-label="Reading setup controls">
         <Link href="/profile">← Exit</Link>
+        <div className="sanctuary-control-group">
+          <button aria-pressed={reducedMotion} onClick={toggleReducedMotion} type="button">
+            Reduced motion <span>{reducedMotion ? "on" : "off"}</span>
+          </button>
+          <button aria-pressed={sound} onClick={toggleSound} type="button">
+            Sound <span>{sound ? "on" : "off"}</span>
+          </button>
+        </div>
       </header>
       <section className="reading-entry-stage">
         <p>Choose a ritual</p>
@@ -121,9 +129,18 @@ export function ReadingChooser({
           value={question}
         />
         {message && (
-          <p className="sanctuary-error" role="alert">
-            {message}
-          </p>
+          <div className="sanctuary-error" role="alert">
+            <p>{message}</p>
+            {retained && (
+              <p>
+                <Link href={`/reading/${retained.readingId}`}>Open the retained reading</Link>
+                {" · another draw becomes available "}
+                <time dateTime={retained.availableAt}>
+                  {new Date(retained.availableAt).toLocaleString()}
+                </time>
+              </p>
+            )}
+          </div>
         )}
       </div>
     </MysticSanctuaryScene>

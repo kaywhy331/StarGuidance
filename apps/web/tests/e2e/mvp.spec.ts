@@ -49,7 +49,7 @@ async function finishRitual(page: Page) {
   await page.getByRole("button", { name: "Skip cut", exact: true }).click();
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("heading", { name: "Opening theme" })).toBeVisible({
+  await expect(page.locator('.oracle-entry[data-phase="openingTheme"] h2')).toBeVisible({
     timeout: 30_000,
   });
 }
@@ -125,6 +125,16 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
     await nextReadingSection(page);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
   }
+
+  const readingId = page.url().split("/").at(-1) as string;
+  await page.goto("/history");
+  await expect(page.getByText("Three Cards — Direction")).toBeVisible();
+  await page.locator(`a[href="/reading/${readingId}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/reading/${readingId}$`));
+  await expect(page.getByTestId("reading-result-scene")).toBeVisible();
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toHaveCount(0);
+  await expect(page.locator('.oracle-entry[data-phase="openingTheme"] h2')).toBeVisible();
 });
 
 test("an authenticated session never loops back to the credential form", async ({ page }) => {
@@ -317,12 +327,14 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
   await createProfile(page);
   await beginReading(page);
   const before = (await currentReading(page)).reading.draw;
-  await page.reload();
-  // The client-side ritual always restarts from idle on a fresh mount, with
-  // or without this reveal-control change — reload it past its own cut gate
-  // again before expecting the cards.
   await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
+  await expect(page.locator(".physical-card-caption em").first()).toBeVisible();
+  await page.reload();
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toHaveCount(0);
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
   const after = (await currentReading(page)).reading.draw;
   expect(after).toEqual(before);
 });
@@ -331,7 +343,11 @@ test("reduced-motion preference skips ritual transitions", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await createProfile(page);
   await beginReading(page);
-  await expect(page.getByRole("button", { name: "Reduced motion" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reduced motion" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Reduced motion" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await finishRitual(page);
   await expect(page.locator(".oracle-cursor")).toHaveCount(0);
   await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(

@@ -13,6 +13,10 @@ brief/PRD Must-level or integrity items to schedule before public MVP. **P2** �
 record-the-decision items. Commerce P0s are behind `ENABLE_PROFILE_REPORTS=false` today; they
 block _flag flip_, not the current reading beta.
 
+## Implementation update — Wave 4 (2026-08-10)
+
+G14–G19 and G43–G47 are implemented on this branch. Completed readings now have a direct pre-revealed result route; cut/reveal progress recovers per reading; revealed cards expose orientation-correct themes; follow-up cardinality and normalized reread cooldown are configurable; feedback has an authenticated encrypted route, UI, history state, and export; `result.title` heads the opening theme; Groq cardinality is exact; active deck/spread flags gate creation; motion/sound persist; and history uses spread names plus follow-up/feedback/report state. Migration `0011_reading_flow_controls` carries the database changes. The default remains one follow-up to preserve PRD DEC-007. Scheduled outcome reminders and their separate outcome research schema remain explicitly deferred as recorded in `docs/KNOWN-GAPS.md`; the new feedback surface must not be described as outcome verification.
+
 ---
 
 ## P0 — launch blockers
@@ -368,7 +372,7 @@ write-back.
   G37, G39, G41, the documentation-drift sweep, G48, G55.
 - **Wave 2 — data integrity:** G9, G10, G11, G12, G13, G26.
 - **Wave 3 — calculation correctness:** G4, G20, G21, G27, G28 (+ G38 fixtures).
-- **Wave 4 — reading-flow completeness:** G14, G15, G16, G17, G18, G19, G43–G47.
+- **Wave 4 — reading-flow completeness (implemented 2026-08-10):** G14, G15, G16, G17, G18, G19, G43–G47.
 - **Wave 5 — commerce (pre-flag-flip):** G5, G6, G7, G30, G31, G53.
 - **Wave 6 — account & ops:** G32, G33, G34, G35, G40, G49–G52, G56–G60.
 - **Parallel, owner-side:** the five ops actions above.

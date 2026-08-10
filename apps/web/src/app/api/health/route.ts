@@ -170,8 +170,18 @@ async function probeDatabase(): Promise<DatabaseStatus> {
               and column_name = 'idempotency_key'
           )
           and to_regclass('public.birth_profiles_user_unique') is not null
-          and to_regclass('public.follow_up_questions_reading_unique') is not null
+          and to_regclass('public.follow_up_questions_reading_idx') is not null
           and to_regclass('public.reading_sessions_user_idempotency_unique') is not null
+          and exists (
+            select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'decks'
+              and column_name = 'active'
+          )
+          and exists (
+            select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'spreads'
+              and column_name = 'active'
+          )
           and exists (
             select 1 from information_schema.columns
             where table_schema = 'public' and table_name = 'orders'

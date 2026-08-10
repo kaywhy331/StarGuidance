@@ -6,7 +6,7 @@ This procedure is intentionally credential-gated. Use an explicitly non-producti
 
 Applied migrations are immutable. A correction is always a new migration; `packages/database/tests/migration-integrity.test.ts` pins the digest of every applied file so an edit fails a test instead of silently diverging databases that already ran it.
 
-Migration 0005 removes the legacy plaintext birth metadata copy from every existing profile snapshot, adds a request idempotency key to locked readings, and enforces one profile root per user plus one follow-up per reading. Its preflight refuses ambiguous duplicate roots/follow-ups instead of silently deleting or choosing records.
+Migration 0005 removes the legacy plaintext birth metadata copy from every existing profile snapshot, adds a request idempotency key to locked readings, and initially enforces one profile root per user plus one follow-up per reading. Its preflight refuses ambiguous duplicate roots/follow-ups instead of silently deleting or choosing records. Migration 0011 adds active deck/spread controls and replaces the singleton follow-up index with a non-unique reading index; the server then serializes count-and-insert on the owned reading row and enforces `READING_FOLLOW_UP_LIMIT` (default 1).
 
 ## How an application user comes into existence
 

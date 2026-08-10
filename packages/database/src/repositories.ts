@@ -57,6 +57,16 @@ export interface StoredFollowUp {
   createdAt: string;
 }
 
+export interface StoredFeedback {
+  id: string;
+  userId: string;
+  readingId: string;
+  resonance?: number;
+  helpfulness?: number;
+  encryptedComment?: string;
+  createdAt: string;
+}
+
 export interface StoredReading {
   id: string;
   userId: string;
@@ -184,7 +194,12 @@ export interface ReadingOutputRepository {
 
 export interface FollowUpRepository {
   list(userId: string, readingId: string): Promise<StoredFollowUp[]>;
-  create(userId: string, readingId: string, followUp: StoredFollowUp): Promise<void>;
+  create(
+    userId: string,
+    readingId: string,
+    followUp: StoredFollowUp,
+    policy: { limit: number },
+  ): Promise<void>;
 }
 
 export interface HistoryRepository {
@@ -198,7 +213,8 @@ export interface FeedbackRepository {
     resonance?: number;
     helpfulness?: number;
     encryptedComment?: string;
-  }): Promise<string>;
+  }): Promise<StoredFeedback>;
+  list(userId: string, readingId?: string): Promise<StoredFeedback[]>;
 }
 
 export interface ReportRepository {
@@ -241,6 +257,7 @@ export interface PrivacyRepository {
     consents: ConsentRecord[];
     profiles: StoredProfileVersion[];
     readings: StoredReading[];
+    feedback: StoredFeedback[];
     reports: StoredReport[];
     orders: StoredOrder[];
     entitlements: StoredEntitlement[];

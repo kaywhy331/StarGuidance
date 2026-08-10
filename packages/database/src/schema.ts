@@ -106,6 +106,7 @@ export const decks = pgTable("decks", {
   id,
   version: text("version").notNull().unique(),
   name: text("name").notNull(),
+  active: boolean("active").default(true).notNull(),
   createdAt,
 });
 export const cards = pgTable("cards", {
@@ -133,6 +134,7 @@ export const spreads = pgTable("spreads", {
   id: text("id").primaryKey(),
   version: text("version").notNull(),
   payload: jsonb("payload").notNull(),
+  active: boolean("active").default(true).notNull(),
   createdAt,
 });
 export const spreadPositions = pgTable(
@@ -213,7 +215,7 @@ export const followUpQuestions = pgTable(
     output: jsonb("output"),
     createdAt,
   },
-  (table) => [uniqueIndex("follow_up_questions_reading_unique").on(table.readingId)],
+  (table) => [index("follow_up_questions_reading_idx").on(table.readingId)],
 );
 export const readingFeedback = pgTable("reading_feedback", {
   id,

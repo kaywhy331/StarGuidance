@@ -302,7 +302,7 @@ export function createOracleStreamEvents(result: ReadingResult): readonly Oracle
     {
       type: "phase",
       phase: "openingTheme",
-      heading: "Opening theme",
+      heading: validated.title,
       text: `${validated.directAnswer} ${validated.centralTheme}`,
     },
     ...validated.cards.map((card, index) => ({

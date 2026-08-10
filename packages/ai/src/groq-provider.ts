@@ -115,7 +115,7 @@ export interface GroqProviderOptions {
 }
 
 /** The JSON Schema the model is constrained to. Mirrors readingResultSchema. */
-function responseSchema(): Record<string, unknown> {
+function responseSchema(cardCount: number): Record<string, unknown> {
   const card = {
     type: "object",
     additionalProperties: false,
@@ -156,7 +156,7 @@ function responseSchema(): Record<string, unknown> {
       title: { type: "string" },
       directAnswer: { type: "string" },
       centralTheme: { type: "string" },
-      cards: { type: "array", items: card },
+      cards: { type: "array", items: card, minItems: cardCount, maxItems: cardCount },
       synthesis: { type: "string" },
       likelyTrajectory: {
         type: "object",
@@ -286,24 +286,25 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
   ): Promise<ReadingResult> {
     const safety = classifyQuestion(input.question);
     const guarded = GUARDED_CATEGORIES.has(safety.category);
+    const resolved = resolveDraw(input.draw);
     const parsed = readingResultSchema.parse(
       await this.requestStructured(
         guarded ? `${READER_VOICE} ${GUARDED_VOICE}` : READER_VOICE,
         this.buildPayload(input),
         "reading",
-        responseSchema(),
+        responseSchema(resolved.length),
         this.options.maxOutputTokens ?? 2600,
         signal,
       ),
     );
+    if (parsed.cards.length !== resolved.length) throw new ProviderRequestError("invalid-response");
     if (generatedOutputSafetyViolation(parsed)) throw new ProviderRequestError("unsafe-response");
     // The model may not echo the locked draw faithfully; the draw is
     // authoritative, so card identity and orientation are restored from it.
-    const resolved = resolveDraw(input.draw);
     return {
       ...parsed,
       cards: resolved.map((entry, index) => ({
-        ...(parsed.cards[index] ?? parsed.cards[0]!),
+        ...parsed.cards[index]!,
         positionId: entry.position.id,
         cardId: entry.card.id,
         orientation: entry.orientation,

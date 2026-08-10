@@ -18,8 +18,8 @@ const asJson = (value: unknown): postgres.JSONValue =>
 try {
   await sql.begin(async (transaction) => {
     await transaction`
-      insert into decks (version, name)
-      values (${DECK_VERSION}, ${"StarGuidance Typographic Tarot"})
+      insert into decks (version, name, active)
+      values (${DECK_VERSION}, ${"StarGuidance Typographic Tarot"}, true)
       on conflict (version) do update set name = excluded.name
     `;
     for (const card of tarotCards) {
@@ -46,8 +46,8 @@ try {
     }
     for (const spread of spreads) {
       await transaction`
-        insert into spreads (id, version, payload)
-        values (${spread.id}, ${spread.version}, ${transaction.json(asJson(spread))})
+        insert into spreads (id, version, payload, active)
+        values (${spread.id}, ${spread.version}, ${transaction.json(asJson(spread))}, true)
         on conflict (id) do update set version = excluded.version, payload = excluded.payload
       `;
       for (const position of spread.positions) {

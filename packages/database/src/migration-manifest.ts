@@ -16,4 +16,5 @@ export const EXPECTED_MIGRATIONS = [
   "0008_interpretation_jobs_subject_rls",
   "0009_profile_snapshot_immutability",
   "0010_deletion_receipts",
+  "0011_reading_flow_controls",
 ] as const;

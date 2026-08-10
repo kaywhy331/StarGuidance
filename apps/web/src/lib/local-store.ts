@@ -8,6 +8,7 @@ import {
   type ProfileTraitRecord,
   type RepositoryUser,
   type StoredEntitlement,
+  type StoredFeedback,
   type StoredOrder,
   type StoredProfileVersion,
   type StoredReading,
@@ -18,6 +19,7 @@ import { isLocalRuntimeAdapterAuthorized } from "./hosted-runtime";
 
 export type {
   StoredEntitlement,
+  StoredFeedback,
   StoredOrder,
   StoredReading,
   StoredReport,
@@ -42,7 +44,7 @@ export interface LocalStore {
   settings: Map<string, { displayName: string; soundEnabled: boolean; reducedMotion: boolean }>;
   profileComponents: Map<string, ProfileComponentRecord[]>;
   profileTraits: Map<string, ProfileTraitRecord[]>;
-  feedback: Map<string, { userId: string; readingId: string }>;
+  feedback: Map<string, StoredFeedback>;
   profileSnapshots: Map<string, LocalProfileVersion>;
   idempotency: Map<string, string>;
   webhookEvents: Map<

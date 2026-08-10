@@ -10,6 +10,7 @@ export interface DealtCardView {
   cardId: string;
   name: string;
   orientation: "upright" | "reversed";
+  themes: readonly string[];
   positionId: string;
   positionName: string;
   artwork: TarotArtwork;
@@ -27,4 +28,8 @@ export interface ReadingPayload {
   /** The category `classifyQuestion()` (@starguidance/ai) assigned at creation. */
   safetyClassification?: SafetyCategory;
   followUps: { id: string; result: FollowUpResult }[];
+  followUpLimit: number;
+  followUpsRemaining: number;
+  feedbackSubmitted: boolean;
+  createdAt: string;
 }

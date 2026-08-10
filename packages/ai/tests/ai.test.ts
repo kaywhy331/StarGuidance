@@ -84,7 +84,7 @@ describe("AI boundary", () => {
       relevantTraitStatements: [],
     });
     const events = createOracleStreamEvents(result);
-    expect(events[0]).toMatchObject({ phase: "openingTheme" });
+    expect(events[0]).toMatchObject({ phase: "openingTheme", heading: result.title });
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ heading: "From the Stars" }),

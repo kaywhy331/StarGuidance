@@ -294,7 +294,7 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
     });
   });
 
-  it("enforces one profile root, one follow-up, and one reading per idempotency key", async () => {
+  it("enforces one profile root and one reading per idempotency key while allowing follow-ups", async () => {
     await expect(
       asUser(ids.userA, async (tx) => {
         await tx`insert into birth_profiles (id, user_id, encrypted_payload)
@@ -302,13 +302,14 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       }),
     ).rejects.toMatchObject({ code: "23505" });
 
-    await expect(
-      asUser(ids.userA, async (tx) => {
-        await tx`insert into follow_up_questions
-          (user_id, reading_id, encrypted_question, output)
-          values (${ids.userA}, ${ids.readingA}, 'duplicate-follow-up', ${tx.json({ response: "duplicate" })})`;
-      }),
-    ).rejects.toMatchObject({ code: "23505" });
+    await asUser(ids.userA, async (tx) => {
+      await tx`insert into follow_up_questions
+        (user_id, reading_id, encrypted_question, output)
+        values (${ids.userA}, ${ids.readingA}, 'second-follow-up', ${tx.json({ response: "second" })})`;
+      const [followUps] = await tx`select count(*)::int as count from follow_up_questions
+        where reading_id = ${ids.readingA}`;
+      expect(followUps?.count).toBe(2);
+    });
 
     await expect(
       asUser(ids.userA, async (tx) => {

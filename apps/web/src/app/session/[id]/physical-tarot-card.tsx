@@ -160,10 +160,13 @@ export function PhysicalTarotCard({
       <figcaption className="physical-card-caption" id={`card-position-${index}`}>
         <span>{card.positionName}</span>
         {revealed && (
-          <small>
-            {card.name}
-            {card.orientation === "reversed" ? " · reversed" : ""}
-          </small>
+          <>
+            <small>
+              {card.name}
+              {card.orientation === "reversed" ? " · reversed" : ""}
+            </small>
+            <em>{card.themes.join(" · ")}</em>
+          </>
         )}
       </figcaption>
     </figure>

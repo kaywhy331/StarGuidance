@@ -40,6 +40,18 @@ export async function GET() {
           })),
           createdAt: reading.createdAt,
         })),
+        feedback: data.feedback.map((feedback) => ({
+          id: feedback.id,
+          readingId: feedback.readingId,
+          resonance: feedback.resonance,
+          helpfulness: feedback.helpfulness,
+          ...(feedback.encryptedComment
+            ? {
+                comment: persistence.decrypt(feedback.encryptedComment, "feedback-comment"),
+              }
+            : {}),
+          createdAt: feedback.createdAt,
+        })),
         reports: data.reports,
         orders: data.orders,
         entitlements: data.entitlements,

@@ -1,6 +1,6 @@
 # Security and privacy
 
-Birth facts, derived profiles, private questions, and follow-ups are sensitive.
+Birth facts, derived profiles, private questions, follow-ups, and free-text feedback are sensitive.
 
 ## Implemented controls
 
@@ -18,14 +18,14 @@ Birth facts, derived profiles, private questions, and follow-ups are sensitive.
 - The profile-engine container disables Uvicorn access logs, and its application does not log request bodies, response bodies, birth inputs, authorization headers, or derived calculations. `/health` remains public and contains no private data.
 - Public web `/api/health` is dependency-free liveness. Deep readiness requires a domain-separated HMAC bearer token before it probes configuration, Postgres/RLS, or the profile engine. Tests assert that environment values, dependency errors, request bodies, and response bodies are absent from both responses.
 - `POST /api/internal/interpretation-jobs` requires its own domain-separated HMAC bearer token (a distinct context string from the readiness probe's) before it drains any interpretation job; a missing or weak `INTERPRETATION_WORKER_SECRET` fails the route closed with `401` rather than accepting an unauthenticated trigger.
-- Safety classification occurs before a draw for crisis and compulsive-redraw language.
+- Safety classification occurs before a draw for crisis and compulsive-redraw language. A configurable normalized same-question cooldown checks only the authenticated user's encrypted reading history server-side and returns the retained reading without creating another draw.
 - The draw function accepts no profile snapshot, trait, question, prompt, or AI input.
 - AI input is designed to contain only a locked draw, curated meanings, the private question, and a compact stable trait lens. Birth name/date/time/place, email, and raw calculations are excluded.
 - Live generation requires an explicit model-safety approval flag. A deterministic post-generation validator rejects prohibited factual or guaranteed death, pregnancy, diagnosis, verdict, guilt, infidelity, private-third-party, investment-return, and employment claims even when a provider response is schema-valid; rejection uses the deterministic fallback and never redraws.
 - History previews are decrypted only for an authenticated response; no question preview is stored in plaintext.
 - Authenticated export reads only through user-scoped repositories, then decrypts for that response. Account deletion verifies the current password, deletes the hosted Auth identity first, and relies on the enforced database cascade so a usable identity is never stranded after a partial two-step deletion.
 - Deletion leaves a cascade-proof tombstone (migration `0010`): after re-authentication and before the Auth identity is deleted, a user-less `deletion_receipts` row records a domain-separated hash of the subject, the policy version, and the request time. Deletion aborts if the receipt cannot be written. The application role may only append receipts; reads belong to the owning connection role. Sign-in, sign-out, and password changes write best-effort `audit_events` rows that never block the auth action itself.
-- Reading session and draw writes are one database transaction. Outputs are separate append-only rows, so failure, retry, refresh recovery, and follow-up cannot replace the locked assignments.
+- Reading session and draw writes are one database transaction. Active deck/spread flags are consulted before creation. Outputs are separate append-only rows, so failure, retry, refresh recovery, and follow-up cannot replace the locked assignments. Concurrent follow-up inserts serialize on the owned reading row before applying the configured count limit.
 - Stripe events are signature checked, claimed with a failure-releasable durable lease, and resolve user/snapshot ownership from the persisted order rather than trusting webhook metadata. Full refunds and disputes revoke the entitlement, and report reads require it to remain active.
 - Oracle streaming emits only schema-validated persisted result phases; the private question is not included in the stream URL or payload.
 - The deploy-preview composition contains synthetic cards and text only, is `noindex`, and is enabled by a Netlify deploy-preview-only flag that defaults off on public production.

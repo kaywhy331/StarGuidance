@@ -10,6 +10,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
+import { followUpLimit, followUpLimitMessage } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "@/lib/runtime";
 
@@ -31,6 +32,8 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { reading } = owned;
     const spread = spreads.find(({ id }) => id === reading.spreadId);
+    const configuredFollowUpLimit = followUpLimit();
+    const feedback = await owned.persistence.repositories.feedback.list(owned.user.id, reading.id);
     return NextResponse.json({
       reading: {
         id: reading.id,
@@ -48,6 +51,8 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
             cardId: card.id,
             name: card.name,
             orientation: assignment.orientation,
+            themes:
+              assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes,
             positionId: assignment.positionId,
             positionName: position?.displayName ?? assignment.positionId.replaceAll("-", " "),
             artwork: card.artwork,
@@ -58,6 +63,9 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
         generationStatus: reading.generationStatus,
         safetyClassification: reading.safetyClassification,
         followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
+        followUpLimit: configuredFollowUpLimit,
+        followUpsRemaining: Math.max(0, configuredFollowUpLimit - reading.followUps.length),
+        feedbackSubmitted: feedback.length > 0,
         createdAt: reading.createdAt,
       },
     });
@@ -159,12 +167,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         draw: reading.draw,
       });
     }
-    if (reading.followUps.length >= 1)
+    const configuredFollowUpLimit = followUpLimit();
+    if (reading.followUps.length >= configuredFollowUpLimit)
       return NextResponse.json(
-        {
-          error:
-            "This MVP includes one follow-up per reading. Keep the same cards in view and allow time for reflection.",
-        },
+        { error: followUpLimitMessage(configuredFollowUpLimit) },
         { status: 409 },
       );
     if (!reading.result)
@@ -187,7 +193,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       result,
       createdAt: new Date().toISOString(),
     };
-    await persistence.repositories.followUps.create(user.id, reading.id, followUp);
+    await persistence.repositories.followUps.create(user.id, reading.id, followUp, {
+      limit: configuredFollowUpLimit,
+    });
     await recordAudit(user.id, "reading.follow_up.created", "reading", reading.id);
     return NextResponse.json(
       { followUp: { id: followUp.id, result }, draw: reading.draw },
@@ -200,14 +208,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         { error: security.error },
         { status: security.status, headers: security.headers },
       );
-    if (error instanceof Error && error.message === "FOLLOW_UP_EXISTS")
-      return NextResponse.json(
-        {
-          error:
-            "This MVP includes one follow-up per reading. Keep the same cards in view and allow time for reflection.",
-        },
-        { status: 409 },
-      );
+    if (error instanceof Error && error.message === "FOLLOW_UP_LIMIT_REACHED")
+      return NextResponse.json({ error: followUpLimitMessage(followUpLimit()) }, { status: 409 });
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
     return NextResponse.json(
       { error: status === 401 ? "Authentication required." : "Invalid follow-up." },

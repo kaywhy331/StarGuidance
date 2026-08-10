@@ -41,6 +41,7 @@ beforeEach(() => {
   localStore.profileSnapshots.clear();
   localStore.profileComponents.clear();
   localStore.profileTraits.clear();
+  localStore.feedback.clear();
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -59,7 +60,7 @@ describe("local integrity parity", () => {
     expect(localStore.readings.size).toBe(1);
   });
 
-  it("rejects a concurrent second follow-up for the same reading", async () => {
+  it("enforces the configured follow-up limit and permits a larger policy", async () => {
     const repositories = createLocalRepositories();
     const stored = await repositories.readingSessions.createLocked(
       reading("00000000-0000-4000-8000-000000000003", "follow-up-request"),
@@ -70,14 +71,26 @@ describe("local integrity parity", () => {
       result: { response: "First response" },
       createdAt: "2026-08-05T00:01:00.000Z",
     };
-    await repositories.followUps.create(userId, stored.id, first);
+    await repositories.followUps.create(userId, stored.id, first, { limit: 2 });
+
+    await repositories.followUps.create(
+      userId,
+      stored.id,
+      { ...first, id: "00000000-0000-4000-8000-000000000005" },
+      { limit: 2 },
+    );
 
     await expect(
-      repositories.followUps.create(userId, stored.id, {
-        ...first,
-        id: "00000000-0000-4000-8000-000000000005",
-      }),
-    ).rejects.toThrow("FOLLOW_UP_EXISTS");
+      repositories.followUps.create(
+        userId,
+        stored.id,
+        {
+          ...first,
+          id: "00000000-0000-4000-8000-00000000000a",
+        },
+        { limit: 2 },
+      ),
+    ).rejects.toThrow("FOLLOW_UP_LIMIT_REACHED");
   });
 
   it("deletes one owned reading without affecting the account", async () => {

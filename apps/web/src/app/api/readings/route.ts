@@ -11,6 +11,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
+import { findRetainedReading } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter } from "@/lib/runtime";
 
@@ -35,6 +36,35 @@ export async function POST(request: Request) {
     if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
     const spread = spreads.find(({ id }) => id === input.spreadId);
     if (!spread) return NextResponse.json({ error: "Unknown spread." }, { status: 404 });
+
+    const previousReadings = await persistence.repositories.readingSessions.list(user.id);
+    const idempotent = previousReadings.find(
+      (candidate) => candidate.idempotencyKey === idempotencyKey,
+    );
+    if (idempotent)
+      return NextResponse.json(
+        {
+          readingId: idempotent.id,
+          safety,
+          generationStatus: idempotent.generationStatus,
+          idempotentReplay: true,
+        },
+        { status: 200 },
+      );
+    const retained = findRetainedReading(previousReadings, input.question, (encrypted) =>
+      persistence.decrypt(encrypted, "reading-question"),
+    );
+    if (retained)
+      return NextResponse.json(
+        {
+          error:
+            "You asked this recently. Keep the existing cards in view before starting another reading.",
+          cooldownActive: true,
+          retainedReadingId: retained.reading.id,
+          availableAt: retained.availableAt,
+        },
+        { status: 409 },
+      );
 
     const readingLens = selectReadingLens(input.question, profile.snapshot.traits);
     const draw = createLockedDraw({
@@ -142,6 +172,11 @@ export async function POST(request: Request) {
         { error: security.error },
         { status: security.status, headers: security.headers },
       );
+    if (error instanceof Error && error.message === "READING_CONTENT_INACTIVE")
+      return NextResponse.json(
+        { error: "This deck or reading type is temporarily unavailable." },
+        { status: 409 },
+      );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
     return NextResponse.json(
       { error: status === 401 ? "Authentication required." : "Invalid reading request." },
@@ -154,15 +189,29 @@ export async function GET() {
   try {
     const user = await requireUser();
     const persistence = persistenceFor(user);
-    const readings = (await persistence.repositories.history.listReadings(user.id)).map(
+    const [storedReadings, reports, feedback] = await Promise.all([
+      persistence.repositories.history.listReadings(user.id),
+      persistence.repositories.reports.list(user.id),
+      persistence.repositories.feedback.list(user.id),
+    ]);
+    const readings = storedReadings.map(
       ({ id, spreadId, encryptedQuestion, draw, generationStatus, createdAt }) => {
+        const stored = storedReadings.find((reading) => reading.id === id)!;
         const question = persistence.decrypt(encryptedQuestion, "reading-question");
+        const spread = spreads.find((candidate) => candidate.id === spreadId);
+        const report = reports.find(
+          (candidate) => candidate.snapshotId === stored.profileSnapshotId,
+        );
         return {
           id,
           spreadId,
+          spreadName: spread?.name ?? spreadId.replaceAll("-", " "),
           questionPreview: `${question.slice(0, 48)}${question.length > 48 ? "…" : ""}`,
           draw,
           generationStatus,
+          followUpCount: stored.followUps.length,
+          feedbackSubmitted: feedback.some((entry) => entry.readingId === id),
+          reportStatus: report?.status ?? "not-purchased",
           createdAt,
         };
       },

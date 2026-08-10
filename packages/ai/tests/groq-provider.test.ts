@@ -220,6 +220,60 @@ describe("high-risk generation safety", () => {
 });
 
 describe("the draw is authoritative, not the model", () => {
+  it("constrains the provider schema to the locked draw cardinality", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(originalResult) } }] }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await provider().generateWithProvenance(input);
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body)) as {
+      response_format: {
+        json_schema: {
+          schema: { properties: { cards: { minItems: number; maxItems: number } } };
+        };
+      };
+    };
+    expect(request.response_format.json_schema.schema.properties.cards).toMatchObject({
+      minItems: draw.assignments.length,
+      maxItems: draw.assignments.length,
+    });
+  });
+
+  it("rejects a short provider card array instead of duplicating a card interpretation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    ...originalResult,
+                    cards: originalResult.cards.slice(0, 1),
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const { result, provenance } = await provider().generateWithProvenance(input);
+
+    expect(result.cards).toHaveLength(draw.assignments.length);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
+  });
+
   it("restores card identity and orientation even when the model returns different ones", async () => {
     const invented = {
       title: "T",

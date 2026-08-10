@@ -20,6 +20,7 @@ import type {
   ProfileTraitRecord,
   RepositoryUser,
   StoredEntitlement,
+  StoredFeedback,
   StoredFollowUp,
   StoredOrder,
   StoredProfileVersion,
@@ -480,6 +481,22 @@ export function createPostgresRepositories(
   const readingSessions = {
     async createLocked(reading: StoredReading) {
       return userTransaction(reading.userId, async (tx) => {
+        const [idempotent] = await tx`
+          select * from reading_sessions
+          where user_id = ${reading.userId} and idempotency_key = ${reading.idempotencyKey}
+        `;
+        if (idempotent) return hydrateReading(tx, idempotent);
+
+        const [activeContent] = await tx`
+          select d.version as deck_version, s.id as spread_id
+          from decks d
+          cross join spreads s
+          where d.version = ${reading.draw.deckVersion} and d.active = true
+            and s.id = ${reading.spreadId} and s.version = ${reading.draw.spreadVersion}
+            and s.active = true
+        `;
+        if (!activeContent) throw new Error("READING_CONTENT_INACTIVE");
+
         const [created] = await tx`
           insert into reading_sessions (
             id, user_id, profile_snapshot_id, spread_id, spread_version, idempotency_key,
@@ -604,27 +621,33 @@ export function createPostgresRepositories(
     async list(userId: string, readingId: string): Promise<StoredFollowUp[]> {
       return (await readingSessions.get(userId, readingId))?.followUps ?? [];
     },
-    async create(userId: string, readingId: string, followUp: StoredFollowUp) {
-      try {
-        await userTransaction(userId, async (tx) => {
-          await tx`
-            insert into follow_up_questions (
-              id, user_id, reading_id, encrypted_question, output, created_at
-            ) values (
-              ${followUp.id}, ${userId}, ${readingId}, ${followUp.encryptedQuestion},
-              ${tx.json(json(followUpResultSchema.parse(followUp.result)))}, ${followUp.createdAt}
-            )
-          `;
-        });
-      } catch (error) {
-        const databaseError = error as { code?: string; constraint_name?: string };
-        if (
-          databaseError.code === "23505" &&
-          databaseError.constraint_name === "follow_up_questions_reading_unique"
-        )
-          throw new Error("FOLLOW_UP_EXISTS");
-        throw error;
-      }
+    async create(
+      userId: string,
+      readingId: string,
+      followUp: StoredFollowUp,
+      policy: { limit: number },
+    ) {
+      await userTransaction(userId, async (tx) => {
+        const [reading] = await tx`
+          select id from reading_sessions
+          where id = ${readingId} and user_id = ${userId}
+          for update
+        `;
+        if (!reading) throw new Error("READING_NOT_FOUND");
+        const [usage] = await tx`
+          select count(*)::int as count from follow_up_questions
+          where reading_id = ${readingId} and user_id = ${userId}
+        `;
+        if (Number(usage?.count ?? 0) >= policy.limit) throw new Error("FOLLOW_UP_LIMIT_REACHED");
+        await tx`
+          insert into follow_up_questions (
+            id, user_id, reading_id, encrypted_question, output, created_at
+          ) values (
+            ${followUp.id}, ${userId}, ${readingId}, ${followUp.encryptedQuestion},
+            ${tx.json(json(followUpResultSchema.parse(followUp.result)))}, ${followUp.createdAt}
+          )
+        `;
+      });
     },
   };
 
@@ -825,6 +848,67 @@ export function createPostgresRepositories(
     },
   };
 
+  const feedback = {
+    async create(input: {
+      userId: string;
+      readingId: string;
+      resonance?: number;
+      helpfulness?: number;
+      encryptedComment?: string;
+    }): Promise<StoredFeedback> {
+      return userTransaction(input.userId, async (tx) => {
+        const feedback: StoredFeedback = {
+          id: randomUUID(),
+          userId: input.userId,
+          readingId: input.readingId,
+          ...(input.resonance === undefined ? {} : { resonance: input.resonance }),
+          ...(input.helpfulness === undefined ? {} : { helpfulness: input.helpfulness }),
+          ...(input.encryptedComment === undefined
+            ? {}
+            : { encryptedComment: input.encryptedComment }),
+          createdAt: new Date().toISOString(),
+        };
+        await tx`
+          insert into reading_feedback (
+            id, user_id, reading_id, resonance, helpfulness, encrypted_comment, created_at
+          ) values (
+            ${feedback.id}, ${feedback.userId}, ${feedback.readingId},
+            ${feedback.resonance ?? null}, ${feedback.helpfulness ?? null},
+            ${feedback.encryptedComment ?? null}, ${feedback.createdAt}
+          )
+        `;
+        return feedback;
+      });
+    },
+    async list(userId: string, readingId?: string): Promise<StoredFeedback[]> {
+      return userTransaction(userId, async (tx) => {
+        const rows = readingId
+          ? await tx`
+              select * from reading_feedback
+              where user_id = ${userId} and reading_id = ${readingId}
+              order by created_at, id
+            `
+          : await tx`
+              select * from reading_feedback
+              where user_id = ${userId} order by created_at, id
+            `;
+        return rows.map((row) => ({
+          id: String(row.id),
+          userId: String(row.user_id),
+          readingId: String(row.reading_id),
+          ...(row.resonance === null || row.resonance === undefined
+            ? {}
+            : { resonance: Number(row.resonance) }),
+          ...(row.helpfulness === null || row.helpfulness === undefined
+            ? {}
+            : { helpfulness: Number(row.helpfulness) }),
+          ...(row.encrypted_comment ? { encryptedComment: String(row.encrypted_comment) } : {}),
+          createdAt: iso(row.created_at as Date),
+        }));
+      });
+    },
+  };
+
   const privacy = {
     async export(userId: string) {
       const user = await users.get(userId);
@@ -836,6 +920,7 @@ export function createPostgresRepositories(
         consents: await consents.list(userId),
         profiles: await birthProfiles.listVersions(userId),
         readings: await readingSessions.list(userId),
+        feedback: await feedback.list(userId),
         reports: await reports.list(userId),
         orders: await orders.list(userId),
         entitlements: await entitlements.list(userId),
@@ -860,22 +945,7 @@ export function createPostgresRepositories(
     outputs,
     followUps,
     history: { listReadings: readingSessions.list },
-    feedback: {
-      async create(input) {
-        return userTransaction(input.userId, async (tx) => {
-          const id = randomUUID();
-          await tx`
-            insert into reading_feedback (
-              id, user_id, reading_id, resonance, helpfulness, encrypted_comment
-            ) values (
-              ${id}, ${input.userId}, ${input.readingId}, ${input.resonance ?? null},
-              ${input.helpfulness ?? null}, ${input.encryptedComment ?? null}
-            )
-          `;
-          return id;
-        });
-      },
-    },
+    feedback,
     reports,
     orders,
     entitlements,

@@ -21,6 +21,7 @@ export default function VisualPreviewPage() {
     cardId: card.id,
     name: card.name,
     orientation: index === 1 ? ("reversed" as const) : ("upright" as const),
+    themes: index === 1 ? card.reversedThemes : card.uprightThemes,
     positionId: spread.positions[index]!.id,
     positionName: spread.positions[index]!.displayName,
     artwork: card.artwork,

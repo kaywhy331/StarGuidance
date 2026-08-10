@@ -7,8 +7,12 @@ import { Button, EmptyState, LoadingState, Panel } from "@starguidance/design-sy
 interface HistoryItem {
   id: string;
   spreadId: string;
+  spreadName: string;
   questionPreview: string;
   generationStatus: string;
+  followUpCount: number;
+  feedbackSubmitted: boolean;
+  reportStatus: "not-purchased" | "pending" | "ready" | "failed";
   createdAt: string;
 }
 export default function HistoryPage() {
@@ -41,11 +45,25 @@ export default function HistoryPage() {
           items.map((item) => (
             <Panel key={item.id}>
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <Link className="min-w-0 flex-1" href={`/session/${item.id}`}>
-                  <p className="text-sm text-[#d8b56d]">{item.spreadId}</p>
+                <Link
+                  className="min-w-0 flex-1"
+                  href={
+                    item.generationStatus === "ready"
+                      ? `/reading/${item.id}`
+                      : `/session/${item.id}`
+                  }
+                >
+                  <p className="text-sm text-[#d8b56d]">{item.spreadName}</p>
                   <h2 className="mt-2 text-xl">{item.questionPreview}</h2>
                   <p className="mt-2 text-sm text-[#a99db5]">
                     {new Date(item.createdAt).toLocaleString()} · {item.generationStatus}
+                  </p>
+                  <p className="mt-2 text-xs text-[#b8afc2]">
+                    {item.followUpCount > 0
+                      ? `${item.followUpCount} follow-up${item.followUpCount === 1 ? "" : "s"}`
+                      : "No follow-up"}
+                    {item.feedbackSubmitted ? " · feedback shared" : " · feedback open"}
+                    {` · report ${item.reportStatus}`}
                   </p>
                 </Link>
                 <Button

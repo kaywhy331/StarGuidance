@@ -23,7 +23,8 @@ export function AppNav() {
     pathname === "/sign-up" ||
     pathname === "/forgot-password" ||
     pathname === "/reset-password" ||
-    pathname.startsWith("/session/")
+    pathname.startsWith("/session/") ||
+    pathname.startsWith("/reading/")
   )
     return null;
   return (

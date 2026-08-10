@@ -10,6 +10,7 @@ import type {
   ProfileTraitRecord,
   RepositoryUser,
   StoredEntitlement,
+  StoredFeedback,
   StoredFollowUp,
   StoredOrder,
   StoredProfileVersion,
@@ -252,10 +253,15 @@ export function createLocalRepositories(): ApplicationRepositories {
     async list(userId: string, readingId: string) {
       return ownedReading(userId, readingId)?.followUps ?? [];
     },
-    async create(userId: string, readingId: string, followUp: StoredFollowUp) {
+    async create(
+      userId: string,
+      readingId: string,
+      followUp: StoredFollowUp,
+      policy: { limit: number },
+    ) {
       const reading = ownedReading(userId, readingId);
       if (!reading) throw new Error("READING_NOT_FOUND");
-      if (reading.followUps.length > 0) throw new Error("FOLLOW_UP_EXISTS");
+      if (reading.followUps.length >= policy.limit) throw new Error("FOLLOW_UP_LIMIT_REACHED");
       reading.followUps.push(followUp);
     },
   };
@@ -360,6 +366,9 @@ export function createLocalRepositories(): ApplicationRepositories {
         consents: await consents.list(userId),
         profiles: await birthProfiles.listVersions(userId),
         readings: await readingSessions.list(userId),
+        feedback: [...localStore.feedback.values()].filter(
+          (feedback) => feedback.userId === userId,
+        ),
         reports: await reports.list(userId),
         orders: await orders.list(userId),
         entitlements: await entitlements.list(userId),
@@ -407,9 +416,26 @@ export function createLocalRepositories(): ApplicationRepositories {
     feedback: {
       async create(input) {
         if (!ownedReading(input.userId, input.readingId)) throw new Error("READING_NOT_FOUND");
-        const id = randomUUID();
-        localStore.feedback.set(id, { userId: input.userId, readingId: input.readingId });
-        return id;
+        const feedback: StoredFeedback = {
+          id: randomUUID(),
+          userId: input.userId,
+          readingId: input.readingId,
+          ...(input.resonance === undefined ? {} : { resonance: input.resonance }),
+          ...(input.helpfulness === undefined ? {} : { helpfulness: input.helpfulness }),
+          ...(input.encryptedComment === undefined
+            ? {}
+            : { encryptedComment: input.encryptedComment }),
+          createdAt: new Date().toISOString(),
+        };
+        localStore.feedback.set(feedback.id, feedback);
+        return feedback;
+      },
+      async list(userId, readingId) {
+        return [...localStore.feedback.values()].filter(
+          (feedback) =>
+            feedback.userId === userId &&
+            (readingId === undefined || feedback.readingId === readingId),
+        );
       },
     },
     reports,
