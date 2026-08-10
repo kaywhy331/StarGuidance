@@ -246,7 +246,7 @@ test("password authentication and account callbacks fail closed", async ({ reque
   expect(missingClosed, "absent code fails closed").toBe(true);
 });
 
-test("the interpretation-jobs drain route rejects bad tokens and reports queue depth for a good one", async ({
+test("the background-jobs drain route rejects bad tokens and reports both queue depths for a good one", async ({
   request,
 }) => {
   const secret = process.env.INTERPRETATION_WORKER_SECRET?.trim();
@@ -254,7 +254,7 @@ test("the interpretation-jobs drain route rejects bad tokens and reports queue d
 
   const missing = await request.post("/api/internal/interpretation-jobs");
   record({
-    section: "Interpretation worker",
+    section: "Background workers",
     check: "Missing bearer token is rejected",
     status: missing.status() === 401 ? "pass" : "fail",
     detail: `status ${missing.status()}`,
@@ -270,7 +270,7 @@ test("the interpretation-jobs drain route rejects bad tokens and reports queue d
     headers: { authorization: `Bearer ${wrongToken}` },
   });
   record({
-    section: "Interpretation worker",
+    section: "Background workers",
     check: "Incorrect bearer token is rejected",
     status: wrong.status() === 401 ? "pass" : "fail",
     detail: `status ${wrong.status()}`,
@@ -283,18 +283,25 @@ test("the interpretation-jobs drain route rejects bad tokens and reports queue d
     headers: { authorization: `Bearer ${token}` },
   });
   const authorizedBody = authorized.ok()
-    ? ((await authorized.json()) as { queueDepth?: unknown })
+    ? ((await authorized.json()) as { queueDepth?: unknown; reportQueueDepth?: unknown })
     : undefined;
-  const reportsDepth = typeof authorizedBody?.queueDepth === "number";
+  const interpretationDepthReported = typeof authorizedBody?.queueDepth === "number";
+  const reportDepthReported = typeof authorizedBody?.reportQueueDepth === "number";
   record({
-    section: "Interpretation worker",
-    check: "Correct bearer token drains the queue and reports its depth",
-    status: authorized.status() === 200 && reportsDepth ? "pass" : "fail",
-    detail: `status ${authorized.status()}; queueDepth ${reportsDepth ? "reported" : "absent"}`,
+    section: "Background workers",
+    check: "Correct bearer token drains both queues and reports both depths",
+    status:
+      authorized.status() === 200 && interpretationDepthReported && reportDepthReported
+        ? "pass"
+        : "fail",
+    detail: `status ${authorized.status()}; queueDepth ${interpretationDepthReported ? "reported" : "absent"}; reportQueueDepth ${reportDepthReported ? "reported" : "absent"}`,
   });
 
   expect(missing.status(), "missing token").toBe(401);
   expect(wrong.status(), "incorrect token").toBe(401);
   expect(authorized.status(), "correct token").toBe(200);
-  expect(reportsDepth, "the drain route reports a numeric queue depth").toBe(true);
+  expect(interpretationDepthReported, "the drain route reports interpretation queue depth").toBe(
+    true,
+  );
+  expect(reportDepthReported, "the drain route reports report queue depth").toBe(true);
 });

@@ -11,11 +11,12 @@ export const COMPLETED_JOB_RETENTION_HOURS = 24;
 export interface SystemPruneSummary {
   expiredRateLimitBuckets: number;
   completedInterpretationJobs: number;
+  completedReportJobs: number;
 }
 
 /**
- * Opportunistic garbage collection for the two unbounded-growth system
- * tables (gap G12), piggybacked on the every-minute scheduled drain so no
+ * Opportunistic garbage collection for the unbounded-growth system tables
+ * (gap G12), piggybacked on the every-minute scheduled drain so no
  * separate scheduler exists to misconfigure. Runs on the connection role,
  * like the drain itself.
  *
@@ -37,8 +38,14 @@ export async function pruneExpiredSystemRows(
     where status = 'completed'
       and completed_at < now() - make_interval(hours => ${COMPLETED_JOB_RETENTION_HOURS})
   `;
+  const reportJobs = await client`
+    delete from report_jobs
+    where status = 'completed'
+      and completed_at < now() - make_interval(hours => ${COMPLETED_JOB_RETENTION_HOURS})
+  `;
   return {
     expiredRateLimitBuckets: buckets.count,
     completedInterpretationJobs: jobs.count,
+    completedReportJobs: reportJobs.count,
   };
 }

@@ -253,7 +253,7 @@ test("birth time works without birthplace or timezone", async ({ page }) => {
 test("omitted birth time never fabricates astrology or BaZi", async ({ page }) => {
   await createProfile(page);
   await page.goto("/profile");
-  await page.getByRole("button", { name: "Generate test profile report" }).click();
+  await page.getByRole("button", { name: "Get full profile report" }).click();
   // Only the report tests reach the checkout route, so under `next dev` this
   // navigation always pays that route's first-request compilation cost.
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
@@ -597,10 +597,11 @@ test("Stripe test-mode report entitlement uses the credential-free local adapter
 }) => {
   await createProfile(page);
   await page.goto("/profile");
-  await page.getByRole("button", { name: "Generate test profile report" }).click();
+  await expect(page.getByText("Cross-system contradictions")).toBeVisible();
+  await page.getByRole("button", { name: "Get full profile report" }).click();
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByText(/Life Path \d+; Expression \d+/)).toBeVisible();
-  await expect(page.getByText(/local test entitlement/i)).toBeVisible();
+  await expect(page.getByText(/local test adapter/i)).toBeVisible();
 });
 
 test("the standing terms are reachable from every page instead of every reading", async ({

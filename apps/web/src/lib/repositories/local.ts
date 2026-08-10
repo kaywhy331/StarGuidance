@@ -144,14 +144,14 @@ export function createLocalRepositories(): ApplicationRepositories {
       const user = localStore.users.get(userId);
       const profileId = user?.profile?.snapshot.profileId;
       if (!user || !profileId) return false;
-      for (const collection of [
-        localStore.readings,
-        localStore.reports,
-        localStore.orders,
-        localStore.entitlements,
-      ])
-        for (const [recordId, value] of collection)
-          if (value.userId === userId) collection.delete(recordId);
+      for (const [recordId, reading] of localStore.readings)
+        if (reading.userId === userId) localStore.readings.delete(recordId);
+      // Finance/report records outlive the private profile. Remove their
+      // snapshot pointer while retaining provider reconciliation and the
+      // already-generated report product.
+      for (const collection of [localStore.reports, localStore.orders, localStore.entitlements])
+        for (const value of collection.values())
+          if (value.userId === userId) value.snapshotId = null;
       for (const [feedbackId, feedback] of localStore.feedback)
         if (feedback.userId === userId) localStore.feedback.delete(feedbackId);
       for (const [snapshotId, profile] of localStore.profileSnapshots)
@@ -295,11 +295,15 @@ export function createLocalRepositories(): ApplicationRepositories {
       }
       return result;
     },
+    async listForExport(userId: string) {
+      return [...localStore.reports.values()].filter((report) => report.userId === userId);
+    },
   };
 
   const orders = {
-    async create(order: StoredOrder) {
+    async create(order: StoredOrder, encryptedReportSource?: string) {
       localStore.orders.set(order.id, order);
+      if (encryptedReportSource) localStore.reportSources.set(order.id, encryptedReportSource);
       localStore.idempotency.set(`${order.userId}:${order.idempotencyKey}`, order.id);
     },
     async get(userId: string, orderId: string) {
@@ -314,6 +318,23 @@ export function createLocalRepositories(): ApplicationRepositories {
       return [...localStore.orders.values()].find(
         (order) => order.providerSessionId === providerSessionId,
       );
+    },
+    async getByProviderReference(orderId: string) {
+      return localStore.orders.get(orderId);
+    },
+    async replaceProviderSession(
+      userId: string,
+      orderId: string,
+      expectedProviderSessionId: string,
+      providerSessionId: string,
+    ) {
+      const order = await this.get(userId, orderId);
+      if (!order || order.providerSessionId !== expectedProviderSessionId) return false;
+      order.providerSessionId = providerSessionId;
+      return true;
+    },
+    async clearReportSource(orderId: string) {
+      localStore.reportSources.delete(orderId);
     },
     async setStatus(orderId: string, status: StoredOrder["status"]) {
       const order = localStore.orders.get(orderId);
@@ -346,6 +367,55 @@ export function createLocalRepositories(): ApplicationRepositories {
     },
   };
 
+  const reportFulfillment = {
+    async enqueuePaid(input: {
+      orderId: string;
+      userId: string;
+      snapshotId: string | null;
+      reportId: string;
+      entitlementId: string;
+      createdAt: string;
+    }) {
+      const order = await orders.get(input.userId, input.orderId);
+      if (
+        !order ||
+        order.snapshotId !== input.snapshotId ||
+        order.provider !== "stripe" ||
+        order.status === "refunded" ||
+        order.status === "disputed"
+      )
+        throw new Error("ORDER_NOT_FULFILLABLE");
+      const existing = [...localStore.reports.values()].find(
+        (report) => report.userId === input.userId && report.orderId === input.orderId,
+      );
+      if (existing) return existing;
+      const encryptedSource = localStore.reportSources.get(order.id);
+      if (!encryptedSource) throw new Error("REPORT_SOURCE_NOT_FOUND");
+      await orders.setStatus(order.id, "paid");
+      await entitlements.grant({
+        id: input.entitlementId,
+        userId: input.userId,
+        snapshotId: input.snapshotId,
+        orderId: input.orderId,
+        status: "active",
+        createdAt: input.createdAt,
+      });
+      const report: StoredReport = {
+        id: input.reportId,
+        userId: input.userId,
+        snapshotId: input.snapshotId,
+        orderId: input.orderId,
+        provider: order.provider,
+        status: "pending",
+        sections: [],
+        createdAt: input.createdAt,
+      };
+      localStore.reports.set(report.id, report);
+      localStore.reportSources.delete(order.id);
+      return report;
+    },
+  };
+
   const audit = {
     async record(record: Omit<AuditRecord, "createdAt">) {
       localStore.auditEvents.push({ ...record, createdAt: new Date().toISOString() });
@@ -369,7 +439,7 @@ export function createLocalRepositories(): ApplicationRepositories {
         feedback: [...localStore.feedback.values()].filter(
           (feedback) => feedback.userId === userId,
         ),
-        reports: await reports.list(userId),
+        reports: await reports.listForExport(userId),
         orders: await orders.list(userId),
         entitlements: await entitlements.list(userId),
         auditEvents: await audit.list(userId),
@@ -378,6 +448,8 @@ export function createLocalRepositories(): ApplicationRepositories {
     async deleteAccount(userId: string) {
       const user = localStore.users.get(userId);
       if (!user) return;
+      for (const [orderId, order] of localStore.orders)
+        if (order.userId === userId) localStore.reportSources.delete(orderId);
       for (const collection of [
         localStore.readings,
         localStore.reports,
@@ -439,6 +511,7 @@ export function createLocalRepositories(): ApplicationRepositories {
       },
     },
     reports,
+    reportFulfillment,
     orders,
     entitlements,
     webhookEvents: {

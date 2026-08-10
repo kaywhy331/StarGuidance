@@ -116,6 +116,7 @@ jobs:
       - run: pnpm --filter @starguidance/database exec drizzle-kit migrate
       - run: pnpm db:seed
       - run: pnpm --filter @starguidance/database test:integration
+      - run: pnpm --filter @starguidance/web test:integration
       - name: Rehearse logical backup and isolated restore
         env:
           APP_ENV: test

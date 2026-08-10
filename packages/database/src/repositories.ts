@@ -94,8 +94,9 @@ export interface StoredReportSection {
 export interface StoredReport {
   id: string;
   userId: string;
-  snapshotId: string;
+  snapshotId: string | null;
   orderId: string;
+  provider: "local" | "stripe";
   status: "pending" | "ready" | "failed";
   sections: StoredReportSection[];
   createdAt: string;
@@ -104,7 +105,7 @@ export interface StoredReport {
 export interface StoredOrder {
   id: string;
   userId: string;
-  snapshotId: string;
+  snapshotId: string | null;
   provider: "local" | "stripe";
   providerSessionId: string;
   idempotencyKey: string;
@@ -115,7 +116,7 @@ export interface StoredOrder {
 export interface StoredEntitlement {
   id: string;
   userId: string;
-  snapshotId: string;
+  snapshotId: string | null;
   orderId: string;
   status: "active" | "revoked";
   createdAt: string;
@@ -222,15 +223,35 @@ export interface ReportRepository {
   getByOrder(userId: string, orderId: string): Promise<StoredReport | undefined>;
   create(report: StoredReport): Promise<void>;
   list(userId: string): Promise<StoredReport[]>;
+  listForExport(userId: string): Promise<StoredReport[]>;
 }
 
 export interface OrderRepository {
-  create(order: StoredOrder): Promise<void>;
+  create(order: StoredOrder, encryptedReportSource?: string): Promise<void>;
   get(userId: string, orderId: string): Promise<StoredOrder | undefined>;
   getByIdempotencyKey(userId: string, key: string): Promise<StoredOrder | undefined>;
   getByProviderSession(providerSessionId: string): Promise<StoredOrder | undefined>;
+  getByProviderReference(orderId: string): Promise<StoredOrder | undefined>;
+  replaceProviderSession(
+    userId: string,
+    orderId: string,
+    expectedProviderSessionId: string,
+    providerSessionId: string,
+  ): Promise<boolean>;
+  clearReportSource(orderId: string): Promise<void>;
   setStatus(orderId: string, status: StoredOrder["status"]): Promise<void>;
   list(userId: string): Promise<StoredOrder[]>;
+}
+
+export interface ReportFulfillmentRepository {
+  enqueuePaid(input: {
+    orderId: string;
+    userId: string;
+    snapshotId: string | null;
+    reportId: string;
+    entitlementId: string;
+    createdAt: string;
+  }): Promise<StoredReport>;
 }
 
 export interface EntitlementRepository {
@@ -281,6 +302,7 @@ export interface ApplicationRepositories {
   history: HistoryRepository;
   feedback: FeedbackRepository;
   reports: ReportRepository;
+  reportFulfillment: ReportFulfillmentRepository;
   orders: OrderRepository;
   entitlements: EntitlementRepository;
   webhookEvents: WebhookEventRepository;

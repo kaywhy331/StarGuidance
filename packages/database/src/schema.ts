@@ -242,12 +242,13 @@ export const orders = pgTable(
     productId: text("product_id")
       .notNull()
       .references(() => products.id),
-    profileSnapshotId: uuid("profile_snapshot_id")
-      .notNull()
-      .references(() => profileSnapshots.id),
+    profileSnapshotId: uuid("profile_snapshot_id").references(() => profileSnapshots.id, {
+      onDelete: "set null",
+    }),
     provider: text("provider").notNull(),
     providerSessionId: text("provider_session_id").notNull().unique(),
     idempotencyKey: text("idempotency_key").notNull(),
+    encryptedReportSource: text("encrypted_report_source"),
     status: text("status").notNull(),
     createdAt,
     updatedAt,
@@ -260,9 +261,9 @@ export const entitlements = pgTable("entitlements", {
   productId: text("product_id")
     .notNull()
     .references(() => products.id),
-  profileSnapshotId: uuid("profile_snapshot_id")
-    .notNull()
-    .references(() => profileSnapshots.id),
+  profileSnapshotId: uuid("profile_snapshot_id").references(() => profileSnapshots.id, {
+    onDelete: "set null",
+  }),
   orderId: uuid("order_id")
     .notNull()
     .unique()
@@ -287,9 +288,9 @@ export const reports = pgTable("reports", {
     .notNull()
     .unique()
     .references(() => entitlements.id),
-  profileSnapshotId: uuid("profile_snapshot_id")
-    .notNull()
-    .references(() => profileSnapshots.id),
+  profileSnapshotId: uuid("profile_snapshot_id").references(() => profileSnapshots.id, {
+    onDelete: "set null",
+  }),
   status: text("status").notNull(),
   templateVersion: text("template_version").notNull(),
   payload: jsonb("payload"),
@@ -306,6 +307,37 @@ export const reportSections = pgTable("report_sections", {
   payload: jsonb("payload").notNull(),
   createdAt,
 });
+
+// The report source is a context-bound encrypted copy of derived profile
+// output, never raw birth input. It lets a paid report finish even when the
+// user deletes their private profile while the background job is pending.
+// Subject-scoped request access and the cross-user worker policy are installed
+// explicitly by the commerce migration, mirroring interpretation_jobs.
+export const reportJobs = pgTable(
+  "report_jobs",
+  {
+    id,
+    userId: userId(),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    encryptedSource: text("encrypted_source"),
+    status: text("status").notNull().default("pending"),
+    availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockExpiresAt: timestamp("lock_expires_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    maxAttempts: integer("max_attempts").default(5).notNull(),
+    lastError: text("last_error"),
+    createdAt,
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("report_jobs_report_unique").on(table.reportId),
+    index("report_jobs_claimable_idx").on(table.status, table.availableAt, table.lockExpiresAt),
+  ],
+);
 export const promptVersions = pgTable("prompt_versions", {
   id,
   version: text("version").notNull().unique(),

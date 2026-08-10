@@ -17,7 +17,9 @@ export default function PrivacyPage() {
       <Panel className="mt-8">
         <h2 className="text-2xl">Export</h2>
         <p className="mt-2 text-[#b8adc8]">
-          Download a readable JSON copy without internal prompts or security logs.
+          Download a readable JSON copy without internal prompts. It includes your audit/security
+          event receipts, feedback, and retained report content, including reports whose access was
+          later revoked.
         </p>
         <a
           className="mt-4 inline-flex rounded-full border border-white/15 px-5 py-3"
@@ -30,8 +32,9 @@ export default function PrivacyPage() {
       <Panel className="mt-5">
         <h2 className="text-2xl">Delete selected data</h2>
         <p className="mt-2 text-[#b8adc8]">
-          Delete one reading from history, or remove the private profile and all records that depend
-          on its snapshots without deleting your login.
+          Delete one reading from history, or remove the private profile and dependent readings
+          without deleting your login. Paid commerce and report records follow the separate finance
+          retention policy.
         </p>
         <div className="mt-4 flex flex-wrap gap-4">
           <Link className="underline" href="/history">

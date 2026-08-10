@@ -6,7 +6,7 @@ This procedure is intentionally credential-gated. Use an explicitly non-producti
 
 Applied migrations are immutable. A correction is always a new migration; `packages/database/tests/migration-integrity.test.ts` pins the digest of every applied file so an edit fails a test instead of silently diverging databases that already ran it.
 
-Migration 0005 removes the legacy plaintext birth metadata copy from every existing profile snapshot, adds a request idempotency key to locked readings, and initially enforces one profile root per user plus one follow-up per reading. Its preflight refuses ambiguous duplicate roots/follow-ups instead of silently deleting or choosing records. Migration 0011 adds active deck/spread controls and replaces the singleton follow-up index with a non-unique reading index; the server then serializes count-and-insert on the owned reading row and enforces `READING_FOLLOW_UP_LIMIT` (default 1).
+Migration 0005 removes the legacy plaintext birth metadata copy from every existing profile snapshot, adds a request idempotency key to locked readings, and initially enforces one profile root per user plus one follow-up per reading. Its preflight refuses ambiguous duplicate roots/follow-ups instead of silently deleting or choosing records. Migration 0011 adds active deck/spread controls and replaces the singleton follow-up index with a non-unique reading index; the server then serializes count-and-insert on the owned reading row and enforces `READING_FOLLOW_UP_LIMIT` (default 1). Migration 0012 adds the forced-RLS paid-report queue and makes order, entitlement, and report snapshot pointers nullable with `ON DELETE SET NULL`; migration 0013 stages an encrypted minimized report source on a pending Checkout order so a paid purchase can recover after profile deletion.
 
 ## How an application user comes into existence
 
@@ -35,6 +35,8 @@ Configure these for the Netlify **Deploy Previews** context:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `PROFILE_ENGINE_URL`
 - `PROFILE_ENGINE_SHARED_SECRET`
+- `INTERPRETATION_WORKER_SECRET`
+- `NEXT_PUBLIC_APP_URL`
 
 `APP_ENV=staging` and `RUNTIME_ADAPTER=supabase` are non-secret build values committed in `netlify.toml`. Netlify serverless functions do not receive configuration-file values at runtime, so configure the same names and values in the Netlify UI for the **Deploy Previews** context with **Functions** scope. `DEPLOY_PRIME_URL` is build-only; runtime Auth redirects use the request origin on Netlify previews. Add the deploy-preview callback wildcard and exact staging callback to Supabase Auth redirect allowlists.
 
@@ -52,9 +54,9 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 1. Confirm the target project name/ref twice and confirm it contains no production data.
 2. Confirm only that `DATABASE_URL` and `DATABASE_INTEGRATION_URL` are present in the operator shell; do not print their values.
 3. Run `corepack pnpm --filter @starguidance/database staging:migration-history`, which runs `drizzle-kit check` and the migration-immutability assertions.
-4. Run `corepack pnpm db:migrate` with the authorized staging `DATABASE_URL`, then confirm no `sync_authenticated_user_after_insert` trigger and no `public.sync_authenticated_user()` function remain and migration 0005's three unique indexes exist.
+4. Run `corepack pnpm db:migrate` with the authorized staging `DATABASE_URL`, then confirm no `sync_authenticated_user_after_insert` trigger and no `public.sync_authenticated_user()` function remain, migration 0005's three unique indexes exist, and both background queues have forced RLS plus subject-bound actor policies.
 5. Run `corepack pnpm db:seed` twice with the same URL and confirm the second execution is idempotent.
-6. Run `corepack pnpm --filter @starguidance/database test:integration` with `DATABASE_INTEGRATION_URL`. CI performs this with an isolated Postgres service.
+6. Run `corepack pnpm --filter @starguidance/database test:integration` and `corepack pnpm --filter @starguidance/web test:integration` with `DATABASE_INTEGRATION_URL`. CI performs both with an isolated Postgres service; the latter directly verifies the atomic paid-report repository transaction after profile deletion and on webhook replay.
 7. Confirm `/health` on the hosted profile engine and one unauthorized/authorized synthetic compute pair. Record the hostname and status results only. A suspended free instance can need a long cold start; that is not the same as unreachable.
    7a. Confirm public web `/api/health` returns dependency-free liveness and the commit under test. The protected suite then derives the readiness bearer as base64url HMAC-SHA256 over `starguidance-readiness-v1`, keyed by `PROFILE_ENGINE_SHARED_SECRET`, and calls `/api/health?readiness=1`. It never sends the raw shared secret to web readiness or records either bearer. The suite waits up to ten minutes for the expected build and refuses to verify an earlier one.
 8. Create two temporary Supabase Auth users through an operator-only process. Do not use real people or personal email addresses. Confirm the Admin API returns a success status rather than 500, and that no `public.users` row exists for either subject until the application is first used.
@@ -63,12 +65,12 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 
    Supabase's built-in SMTP has a low hourly send quota. Optional signup confirmation and password recovery can therefore be refused with `over_email_send_rate_limit` even when the application is correct; `/api/auth` reports that as HTTP 429 with `retryable: true`. Routine password sign-in sends no email. Admin-created synthetic identities use `email_confirm: true` and send no mail, so they are unaffected.
 
-9. With each user independently authenticated, create synthetic profiles, two snapshots for one user, a reading/follow-up, report entitlement, and order.
+9. With each user independently authenticated, create synthetic profiles, two snapshots for one user, a reading/follow-up, and report commerce fixtures. In an approved Stripe test rehearsal, confirm Checkout stores only a context-bound encrypted minimized source on the pending order, the paid webhook atomically creates one entitlement/report/job, and the order source is cleared.
 10. Verify user A receives not-found/empty results for user B's profile, snapshots, reading, draw, encrypted question, follow-up, report, order, and export—and vice versa. Verify cross-user insert/update/delete attempts are rejected by RLS.
-    Also prove Supabase's browser `authenticated` role receives `42501` for a direct private-table read even with a valid subject, while the non-login `starguidance_app` role can operate only on that subject through forced RLS.
+    Also prove Supabase's browser `authenticated` role receives `42501` for a direct private-table read even with a valid subject, while the non-login `starguidance_app` role can operate only on that subject through forced RLS. Verify both `interpretation_jobs` and `report_jobs` are cross-subject invisible and their connection-role sweeps remain operational.
 11. Force one generation failure, refresh, retry, and submit a follow-up. Compare reading ID, deck/spread/shuffle versions, locked timestamp, positions, card IDs, orientations, and orders byte-for-byte before and after.
 12. Update birth data and confirm the prior reading still references snapshot v1 while only future readings use v2.
-13. Export user A, then delete the account. Confirm all user-A database rows and the Auth identity are gone while user B remains intact.
+13. Delete user A's profile first. Confirm birth snapshots/readings are removed while paid orders, entitlements, reports, and any pending paid fulfillment survive with null snapshot pointers; confirm the minimized source can still produce the purchased report. Export user A and confirm feedback plus revoked report content are included, then delete the account. Confirm all user-A application rows and the Auth identity are gone while user B remains intact.
     The protected workflow deliberately keeps user B until it has rehearsed application-encryption key rotation against those real synthetic rows. It selects only reserved-domain synthetic Auth identities even when ordinary staging accounts coexist, refuses zero synthetic identities or encrypted rows, assumes the subject-scoped `starguidance_app` role without bypassing forced RLS, rotates to a fresh masked ephemeral key, verifies current-key-only authentication, always rotates back to the configured staging key, and verifies again before cleanup. Because no non-synthetic subject is ever bound, forced RLS prevents the rehearsal from reading or changing another account's rows. Neither key is recorded in evidence.
 14. Inspect Netlify, Supabase, and profile-engine logs for birth data, questions, response bodies, secrets, and authorization headers. Record a redacted pass/fail result only.
 15. Delete the temporary Auth users/project after evidence is captured. Record only non-secret pass/fail results and migration IDs.
@@ -93,6 +95,8 @@ An inbox address is not currently available to automation. `MAIL` in a typical r
 - two real Auth subject IDs represented only by non-sensitive aliases in the test report;
 - per-resource RLS pass/fail table;
 - locked-draw equality digest before/after recovery, retry, and follow-up;
+- numeric interpretation and report queue depths from the authenticated drain probe;
+- singular paid-report fulfillment plus profile-deletion recovery results from the approved commerce rehearsal;
 - successful synthetic-only forward key rotation and verified rollback to the configured staging key;
 - profile lineage, export, and deletion results;
 - Netlify Deploy Preview URL and green build/function logs with secrets redacted;

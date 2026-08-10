@@ -142,6 +142,9 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       await tx`insert into report_sections (user_id, report_id, section_key, payload) values
         (${ids.userA}, ${ids.reportA}, 'overview', ${tx.json({ body: "synthetic-a" })}),
         (${ids.userB}, ${ids.reportB}, 'overview', ${tx.json({ body: "synthetic-b" })})`;
+      await tx`insert into report_jobs (user_id, report_id, encrypted_source, status) values
+        (${ids.userA}, ${ids.reportA}, null, 'completed'),
+        (${ids.userB}, ${ids.reportB}, null, 'completed')`;
       await tx`insert into audit_events (user_id, action, target_type, target_id, metadata) values
         (${ids.userA}, 'test.created', 'test', ${ids.readingA}, ${tx.json({})}),
         (${ids.userB}, 'test.created', 'test', ${ids.readingB}, ${tx.json({})})`;
@@ -176,6 +179,7 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       "entitlements",
       "reports",
       "report_sections",
+      "report_jobs",
       "audit_events",
     ] as const;
     for (const [viewer, other] of [
@@ -222,6 +226,7 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       ["follow_up_questions", "reading_id", ids.readingB],
       ["reading_feedback", "reading_id", ids.readingB],
       ["report_sections", "report_id", ids.reportB],
+      ["report_jobs", "report_id", ids.reportB],
       ["audit_events", "user_id", ids.userB],
       ["reports", "id", ids.reportB],
       ["entitlements", "id", ids.entitlementB],
@@ -380,6 +385,7 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
       "reading_draws",
       "follow_up_questions",
       "reports",
+      "report_jobs",
       "orders",
     ]) {
       const column = table === "users" ? "id" : "user_id";

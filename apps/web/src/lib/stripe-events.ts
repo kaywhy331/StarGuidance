@@ -5,12 +5,16 @@ import { randomUUID } from "node:crypto";
 import type { ApplicationRepositories, StoredOrder } from "@starguidance/database";
 import type Stripe from "stripe";
 
-type CommerceRepositories = Pick<ApplicationRepositories, "orders" | "entitlements" | "audit">;
+type CommerceRepositories = Pick<
+  ApplicationRepositories,
+  "orders" | "entitlements" | "reports" | "reportFulfillment" | "audit"
+>;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface StripeEventDependencies {
   stripe: Stripe;
   repositories: CommerceRepositories;
-  generateReport(input: { userId: string; snapshotId: string; orderId: string }): Promise<unknown>;
 }
 
 export class StripeReconciliationError extends Error {
@@ -32,12 +36,14 @@ function assertPersistedOrder(
   order: StoredOrder | undefined,
   providerSessionId: string,
   metadataOrderId: string | undefined,
+  clientReferenceId: string | null,
 ): StoredOrder {
   if (
     !order ||
     order.provider !== "stripe" ||
     order.providerSessionId !== providerSessionId ||
-    metadataOrderId !== order.id
+    metadataOrderId !== order.id ||
+    clientReferenceId !== order.id
   )
     throw new StripeReconciliationError();
   return order;
@@ -47,11 +53,23 @@ async function orderForSession(
   repositories: CommerceRepositories,
   session: Stripe.Checkout.Session,
 ): Promise<StoredOrder> {
-  return assertPersistedOrder(
-    await repositories.orders.getByProviderSession(session.id),
-    session.id,
-    session.metadata?.orderId,
-  );
+  const metadataOrderId = session.metadata?.orderId;
+  const current = await repositories.orders.getByProviderSession(session.id);
+  if (current)
+    return assertPersistedOrder(current, session.id, metadataOrderId, session.client_reference_id);
+  // Replacing an expired Checkout session deliberately changes the order's
+  // current provider_session_id. A later signed event for the superseded
+  // session can still be located by the opaque order ID we originally wrote,
+  // but ownership/snapshot state continues to come only from the stored row.
+  if (
+    !metadataOrderId ||
+    !UUID.test(metadataOrderId) ||
+    session.client_reference_id !== metadataOrderId
+  )
+    throw new StripeReconciliationError();
+  const superseded = await repositories.orders.getByProviderReference(metadataOrderId);
+  if (!superseded || superseded.provider !== "stripe") throw new StripeReconciliationError();
+  return superseded;
 }
 
 async function orderForPaymentIntent(
@@ -84,21 +102,22 @@ async function audit(
 }
 
 async function fulfill(order: StoredOrder, dependencies: StripeEventDependencies): Promise<void> {
-  await dependencies.repositories.orders.setStatus(order.id, "paid");
-  await dependencies.repositories.entitlements.grant({
-    id: randomUUID(),
-    userId: order.userId,
-    snapshotId: order.snapshotId,
-    orderId: order.id,
-    status: "active",
-    createdAt: new Date().toISOString(),
-  });
-  await dependencies.generateReport({
-    userId: order.userId,
-    snapshotId: order.snapshotId,
-    orderId: order.id,
-  });
-  await audit(dependencies.repositories, order, "payment.fulfilled");
+  const existing = await dependencies.repositories.reports.getByOrder(order.userId, order.id);
+  if (!existing) {
+    const now = new Date().toISOString();
+    await dependencies.repositories.reportFulfillment.enqueuePaid({
+      orderId: order.id,
+      userId: order.userId,
+      snapshotId: order.snapshotId,
+      reportId: randomUUID(),
+      entitlementId: randomUUID(),
+      createdAt: now,
+    });
+  }
+  // If fulfillment committed but this audit write failed, Stripe retries the
+  // event. Auditing the existing-report path makes that retry complete the
+  // durable receipt rather than silently accepting the event without it.
+  await audit(dependencies.repositories, order, "payment.fulfillment_queued");
 }
 
 async function revoke(
@@ -109,6 +128,7 @@ async function revoke(
 ): Promise<void> {
   await repositories.orders.setStatus(order.id, status);
   await repositories.entitlements.revokeByOrder(order.id);
+  await repositories.orders.clearReportSource(order.id);
   await audit(repositories, order, action);
 }
 
@@ -130,11 +150,28 @@ export async function processStripeEvent(
     return;
   }
 
-  if (
-    event.type === "checkout.session.async_payment_failed" ||
-    event.type === "checkout.session.expired"
-  ) {
-    const order = await orderForSession(dependencies.repositories, event.data.object);
+  if (event.type === "checkout.session.expired") {
+    const session = event.data.object;
+    const order = await orderForSession(dependencies.repositories, session);
+    await audit(
+      dependencies.repositories,
+      order,
+      order.providerSessionId === session.id
+        ? "payment.checkout_expired"
+        : "payment.superseded_session_closed",
+    );
+    // Expiration means no payment occurred, but it is intentionally not an
+    // order failure: the return route can replace this session on the same
+    // order. Keeping it pending also removes the race where the expiration
+    // webhook clears the source while that replacement is being attached.
+    return;
+  }
+
+  if (event.type === "checkout.session.async_payment_failed") {
+    const session = event.data.object;
+    const order = await orderForSession(dependencies.repositories, session);
+    if (order.providerSessionId !== session.id)
+      return audit(dependencies.repositories, order, "payment.superseded_session_closed");
     await revoke(order, "failed", "payment.failed", dependencies.repositories);
     return;
   }

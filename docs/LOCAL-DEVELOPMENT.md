@@ -48,9 +48,9 @@ The local-only adapter accepts any valid email and 12–72 character password th
 
 `READING_FOLLOW_UP_LIMIT` defaults to `1` and is bounded to 0–10. `READING_REREAD_COOLDOWN_MINUTES` defaults to `30` and is bounded to 0–1440; `0` disables only the same-question cooldown. The repeat check normalizes Unicode, case, whitespace, and punctuation, then links to the retained reading without drawing new cards. Browser motion/sound preferences use local storage; ritual cut/reveal progress uses per-reading session storage.
 
-Detailed report generation is a test adapter, not part of the safe-beta surface. To exercise it locally, set both `ENABLE_PROFILE_REPORTS=true` and `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`; the server flag is the authorization boundary and the public flag controls only button visibility. Keep both false in staging unless running the separately approved commerce rehearsal.
+Detailed report generation is outside the safe-beta surface. To exercise the credential-free local adapter, set both `ENABLE_PROFILE_REPORTS=true` and `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`; the server flag is the authorization boundary and the public flag controls only button visibility. `PAYMENTS_PROVIDER=local` fulfills synchronously without Stripe and renders the same title-only preview, 17 structured sections, unavailable-system labels, provenance, and browser print/PDF action as the durable path. It is a test aid, not payment evidence. Keep both flags false in staging unless running the separately approved commerce rehearsal.
 
-To exercise the durable adapter locally, change only `RUNTIME_ADAPTER` to `supabase` and configure the Supabase variables through an uncommitted `.env.local`. The app will fail closed if any required database, Auth, or encryption setting is absent.
+To exercise the durable adapter locally, change only `RUNTIME_ADAPTER` to `supabase` and configure the Supabase variables through an uncommitted `.env.local`. The app will fail closed if any required database, Auth, or encryption setting is absent. In Stripe test mode, Checkout stages an encrypted minimized report source on the pending order; a verified paid webhook atomically creates the entitlement, pending report, and `report_jobs` row. Run the authenticated internal drain (normally the every-minute Netlify function) to generate sections. Refreshing the return route resumes or polls the same purchase; it does not create a second order or require the profile snapshot to still exist.
 
 If `PROFILE_ENGINE_SHARED_SECRET` is set for FastAPI, configure the identical value for Next.js. Health remains public at `http://127.0.0.1:8000/health`; calculation requires the bearer secret.
 
@@ -91,9 +91,12 @@ For an isolated Postgres integration database that has already received the migr
 ```bash
 DATABASE_INTEGRATION_URL=postgresql://... \
 corepack pnpm --filter @starguidance/database test:integration
+
+DATABASE_INTEGRATION_URL=postgresql://... \
+corepack pnpm --filter @starguidance/web test:integration
 ```
 
-The suite creates synthetic users, assumes the non-login `starguidance_app` role with a verified subject, proves the browser `authenticated` role cannot reach private tables, verifies two-user RLS isolation and same-draw recovery, tests snapshot history/export scope/deletion, and removes its fixtures. Use only a disposable database.
+The suite creates synthetic users, assumes the non-login `starguidance_app` role with a verified subject, proves the browser `authenticated` role cannot reach private tables, verifies two-user RLS isolation and same-draw recovery, exercises the leased interpretation/report queues plus profile-deletion commerce retention, tests snapshot history/export scope/account deletion, and removes its fixtures. Use only a disposable database.
 
 ## Deploy-preview screenshots
 

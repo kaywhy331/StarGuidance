@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { getInterpretationQueueStats, pruneExpiredSystemRows } from "@starguidance/database";
+import {
+  getInterpretationQueueStats,
+  getReportQueueStats,
+  pruneExpiredSystemRows,
+} from "@starguidance/database";
 import { INTERPRETATION_WORKER_TOKEN_CONTEXT } from "@starguidance/contracts";
 
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
+import { runReportJobs } from "@/lib/report-worker";
 import { getSystemDatabaseClient } from "@/lib/runtime";
 import { isWeakSharedSecret } from "@/lib/shared-secret";
 
@@ -46,6 +51,7 @@ export async function POST(request: Request) {
     );
   try {
     const summary = await runInterpretationJobs(BATCH_LIMIT);
+    const reportSummary = await runReportJobs(BATCH_LIMIT);
     // Opportunistic garbage collection rides the same every-minute schedule
     // (gap G12): expired rate-limit buckets and completed jobs past their
     // observability window. Failed jobs are never touched here — they are
@@ -58,12 +64,16 @@ export async function POST(request: Request) {
     // (netlify/functions/process-interpretation-jobs.mts) can alert when the
     // backlog is growing across cycles rather than draining.
     const stats = await getInterpretationQueueStats(getSystemDatabaseClient());
+    const reportStats = await getReportQueueStats(getSystemDatabaseClient());
     return NextResponse.json(
       {
         status: "ok",
         ...summary,
         queueDepth: stats.depth,
         oldestPendingAgeSeconds: stats.oldestPendingAgeSeconds,
+        reports: reportSummary,
+        reportQueueDepth: reportStats.depth,
+        oldestPendingReportAgeSeconds: reportStats.oldestPendingAgeSeconds,
         pruned,
       },
       { status: 200, headers: { "cache-control": "no-store" } },

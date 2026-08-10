@@ -115,9 +115,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
-          # Load-bearing since migration 0007: the interpretation-jobs drain
-          # route rejects every request without a strong INTERPRETATION_WORKER_SECRET,
-          # and the Netlify-scheduled trigger that calls it needs its own copy of
+          # Load-bearing since migrations 0007 and 0012: the background-jobs
+          # drain rejects every request without a strong worker secret, and the
+          # Netlify-scheduled trigger that calls it needs its own copy of
           # NEXT_PUBLIC_APP_URL to know what to call back into.
           INTERPRETATION_WORKER_SECRET: ${{ secrets.INTERPRETATION_WORKER_SECRET }}
           NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
@@ -252,6 +252,13 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
         run: .github/scripts/stage.sh rls-suite "Two-user isolation suite against staging" corepack pnpm --filter @starguidance/database test:integration
 
+      - name: Verify atomic paid-report fulfillment after profile deletion
+        env:
+          DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: .github/scripts/stage.sh report-fulfillment "Atomic paid-report fulfillment repository" corepack pnpm --filter @starguidance/web test:integration
+
       - name: Install the verification browser
         run: corepack pnpm exec playwright install --with-deps chromium
 
@@ -270,7 +277,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
-          # The new drain-route probe in service-probes.spec.ts derives its own
+          # The drain-route probe in service-probes.spec.ts derives its own
           # bearer token from this, the same way the Netlify-scheduled trigger
           # does — it targets STAGING_BASE_URL (already in scope from the job's
           # own env), so NEXT_PUBLIC_APP_URL is not needed in this step.

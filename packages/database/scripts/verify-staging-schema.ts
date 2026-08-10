@@ -15,13 +15,18 @@ import { completeStage, record, requiredEnv } from "./staging-result";
  */
 /**
  * App-only tables carry a user_id-free or cross-user workload (rate-limit
- * buckets keyed by opaque hash; the interpretation-job queue's claim sweep),
+ * buckets keyed by opaque hash; the interpretation/report job queues' claim sweeps),
  * so they are absent from USER_OWNED_TABLES' per-subject policy shape — but
  * they must still be forced-RLS and unreachable from any browser role, and
- * interpretation_jobs' application-role policy must be subject-bound
- * (migration 0008) rather than permissive.
+ * both job queues' application-role policies must be subject-bound rather
+ * than permissive.
  */
-const APP_ONLY_TABLES = ["interpretation_jobs", "rate_limit_buckets", "deletion_receipts"] as const;
+const APP_ONLY_TABLES = [
+  "interpretation_jobs",
+  "report_jobs",
+  "rate_limit_buckets",
+  "deletion_receipts",
+] as const;
 
 const USER_OWNED_TABLES = [
   "users",
@@ -198,23 +203,25 @@ async function main(): Promise<void> {
     const appOnlyStructureOk =
       appOnlyRows.length === APP_ONLY_TABLES.length &&
       appOnlyRows.every((row) => row.forced && !row.browser_reachable);
-    const [jobsPolicy] = await sql<{ subject_bound: boolean }[]>`
-      select exists (
-        select 1 from pg_policies
-        where schemaname = 'public' and tablename = 'interpretation_jobs'
-          and policyname = 'interpretation_jobs_subject'
-          and roles = array[${APPLICATION_DATABASE_ROLE}]::name[]
-          and qual like '%request.jwt.claim.sub%'
-          and with_check like '%request.jwt.claim.sub%'
-      ) as subject_bound`;
-    const appOnlyOk = appOnlyStructureOk && jobsPolicy?.subject_bound === true;
+    const [jobsPolicy] = await sql<{ subject_bound_count: number }[]>`
+      select count(*)::int as subject_bound_count from pg_policies
+      where schemaname = 'public'
+        and (tablename, policyname) in (
+          ('interpretation_jobs', 'interpretation_jobs_subject'),
+          ('report_jobs', 'report_jobs_subject')
+        )
+        and roles = array[${APPLICATION_DATABASE_ROLE}]::name[]
+        and qual like '%request.jwt.claim.sub%'
+        and with_check like '%request.jwt.claim.sub%'
+    `;
+    const appOnlyOk = appOnlyStructureOk && jobsPolicy?.subject_bound_count === 2;
     if (!appOnlyOk) failed = true;
     record({
       section: "Row level security",
       check: "App-only tables forced, browser-unreachable, and subject-bound for the actor",
       status: appOnlyOk ? "pass" : "fail",
       detail: appOnlyOk
-        ? `${APP_ONLY_TABLES.length} app-only table(s) verified; interpretation_jobs actor policy is subject-bound`
+        ? `${APP_ONLY_TABLES.length} app-only table(s) verified; both job-queue actor policies are subject-bound`
         : "an app-only table is missing forced RLS, is browser-reachable, or lacks the subject-bound actor policy",
     });
 

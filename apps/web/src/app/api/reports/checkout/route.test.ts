@@ -5,16 +5,26 @@ const mocks = vi.hoisted(() => ({
   assertRateLimit: vi.fn(),
   assertSameOrigin: vi.fn(),
   createCheckoutSession: vi.fn(),
+  retrieveCheckoutSession: vi.fn(),
   getActiveProfile: vi.fn(),
   getByIdempotencyKey: vi.fn(),
+  getOrder: vi.fn(),
+  listOrders: vi.fn(),
+  replaceProviderSession: vi.fn(),
   createOrder: vi.fn(),
-  listReports: vi.fn(),
+  getReportByOrder: vi.fn(),
   grantEntitlement: vi.fn(),
+  prepareReportSource: vi.fn(),
 }));
 
 vi.mock("stripe", () => ({
   default: class Stripe {
-    checkout = { sessions: { create: mocks.createCheckoutSession } };
+    checkout = {
+      sessions: {
+        create: mocks.createCheckoutSession,
+        retrieve: mocks.retrieveCheckoutSession,
+      },
+    };
   },
 }));
 
@@ -28,15 +38,21 @@ vi.mock("@/lib/persistence", () => ({
       birthProfiles: { getActive: mocks.getActiveProfile },
       orders: {
         getByIdempotencyKey: mocks.getByIdempotencyKey,
+        get: mocks.getOrder,
+        list: mocks.listOrders,
+        replaceProviderSession: mocks.replaceProviderSession,
         create: mocks.createOrder,
       },
-      reports: { list: mocks.listReports },
+      reports: { getByOrder: mocks.getReportByOrder },
       entitlements: { grant: mocks.grantEntitlement },
     },
   }),
 }));
 
-vi.mock("@/lib/report", () => ({ generateProfileReport: vi.fn() }));
+vi.mock("@/lib/report", () => ({
+  generateProfileReport: vi.fn(),
+  prepareProfileReportSource: mocks.prepareReportSource,
+}));
 vi.mock("@/lib/request-security", () => ({
   assertRateLimit: mocks.assertRateLimit,
   assertSameOrigin: mocks.assertSameOrigin,
@@ -68,10 +84,18 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://staging.invalid");
   mocks.getActiveProfile.mockResolvedValue({ snapshot: { id: snapshotId } });
   mocks.getByIdempotencyKey.mockResolvedValue(undefined);
-  mocks.listReports.mockResolvedValue([]);
+  mocks.listOrders.mockResolvedValue([]);
+  mocks.getReportByOrder.mockResolvedValue(undefined);
+  mocks.replaceProviderSession.mockResolvedValue(true);
+  mocks.prepareReportSource.mockResolvedValue("encrypted-derived-source");
   mocks.createCheckoutSession.mockResolvedValue({
     id: "cs_test_starguidance",
     metadata: { orderId: returnedOrderId },
+    url: "https://checkout.stripe.test/session",
+  });
+  mocks.retrieveCheckoutSession.mockResolvedValue({
+    id: "cs_test_starguidance",
+    status: "open",
     url: "https://checkout.stripe.test/session",
   });
 });
@@ -104,7 +128,8 @@ describe("Stripe Checkout boundary", () => {
     ];
     expect(parameters.metadata.orderId).toBe(parameters.payment_intent_data.metadata.orderId);
     expect(options).toEqual({
-      idempotencyKey: "f1336b0d-9fb6-4903-b0f1-dba2e26e6143:00000000-0000-4000-8000-000000000001",
+      idempotencyKey:
+        "f1336b0d-9fb6-4903-b0f1-dba2e26e6143:548e8158-2b54-4d28-a6bd-b6a4223f820b:purchase:0",
     });
     expect(mocks.createOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -112,6 +137,7 @@ describe("Stripe Checkout boundary", () => {
         snapshotId,
         providerSessionId: "cs_test_starguidance",
       }),
+      "encrypted-derived-source",
     );
     expect(await response.json()).toEqual({
       checkoutUrl: "https://checkout.stripe.test/session",
@@ -124,6 +150,140 @@ describe("Stripe Checkout boundary", () => {
     const response = await POST(request("someone@example.com"));
     expect(response.status).toBe(400);
     expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("returns the live URL for a cancelled-but-open Checkout session", async () => {
+    mocks.getByIdempotencyKey.mockResolvedValue({
+      id: returnedOrderId,
+      userId: "f1336b0d-9fb6-4903-b0f1-dba2e26e6143",
+      snapshotId,
+      provider: "stripe",
+      providerSessionId: "cs_test_starguidance",
+      idempotencyKey: key,
+      status: "pending",
+    });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      checkoutUrl: "https://checkout.stripe.test/session",
+      orderId: returnedOrderId,
+      status: "pending",
+      adapter: "stripe",
+    });
+    expect(mocks.retrieveCheckoutSession).toHaveBeenCalledWith("cs_test_starguidance");
+    expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("replaces an expired session without replacing its order", async () => {
+    mocks.getByIdempotencyKey.mockResolvedValue({
+      id: returnedOrderId,
+      userId: "f1336b0d-9fb6-4903-b0f1-dba2e26e6143",
+      snapshotId,
+      provider: "stripe",
+      providerSessionId: "cs_test_expired",
+      idempotencyKey: key,
+      status: "pending",
+    });
+    mocks.retrieveCheckoutSession.mockResolvedValue({
+      id: "cs_test_expired",
+      status: "expired",
+      url: null,
+    });
+    mocks.createCheckoutSession.mockResolvedValue({
+      id: "cs_test_replacement",
+      metadata: { orderId: returnedOrderId },
+      status: "open",
+      url: "https://checkout.stripe.test/replacement",
+    });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.replaceProviderSession).toHaveBeenCalledWith(
+      "f1336b0d-9fb6-4903-b0f1-dba2e26e6143",
+      returnedOrderId,
+      "cs_test_expired",
+      "cs_test_replacement",
+    );
+    expect(mocks.createOrder).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        checkoutUrl: "https://checkout.stripe.test/replacement",
+        orderId: returnedOrderId,
+      }),
+    );
+  });
+
+  it("returns an existing paid report instead of selling the same snapshot twice", async () => {
+    mocks.listOrders.mockResolvedValue([
+      {
+        id: returnedOrderId,
+        userId: "f1336b0d-9fb6-4903-b0f1-dba2e26e6143",
+        snapshotId,
+        provider: "stripe",
+        providerSessionId: "cs_test_paid",
+        idempotencyKey: "00000000-0000-4000-8000-000000000099",
+        status: "paid",
+      },
+    ]);
+    mocks.getReportByOrder.mockResolvedValue({ id: "report-ready", status: "ready" });
+
+    const response = await POST(request());
+
+    expect(await response.json()).toEqual({
+      reportId: "report-ready",
+      status: "paid",
+      reportStatus: "ready",
+      adapter: "stripe",
+    });
+    expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("uses a new provider attempt after a terminal order without reusing a payable session", async () => {
+    mocks.listOrders.mockResolvedValue([
+      {
+        id: returnedOrderId,
+        userId: "f1336b0d-9fb6-4903-b0f1-dba2e26e6143",
+        snapshotId,
+        provider: "stripe",
+        providerSessionId: "cs_test_failed",
+        idempotencyKey: "00000000-0000-4000-8000-000000000099",
+        status: "failed",
+      },
+    ]);
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.createCheckoutSession.mock.calls.at(0)?.[1]).toEqual({
+      idempotencyKey:
+        "f1336b0d-9fb6-4903-b0f1-dba2e26e6143:548e8158-2b54-4d28-a6bd-b6a4223f820b:purchase:1",
+    });
+  });
+
+  it("recovers a paid report after profile deletion using only the retained order", async () => {
+    mocks.getByIdempotencyKey.mockResolvedValue({
+      id: returnedOrderId,
+      userId: "f1336b0d-9fb6-4903-b0f1-dba2e26e6143",
+      snapshotId: null,
+      provider: "stripe",
+      providerSessionId: "cs_test_paid",
+      idempotencyKey: key,
+      status: "paid",
+    });
+    mocks.getReportByOrder.mockResolvedValue({ id: "report-retained", status: "ready" });
+
+    const response = await POST(request());
+
+    expect(await response.json()).toEqual({
+      reportId: "report-retained",
+      status: "paid",
+      reportStatus: "ready",
+      adapter: "stripe",
+    });
+    expect(mocks.getActiveProfile).not.toHaveBeenCalled();
   });
 
   it("refuses a live secret on the test-only checkout path", async () => {

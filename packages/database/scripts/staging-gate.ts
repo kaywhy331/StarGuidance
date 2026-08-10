@@ -35,6 +35,7 @@ export const REQUIRED_STAGES = [
   "fingerprint-compare",
   // Database-level isolation
   "rls-suite",
+  "report-fulfillment",
   // Deployed services
   "preview-provenance",
   "profile-engine-probe",

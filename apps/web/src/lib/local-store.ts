@@ -40,6 +40,7 @@ export interface LocalStore {
   readings: Map<string, StoredReading>;
   reports: Map<string, StoredReport>;
   orders: Map<string, StoredOrder>;
+  reportSources: Map<string, string>;
   entitlements: Map<string, StoredEntitlement>;
   settings: Map<string, { displayName: string; soundEnabled: boolean; reducedMotion: boolean }>;
   profileComponents: Map<string, ProfileComponentRecord[]>;
@@ -72,6 +73,7 @@ export const localStore: LocalStore =
     readings: new Map(),
     reports: new Map(),
     orders: new Map(),
+    reportSources: new Map(),
     entitlements: new Map(),
     settings: new Map(),
     profileComponents: new Map(),

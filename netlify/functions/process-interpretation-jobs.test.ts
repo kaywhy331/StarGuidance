@@ -31,28 +31,56 @@ describe("process-interpretation-jobs", () => {
     expect(config.schedule).toBe("*/1 * * * *");
   });
 
-  it("alerts when the drained queue depth exceeds the threshold", async () => {
+  it("alerts when the interpretation queue depth exceeds the threshold", async () => {
     configureEnv();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify({ queueDepth: 21 }), { status: 200 })),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ queueDepth: 21, reportQueueDepth: 0 }), { status: 200 }),
+        ),
     );
 
     const response = await handler();
 
     expect(response.status).toBe(202);
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("queue depth 21 exceeds alert threshold"),
+      expect.stringContaining("interpretation queue depth 21 exceeds alert threshold"),
     );
   });
 
-  it("stays quiet when the drained queue depth is at or under the threshold", async () => {
+  it("alerts when the report queue depth exceeds the threshold", async () => {
     configureEnv();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(new Response(JSON.stringify({ queueDepth: 20 }), { status: 200 })),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ queueDepth: 0, reportQueueDepth: 21 }), { status: 200 }),
+        ),
+    );
+
+    const response = await handler();
+
+    expect(response.status).toBe(202);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("report queue depth 21 exceeds alert threshold"),
+    );
+  });
+
+  it("stays quiet when both queue depths are at or under the threshold", async () => {
+    configureEnv();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ queueDepth: 20, reportQueueDepth: 20 }), { status: 200 }),
+        ),
     );
 
     const response = await handler();

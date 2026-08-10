@@ -1,24 +1,34 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LoadingState, Panel } from "@starguidance/design-system";
+import { Button, LoadingState, Panel } from "@starguidance/design-system";
 interface Report {
   id: string;
-  status: string;
+  provider: "local" | "stripe";
+  status: "pending" | "ready" | "failed";
   sections: { key: string; title: string; body: string; unavailable?: boolean }[];
 }
 export function ReportView({ reportId }: { reportId: string }) {
   const [report, setReport] = useState<Report>();
   const [error, setError] = useState<string>();
   const router = useRouter();
-  useEffect(() => {
-    void fetch(`/api/reports/${reportId}`, { cache: "no-store" }).then(async (response) => {
-      if (response.status === 401) return router.push("/sign-in");
-      if (!response.ok) return setError("This report is unavailable.");
-      const payload = (await response.json()) as { report: Report };
-      setReport(payload.report);
-    });
+  const loadReport = useCallback(async () => {
+    const response = await fetch(`/api/reports/${reportId}`, { cache: "no-store" });
+    if (response.status === 401) return router.push("/sign-in");
+    if (!response.ok) return setError("This report is unavailable.");
+    const payload = (await response.json()) as { report: Report };
+    setReport(payload.report);
+    setError(undefined);
   }, [reportId, router]);
+  useEffect(() => {
+    const timer = setTimeout(() => void loadReport(), 0);
+    return () => clearTimeout(timer);
+  }, [loadReport]);
+  useEffect(() => {
+    if (report?.status !== "pending") return;
+    const timer = setInterval(() => void loadReport(), 2_000);
+    return () => clearInterval(timer);
+  }, [loadReport, report?.status]);
   if (error)
     return (
       <main className="mx-auto max-w-3xl px-6 py-16">
@@ -34,12 +44,60 @@ export function ReportView({ reportId }: { reportId: string }) {
         <LoadingState label="Preparing your report…" />
       </main>
     );
+  if (report.status === "pending")
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-16">
+        <Panel>
+          <p className="text-sm tracking-[.2em] text-[#d8b56d] uppercase">Payment confirmed</p>
+          <h1 className="mt-3 text-3xl">Your report is being prepared</h1>
+          <p className="mt-3 text-[#b8adc8]">
+            The purchase is retained while a background job builds the deterministic report. This
+            page checks automatically; leaving it will not cancel fulfillment.
+          </p>
+          <div className="mt-6">
+            <LoadingState label="Preparing your report…" />
+          </div>
+        </Panel>
+      </main>
+    );
+  if (report.status === "failed")
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-16">
+        <Panel>
+          <h1 className="text-3xl">Report preparation paused</h1>
+          <p className="mt-3 text-[#b8adc8]">
+            Your purchase and locked report source are retained. Retry preparation without another
+            charge.
+          </p>
+          <Button
+            className="mt-5"
+            onClick={async () => {
+              const response = await fetch(`/api/reports/${reportId}`, { method: "POST" });
+              const payload = (await response.json()) as {
+                reportStatus?: Report["status"];
+                error?: string;
+              };
+              if (!response.ok) return setError(payload.error ?? "Retry could not be scheduled.");
+              setReport((current) =>
+                current ? { ...current, status: payload.reportStatus ?? "pending" } : current,
+              );
+            }}
+          >
+            Retry report preparation
+          </Button>
+        </Panel>
+      </main>
+    );
   return (
     <main className="mx-auto max-w-4xl px-6 py-12 print:max-w-none print:text-black">
       <p className="text-sm tracking-[.2em] text-[#d8b56d] uppercase">
-        Full profile report · local test entitlement
+        Full profile report ·{" "}
+        {report.provider === "local" ? "local test adapter" : "Stripe test purchase"}
       </p>
       <h1 className="mt-3 text-5xl font-semibold">Your private profile</h1>
+      <Button className="mt-5 print:hidden" onClick={() => window.print()}>
+        Print or save as PDF
+      </Button>
       <div className="mt-8 grid gap-5">
         {report.sections.map((section) => (
           <Panel

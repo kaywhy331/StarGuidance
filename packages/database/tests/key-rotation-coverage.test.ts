@@ -14,11 +14,13 @@ const rehearsal = readFileSync(
 describe("key rotation coverage", () => {
   it("covers every persisted encrypted-field location", () => {
     for (const field of [
+      "orders.encrypted_report_source",
       "birth_profiles.encrypted_payload",
       "profile_components.payload.envelope",
       "reading_sessions.encrypted_question",
       "follow_up_questions.encrypted_question",
       "reading_feedback.encrypted_comment",
+      "report_jobs.encrypted_source",
     ])
       expect(rotation, `${field} must participate in rotation`).toContain(field);
   });

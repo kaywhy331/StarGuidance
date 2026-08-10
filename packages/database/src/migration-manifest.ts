@@ -17,4 +17,6 @@ export const EXPECTED_MIGRATIONS = [
   "0009_profile_snapshot_immutability",
   "0010_deletion_receipts",
   "0011_reading_flow_controls",
+  "0012_commerce_report_jobs",
+  "0013_checkout_report_source",
 ] as const;

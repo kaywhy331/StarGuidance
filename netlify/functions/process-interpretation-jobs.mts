@@ -1,4 +1,4 @@
-// Durability backstop for background interpretation generation (StarGuidance
+// Durability backstop for background interpretation and paid-report generation (StarGuidance
 // Workstream B — see docs/KNOWN-GAPS.md). Deliberately zero workspace/npm
 // dependencies beyond @netlify/functions' types: Netlify's zip-it-and-ship-it
 // bundler cannot resolve `postgres` at runtime for a standalone Netlify
@@ -27,22 +27,25 @@ export const TOKEN_CONTEXT = "starguidance-interpretation-worker-v1";
 const QUEUE_DEPTH_ALERT_THRESHOLD = 20;
 
 /**
- * Parses the drain route's already-fetched response body for `queueDepth`
- * and alerts when it's over threshold. Never throws: a malformed or
+ * Parses the drain route's already-fetched response body for both queue
+ * depths and alerts when either is over threshold. Never throws: a malformed or
  * unexpected body is itself worth a log line, but must never turn a
  * successful trigger into a reported failure.
  */
 async function alertOnHighQueueDepth(response: Response): Promise<void> {
   try {
     const body: unknown = await response.json();
-    const queueDepth =
-      body && typeof body === "object" && "queueDepth" in body
-        ? (body as { queueDepth: unknown }).queueDepth
-        : undefined;
-    if (typeof queueDepth === "number" && queueDepth > QUEUE_DEPTH_ALERT_THRESHOLD)
-      console.error(
-        `process-interpretation-jobs: queue depth ${queueDepth} exceeds alert threshold ${QUEUE_DEPTH_ALERT_THRESHOLD}`,
-      );
+    const object = body && typeof body === "object" ? body : undefined;
+    for (const [label, field] of [
+      ["interpretation", "queueDepth"],
+      ["report", "reportQueueDepth"],
+    ] as const) {
+      const queueDepth = object && field in object ? (object as Record<string, unknown>)[field] : 0;
+      if (typeof queueDepth === "number" && queueDepth > QUEUE_DEPTH_ALERT_THRESHOLD)
+        console.error(
+          `process-interpretation-jobs: ${label} queue depth ${queueDepth} exceeds alert threshold ${QUEUE_DEPTH_ALERT_THRESHOLD}`,
+        );
+    }
   } catch (error) {
     console.error("process-interpretation-jobs: could not parse trigger response body", error);
   }

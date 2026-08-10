@@ -8,6 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --no-file-parallelism --testTimeout=120000 --hookTimeout=180000 src/lib/repositories/postgres.integration.test.ts",
     "test:e2e": "playwright test",
     "test:staging": "playwright test --config=playwright.staging.config.ts"
   },

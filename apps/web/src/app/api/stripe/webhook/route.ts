@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
-import { generateProfileReport } from "@/lib/report";
 import { getServiceRepositories } from "@/lib/runtime";
 import { isStripeTestSecret, processStripeEvent } from "@/lib/stripe-events";
 
@@ -32,7 +31,6 @@ export async function POST(request: Request) {
     await processStripeEvent(event, {
       stripe,
       repositories,
-      generateReport: generateProfileReport,
     });
     await repositories.webhookEvents.complete(event.id);
     return NextResponse.json({ received: true });

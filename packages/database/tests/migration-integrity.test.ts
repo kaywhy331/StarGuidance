@@ -70,6 +70,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
     "d228d35758f7bd7fa722cc2e95572a7cadca3570ed93b584db768c1420291bf4",
   "0010_deletion_receipts": "c493ef6415cfbbf7625a17654f46303494c7bf25c219bb76713144f571fe9178",
   "0011_reading_flow_controls": "07de96da150bacd6f3e028165508ddcc4d94c49b420fc5d5985f303b4f54c823",
+  "0012_commerce_report_jobs": "ae71077d80d026d3cd14738521908d4aa4499b3dd2a30517adbfd8f6d115f8ff",
+  "0013_checkout_report_source": "94c13c7badf5be7b7ebd86111c2c8970e724ffa15968104fd5771d60e9e0b54d",
 };
 
 describe("migration history", () => {
@@ -267,5 +269,37 @@ describe("migration history", () => {
           "i",
         ),
       );
+  });
+
+  it("queues reports durably and separates commerce from profile deletion (0012)", () => {
+    const sql = executableSql("0012_commerce_report_jobs");
+    expect(sql).toMatch(/create\s+table\s+"report_jobs"/i);
+    for (const table of ["orders", "entitlements", "reports"])
+      expect(sql).toMatch(
+        new RegExp(
+          String.raw`alter\s+table\s+"${table}"\s+add\s+constraint[\s\S]*profile_snapshot[\s\S]*on\s+delete\s+set\s+null`,
+          "i",
+        ),
+      );
+    expect(sql).toMatch(/alter\s+table\s+"report_jobs"\s+enable\s+row\s+level\s+security/i);
+    expect(sql).toMatch(/alter\s+table\s+"report_jobs"\s+force\s+row\s+level\s+security/i);
+    expect(sql).toMatch(
+      /create\s+policy\s+"report_jobs_subject"[\s\S]*to\s+starguidance_app[\s\S]*request\.jwt\.claim\.sub/i,
+    );
+    expect(sql).toMatch(
+      /create\s+policy\s+"report_jobs_system"[\s\S]*to\s+current_user[\s\S]*using\s*\(true\)/i,
+    );
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"report_jobs"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).not.toMatch(/security\s+definer/i);
+    expect(sql).not.toMatch(/\bbypassrls\b/i);
+  });
+
+  it("stages the minimized Checkout report source before payment (0013)", () => {
+    const sql = executableSql("0013_checkout_report_source");
+    expect(sql).toMatch(
+      /alter\s+table\s+"orders"\s+add\s+column\s+"encrypted_report_source"\s+text/i,
+    );
   });
 });

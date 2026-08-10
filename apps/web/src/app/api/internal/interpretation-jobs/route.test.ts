@@ -5,13 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   runInterpretationJobs: vi.fn(),
+  runReportJobs: vi.fn(),
   getInterpretationQueueStats: vi.fn(),
+  getReportQueueStats: vi.fn(),
   pruneExpiredSystemRows: vi.fn(),
 }));
 
 vi.mock("@/lib/interpretation-worker", () => ({
   runInterpretationJobs: mocks.runInterpretationJobs,
 }));
+vi.mock("@/lib/report-worker", () => ({ runReportJobs: mocks.runReportJobs }));
 
 // This route only reaches @/lib/runtime for the raw pooled client, which the
 // queue-stats query runs on directly (the connection-role path, migration
@@ -23,6 +26,7 @@ vi.mock("@/lib/runtime", () => ({
 
 vi.mock("@starguidance/database", () => ({
   getInterpretationQueueStats: mocks.getInterpretationQueueStats,
+  getReportQueueStats: mocks.getReportQueueStats,
   pruneExpiredSystemRows: mocks.pruneExpiredSystemRows,
 }));
 
@@ -50,10 +54,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("INTERPRETATION_WORKER_SECRET", STRONG_SECRET);
   mocks.runInterpretationJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0 });
+  mocks.runReportJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0 });
   mocks.getInterpretationQueueStats.mockResolvedValue({ depth: 0, oldestPendingAgeSeconds: null });
+  mocks.getReportQueueStats.mockResolvedValue({ depth: 0, oldestPendingAgeSeconds: null });
   mocks.pruneExpiredSystemRows.mockResolvedValue({
     expiredRateLimitBuckets: 0,
     completedInterpretationJobs: 0,
+    completedReportJobs: 0,
   });
 });
 
@@ -97,9 +104,12 @@ describe("POST /api/internal/interpretation-jobs", () => {
   it("drains a batch and reports the summary plus queue depth for the correct token", async () => {
     mocks.runInterpretationJobs.mockResolvedValue({ claimed: 3, succeeded: 2, failed: 1 });
     mocks.getInterpretationQueueStats.mockResolvedValue({ depth: 5, oldestPendingAgeSeconds: 42 });
+    mocks.runReportJobs.mockResolvedValue({ claimed: 2, succeeded: 1, failed: 1 });
+    mocks.getReportQueueStats.mockResolvedValue({ depth: 4, oldestPendingAgeSeconds: 21 });
     mocks.pruneExpiredSystemRows.mockResolvedValue({
       expiredRateLimitBuckets: 7,
       completedInterpretationJobs: 2,
+      completedReportJobs: 1,
     });
     const response = await POST(request(`Bearer ${tokenFor(STRONG_SECRET)}`));
     expect(response.status).toBe(200);
@@ -110,7 +120,14 @@ describe("POST /api/internal/interpretation-jobs", () => {
       failed: 1,
       queueDepth: 5,
       oldestPendingAgeSeconds: 42,
-      pruned: { expiredRateLimitBuckets: 7, completedInterpretationJobs: 2 },
+      reports: { claimed: 2, succeeded: 1, failed: 1 },
+      reportQueueDepth: 4,
+      oldestPendingReportAgeSeconds: 21,
+      pruned: {
+        expiredRateLimitBuckets: 7,
+        completedInterpretationJobs: 2,
+        completedReportJobs: 1,
+      },
     });
     expect(mocks.runInterpretationJobs).toHaveBeenCalledWith(10);
     expect(mocks.pruneExpiredSystemRows).toHaveBeenCalledWith("synthetic-system-client");

@@ -17,6 +17,10 @@ block _flag flip_, not the current reading beta.
 
 G14–G19 and G43–G47 are implemented on this branch. Completed readings now have a direct pre-revealed result route; cut/reveal progress recovers per reading; revealed cards expose orientation-correct themes; follow-up cardinality and normalized reread cooldown are configurable; feedback has an authenticated encrypted route, UI, history state, and export; `result.title` heads the opening theme; Groq cardinality is exact; active deck/spread flags gate creation; motion/sound persist; and history uses spread names plus follow-up/feedback/report state. Migration `0011_reading_flow_controls` carries the database changes. The default remains one follow-up to preserve PRD DEC-007. Scheduled outcome reminders and their separate outcome research schema remain explicitly deferred as recorded in `docs/KNOWN-GAPS.md`; the new feedback surface must not be described as outcome verification.
 
+## Implementation update — Wave 5 (2026-08-10)
+
+G5–G7, G30, G31, and G53 are implemented on this branch. Checkout success/cancel states are active, open sessions resume, expired sessions are replaceable without replacing the order, and one active purchase is reused per snapshot. Verified paid events atomically grant entitlement, create a pending report, and enqueue durable `report_jobs`; the webhook no longer generates the report inline. A minimized encrypted source is staged before redirect so profile deletion during Checkout cannot strand a later payment. Commerce snapshot pointers use `ON DELETE SET NULL`, while profile deletion removes private snapshots/readings and retains finance/report records. The preview and structured report expose all 17 agreed sections with trait provenance, explicit unavailable systems, convergence, and preserved contradictions. Revoked report content and feedback are included in export, and the report banner derives from the persisted provider. Migrations `0012_commerce_report_jobs` and `0013_checkout_report_source` carry the database changes. Commerce remains default-off pending the owner gates in `docs/KNOWN-GAPS.md` and `docs/COMMERCE.md`.
+
 ---
 
 ## P0 — launch blockers
@@ -373,6 +377,6 @@ write-back.
 - **Wave 2 — data integrity:** G9, G10, G11, G12, G13, G26.
 - **Wave 3 — calculation correctness:** G4, G20, G21, G27, G28 (+ G38 fixtures).
 - **Wave 4 — reading-flow completeness (implemented 2026-08-10):** G14, G15, G16, G17, G18, G19, G43–G47.
-- **Wave 5 — commerce (pre-flag-flip):** G5, G6, G7, G30, G31, G53.
+- **Wave 5 — commerce (implemented 2026-08-10; flag remains off):** G5, G6, G7, G30, G31, G53.
 - **Wave 6 — account & ops:** G32, G33, G34, G35, G40, G49–G52, G56–G60.
 - **Parallel, owner-side:** the five ops actions above.

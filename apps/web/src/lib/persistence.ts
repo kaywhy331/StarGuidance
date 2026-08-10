@@ -29,7 +29,8 @@ export type SensitiveDataClass =
   | "profile-calculations"
   | "reading-question"
   | "follow-up-question"
-  | "feedback-comment";
+  | "feedback-comment"
+  | "report-source";
 
 export function encryptionAadContext(dataClass: SensitiveDataClass, userId: string): string {
   return `${dataClass}:${userId}`;

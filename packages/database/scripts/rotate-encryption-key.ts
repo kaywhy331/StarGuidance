@@ -72,6 +72,25 @@ function rows(result: DatabaseRow[], dataClass: (row: DatabaseRow) => string): E
 
 const targets: Target[] = [
   {
+    name: "orders.encrypted_report_source",
+    async load(sql, afterId) {
+      return rows(
+        await sql`
+          select id, user_id, encrypted_report_source as envelope from orders
+          where encrypted_report_source is not null
+            and (${afterId}::uuid is null or id > ${afterId}::uuid)
+          order by id limit ${BATCH_SIZE}`,
+        () => "report-source",
+      );
+    },
+    async replace(sql, row, envelope) {
+      const updated = await sql`
+        update orders set encrypted_report_source = ${envelope}, updated_at = now()
+        where id = ${row.id} and encrypted_report_source = ${row.envelope} returning id`;
+      return updated.length === 1;
+    },
+  },
+  {
     name: "birth_profiles.encrypted_payload",
     async load(sql, afterId) {
       return rows(
@@ -163,6 +182,25 @@ const targets: Target[] = [
       const updated = await sql`
         update reading_feedback set encrypted_comment = ${envelope}
         where id = ${row.id} and encrypted_comment = ${row.envelope} returning id`;
+      return updated.length === 1;
+    },
+  },
+  {
+    name: "report_jobs.encrypted_source",
+    async load(sql, afterId) {
+      return rows(
+        await sql`
+          select id, user_id, encrypted_source as envelope from report_jobs
+          where encrypted_source is not null
+            and (${afterId}::uuid is null or id > ${afterId}::uuid)
+          order by id limit ${BATCH_SIZE}`,
+        () => "report-source",
+      );
+    },
+    async replace(sql, row, envelope) {
+      const updated = await sql`
+        update report_jobs set encrypted_source = ${envelope}
+        where id = ${row.id} and encrypted_source = ${row.envelope} returning id`;
       return updated.length === 1;
     },
   },

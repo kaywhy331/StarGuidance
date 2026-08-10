@@ -18,6 +18,7 @@ const order: StoredOrder = {
 const session = {
   id: order.providerSessionId,
   object: "checkout.session",
+  client_reference_id: order.id,
   metadata: { orderId: order.id },
   payment_status: "paid",
 } as unknown as Stripe.Checkout.Session;
@@ -25,16 +26,19 @@ const session = {
 const repositories = {
   orders: {
     getByProviderSession: vi.fn(),
+    getByProviderReference: vi.fn(),
+    clearReportSource: vi.fn(),
     setStatus: vi.fn(),
   },
   entitlements: {
     grant: vi.fn(),
     revokeByOrder: vi.fn(),
   },
+  reports: { getByOrder: vi.fn() },
+  reportFulfillment: { enqueuePaid: vi.fn() },
   audit: { record: vi.fn() },
 };
 const listSessions = vi.fn();
-const generateReport = vi.fn();
 
 function event(type: Stripe.Event.Type, object: unknown): Stripe.Event {
   return {
@@ -54,40 +58,95 @@ function dependencies(): StripeEventDependencies {
   return {
     repositories: repositories as unknown as Pick<
       ApplicationRepositories,
-      "orders" | "entitlements" | "audit"
+      "orders" | "entitlements" | "reports" | "reportFulfillment" | "audit"
     >,
     stripe: {
       checkout: { sessions: { list: listSessions } },
     } as unknown as Stripe,
-    generateReport,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   repositories.orders.getByProviderSession.mockResolvedValue(order);
+  repositories.orders.getByProviderReference.mockResolvedValue(order);
   listSessions.mockResolvedValue({ data: [session] });
-  generateReport.mockResolvedValue({ id: "report" });
+  repositories.reports.getByOrder.mockResolvedValue(undefined);
+  repositories.reportFulfillment.enqueuePaid.mockResolvedValue({ id: "report" });
 });
 
 describe("Stripe event reconciliation", () => {
   it("fulfills a paid Checkout session from persisted ownership", async () => {
     await processStripeEvent(event("checkout.session.completed", session), dependencies());
 
-    expect(repositories.orders.setStatus).toHaveBeenCalledWith(order.id, "paid");
-    expect(repositories.entitlements.grant).toHaveBeenCalledWith(
+    expect(repositories.reportFulfillment.enqueuePaid).toHaveBeenCalledWith(
       expect.objectContaining({
+        orderId: order.id,
         userId: order.userId,
         snapshotId: order.snapshotId,
-        orderId: order.id,
-        status: "active",
       }),
     );
-    expect(generateReport).toHaveBeenCalledWith({
-      userId: order.userId,
-      snapshotId: order.snapshotId,
-      orderId: order.id,
-    });
+    expect(repositories.orders.setStatus).not.toHaveBeenCalled();
+    expect(repositories.entitlements.grant).not.toHaveBeenCalled();
+    expect(repositories.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "payment.fulfillment_queued" }),
+    );
+  });
+
+  it("does not duplicate fulfillment but still records the retried paid event", async () => {
+    repositories.reports.getByOrder.mockResolvedValue({ id: "report" });
+
+    await processStripeEvent(
+      event("checkout.session.async_payment_succeeded", session),
+      dependencies(),
+    );
+
+    expect(repositories.reportFulfillment.enqueuePaid).not.toHaveBeenCalled();
+    expect(repositories.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "payment.fulfillment_queued" }),
+    );
+  });
+
+  it("uses the staged source when profile deletion has already nulled snapshot lineage", async () => {
+    const detachedOrder = { ...order, snapshotId: null };
+    repositories.orders.getByProviderSession.mockResolvedValue(detachedOrder);
+
+    await processStripeEvent(event("checkout.session.completed", session), dependencies());
+
+    expect(repositories.reportFulfillment.enqueuePaid).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshotId: null }),
+    );
+  });
+
+  it("does not let a superseded session expiration fail its replacement order", async () => {
+    const replacementOrder = { ...order, providerSessionId: "cs_test_replacement" };
+    repositories.orders.getByProviderSession.mockResolvedValue(undefined);
+    repositories.orders.getByProviderReference.mockResolvedValue(replacementOrder);
+
+    await processStripeEvent(
+      event("checkout.session.expired", { ...session, payment_status: "unpaid" }),
+      dependencies(),
+    );
+
+    expect(repositories.orders.getByProviderReference).toHaveBeenCalledWith(order.id);
+    expect(repositories.orders.setStatus).not.toHaveBeenCalled();
+    expect(repositories.entitlements.revokeByOrder).not.toHaveBeenCalled();
+    expect(repositories.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "payment.superseded_session_closed" }),
+    );
+  });
+
+  it("keeps the current expired Checkout resumable on the same pending order", async () => {
+    await processStripeEvent(
+      event("checkout.session.expired", { ...session, payment_status: "unpaid" }),
+      dependencies(),
+    );
+
+    expect(repositories.orders.setStatus).not.toHaveBeenCalled();
+    expect(repositories.orders.clearReportSource).not.toHaveBeenCalled();
+    expect(repositories.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "payment.checkout_expired" }),
+    );
   });
 
   it("revokes report access after a full refund", async () => {
@@ -107,6 +166,7 @@ describe("Stripe event reconciliation", () => {
     });
     expect(repositories.orders.setStatus).toHaveBeenCalledWith(order.id, "refunded");
     expect(repositories.entitlements.revokeByOrder).toHaveBeenCalledWith(order.id);
+    expect(repositories.orders.clearReportSource).toHaveBeenCalledWith(order.id);
     expect(repositories.audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: "payment.refunded", userId: order.userId }),
     );
@@ -154,6 +214,6 @@ describe("Stripe event reconciliation", () => {
         dependencies(),
       ),
     ).rejects.toThrow("STRIPE_EVENT_NOT_RECONCILED");
-    expect(repositories.entitlements.grant).not.toHaveBeenCalled();
+    expect(repositories.reportFulfillment.enqueuePaid).not.toHaveBeenCalled();
   });
 });

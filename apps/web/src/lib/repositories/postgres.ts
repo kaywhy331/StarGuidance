@@ -91,7 +91,7 @@ function orderFromRow(row: DatabaseRow): StoredOrder {
   return {
     id: String(row.id),
     userId: String(row.user_id),
-    snapshotId: String(row.profile_snapshot_id),
+    snapshotId: row.profile_snapshot_id ? String(row.profile_snapshot_id) : null,
     provider: row.provider as StoredOrder["provider"],
     providerSessionId: String(row.provider_session_id),
     idempotencyKey: String(row.idempotency_key),
@@ -104,7 +104,7 @@ function entitlementFromRow(row: DatabaseRow): StoredEntitlement {
   return {
     id: String(row.id),
     userId: String(row.user_id),
-    snapshotId: String(row.profile_snapshot_id),
+    snapshotId: row.profile_snapshot_id ? String(row.profile_snapshot_id) : null,
     orderId: String(row.order_id),
     status: row.status as StoredEntitlement["status"],
     createdAt: iso(row.created_at as Date),
@@ -115,8 +115,9 @@ function reportFromRows(report: DatabaseRow, sections: readonly DatabaseRow[]): 
   return {
     id: String(report.id),
     userId: String(report.user_id),
-    snapshotId: String(report.profile_snapshot_id),
+    snapshotId: report.profile_snapshot_id ? String(report.profile_snapshot_id) : null,
     orderId: String(report.order_id),
+    provider: report.provider as StoredReport["provider"],
     status: report.status as StoredReport["status"],
     createdAt: iso(report.created_at as Date),
     sections: sections.map((row) => {
@@ -360,12 +361,11 @@ export function createPostgresRepositories(
       return userTransaction(userId, async (tx) => {
         const [profile] = await tx`select id from birth_profiles where user_id = ${userId}`;
         if (!profile) return false;
-        // These records reference profile snapshots without ON DELETE CASCADE,
-        // so remove them from the leaves inward before deleting the root.
+        // Readings deliberately retain a non-null snapshot lineage and are
+        // private-profile dependants. Commerce FKs use ON DELETE SET NULL, so
+        // paid orders, entitlements, report content, and reconciliation state
+        // survive this profile-only operation.
         await tx`delete from reading_sessions where user_id = ${userId}`;
-        await tx`delete from reports where user_id = ${userId}`;
-        await tx`delete from entitlements where user_id = ${userId}`;
-        await tx`delete from orders where user_id = ${userId}`;
         await tx`delete from birth_profiles where id = ${String(profile.id)} and user_id = ${userId}`;
         return true;
       });
@@ -651,21 +651,27 @@ export function createPostgresRepositories(
     },
   };
 
-  const reports = {
-    async get(userId: string, reportId: string) {
-      return userTransaction(userId, async (tx) => {
-        const [report] = await tx`
-          select r.*, e.order_id from reports r
+  const loadReport = async (userId: string, reportId: string, requireActive: boolean) => {
+    return userTransaction(userId, async (tx) => {
+      const [report] = await tx`
+          select r.*, e.order_id, o.provider from reports r
           join entitlements e on e.id = r.entitlement_id
-          where r.id = ${reportId} and r.user_id = ${userId} and e.status = 'active'
+          join orders o on o.id = e.order_id
+          where r.id = ${reportId} and r.user_id = ${userId}
+            and (${requireActive} = false or e.status = 'active')
         `;
-        if (!report) return undefined;
-        const sections = await tx`
+      if (!report) return undefined;
+      const sections = await tx`
           select section_key, payload from report_sections
           where report_id = ${reportId} and user_id = ${userId} order by created_at, id
         `;
-        return reportFromRows(report, sections);
-      });
+      return reportFromRows(report, sections);
+    });
+  };
+
+  const reports = {
+    async get(userId: string, reportId: string) {
+      return loadReport(userId, reportId, true);
     },
     async getByOrder(userId: string, orderId: string) {
       return userTransaction(userId, async (tx) => {
@@ -723,19 +729,32 @@ export function createPostgresRepositories(
         return result;
       });
     },
+    async listForExport(userId: string) {
+      return userTransaction(userId, async (tx) => {
+        const rows = await tx`
+          select id from reports where user_id = ${userId} order by created_at, id
+        `;
+        const result: StoredReport[] = [];
+        for (const row of rows) {
+          const report = await loadReport(userId, String(row.id), false);
+          if (report) result.push(report);
+        }
+        return result;
+      });
+    },
   };
 
   const orders = {
-    async create(order: StoredOrder) {
+    async create(order: StoredOrder, encryptedReportSource?: string) {
       await userTransaction(order.userId, async (tx) => {
         await tx`
           insert into orders (
             id, user_id, product_id, profile_snapshot_id, provider, provider_session_id,
-            idempotency_key, status, created_at
+            idempotency_key, encrypted_report_source, status, created_at
           ) values (
             ${order.id}, ${order.userId}, 'profile-report-v1', ${order.snapshotId},
             ${order.provider}, ${order.providerSessionId}, ${order.idempotencyKey},
-            ${order.status}, ${order.createdAt}
+            ${encryptedReportSource ?? null}, ${order.status}, ${order.createdAt}
           )
         `;
       });
@@ -760,6 +779,36 @@ export function createPostgresRepositories(
           select * from orders where provider_session_id = ${providerSessionId}
         `;
         return row ? orderFromRow(row) : undefined;
+      });
+    },
+    async getByProviderReference(orderId: string) {
+      return serviceTransaction(async (tx) => {
+        const [row] = await tx`select * from orders where id = ${orderId}`;
+        return row ? orderFromRow(row) : undefined;
+      });
+    },
+    async replaceProviderSession(
+      userId: string,
+      orderId: string,
+      expectedProviderSessionId: string,
+      providerSessionId: string,
+    ) {
+      return userTransaction(userId, async (tx) => {
+        const rows = await tx`
+          update orders set provider_session_id = ${providerSessionId}, updated_at = now()
+          where id = ${orderId} and user_id = ${userId}
+            and provider_session_id = ${expectedProviderSessionId} and status = 'pending'
+          returning id
+        `;
+        return rows.length === 1;
+      });
+    },
+    async clearReportSource(orderId: string) {
+      await serviceTransaction(async (tx) => {
+        await tx`
+          update orders set encrypted_report_source = null, updated_at = now()
+          where id = ${orderId}
+        `;
       });
     },
     async setStatus(orderId: string, status: StoredOrder["status"]) {
@@ -814,6 +863,95 @@ export function createPostgresRepositories(
           select * from entitlements where user_id = ${userId} order by created_at
         `;
         return rows.map(entitlementFromRow);
+      });
+    },
+  };
+
+  const reportFulfillment = {
+    async enqueuePaid(input: {
+      orderId: string;
+      userId: string;
+      snapshotId: string | null;
+      reportId: string;
+      entitlementId: string;
+      createdAt: string;
+    }): Promise<StoredReport> {
+      return serviceTransaction(async (tx) => {
+        const [order] = await tx`
+          select * from orders where id = ${input.orderId} for update
+        `;
+        if (
+          !order ||
+          String(order.user_id) !== input.userId ||
+          (order.profile_snapshot_id ? String(order.profile_snapshot_id) : null) !==
+            input.snapshotId ||
+          order.provider !== "stripe" ||
+          order.status === "refunded" ||
+          order.status === "disputed"
+        )
+          throw new Error("ORDER_NOT_FULFILLABLE");
+        const [existing] = await tx`
+          select r.id from reports r
+          join entitlements e on e.id = r.entitlement_id
+          where e.order_id = ${input.orderId}
+        `;
+        if (existing) {
+          const [report] = await tx`
+            select r.*, e.order_id, o.provider from reports r
+            join entitlements e on e.id = r.entitlement_id
+            join orders o on o.id = e.order_id
+            where r.id = ${String(existing.id)}
+          `;
+          const sections = await tx`
+            select section_key, payload from report_sections
+            where report_id = ${String(existing.id)} order by created_at, id
+          `;
+          if (!report) throw new Error("REPORT_NOT_FOUND");
+          return reportFromRows(report, sections);
+        }
+        if (!order.encrypted_report_source) throw new Error("REPORT_SOURCE_NOT_FOUND");
+        const encryptedSource = String(order.encrypted_report_source);
+        await tx`
+          update orders set status = 'paid', encrypted_report_source = null, updated_at = now()
+          where id = ${input.orderId}
+        `;
+        await tx`
+          insert into entitlements (
+            id, user_id, product_id, profile_snapshot_id, order_id, status, created_at
+          ) values (
+            ${input.entitlementId}, ${input.userId}, 'profile-report-v1', ${input.snapshotId},
+            ${input.orderId}, 'active', ${input.createdAt}
+          )
+          on conflict (order_id) do update set status = 'active'
+        `;
+        const [entitlement] = await tx`
+          select id from entitlements where order_id = ${input.orderId}
+        `;
+        if (!entitlement) throw new Error("ENTITLEMENT_NOT_FOUND");
+        await tx`
+          insert into reports (
+            id, user_id, entitlement_id, profile_snapshot_id, status, template_version,
+            payload, created_at
+          ) values (
+            ${input.reportId}, ${input.userId}, ${String(entitlement.id)}, ${input.snapshotId},
+            'pending', 'profile-report-v2', ${tx.json(json({ sectionCount: 0 }))},
+            ${input.createdAt}
+          )
+        `;
+        await tx`
+          insert into report_jobs (user_id, report_id, encrypted_source)
+          values (${input.userId}, ${input.reportId}, ${encryptedSource})
+        `;
+        return {
+          id: input.reportId,
+          userId: input.userId,
+          snapshotId: input.snapshotId,
+          orderId: input.orderId,
+          provider: "stripe",
+          status: "pending",
+          sections: [],
+          createdAt: input.createdAt,
+        };
       });
     },
   };
@@ -921,7 +1059,7 @@ export function createPostgresRepositories(
         profiles: await birthProfiles.listVersions(userId),
         readings: await readingSessions.list(userId),
         feedback: await feedback.list(userId),
-        reports: await reports.list(userId),
+        reports: await reports.listForExport(userId),
         orders: await orders.list(userId),
         entitlements: await entitlements.list(userId),
         auditEvents: await audit.list(userId),
@@ -947,6 +1085,7 @@ export function createPostgresRepositories(
     history: { listReadings: readingSessions.list },
     feedback,
     reports,
+    reportFulfillment,
     orders,
     entitlements,
     webhookEvents: {
