@@ -1,0 +1,10 @@
+{
+  "datasetId": "dreamspell-no-leap-v2-regression-v1",
+  "algorithmVersion": "dreamspell-anchor-1987-07-26-kin34-no-leap-v2",
+  "source": "StarGuidance Dreamspell no-leap convention worksheet",
+  "sourceVersion": "2026-08-10",
+  "reviewStatus": "internal_regression_pending_approved_reference_dataset",
+  "caseFile": "dreamspell-no-leap-v2.csv",
+  "caseCount": 60,
+  "sha256": "81ef07d77622a2c971c05a2c3e59f1125982e5099bc3fae427a5cac4e92e6c51"
+}

@@ -1,0 +1,10 @@
+{
+  "datasetId": "numerology-pythagorean-v3-regression-v1",
+  "algorithmVersion": "pythagorean-v3",
+  "source": "StarGuidance pythagorean-v3 convention worksheet",
+  "sourceVersion": "2026-08-10",
+  "reviewStatus": "internal_regression_pending_independent_certification",
+  "caseFile": "numerology-pythagorean-v3.csv",
+  "caseCount": 60,
+  "sha256": "e3a72dd4e1953aed1f03a45266d87270e4b60cfe0ce6badd31fe0a058dfb6136"
+}

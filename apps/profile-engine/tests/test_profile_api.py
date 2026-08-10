@@ -49,6 +49,22 @@ def test_birth_time_without_place_or_timezone_is_accepted() -> None:
     assert response.json()["completeness"] == "core"
 
 
+def test_birthplace_without_time_creates_location_enhanced_profile() -> None:
+    response = TestClient(app).post(
+        "/v1/profile/compute",
+        json={
+            "full_birth_name": "Ada Lovelace",
+            "birth_date": "1815-12-10",
+            "birthplace": "London, United Kingdom",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["completeness"] == "locationEnhanced"
+    assert payload["planetary_angularity"]["reason"] == "precise_birth_time_required"
+
+
 def test_simple_birthplace_and_time_create_complete_profile() -> None:
     response = TestClient(app).post(
         "/v1/profile/compute",
@@ -61,6 +77,23 @@ def test_simple_birthplace_and_time_create_complete_profile() -> None:
     )
     assert response.status_code == 200
     assert response.json()["completeness"] == "complete"
+
+
+def test_leap_day_and_master_number_profile_are_computed_end_to_end() -> None:
+    leap_day = TestClient(app).post(
+        "/v1/profile/compute",
+        json={"full_birth_name": "Ada Lovelace", "birth_date": "2000-02-29"},
+    )
+    master_number = TestClient(app).post(
+        "/v1/profile/compute",
+        json={"full_birth_name": "Reference Person", "birth_date": "1987-07-26"},
+    )
+
+    assert leap_day.status_code == 200
+    assert leap_day.json()["numerology"]["life_path"] == 6
+    assert leap_day.json()["numerology"]["birthday"] == 11
+    assert master_number.status_code == 200
+    assert master_number.json()["numerology"]["life_path"] == 22
 
 
 def test_unicode_name_reduces_numerology_detail_without_blocking_profile() -> None:
@@ -170,15 +203,19 @@ def test_disabled_unvalidated_calculation_flags_keep_typed_unavailable_results()
 
 
 def test_time_and_place_do_not_activate_unvalidated_new_systems() -> None:
-    payload = TestClient(app).post(
-        "/v1/profile/compute",
-        json={
-            "full_birth_name": "Ada Lovelace",
-            "birth_date": "1815-12-10",
-            "birth_time": "07:00:00",
-            "birthplace": "London, United Kingdom",
-        },
-    ).json()
+    payload = (
+        TestClient(app)
+        .post(
+            "/v1/profile/compute",
+            json={
+                "full_birth_name": "Ada Lovelace",
+                "birth_date": "1815-12-10",
+                "birth_time": "07:00:00",
+                "birthplace": "London, United Kingdom",
+            },
+        )
+        .json()
+    )
 
     assert payload["planetary_angularity"]["reason"] == (
         "licensed_ephemeris_and_mapping_adapter_required"

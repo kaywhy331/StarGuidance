@@ -82,8 +82,8 @@ export const traitDomainSchema = z.enum([
  * into an immediate 502 in staging rather than a quietly unjoined snapshot.
  */
 export const CALCULATION_SYSTEM_VERSIONS = {
-  numerology: "pythagorean-v2",
-  dreamspell: "dreamspell-anchor-1987-07-26-kin34-v1",
+  numerology: "pythagorean-v3",
+  dreamspell: "dreamspell-anchor-1987-07-26-kin34-no-leap-v2",
   nineStarKi: "nine-star-ki-fixed-boundaries-lo-shu-v1",
   westernAstrology: "western-astrology-contract-v1",
   bazi: "bazi-contract-v1",

@@ -134,7 +134,7 @@ describe("a service that was only waking up", () => {
         birthday: 6,
         name_rendering: null,
         transformation: "steady",
-        algorithm_version: "pythagorean-v2",
+        algorithm_version: "pythagorean-v3",
       },
       dreamspell: {
         kin: 12,
@@ -143,7 +143,7 @@ describe("a service that was only waking up", () => {
         solar_seal: 12,
         solar_seal_name: "Human",
         color: "blue",
-        algorithm_version: "dreamspell-anchor-1987-07-26-kin34-v1",
+        algorithm_version: "dreamspell-anchor-1987-07-26-kin34-no-leap-v2",
         certification_status: "pending",
       },
       nine_star_ki: {

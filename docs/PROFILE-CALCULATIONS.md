@@ -2,15 +2,33 @@
 
 ## Implemented, pending reference certification
 
-`pythagorean-v2` always calculates the date-derived Life Path and Birthday values. It calculates Expression, Soul Urge, and Personality when the entered name can be normalized without transliteration. Master numbers 11, 22, and 33 are preserved. Spaces, punctuation, and Latin diacritics are normalized while the encrypted original name remains unchanged. For unsupported writing systems, name-derived values are typed unavailable; the profile still succeeds and the application never asks for or invents a Latin rendering. Numerology's letter-reduction convention and reference test cases have not yet had the same independent review applied to Nine Star Ki, Dreamspell, and the astrology/BaZi activation gates below; treat its output as deterministic but not yet independently certified.
+`pythagorean-v3` always calculates the date-derived Life Path and Birthday values. Life Path reduces month, day, and four-digit year separately, preserving 11, 22, or 33 at each component, then sums and reduces those three values while again preserving master numbers. This component-wise convention intentionally changes cases such as 1987-07-26 from the v2 all-digit result 4 to 22. Existing snapshots remain on v2; only newly calculated snapshots use v3. Expression, Soul Urge, and Personality are calculated when the entered birth name can be normalized under the rules below. The output is deterministic and covered by a digest-pinned regression set, but it is not yet independently certified.
+
+### Name handling
+
+- **Birth name versus current name:** the required `fullBirthName` is the only name used. A current, married, chosen, or professional name is neither collected nor substituted. The encrypted original birth-name input is preserved unchanged.
+- **Middle names:** every entered middle-name letter participates in Expression, Soul Urge, and Personality.
+- **Suffixes:** entered suffix letters such as `Jr` or `III` participate. The engine does not silently guess whether a final token is a cultural, professional, or generational suffix.
+- **Hyphens and apostrophes:** these are ignored as separators while letters on both sides retain their order. Spaces and other non-letter punctuation are likewise excluded from the numeric sum.
+- **Accents:** Unicode NFKD removes combining marks for letters such as `é`, `ş`, and `Ż`.
+- **Latin-Extended letters:** NFKD is supplemented by the versioned allowlist `Æ→AE`, `Ð/Đ→D`, `Ħ→H`, dotless `ı→I`, `ĸ→K`, `Ł→L`, `Ŋ→N`, `Œ→OE`, `Ø→O`, `ß→SS`, `Þ→TH`, and `Ŧ→T`, including lowercase forms. This list is part of pythagorean-v3 and changes only through a version bump.
+- **Non-Latin and unlisted letters:** if any letter remains outside ASCII after that allowlist and NFKD normalization, all name-derived values return typed `unavailable`; date-derived values and profile creation still succeed.
+- **Transliteration:** the application never transliterates unsupported writing systems, strips their letters into a partial result, asks for a Latin rendering, or invents one.
+- **Master numbers:** 11, 22, and 33 are preserved for Life Path, Birthday, Expression, Soul Urge, and Personality whenever a reduction step reaches one of them.
 
 `profile-traits-v3` maps deterministic available numerology observations and original Nine Star Ki editorial observations to the shared trait ontology with source rule, source system, calculation version, and stability. It preserves a motivation/expression tension when their mapped families differ and omits name-derived traits when those calculations are unavailable. Nine Star Ki traits remain uncertain until the convention review below is complete. `question-trait-lens-v1` deterministically selects at most three stable traits relevant to career, relationship, change, or general questions. It never selects cards and never sends raw calculation values into a base tarot reading.
 
-`dreamspell-anchor-1987-07-26-kin34-v1` produces Kin, tone, solar seal, color, and version from the Gregorian date. Its trait is marked uncertain and excluded from the stable reading lens. The implementation status is `implemented_pending_approved_reference_dataset`; production certification requires an approved decoder set and terminology/rights review.
+`dreamspell-anchor-1987-07-26-kin34-no-leap-v2` produces Kin, tone, solar seal, color, and version from the Gregorian date. It uses the explicit Dreamspell no-leap day-count convention: February 29 does not advance the 260-day sequence, and a February 29 birth receives the same Kin as February 28. This replaces v1's continuous Gregorian delta; old snapshots keep v1. Its trait is marked uncertain and excluded from the stable reading lens. The implementation status is `implemented_pending_approved_reference_dataset`; production certification still requires an approved decoder set and terminology/rights review.
 
 `nine-star-ki-fixed-boundaries-lo-shu-v1` deterministically produces a Principal, Character, and derived Energy star from the Gregorian birth date. The annual sequence uses 1963 as the 1 Water cycle anchor and changes on February 4. Monthly stars use the explicit fixed civil-date boundary table encoded in the module. The optional third star uses the named Lo Shu positional derivation; it is not presented as a separate time-of-birth measurement, and other schools may use a different derivation. Each number retains its traditional five-phase association, while every personality sentence is original StarGuidance editorial copy.
 
 The fixed-date convention is intentionally not described as an exact astronomical solar-term calculation. Its status is `implemented_pending_independent_reference_review`. Activation as a certified component requires an approved convention manifest, independent golden cases around every annual/monthly boundary, review of the third-star derivation, and a rights record confirming that only calculation facts and original prose/assets are shipped. The engine does not call or scrape a consumer Nine Star Ki guide or calculator.
+
+### Regression fixtures and certification boundary
+
+`apps/profile-engine/tests/fixtures/` contains versioned CSV datasets plus JSON manifests naming the source worksheet, source version, case count, review status, and SHA-256 digest. CI verifies the digest before executing every row: 60 pythagorean-v3 cases, 60 Dreamspell v2 cases across leap/non-leap centuries and the anchor, and 100 Nine Star Ki cases spanning every fixed monthly boundary in multiple years. The fixtures contain synthetic/public historical names and dates only, never customer data.
+
+These are internal regression worksheets, not approved independent references. They prevent an unversioned convention change and fill the automated matrix, but they do not satisfy the expert/source certification gates below. A future approved dataset is added under a new dataset ID and digest; it does not overwrite these fixtures.
 
 Onboarding accepts one optional birth-time value and one independent optional birth city/country value. It does not ask users to classify time confidence or enter an IANA timezone. A time supplied without birthplace is retained, while calculations requiring historical timezone context remain unavailable. Missing data reduces profile capability rather than blocking tarot.
 
@@ -40,7 +58,7 @@ A named qualified BaZi reviewer must sign the convention manifest, reference res
 
 ### Dreamspell certification and content-rights gate
 
-`dreamspell-anchor-1987-07-26-kin34-v1` remains deterministic but `implemented_pending_approved_reference_dataset`; it is not a certified production interpretation source. Certification requires:
+`dreamspell-anchor-1987-07-26-kin34-no-leap-v2` remains deterministic but `implemented_pending_approved_reference_dataset`; it is not a certified production interpretation source. Certification requires:
 
 1. An approved decoder dataset with at least the PRD's 60 known dates across centuries, Gregorian leap years/century rules, cycle wrap points, and the documented anchor. Every case must match Kin, Galactic Tone, Solar Seal, and color at 100%, and the dataset must carry a stable version and digest.
 2. Source provenance and reviewer approval for the decoder rules. Internal and user-facing language must identify the system as **Dreamspell** and must not present it as the historical Maya calendar or imply institutional/Indigenous endorsement.
