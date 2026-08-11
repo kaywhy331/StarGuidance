@@ -555,34 +555,29 @@ test("buttons, keyboard, wheel, and touch move sequentially without a text scrol
 
   await journey.evaluate((element) => {
     const bounds = element.getBoundingClientRect();
-    const start = new Touch({
+    const start = {
       clientX: bounds.left + bounds.width * 0.35,
       clientY: bounds.top + bounds.height / 2,
-      identifier: 1,
-      target: element,
-    });
-    const end = new Touch({
+    };
+    const end = {
       clientX: bounds.left + bounds.width * 0.75,
       clientY: bounds.top + bounds.height / 2,
-      identifier: 1,
-      target: element,
-    });
-    element.dispatchEvent(
-      new TouchEvent("touchstart", {
-        bubbles: true,
-        cancelable: true,
-        changedTouches: [start],
-        touches: [start],
-      }),
-    );
-    element.dispatchEvent(
-      new TouchEvent("touchend", {
-        bubbles: true,
-        cancelable: true,
-        changedTouches: [end],
-        touches: [],
-      }),
-    );
+    };
+    const dispatchTouch = (
+      type: "touchstart" | "touchend",
+      touches: Array<typeof start>,
+      changedTouches: Array<typeof start>,
+    ) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        changedTouches: { value: changedTouches },
+        targetTouches: { value: touches },
+        touches: { value: touches },
+      });
+      element.dispatchEvent(event);
+    };
+    dispatchTouch("touchstart", [start], [start]);
+    dispatchTouch("touchend", [], [end]);
   });
   await expect(journey).toHaveAttribute("data-active-card-index", "1");
 });

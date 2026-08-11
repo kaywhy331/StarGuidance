@@ -62,7 +62,7 @@ test("display identity, reading preferences, and reversible marketing consent pe
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Account settings saved.")).toBeVisible();
 
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByLabel("Display name")).toHaveValue("Nova");
   await expect(page.getByLabel(/Reduce card and scene motion/i)).toBeChecked();
   await expect(page.getByLabel(/Enable optional reading sounds/i)).toBeChecked();
@@ -71,7 +71,7 @@ test("display identity, reading preferences, and reversible marketing consent pe
   await page.getByLabel(/Send occasional product news/i).uncheck();
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Account settings saved.")).toBeVisible();
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByLabel(/Send occasional product news/i)).not.toBeChecked();
 
   const exportPayload = await page.evaluate(async () => {
