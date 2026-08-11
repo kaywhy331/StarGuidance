@@ -106,6 +106,19 @@ describe("bounded rate limiting", () => {
     });
   });
 
+  it("distinguishes a limiter outage from an exhausted caller quota", () => {
+    expect(requestSecurityFailure(new Error("RATE_LIMIT_UNAVAILABLE"))).toEqual({
+      status: 503,
+      error: "Service is temporarily unavailable. Try again shortly.",
+      headers: { "retry-after": "60" },
+    });
+    expect(requestSecurityFailure(new Error("RATE_LIMITED"))).toEqual({
+      status: 429,
+      error: "Too many requests. Try again shortly.",
+      headers: { "retry-after": "60" },
+    });
+  });
+
   it("caps attacker-created bucket keys", async () => {
     for (let index = 0; index < 10_100; index += 1)
       await assertRateLimit(`attacker:${index}`, 1, 60_000);

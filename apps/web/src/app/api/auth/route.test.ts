@@ -16,6 +16,7 @@ const recovery = vi.hoisted(() => ({
   verify: vi.fn(),
 }));
 const security = vi.hoisted(() => ({ recordSecurityAudit: vi.fn() }));
+const rateLimit = vi.hoisted(() => ({ assert: vi.fn() }));
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ delete: recovery.cookieDelete, get: recovery.cookieGet }),
@@ -46,7 +47,7 @@ vi.mock("@/lib/supabase", () => ({
 // packages/database/src/rate-limits.integration.test.ts against a real one.
 vi.mock("@/lib/request-security", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/request-security")>()),
-  assertRateLimit: vi.fn().mockResolvedValue(undefined),
+  assertRateLimit: rateLimit.assert,
 }));
 
 import { DELETE, POST } from "./route";
@@ -117,6 +118,7 @@ beforeEach(() => {
   supabase.signOut.mockResolvedValue({ error: null });
   supabase.resend.mockResolvedValue({ error: null });
   security.recordSecurityAudit.mockResolvedValue(undefined);
+  rateLimit.assert.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -125,9 +127,34 @@ afterEach(() => {
   for (const mock of Object.values(admin)) mock.mockReset();
   for (const mock of Object.values(recovery)) mock.mockReset();
   security.recordSecurityAudit.mockReset();
+  rateLimit.assert.mockReset();
 });
 
 describe("email and password authentication", () => {
+  it("reports a limiter dependency outage as unavailable rather than caller throttling", async () => {
+    rateLimit.assert.mockRejectedValueOnce(new Error("RATE_LIMIT_UNAVAILABLE"));
+
+    const response = await POST(request(credentials));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(await response.json()).toEqual({
+      error: "Authentication is temporarily unavailable. Try again shortly.",
+    });
+    expect(supabase.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("reserves 429 for a caller that actually exhausted the request quota", async () => {
+    rateLimit.assert.mockRejectedValueOnce(new Error("RATE_LIMITED"));
+
+    const response = await POST(request(credentials));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(await response.json()).toEqual({ error: "Too many requests. Try again shortly." });
+    expect(supabase.signInWithPassword).not.toHaveBeenCalled();
+  });
+
   it("signs in with a password and never returns the credential", async () => {
     supabase.signInWithPassword.mockResolvedValue({
       data: { user: { id: "4978a7ef-c4a6-462d-befe-d286a38a772f" } },

@@ -253,7 +253,12 @@ export async function POST(request: Request) {
     const security = requestSecurityFailure(error);
     if (security)
       return NextResponse.json(
-        { error: security.error },
+        {
+          error:
+            security.status === 503
+              ? "Authentication is temporarily unavailable. Try again shortly."
+              : security.error,
+        },
         { status: security.status, headers: security.headers },
       );
     if (error instanceof RuntimeConfigurationError)

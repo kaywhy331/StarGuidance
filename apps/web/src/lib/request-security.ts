@@ -16,12 +16,13 @@ interface RateLimitBucket {
 
 const buckets = new Map<string, RateLimitBucket>();
 
-type RequestSecurityCode = "INVALID_ORIGIN" | "MISSING_ORIGIN" | "RATE_LIMITED";
+type RequestSecurityCode =
+  "INVALID_ORIGIN" | "MISSING_ORIGIN" | "RATE_LIMITED" | "RATE_LIMIT_UNAVAILABLE";
 
 export class RequestSecurityError extends Error {
   constructor(
     readonly code: RequestSecurityCode,
-    readonly status: 403 | 429,
+    readonly status: 403 | 429 | 503,
     readonly retryAfterSeconds?: number,
   ) {
     super(code);
@@ -30,7 +31,7 @@ export class RequestSecurityError extends Error {
 }
 
 export interface RequestSecurityFailure {
-  status: 403 | 429;
+  status: 403 | 429 | 503;
   error: string;
   headers: Record<string, string>;
 }
@@ -40,7 +41,9 @@ export function requestSecurityFailure(error: unknown): RequestSecurityFailure |
     error instanceof RequestSecurityError
       ? error.code
       : error instanceof Error &&
-          ["INVALID_ORIGIN", "MISSING_ORIGIN", "RATE_LIMITED"].includes(error.message)
+          ["INVALID_ORIGIN", "MISSING_ORIGIN", "RATE_LIMITED", "RATE_LIMIT_UNAVAILABLE"].includes(
+            error.message,
+          )
         ? (error.message as RequestSecurityCode)
         : undefined;
   if (!code) return undefined;
@@ -49,6 +52,14 @@ export function requestSecurityFailure(error: unknown): RequestSecurityFailure |
     return {
       status: 429,
       error: "Too many requests. Try again shortly.",
+      headers: { "retry-after": String(retryAfter ?? 60) },
+    };
+  }
+  if (code === "RATE_LIMIT_UNAVAILABLE") {
+    const retryAfter = error instanceof RequestSecurityError ? error.retryAfterSeconds : 60;
+    return {
+      status: 503,
+      error: "Service is temporarily unavailable. Try again shortly.",
       headers: { "retry-after": String(retryAfter ?? 60) },
     };
   }
@@ -186,10 +197,11 @@ async function assertRateLimitDistributed(
  * playwright.config.ts and vitest — no Postgres to connect to); a shared,
  * atomic Postgres check (migration 0006) on the supabase adapter, so limits
  * hold across multiple serverless instances. A distributed-path failure —
- * a connection error, not just an over-limit result — is treated as
- * RATE_LIMITED rather than allowed through: this exists to protect
- * expensive and abuse-sensitive endpoints (AI generation, auth, email), and
- * a limiter that fails open on its own outage stops being one.
+ * a connection error, not just an over-limit result — still fails closed, but
+ * is reported as an unavailable dependency rather than falsely claiming that
+ * the caller exhausted a quota. This exists to protect expensive and
+ * abuse-sensitive endpoints (AI generation, auth, email), and a limiter that
+ * fails open on its own outage stops being one.
  */
 export async function assertRateLimit(
   key: string,
@@ -203,7 +215,7 @@ export async function assertRateLimit(
     await assertRateLimitDistributed(key, limit, windowMs);
   } catch (error) {
     if (error instanceof RequestSecurityError) throw error;
-    throw new RequestSecurityError("RATE_LIMITED", 429, 60);
+    throw new RequestSecurityError("RATE_LIMIT_UNAVAILABLE", 503, 60);
   }
 }
 
