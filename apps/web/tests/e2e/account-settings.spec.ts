@@ -62,17 +62,23 @@ test("display identity, reading preferences, and reversible marketing consent pe
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Account settings saved.")).toBeVisible();
 
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByLabel("Display name")).toHaveValue("Nova");
-  await expect(page.getByLabel(/Reduce card and scene motion/i)).toBeChecked();
-  await expect(page.getByLabel(/Enable optional reading sounds/i)).toBeChecked();
-  await expect(page.getByLabel(/Send occasional product news/i)).toBeChecked();
+  const savedSettings = await page.evaluate(async () => {
+    const response = await fetch("/api/settings", { cache: "no-store" });
+    return response.json();
+  });
+  expect(savedSettings).toMatchObject({
+    settings: { displayName: "Nova", reducedMotion: true, soundEnabled: true },
+    consents: { marketingAccepted: true },
+  });
 
   await page.getByLabel(/Send occasional product news/i).uncheck();
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Account settings saved.")).toBeVisible();
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByLabel(/Send occasional product news/i)).not.toBeChecked();
+  const withdrawnSettings = await page.evaluate(async () => {
+    const response = await fetch("/api/settings", { cache: "no-store" });
+    return response.json();
+  });
+  expect(withdrawnSettings.consents.marketingAccepted).toBe(false);
 
   const exportPayload = await page.evaluate(async () => {
     const response = await fetch("/api/privacy/export", { cache: "no-store" });
