@@ -260,7 +260,7 @@ G5–G7, G30, G31, and G53 are implemented on this branch. Checkout success/canc
 - **G36. The worker/trigger pair is glued by an unverified string triplicated in three files.**
   `TOKEN_CONTEXT` in the route, its test, and the Netlify function; `netlify/functions` has zero
   tests. Editing the route + test keeps CI green while the trigger 401s forever. **Fix:** shared
-  constant importable without `postgres`; a vitest in `netlify/functions/` asserting token
+  constant importable without `postgres`; a vitest in `netlify/functions-tests/` asserting token
   equality and `config.schedule`.
 - **G37. `interpretation-worker.ts` itself is untested** (E2E pins the local adapter where it
   no-ops; the route test mocks it). **Fix:** unit tests over a faked persistence/provider —

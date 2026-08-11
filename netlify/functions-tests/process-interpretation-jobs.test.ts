@@ -1,7 +1,7 @@
 import { INTERPRETATION_WORKER_TOKEN_CONTEXT } from "@starguidance/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import handler, { config, TOKEN_CONTEXT } from "./process-interpretation-jobs.mts";
+import handler, { config, TOKEN_CONTEXT } from "../functions/process-interpretation-jobs.mts";
 
 const STRONG_SECRET = "synthetic-interpretation-worker-shared-secret";
 

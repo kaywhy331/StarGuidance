@@ -1,7 +1,7 @@
 packages:
   - apps/web
   - packages/*
-  - netlify/functions
+  - netlify
 
 allowBuilds:
   esbuild: true

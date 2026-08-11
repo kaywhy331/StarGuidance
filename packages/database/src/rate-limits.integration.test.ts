@@ -40,9 +40,13 @@ describeDatabase("Postgres-backed rate limiting", () => {
     const key = `test:${randomUUID()}`;
     // A short window keeps this well within the suite's test timeout.
     await asApp((tx) => checkRateLimit(tx, key, 1, 1_000));
-    const blocked = await asApp((tx) => checkRateLimit(tx, key, 1, 1_000));
+    let blocked = await asApp((tx) => checkRateLimit(tx, key, 1, 1_000));
+    // The window is aligned to the epoch. If the first two calls straddle its
+    // boundary, the second call legitimately opens a new bucket; make one
+    // immediate follow-up so the assertion always targets the active bucket.
+    if (blocked.allowed) blocked = await asApp((tx) => checkRateLimit(tx, key, 1, 1_000));
     expect(blocked.allowed).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    await new Promise((resolve) => setTimeout(resolve, blocked.retryAfterSeconds * 1_000 + 100));
     const afterWindow = await asApp((tx) => checkRateLimit(tx, key, 1, 1_000));
     expect(afterWindow.allowed).toBe(true);
   });

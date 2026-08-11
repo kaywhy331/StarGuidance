@@ -9,6 +9,8 @@
 
 [functions]
   directory = "netlify/functions"
+  # Keep tests outside this directory: every top-level TypeScript source is
+  # packaged as a deployable function and `.test` is not a valid function name.
   # No node_bundler/external_node_modules override: netlify/zip-it-and-ship-it#869
   # (zip-it-and-ship-it cannot resolve `postgres` at runtime for a standalone
   # Netlify Function — confirmed here across three bundler configurations)
