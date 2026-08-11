@@ -9,6 +9,13 @@ async function signIn(page: Page) {
   await page.getByLabel("Email").fill(`reader-${randomUUID()}@example.test`);
   await page.getByLabel("Password").fill("synthetic-private-password");
   await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/(consent|onboarding)$/, { timeout: 20_000 });
+  if (new URL(page.url()).pathname === "/consent") {
+    await page.getByLabel(/I accept the current Terms/i).check();
+    await page.getByLabel(/I have read the current Privacy Notice/i).check();
+    await page.getByLabel(/I confirm that I am at least 18/i).check();
+    await page.getByRole("button", { name: "Accept and continue" }).click();
+  }
   await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
 }
 
@@ -91,6 +98,14 @@ async function currentReading(page: Page) {
         draw: unknown;
         generationStatus: string;
         followUps: unknown[];
+        questionClassification: {
+          topic: string;
+          horizon: string;
+          intent: string;
+          generalReading: boolean;
+        };
+        entitlementDecision: { outcome: string; mode: string };
+        ritualProgress?: { cutTaken: boolean; revealedIndexes: number[]; phase: string };
       };
     };
   }, id);
@@ -147,6 +162,7 @@ test("an authenticated session never loops back to the credential form", async (
 test("a new user can create an account with email and password", async ({ page }) => {
   await page.goto("/sign-up");
   await page.getByLabel("Email").fill(`new-reader-${randomUUID()}@example.test`);
+  await page.getByLabel("Display name").fill("Nova");
   await page.getByLabel(/^Password/).fill("synthetic-private-password");
   await page.getByLabel("Confirm password").fill("synthetic-private-password");
   await page.getByLabel(/I agree to the versioned Terms/i).check();
@@ -265,11 +281,15 @@ test("omitted birth time never fabricates astrology or BaZi", async ({ page }) =
 });
 
 test("a reading stays pinned to the snapshot it was drawn against", async ({ page }) => {
-  await createProfile(page);
+  await createProfile(page, "all-fields");
   const before = await page.evaluate(
     async () =>
       (await fetch("/api/profile", { cache: "no-store" })).json() as Promise<{
-        profile: { snapshot: { id: string; version: number } };
+        profile: {
+          snapshot: { id: string; version: number; completeness: string };
+          birthTimeProvided: boolean;
+          birthplaceLabel?: string;
+        };
       }>,
   );
   await beginReading(page);
@@ -282,21 +302,34 @@ test("a reading stays pinned to the snapshot it was drawn against", async ({ pag
   // pointing at the version of the profile it actually interpreted.
   const sessionUrl = page.url();
   await page.goto("/onboarding");
-  await page.getByLabel("Full birth name").fill("Ada Lovelace");
-  await page.getByLabel("Date of birth").fill("1990-01-15");
+  await expect(page.getByLabel("Full birth name")).toHaveValue("Ada Lovelace");
+  await expect(page.getByLabel("Date of birth")).toHaveValue("1990-01-15");
+  await expect(page.getByLabel("Birth time")).toHaveValue("08:15");
+  await expect(page.getByLabel("Birth city / country")).toHaveValue("London, United Kingdom");
   await page.getByLabel("Birth city / country").fill("Edinburgh, United Kingdom");
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await page.getByRole("button", { name: "Save new profile snapshot" }).click();
   await expect(page).toHaveURL(/\/readings$/);
 
   const after = await page.evaluate(
     async () =>
       (await fetch("/api/profile", { cache: "no-store" })).json() as Promise<{
-        profile: { snapshot: { id: string; version: number } };
+        profile: {
+          snapshot: { id: string; version: number; completeness: string };
+          birthTimeProvided: boolean;
+          birthplaceLabel?: string;
+        };
       }>,
   );
   expect(after.profile.snapshot.id).not.toBe(before.profile.snapshot.id);
   expect(after.profile.snapshot.version).toBeGreaterThan(before.profile.snapshot.version);
+  expect(after.profile.snapshot.completeness).toBe("complete");
+  expect(after.profile.birthTimeProvided).toBe(true);
+  expect(after.profile.birthplaceLabel).toBe("Edinburgh, United Kingdom");
+
+  await page.goto("/profile");
+  await expect(page.getByText("Edinburgh, United Kingdom", { exact: true })).toBeVisible();
+  await expect(page.getByText("Complete", { exact: true })).toBeVisible();
 
   await page.goto(sessionUrl);
   const unchanged = await currentReading(page);
@@ -327,16 +360,76 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
   await createProfile(page);
   await beginReading(page);
   const before = (await currentReading(page)).reading.draw;
+  const cutProgress = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.request().postData()?.includes('"phase":"cuttingDeck"') === true,
+  );
   await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  expect((await cutProgress).status()).toBe(200);
+  const revealProgress = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.request().postData()?.includes('"phase":"revealingCards"') === true,
+  );
   await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
+  expect((await revealProgress).status()).toBe(200);
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
   await expect(page.locator(".physical-card-caption em").first()).toBeVisible();
+  const durableProgress = (await currentReading(page)).reading.ritualProgress;
+  expect(durableProgress).toMatchObject({
+    cutTaken: false,
+    revealedIndexes: [0],
+    phase: "revealingCards",
+  });
+  await page.evaluate(() => window.sessionStorage.clear());
   await page.reload();
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toHaveCount(0);
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
   const after = (await currentReading(page)).reading.draw;
   expect(after).toEqual(before);
+});
+
+test("reading intake stores topic, horizon, intent, and entitlement apart from safety", async ({
+  page,
+}) => {
+  await createProfile(page);
+  await page.getByLabel("Topic").selectOption("career");
+  await page.getByLabel("Time horizon").selectOption("months");
+  await beginReading(page, "How should I prepare for a possible new role?");
+  const intake = (await currentReading(page)).reading;
+  expect(intake.questionClassification).toMatchObject({
+    topic: "career",
+    horizon: "months",
+    intent: "decisionSupport",
+    generalReading: false,
+  });
+  expect(intake.entitlementDecision).toMatchObject({ outcome: "granted", mode: "unlimited" });
+});
+
+test("the approved general-reading path needs no custom question", async ({ page }) => {
+  await createProfile(page);
+  await page
+    .getByLabel("Use a general reading when you do not want to ask a specific question.")
+    .check();
+  await expect(page.getByLabel("Your private question")).toHaveValue(
+    "What would be most useful for me to notice and reflect on right now?",
+  );
+  const readingResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/readings",
+  );
+  await page.getByRole("button", { name: "Begin the shuffle" }).click();
+  expect((await readingResponse).status()).toBe(201);
+  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
+  expect((await currentReading(page)).reading.questionClassification).toMatchObject({
+    topic: "general",
+    horizon: "open",
+    intent: "generalReflection",
+    generalReading: true,
+  });
 });
 
 test("reduced-motion preference skips ritual transitions", async ({ page }) => {
@@ -602,6 +695,15 @@ test("Stripe test-mode report entitlement uses the credential-free local adapter
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByText(/Life Path \d+; Expression \d+/)).toBeVisible();
   await expect(page.getByText(/local test adapter/i)).toBeVisible();
+  const reportId = page.url().split("/").at(-1)!;
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download accessible PDF" }).click();
+  expect((await download).suggestedFilename()).toBe(
+    `starguidance-profile-report-${reportId.slice(0, 8)}.pdf`,
+  );
+  await page.goto("/reports");
+  await expect(page.getByRole("heading", { name: "Profile reports" })).toBeVisible();
+  await expect(page.locator(`a[href="/report/${reportId}"]`)).toBeVisible();
 });
 
 test("the standing terms are reachable from every page instead of every reading", async ({

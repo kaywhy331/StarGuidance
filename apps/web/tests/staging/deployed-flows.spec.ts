@@ -197,8 +197,8 @@ async function readingState(page: Page, id: string): Promise<ReadingResponse["re
 }
 
 async function configuredInterpretationContract(): Promise<InterpretationContract> {
-  const readinessSecret = process.env.PROFILE_ENGINE_SHARED_SECRET?.trim();
-  if (!readinessSecret) throw new Error("PROFILE_ENGINE_SHARED_SECRET is required");
+  const readinessSecret = process.env.READINESS_PROBE_SECRET?.trim();
+  if (!readinessSecret) throw new Error("READINESS_PROBE_SECRET is required");
   const readinessToken = createHmac("sha256", readinessSecret)
     .update("starguidance-readiness-v1")
     .digest("base64url");

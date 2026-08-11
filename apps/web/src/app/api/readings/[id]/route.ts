@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import {
   createInterpretationProvider,
   classifyQuestion,
+  readingLensStatements,
   selectReadingLens,
 } from "@starguidance/ai";
 import { actorTransaction, reenqueueInterpretationJob } from "@starguidance/database";
+import { ritualProgressSchema } from "@starguidance/contracts";
 import { spreads, tarotCards } from "@starguidance/tarot-content";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
 import { followUpLimit, followUpLimitMessage } from "@/lib/reading-policy";
@@ -17,7 +19,15 @@ import { getRuntimeAdapter, getSystemDatabaseClient } from "@/lib/runtime";
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("retry") }),
   z.object({ action: z.literal("followUp"), question: z.string().trim().min(1).max(500) }),
+  z.object({
+    action: z.literal("progress"),
+    phase: z.enum(["cuttingDeck", "revealingCards", "complete"]),
+    cutTaken: z.boolean(),
+    revealedIndexes: z.array(z.number().int().nonnegative()).max(7),
+  }),
 ]);
+
+const ritualPhaseRank = { cuttingDeck: 0, revealingCards: 1, complete: 2 } as const;
 
 async function ownedReading(id: string) {
   const user = await requireUser();
@@ -61,6 +71,13 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
         result: reading.result,
         outputProvenance: reading.outputProvenance,
         generationStatus: reading.generationStatus,
+        questionClassification: reading.questionClassification,
+        entitlementDecision: reading.entitlementDecision,
+        ritualProgress: reading.ritualProgress,
+        expiresAt: reading.expiresAt,
+        sessionExpired:
+          reading.ritualProgress?.phase !== "complete" &&
+          Date.now() >= Date.parse(reading.expiresAt),
         safetyClassification: reading.safetyClassification,
         followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
         followUpLimit: configuredFollowUpLimit,
@@ -106,8 +123,51 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const owned = await ownedReading((await context.params).id);
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { persistence, reading, user } = owned;
+    assertCurrentPolicyConsents(user);
     await assertRateLimit(`reading-action:${reading.userId}`, 15);
     const input = actionSchema.parse(await request.json());
+    if (input.action === "progress") {
+      if (
+        reading.ritualProgress?.phase !== "complete" &&
+        Date.now() >= Date.parse(reading.expiresAt)
+      )
+        return NextResponse.json(
+          { error: "This ritual session has expired. Its locked cards remain in history." },
+          { status: 410 },
+        );
+      const revealedIndexes = [...new Set(input.revealedIndexes)].sort((a, b) => a - b);
+      if (revealedIndexes.some((index) => index >= reading.draw.assignments.length))
+        return NextResponse.json({ error: "Invalid ritual progress." }, { status: 422 });
+      const previous = reading.ritualProgress;
+      if (
+        previous &&
+        (previous.cutTaken !== input.cutTaken ||
+          ritualPhaseRank[input.phase] < ritualPhaseRank[previous.phase] ||
+          previous.revealedIndexes.some((index) => !revealedIndexes.includes(index)))
+      )
+        return NextResponse.json(
+          { error: "Ritual progress cannot move backward or change the recorded cut." },
+          { status: 409 },
+        );
+      if (input.phase === "complete" && revealedIndexes.length !== reading.draw.assignments.length)
+        return NextResponse.json(
+          { error: "Every locked card must be revealed before the ritual is complete." },
+          { status: 422 },
+        );
+      const progress = ritualProgressSchema.parse({
+        version: "ritual-progress-v1",
+        phase: input.phase,
+        cutTaken: input.cutTaken,
+        revealedIndexes,
+        updatedAt: new Date().toISOString(),
+      });
+      await persistence.repositories.readingSessions.updateRitualProgress(
+        user.id,
+        reading.id,
+        progress,
+      );
+      return NextResponse.json({ progress });
+    }
     const provider = createInterpretationProvider();
     const snapshot = (
       await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
@@ -121,9 +181,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           draw: reading.draw,
           question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
           relevantTraitStatements: snapshot
-            ? reading.readingLens.traitIndexes.map(
-                (index) => snapshot.traits[index]?.statement ?? "",
-              )
+            ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
             : [],
         });
         await persistence.repositories.outputs.save(
@@ -180,7 +238,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     const safety = classifyQuestion(input.question);
     if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
-    const lens = selectReadingLens(input.question, snapshot?.traits ?? []);
+    const lens = selectReadingLens(
+      input.question,
+      snapshot?.traits ?? [],
+      snapshot?.tensions ?? [],
+    );
     const result = await provider.generateFollowUp({
       draw: reading.draw,
       question: input.question,
@@ -210,6 +272,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     if (error instanceof Error && error.message === "FOLLOW_UP_LIMIT_REACHED")
       return NextResponse.json({ error: followUpLimitMessage(followUpLimit()) }, { status: 409 });
+    if (error instanceof Error && error.message === POLICY_RECONSENT_REQUIRED)
+      return NextResponse.json(
+        { error: "Review the current service policies before continuing this reading." },
+        { status: 428 },
+      );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
     return NextResponse.json(
       { error: status === 401 ? "Authentication required." : "Invalid follow-up." },

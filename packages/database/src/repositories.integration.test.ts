@@ -215,6 +215,21 @@ describeDatabase("Supabase/Postgres repository isolation", () => {
     });
   });
 
+  it("records consent withdrawal without erasing the grant or crossing subjects", async () => {
+    await asUser(ids.userA, async (tx) => {
+      const rows = await tx`update consents set withdrawn_at = now()
+        where user_id = ${ids.userA} and policy = 'privacy-reflective'
+        returning policy, accepted_at, withdrawn_at`;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.accepted_at).toBeDefined();
+      expect(rows[0]?.withdrawn_at).toBeDefined();
+    });
+    await asUser(ids.userB, async (tx) => {
+      const rows = await tx`select withdrawn_at from consents where user_id = ${ids.userA}`;
+      expect(rows).toHaveLength(0);
+    });
+  });
+
   it("blocks cross-user deletes across every user-owned resource", async () => {
     const targets = [
       ["user_settings", "user_id", ids.userB],

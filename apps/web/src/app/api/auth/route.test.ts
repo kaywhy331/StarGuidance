@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const supabase = vi.hoisted(() => ({
   getUser: vi.fn(),
+  resend: vi.fn(),
   resetPasswordForEmail: vi.fn(),
   signInWithPassword: vi.fn(),
   signOut: vi.fn(),
@@ -92,6 +93,8 @@ const consents = {
   privacyVersion: "privacy-beta-2026-08-05",
   ageConfirmed: true,
   ageEligibilityVersion: "age-18-beta-2026-08-05",
+  marketingAccepted: false,
+  marketingVersion: "marketing-beta-v1",
 };
 
 beforeEach(() => {
@@ -112,6 +115,7 @@ beforeEach(() => {
     error: null,
   });
   supabase.signOut.mockResolvedValue({ error: null });
+  supabase.resend.mockResolvedValue({ error: null });
   security.recordSecurityAudit.mockResolvedValue(undefined);
 });
 
@@ -164,7 +168,13 @@ describe("email and password authentication", () => {
       error: null,
     });
     const response = await POST(
-      request({ ...credentials, action: "sign-up", email: "New.Reader@Example.Test", consents }),
+      request({
+        ...credentials,
+        action: "sign-up",
+        email: "New.Reader@Example.Test",
+        displayName: "Nova",
+        consents,
+      }),
     );
 
     expect(await response.json()).toEqual({ ok: true, authenticated: true, pending: false });
@@ -175,6 +185,7 @@ describe("email and password authentication", () => {
       "new-user",
       expect.objectContaining({
         app_metadata: expect.objectContaining({
+          starguidance_display_name: "Nova",
           starguidance_policy_consents: expect.arrayContaining([
             expect.objectContaining({ policy: "terms", version: consents.termsVersion }),
             expect.objectContaining({ policy: "privacy", version: consents.privacyVersion }),
@@ -182,6 +193,43 @@ describe("email and password authentication", () => {
               policy: "age-eligibility",
               version: consents.ageEligibilityVersion,
             }),
+          ]),
+        }),
+      }),
+    );
+    const metadata = admin.updateUserById.mock.calls[0]?.[1]?.app_metadata as {
+      starguidance_policy_consents: { policy: string }[];
+    };
+    expect(metadata.starguidance_policy_consents).not.toContainEqual(
+      expect.objectContaining({ policy: "marketing" }),
+    );
+  });
+
+  it("stores optional marketing consent independently when selected", async () => {
+    supabase.signUp.mockResolvedValue({
+      data: {
+        session: { access_token: "redacted" },
+        user: { id: "marketing-user", identities: [{ id: "identity" }], app_metadata: {} },
+      },
+      error: null,
+    });
+
+    const response = await POST(
+      request({
+        ...credentials,
+        action: "sign-up",
+        displayName: "Nova",
+        consents: { ...consents, marketingAccepted: true },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(admin.updateUserById).toHaveBeenCalledWith(
+      "marketing-user",
+      expect.objectContaining({
+        app_metadata: expect.objectContaining({
+          starguidance_policy_consents: expect.arrayContaining([
+            expect.objectContaining({ policy: "marketing", version: "marketing-beta-v1" }),
           ]),
         }),
       }),
@@ -201,7 +249,7 @@ describe("email and password authentication", () => {
     const browserHost = "deploy-preview-4--starguidance.netlify.app";
     const response = await POST(
       request(
-        { ...credentials, action: "sign-up", consents },
+        { ...credentials, action: "sign-up", displayName: "Nova", consents },
         "https://6a7389a677f16700083770ed--starguidance.netlify.app/api/auth",
         browserHost,
       ),
@@ -216,6 +264,40 @@ describe("email and password authentication", () => {
           "https://deploy-preview-4--starguidance.netlify.app/auth/callback?next=%2Fonboarding",
       },
     });
+  });
+
+  it("resends signup confirmation without requiring another registration attempt", async () => {
+    const response = await POST(
+      request({ action: "resend-confirmation", email: credentials.email }),
+    );
+
+    expect(await response.json()).toEqual({ ok: true, pending: true });
+    expect(supabase.resend).toHaveBeenCalledWith({
+      type: "signup",
+      email: credentials.email,
+      options: { emailRedirectTo: "https://synthetic.invalid/auth/callback?next=%2Fonboarding" },
+    });
+    expect(supabase.signUp).not.toHaveBeenCalled();
+  });
+
+  it("keeps resend account state private and classifies mail quota errors", async () => {
+    supabase.resend.mockResolvedValueOnce({
+      error: { code: "user_not_found", message: "private account state" },
+    });
+    const privateResponse = await POST(
+      request({ action: "resend-confirmation", email: credentials.email }),
+    );
+    expect(privateResponse.status).toBe(200);
+    expect(JSON.stringify(await privateResponse.json())).not.toContain("private account state");
+
+    supabase.resend.mockResolvedValueOnce({
+      error: { code: "over_email_send_rate_limit", message: "quota" },
+    });
+    const limited = await POST(
+      request({ action: "resend-confirmation", email: credentials.email }),
+    );
+    expect(limited.status).toBe(429);
+    expect((await limited.json()).retryable).toBe(true);
   });
 
   it("starts password recovery without exposing whether an account exists", async () => {
@@ -294,6 +376,7 @@ describe("email and password authentication", () => {
       request({
         ...credentials,
         action: "sign-up",
+        displayName: "Nova",
         consents: { ...consents, ageConfirmed: false },
       }),
     );
@@ -312,7 +395,9 @@ describe("email and password authentication", () => {
     });
     admin.updateUserById.mockResolvedValue({ error: { code: "provider_unavailable" } });
 
-    const response = await POST(request({ ...credentials, action: "sign-up", consents }));
+    const response = await POST(
+      request({ ...credentials, action: "sign-up", displayName: "Nova", consents }),
+    );
 
     expect(response.status).toBe(503);
     expect((await response.json()).error).toMatch(/incomplete account was removed/i);
@@ -331,7 +416,9 @@ describe("email and password authentication", () => {
     admin.updateUserById.mockResolvedValue({ error: { code: "provider_unavailable" } });
     admin.deleteUser.mockRejectedValue(new Error("provider timeout"));
 
-    const response = await POST(request({ ...credentials, action: "sign-up", consents }));
+    const response = await POST(
+      request({ ...credentials, action: "sign-up", displayName: "Nova", consents }),
+    );
 
     expect(response.status).toBe(503);
     expect((await response.json()).error).toMatch(/cleanup could not be confirmed/i);

@@ -9,7 +9,7 @@ import { useForm } from "react-hook-form";
 
 import { POLICY_VERSIONS } from "@/lib/policies";
 
-export function BirthProfileForm() {
+export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthProfileInput }) {
   const [consent, setConsent] = useState(false);
   const [saveError, setSaveError] = useState<string>();
   /**
@@ -23,7 +23,12 @@ export function BirthProfileForm() {
   const router = useRouter();
   const form = useForm<BirthProfileInput>({
     resolver: zodResolver(birthProfileInputSchema),
-    defaultValues: { fullBirthName: "", birthDate: "", birthplace: "", birthTime: "" },
+    defaultValues: initialProfile ?? {
+      fullBirthName: "",
+      birthDate: "",
+      birthplace: "",
+      birthTime: "",
+    },
   });
   const error = form.formState.errors;
   const submitting = form.formState.isSubmitting;
@@ -47,6 +52,7 @@ export function BirthProfileForm() {
               }),
             });
             if (response.status === 401) return router.push("/sign-in");
+            if (response.status === 428) return router.push("/consent");
             if (!response.ok) {
               const payload = (await response.json()) as { error?: string };
               setSaveError(payload.error ?? "The private profile could not be calculated.");
@@ -105,7 +111,11 @@ export function BirthProfileForm() {
           not factual prediction or professional advice.
         </label>
         <Button disabled={!consent || form.formState.isSubmitting} type="submit">
-          {form.formState.isSubmitting ? "Calculating privately…" : "Check profile capability"}
+          {form.formState.isSubmitting
+            ? "Calculating privately…"
+            : initialProfile
+              ? "Save new profile snapshot"
+              : "Check profile capability"}
         </Button>
         {submitting && stillWorking && (
           <p aria-live="polite" className="text-sm text-[#c9bfd4]">

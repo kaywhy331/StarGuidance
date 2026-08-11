@@ -12,8 +12,10 @@ describe("profile snapshot plaintext boundary", () => {
       profileId: "00000000-0000-4000-8000-000000000002",
       version: 1,
       completeness: "complete",
+      ontologyVersion: "profile-traits-v4",
       traits: [],
       tensions: [],
+      convergences: [],
       calculationVersions: {
         numerology: "test-v1",
         dreamspell: "test-v1",

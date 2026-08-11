@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export * from "./profile";
 export * from "./reading";
+export * from "./reading-session";
 
 /**
  * HMAC context string binding the Netlify-scheduled trigger

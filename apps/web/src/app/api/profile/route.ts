@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { birthProfileInputSchema } from "@starguidance/contracts";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { persistenceFor, recordAudit, saveProfileVersion } from "@/lib/persistence";
 import { POLICY_VERSIONS } from "@/lib/policies";
 import { calculateProfile } from "@/lib/profile-engine";
@@ -16,6 +16,7 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await requireUser();
+    assertCurrentPolicyConsents(user);
     await assertRateLimit(`profile:${user.id}`, 8);
     const input = profileRequestSchema.parse(await request.json());
     const calculation = await calculateProfile(input);
@@ -67,6 +68,11 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Check the four birth-profile fields and try again." },
         { status: 422 },
+      );
+    if (error instanceof Error && error.message === POLICY_RECONSENT_REQUIRED)
+      return NextResponse.json(
+        { error: "Review the current service policies before saving a profile." },
+        { status: 428 },
       );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 503;
     return NextResponse.json(

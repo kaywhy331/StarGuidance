@@ -49,6 +49,11 @@ const nextConfig: NextConfig = {
   ],
   poweredByHeader: false,
   reactStrictMode: true,
+  // PDFKit resolves its standard-font metrics from package data at runtime.
+  // Keeping it as a Node dependency lets Next/Netlify trace those AFM assets;
+  // bundling the module made the production route fall into its JSON error
+  // response even though the same renderer passed in Vitest.
+  serverExternalPackages: ["pdfkit"],
   transpilePackages: [
     "@starguidance/ai",
     "@starguidance/contracts",

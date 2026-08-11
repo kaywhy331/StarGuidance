@@ -1,9 +1,15 @@
-from profile_engine.models import ProfileRequest, UnavailableResult
+from typing import Literal
 
-CALCULATION_VERSION = "planetary-angularity-contract-v1"
+from profile_engine.models import PlanetaryAngularityUnavailable, ProfileRequest
+
+CALCULATION_VERSION: Literal["planetary-angularity-contract-v1"] = (
+    "planetary-angularity-contract-v1"
+)
 
 
-def planetary_angularity_availability(request: ProfileRequest) -> UnavailableResult:
+def planetary_angularity_availability(
+    request: ProfileRequest,
+) -> PlanetaryAngularityUnavailable:
     """Describe the activation boundary for geographic planetary angularity.
 
     A free-text birthplace is not silently treated as a coordinate or historical
@@ -18,8 +24,7 @@ def planetary_angularity_availability(request: ProfileRequest) -> UnavailableRes
     else:
         reason = "licensed_ephemeris_and_mapping_adapter_required"
 
-    return UnavailableResult(
-        capability="planetary_angularity_map",
+    return PlanetaryAngularityUnavailable(
         reason=reason,
         calculation_version=CALCULATION_VERSION,
         activation_requirements=(

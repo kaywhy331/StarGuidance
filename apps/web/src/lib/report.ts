@@ -90,35 +90,90 @@ function tensionNarrative(snapshot: ProfileSnapshot): string {
 }
 
 function convergenceNarrative(snapshot: ProfileSnapshot): string {
-  const byDomain = new Map<ProfileTrait["domain"], ProfileTrait[]>();
-  for (const trait of snapshot.traits) {
-    if (trait.stability === "unavailable") continue;
-    const group = byDomain.get(trait.domain) ?? [];
-    group.push(trait);
-    byDomain.set(trait.domain, group);
-  }
-  const convergences = [...byDomain.entries()].filter(
-    ([, traits]) => new Set(traits.map(({ sourceSystem }) => sourceSystem)).size > 1,
-  );
-  if (convergences.length === 0)
-    return "This snapshot contains no same-domain agreement from two independently represented systems. StarGuidance does not manufacture convergence from unrelated traits.";
-  return convergences
-    .map(
-      ([domain, traits]) =>
-        `${domain}: ${traits.map(({ statement }) => statement).join(" / ")} (Sources: ${traits.map(provenance).join("; ")}.)`,
-    )
+  if (snapshot.convergences.length === 0)
+    return "This snapshot contains no explicit, versioned agreement from two independently represented systems. StarGuidance does not manufacture convergence from unrelated traits.";
+  return snapshot.convergences
+    .map((convergence) => {
+      const traits = convergence.traitIndexes
+        .map((index) => snapshot.traits[index])
+        .filter((trait): trait is ProfileTrait => Boolean(trait));
+      const observations = traits.map(({ statement }) => statement).join(" / ");
+      const sources = traits.map(provenance).join("; ");
+      return `${convergence.domain}: ${convergence.summary}${observations ? ` Observations: ${observations}` : ""} (Confidence: ${convergence.confidence}${sources ? `; sources: ${sources}` : ""}.)`;
+    })
     .join(" ");
 }
 
-function planetaryAngularityStatus(source: ProfileReportSource): string {
-  switch (source.calculation.planetary_angularity.reason) {
-    case "precise_birth_time_required":
-      return "Planetary angular lines require a supplied birth time. Without one, StarGuidance does not invent rising, setting, culmination, or anti-culmination locations.";
-    case "validated_birthplace_context_required":
-      return "The birth time is present, but validated coordinates and historical timezone context are not. No city coordinate or UTC instant was guessed.";
-    default:
-      return "Planetary angularity mapping remains unavailable until the ephemeris license, location resolver, and independent line-reference suite are approved. No place is labeled lucky, difficult, or destined without a calculated line.";
+function displayToken(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+function westernAstrologySection(source: ProfileReportSource): StoredReportSection {
+  const result = source.calculation.western_astrology;
+  if (result.status === "unavailable") {
+    return section(
+      "astrology",
+      "Unavailable until ephemeris licensing, calculation conventions, and independent golden references are approved.",
+      true,
+    );
   }
+
+  const placidus =
+    result.house_systems.placidus.status === "available"
+      ? "Placidus houses were calculated."
+      : `Placidus houses are explicitly unavailable (${displayToken(result.house_systems.placidus.reason)}).`;
+  return section(
+    "astrology",
+    `The validated ${result.zodiac} calculation contains ${result.planetary_positions.length} planetary positions and ${result.aspects.length} aspects. Ascendant ${result.angles.ascendant.longitude_degrees.toFixed(2)}°; Midheaven ${result.angles.midheaven.longitude_degrees.toFixed(2)}°. Whole Sign houses were calculated. ${placidus} Calculation ${result.calculation_version}; ${result.uncertainty.status}.`,
+  );
+}
+
+function baziSection(source: ProfileReportSource): StoredReportSection {
+  const result = source.calculation.bazi;
+  if (result.status === "unavailable") {
+    return section(
+      "bazi",
+      "Unavailable until boundary conventions and independent golden references receive domain-expert approval.",
+      true,
+    );
+  }
+
+  const pillars = Object.entries(result.pillars)
+    .map(
+      ([name, pillar]) =>
+        `${name} ${displayToken(pillar.heavenly_stem)}-${displayToken(pillar.earthly_branch)}`,
+    )
+    .join("; ");
+  return section(
+    "bazi",
+    `${pillars}. Year boundary ${displayToken(result.conventions.year_boundary)}; month boundary ${displayToken(result.conventions.month_boundary)}; true solar time ${displayToken(result.conventions.true_solar_time)}; Zi-hour day boundary ${result.conventions.zi_hour_day_boundary}. Calculation ${result.calculation_version}; ${result.uncertainty.status}.`,
+  );
+}
+
+function planetaryAngularitySection(source: ProfileReportSource): StoredReportSection {
+  const result = source.calculation.planetary_angularity;
+  if (result.status === "available") {
+    return section(
+      "planetary-angularity",
+      `The validated WGS84 calculation contains ${result.lines.length} angular lines and ${result.crossings.length} recorded crossings under interpretation policy ${result.interpretation_policy_version}. These are calculated geometric relationships, not guarantees that any place is lucky, difficult, or destined. Calculation ${result.calculation_version}; ${result.uncertainty.status}.`,
+    );
+  }
+
+  let body: string;
+  switch (result.reason) {
+    case "precise_birth_time_required":
+      body =
+        "Planetary angular lines require a supplied birth time. Without one, StarGuidance does not invent rising, setting, culmination, or anti-culmination locations.";
+      break;
+    case "validated_birthplace_context_required":
+      body =
+        "The birth time is present, but validated coordinates and historical timezone context are not. No city coordinate or UTC instant was guessed.";
+      break;
+    default:
+      body =
+        "Planetary angularity mapping remains unavailable until the ephemeris license, location resolver, and independent line-reference suite are approved. No place is labeled lucky, difficult, or destined without a calculated line.";
+  }
+  return section("planetary-angularity", body, true);
 }
 
 export function buildProfileReportSections(source: ProfileReportSource): StoredReportSection[] {
@@ -184,11 +239,7 @@ export function buildProfileReportSections(source: ProfileReportSource): StoredR
         "Use the grounded integration prompts below; this snapshot does not supply a validated growth-lever trait.",
       ),
     ),
-    section(
-      "astrology",
-      "Unavailable until ephemeris licensing, calculation conventions, and independent golden references are approved.",
-      true,
-    ),
+    westernAstrologySection(source),
     section(
       "numerology",
       calculation.numerology.name_calculation_status !== "unavailable" &&
@@ -198,11 +249,7 @@ export function buildProfileReportSections(source: ProfileReportSource): StoredR
         ? `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`
         : `Life Path ${calculation.numerology.life_path}; Birthday ${calculation.numerology.birthday}. Name-derived values are unavailable for this writing system and were not fabricated. Calculated with ${calculation.numerology.algorithm_version}.`,
     ),
-    section(
-      "bazi",
-      "Unavailable until boundary conventions and independent golden references receive domain-expert approval.",
-      true,
-    ),
+    baziSection(source),
     section(
       "dreamspell",
       `Kin ${calculation.dreamspell.kin}: ${calculation.dreamspell.tone_name} ${calculation.dreamspell.solar_seal_name} (${calculation.dreamspell.color}). Calculated with ${calculation.dreamspell.algorithm_version}; production certification and content-rights review remain pending.`,
@@ -211,7 +258,7 @@ export function buildProfileReportSections(source: ProfileReportSource): StoredR
       "nine-star-ki",
       `Principal ${calculation.nine_star_ki.principal_star.number} ${calculation.nine_star_ki.principal_star.phase}; Character ${calculation.nine_star_ki.character_star.number} ${calculation.nine_star_ki.character_star.phase}; derived Energy ${calculation.nine_star_ki.energy_star.number} ${calculation.nine_star_ki.energy_star.phase}. ${nineStarTraits} This uses ${calculation.nine_star_ki.algorithm_version}; independent reference review remains pending.`,
     ),
-    section("planetary-angularity", planetaryAngularityStatus(source), true),
+    planetaryAngularitySection(source),
     section("cross-system-convergence", convergenceNarrative(snapshot)),
     section("cross-system-contradictions", tensionNarrative(snapshot)),
     section(

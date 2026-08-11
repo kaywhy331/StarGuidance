@@ -1,9 +1,15 @@
 import {
   followUpResultSchema,
   oracleStreamEventSchema,
+  questionClassificationSchema,
   readingResultSchema,
   type FollowUpResult,
+  type ProfileLifeDomain,
+  type ProfileTension,
+  type QuestionClassification,
+  type ReadingHorizon,
   type OracleStreamEvent,
+  type ReadingTopic,
   type ProfileTrait,
   type ReadingOutputProvenance,
   type ReadingResult,
@@ -65,7 +71,10 @@ export type SafetyCategory =
   | "compulsiveReading";
 
 const rules: readonly [SafetyCategory, RegExp][] = [
-  ["selfHarmCrisis", /\b(kill myself|suicide|end my life|hurt myself)\b/i],
+  [
+    "selfHarmCrisis",
+    /\b(?:kill|harm|hurt) myself\b|\b(?:suicid(?:e|al)|self[- ]harm|end (?:it all|my life)|take my own life|(?:do not|don['’]t) want to (?:live|be alive)|better off dead|wish i (?:was|were) dead|no reason to live|planning to overdose)\b/i,
+  ],
   ["pregnancy", /\b(pregnan(t|cy)|miscarriage)\b/i],
   ["physicalDeath", /\b(will .* die|death date|going to die)\b/i],
   ["criminalGuilt", /\b(guilty|committed (the )?crime|murdered|stole)\b/i],
@@ -92,7 +101,7 @@ export function classifyQuestion(question: string): {
       category,
       interrupt: true,
       guidance:
-        "Pause the reading and connect the person with immediate local crisis or emergency support.",
+        "If you may act on thoughts of suicide or self-harm, call emergency services now or use one of the crisis resources below. You do not need to handle this alone.",
     };
   if (category === "ordinary")
     return {
@@ -114,6 +123,39 @@ export function classifyQuestion(question: string): {
   };
 }
 
+const inferredTopics: readonly [ReadingTopic, RegExp][] = [
+  ["career", /\b(work|career|job|business|project|lead|role)\b/i],
+  ["relationships", /\b(love|relationship|partner|friend|family|communicat|conflict)\b/i],
+  ["change", /\b(change|move|choice|direction|transition|future|next)\b/i],
+  ["wellbeing", /\b(wellbeing|well-being|balance|rest|energy|habit|stress)\b/i],
+];
+
+export function classifyQuestionContext(
+  question: string,
+  input: { topic: ReadingTopic; horizon: ReadingHorizon; generalReading: boolean },
+): QuestionClassification {
+  const topic =
+    input.generalReading || input.topic !== "general"
+      ? input.topic
+      : (inferredTopics.find(([, pattern]) => pattern.test(question))?.[0] ?? "general");
+  const intent = input.generalReading
+    ? "generalReflection"
+    : /\b(choose|choice|decid|should i|which path)\b/i.test(question)
+      ? "decisionSupport"
+      : /\b(plan|prepare|next step|approach)\b/i.test(question)
+        ? "planning"
+        : /\b(feel|emotion|process|grief|conflict)\b/i.test(question)
+          ? "emotionalProcessing"
+          : "clarity";
+  return questionClassificationSchema.parse({
+    version: "question-classification-v1",
+    topic,
+    horizon: input.horizon,
+    intent,
+    generalReading: input.generalReading,
+  });
+}
+
 export interface ReadingGenerationInput {
   readonly draw: LockedDraw;
   readonly question: string;
@@ -125,45 +167,123 @@ export interface FollowUpGenerationInput extends ReadingGenerationInput {
 }
 
 export interface ReadingLens {
-  readonly version: "question-trait-lens-v1";
+  readonly version: "question-trait-lens-v2";
   readonly traitIndexes: readonly number[];
+  readonly tensionIndexes: readonly number[];
   readonly statements: readonly string[];
 }
 
-const questionDomains: readonly [RegExp, readonly ProfileTrait["domain"][]][] = [
-  [
-    /\b(work|career|job|business|project|lead|decision)\b/i,
-    ["workStyle", "decisionStyle", "riskOrientation", "creativeExpression"],
-  ],
-  [
-    /\b(love|relationship|partner|friend|family|communicat|conflict)\b/i,
-    ["relationshipNeeds", "communicationStyle", "conflictResponse", "emotionalProcessing"],
-  ],
-  [
-    /\b(change|move|choice|direction|future|next)\b/i,
-    ["stabilityVsChange", "growthLever", "decisionStyle", "coreMotivation"],
-  ],
+interface LensFocus {
+  readonly pattern?: RegExp;
+  readonly lifeDomain: ProfileLifeDomain;
+  readonly traitDomains: readonly ProfileTrait["domain"][];
+}
+
+const questionDomains: readonly LensFocus[] = [
+  {
+    pattern: /\b(work|career|job|business|project|lead|decision)\b/i,
+    lifeDomain: "career",
+    traitDomains: [
+      "workStyle",
+      "decisionStyle",
+      "riskOrientation",
+      "creativeExpression",
+      "communicationStyle",
+    ],
+  },
+  {
+    pattern: /\b(love|relationship|partner|friend|family|communicat|conflict)\b/i,
+    lifeDomain: "relationships",
+    traitDomains: [
+      "relationshipNeeds",
+      "communicationStyle",
+      "conflictResponse",
+      "emotionalProcessing",
+      "socialOrientation",
+    ],
+  },
+  {
+    pattern: /\b(change|move|choice|direction|future|next)\b/i,
+    lifeDomain: "change",
+    traitDomains: [
+      "stabilityVsChange",
+      "growthLever",
+      "decisionStyle",
+      "coreMotivation",
+      "riskOrientation",
+    ],
+  },
 ];
 
-export function selectReadingLens(question: string, traits: readonly ProfileTrait[]): ReadingLens {
-  const preferred = questionDomains.find(([pattern]) => pattern.test(question))?.[1] ?? [
-    "coreMotivation",
-    "growthLever",
-    "communicationStyle",
-  ];
+const generalFocus: LensFocus = {
+  lifeDomain: "general",
+  traitDomains: ["coreMotivation", "growthLever"],
+};
+
+const confidenceRank: Record<ProfileTrait["confidence"], number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+function tensionLensStatement(tension: ProfileTension): string {
+  return `Tension to hold: ${tension.sideA} At the same time, ${tension.sideB}`;
+}
+
+export function readingLensStatements(
+  lens: { readonly traitIndexes: readonly number[]; readonly tensionIndexes?: readonly number[] },
+  traits: readonly ProfileTrait[],
+  tensions: readonly ProfileTension[] = [],
+): readonly string[] {
+  return [
+    ...lens.traitIndexes.map((index) => traits[index]?.statement),
+    ...(lens.tensionIndexes ?? []).map((index) => {
+      const tension = tensions[index];
+      return tension ? tensionLensStatement(tension) : undefined;
+    }),
+  ].filter((statement): statement is string => Boolean(statement));
+}
+
+export function selectReadingLens(
+  question: string,
+  traits: readonly ProfileTrait[],
+  tensions: readonly ProfileTension[] = [],
+): ReadingLens {
+  const focus = questionDomains.find(({ pattern }) => pattern?.test(question)) ?? generalFocus;
+  const relevantTensions = tensions
+    .map((tension, index) => ({ tension, index }))
+    .filter(({ tension }) => tension.lifeDomains.includes(focus.lifeDomain))
+    .filter(({ tension }) =>
+      tension.traitIndexes.every((index) => traits[index]?.stability === "stable"),
+    )
+    .slice(0, 1);
+  const traitLimit = relevantTensions.length > 0 ? 2 : 3;
   const ranked = traits
     .map((trait, index) => ({ trait, index }))
-    .filter(({ trait }) => trait.stability === "stable")
+    .filter(
+      ({ trait }) =>
+        trait.stability === "stable" &&
+        trait.lifeDomains.includes(focus.lifeDomain) &&
+        focus.traitDomains.includes(trait.domain),
+    )
     .sort((left, right) => {
-      const leftRank = preferred.indexOf(left.trait.domain);
-      const rightRank = preferred.indexOf(right.trait.domain);
-      return (leftRank < 0 ? 99 : leftRank) - (rightRank < 0 ? 99 : rightRank);
+      const domainDifference =
+        focus.traitDomains.indexOf(left.trait.domain) -
+        focus.traitDomains.indexOf(right.trait.domain);
+      if (domainDifference !== 0) return domainDifference;
+      const confidenceDifference =
+        confidenceRank[left.trait.confidence] - confidenceRank[right.trait.confidence];
+      if (confidenceDifference !== 0) return confidenceDifference;
+      const strengthDifference = right.trait.strength - left.trait.strength;
+      return strengthDifference === 0 ? left.index - right.index : strengthDifference;
     })
-    .slice(0, 3);
+    .slice(0, traitLimit);
+  const tensionStatements = relevantTensions.map(({ tension }) => tensionLensStatement(tension));
   return {
-    version: "question-trait-lens-v1",
+    version: "question-trait-lens-v2",
     traitIndexes: ranked.map(({ index }) => index),
-    statements: ranked.map(({ trait }) => trait.statement),
+    tensionIndexes: relevantTensions.map(({ index }) => index),
+    statements: [...ranked.map(({ trait }) => trait.statement), ...tensionStatements],
   };
 }
 

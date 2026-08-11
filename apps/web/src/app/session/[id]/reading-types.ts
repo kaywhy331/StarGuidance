@@ -1,8 +1,11 @@
 import type { SafetyCategory } from "@starguidance/ai";
 import type {
   FollowUpResult,
+  QuestionClassification,
+  ReadingEntitlementDecision,
   ReadingOutputProvenance,
   ReadingResult,
+  StoredRitualProgress,
 } from "@starguidance/contracts";
 import type { LockedDraw, TarotArtwork } from "@starguidance/tarot-domain";
 
@@ -25,6 +28,11 @@ export interface ReadingPayload {
   result?: ReadingResult;
   outputProvenance?: ReadingOutputProvenance;
   generationStatus: "pending" | "ready" | "failed";
+  questionClassification: QuestionClassification;
+  entitlementDecision: ReadingEntitlementDecision;
+  ritualProgress?: StoredRitualProgress;
+  expiresAt: string;
+  sessionExpired: boolean;
   /** The category `classifyQuestion()` (@starguidance/ai) assigned at creation. */
   safetyClassification?: SafetyCategory;
   followUps: { id: string; result: FollowUpResult }[];

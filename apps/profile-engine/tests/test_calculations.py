@@ -152,14 +152,34 @@ def test_trait_synthesis_preserves_source_and_uncertainty() -> None:
     dreamspell = calculate_dreamspell(date(1815, 12, 10))
     nine_star_ki = calculate_nine_star_ki(date(1815, 12, 10))
 
-    traits, tensions = synthesize_traits(numerology, dreamspell, nine_star_ki)
+    traits, tensions, convergences = synthesize_traits(numerology, dreamspell, nine_star_ki)
 
-    assert len(traits) == 8
+    assert len(traits) >= 13
     assert all(trait.source_rule for trait in traits)
-    assert all(trait.stability == "stable" for trait in traits[:4])
-    assert all(trait.stability == "uncertain" for trait in traits[4:])
+    assert all(0 <= trait.strength <= 1 for trait in traits)
+    assert all(trait.life_domains for trait in traits)
+    assert all(trait.confidence in {"low", "medium", "high"} for trait in traits)
+    assert {trait.domain for trait in traits}.issuperset(
+        {
+            "coreMotivation",
+            "decisionStyle",
+            "riskOrientation",
+            "stabilityVsChange",
+            "growthLever",
+            "creativeExpression",
+            "relationshipNeeds",
+            "communicationStyle",
+            "conflictResponse",
+            "workStyle",
+            "emotionalProcessing",
+            "socialOrientation",
+        }
+    )
     assert [trait.source_system for trait in traits[-3:]] == ["nineStarKi"] * 3
     assert len(tensions) <= 1
+    assert len(convergences) <= 1
+    if convergences:
+        assert len(set(convergences[0].source_systems)) == 2
 
 
 def test_nine_star_ki_matches_versioned_golden_examples() -> None:

@@ -8,6 +8,24 @@ Authenticated browsers receive Supabase's `authenticated` role for Auth only. Mi
 
 The server-only `DATABASE_URL` role must be able to `SET LOCAL ROLE starguidance_app`; migration 0004 grants that membership to the migration role. Service repositories run only for the Stripe webhook and other explicit operator boundaries. Health, isolated Postgres tests, and protected staging verify both positive server-role access and negative browser-role access. A deployment fails health if `authenticated` can select a user, update a draw, or insert an entitlement.
 
+## Role-separated queue diagnostics and recovery
+
+An authorized operator can inspect both durable queues without opening application records or emitting raw failures:
+
+```bash
+pnpm --filter @starguidance/database jobs:inspect
+```
+
+Provide `DATABASE_URL` only through the operator shell or managed secret store. The command is read-only and returns aggregate counts by queue status plus a closed set of failure classes. SQL converts every legacy or unexpected `last_error` to `interpretation_unclassified` or `report_unclassified` before it leaves Postgres. It never returns user/reading/report/job IDs, questions, report text, encrypted source, URLs, exception messages, or credentials.
+
+The authenticated `/operations` surface applies a narrower server-only role boundary:
+
+- `SUPPORT_USER_IDS` is a comma-separated UUID allowlist. Support sees the same aggregate queue health, read-only effective AI/report/allowance configuration, and exact opaque trace lookup. A trace returns only the entered UUID plus matching entity type, status, and creation timestamp—never user IDs, questions, profile facts, report content, encrypted values, or raw errors.
+- `OPERATOR_USER_IDS` is a separate UUID allowlist whose members inherit support visibility and may retry only a retained job currently locked in `failed`. The row is checked under a database lock, requests are same-origin and limited to 12 per operator per hour, and the retry plus its `operations.job.retried` audit receipt commit atomically.
+- A malformed allowlist fails operational access closed. Neither role can change model, prompt, content, product, deck, spread, or allowance configuration in the browser. Apply and roll back those changes through reviewed deployment configuration.
+
+Use opaque IDs only when a person has supplied the relevant reading/report/order reference through an approved support channel. Do not ask for screenshots containing questions or birth data. Named role owners, staff offboarding, periodic access review, and production incident escalation remain launch responsibilities.
+
 ## Data-encryption key rotation
 
 `DATA_ENCRYPTION_KEY` is the current write key. `DATA_ENCRYPTION_KEYS_PREVIOUS` accepts at most three comma-separated rollback keys during a bounded rotation. Reads try current then previous; all writes use current. Keys must be canonical base64 for exactly 32 random bytes.
@@ -74,8 +92,8 @@ No duration is silently selected in code. The approved policy must assign an own
 | Completed interpretation jobs                           | Result lives in reading outputs; the job row is operational residue                                                                         | Pruned by the scheduled drain after 24 hours                                |
 | Completed report jobs                                   | Structured sections live in report tables; the encrypted source is already cleared                                                          | Pruned by the scheduled drain after 24 hours                                |
 | Expired rate-limit buckets                              | Garbage past their own `expires_at`                                                                                                         | Pruned by the scheduled drain; tool clears backlog                          |
-| Failed interpretation jobs (dead letter)                | Only record of a job that gave up; never pruned automatically                                                                               | Explicit-cutoff inventory/delete tool implemented                           |
-| Failed report jobs                                      | Retains the encrypted minimized source so the paid report can be retried                                                                    | No automatic deletion; finance/privacy policy and operator tooling required |
+| Failed interpretation jobs (dead letter)                | Only record of a job that gave up; never pruned automatically                                                                               | Masked inspection and audited retained-job retry implemented                |
+| Failed report jobs                                      | Retains the encrypted minimized source so the paid report can be retried                                                                    | Masked inspection/retry implemented; deletion awaits finance/privacy policy |
 | Hosted logs and backups                                 | Provider-controlled                                                                                                                         | Dashboard/contract approval required                                        |
 
 The retention tool defaults to inventory. It can delete only audit events and completed webhook claims; a test prevents it from targeting profiles, readings, reports, orders, or entitlements. Use exact past UTC cutoffs and a non-sensitive approved policy identifier:

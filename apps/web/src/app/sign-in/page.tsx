@@ -19,7 +19,11 @@ export default async function SignInPage({
   let authenticatedDestination: string | undefined;
   try {
     const user = await requireUser();
-    authenticatedDestination = user.profile ? "/readings" : "/onboarding";
+    authenticatedDestination = user.requiresPolicyReconsent
+      ? "/consent"
+      : user.profile
+        ? "/readings"
+        : "/onboarding";
   } catch {
     // Rendering the sign-in form is the correct anonymous and fail-closed path.
   }

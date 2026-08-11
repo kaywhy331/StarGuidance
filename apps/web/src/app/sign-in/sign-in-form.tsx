@@ -29,7 +29,7 @@ export function SignInForm({ initialError }: { initialError?: string | undefined
         const payload = (await response.json()) as { authenticated?: boolean; error?: string };
         setSubmitting(false);
         if (!response.ok) return setError(payload.error ?? "Unable to sign in securely.");
-        router.push("/onboarding");
+        router.push("/consent");
         router.refresh();
       }}
     >

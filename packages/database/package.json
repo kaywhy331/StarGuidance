@@ -23,6 +23,7 @@
     "key-rotation": "tsx scripts/rotate-encryption-key.ts",
     "restore:fixture": "tsx scripts/restore-fixture.ts",
     "retention": "tsx scripts/apply-retention.ts",
+    "jobs:inspect": "tsx scripts/inspect-job-queues.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },

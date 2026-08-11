@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -37,13 +38,12 @@ export const consents = pgTable(
     policy: text("policy").notNull(),
     policyVersion: text("policy_version").notNull(),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull(),
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("consent_policy_version_unique").on(
-      table.userId,
-      table.policy,
-      table.policyVersion,
-    ),
+    uniqueIndex("consent_active_policy_version_unique")
+      .on(table.userId, table.policy, table.policyVersion)
+      .where(sql`${table.withdrawnAt} is null`),
   ],
 );
 export const birthProfiles = pgTable(
@@ -166,6 +166,20 @@ export const readingSessions = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     encryptedQuestion: text("encrypted_question").notNull(),
     readingLens: jsonb("reading_lens").notNull(),
+    questionClassification: jsonb("question_classification")
+      .default(
+        sql`'{"version":"question-classification-v1","topic":"general","horizon":"open","intent":"generalReflection","generalReading":false}'::jsonb`,
+      )
+      .notNull(),
+    entitlementDecision: jsonb("entitlement_decision")
+      .default(
+        sql`'{"version":"reading-entitlement-v1","mode":"unlimited","outcome":"granted","entitlementClass":"standard","used":0,"limit":null,"remaining":null,"windowStartsAt":null,"windowEndsAt":null}'::jsonb`,
+      )
+      .notNull(),
+    ritualProgress: jsonb("ritual_progress"),
+    expiresAt: timestamp("expires_at", { withTimezone: true })
+      .default(sql`now() + interval '24 hours'`)
+      .notNull(),
     safetyClassification: text("safety_classification").notNull(),
     state: text("state").notNull(),
     createdAt,

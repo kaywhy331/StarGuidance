@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
+  assertCurrentPolicyConsents: vi.fn(),
   assertRateLimit: vi.fn(),
   assertSameOrigin: vi.fn(),
   createCheckoutSession: vi.fn(),
@@ -30,6 +31,8 @@ vi.mock("stripe", () => ({
 
 vi.mock("@/lib/auth", () => ({
   requireUser: mocks.requireUser,
+  assertCurrentPolicyConsents: mocks.assertCurrentPolicyConsents,
+  POLICY_RECONSENT_REQUIRED: "POLICY_RECONSENT_REQUIRED",
 }));
 
 vi.mock("@/lib/persistence", () => ({

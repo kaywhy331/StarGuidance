@@ -2,8 +2,11 @@ import type {
   FollowUpResult,
   ProfileSnapshot,
   ProfileTrait,
+  QuestionClassification,
+  ReadingEntitlementDecision,
   ReadingOutputProvenance,
   ReadingResult,
+  StoredRitualProgress,
 } from "@starguidance/contracts";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
@@ -24,6 +27,7 @@ export interface ConsentRecord {
   policy: string;
   version: string;
   grantedAt: string;
+  withdrawnAt?: string;
 }
 
 export interface StoredProfileVersion {
@@ -48,6 +52,7 @@ export interface ProfileTraitRecord {
 export interface ReadingLensRecord {
   version: string;
   traitIndexes: readonly number[];
+  tensionIndexes?: readonly number[];
 }
 
 export interface StoredFollowUp {
@@ -73,6 +78,10 @@ export interface StoredReading {
   idempotencyKey: string;
   profileSnapshotId: string;
   readingLens: ReadingLensRecord;
+  questionClassification: QuestionClassification;
+  entitlementDecision: ReadingEntitlementDecision;
+  ritualProgress?: StoredRitualProgress;
+  expiresAt: string;
   spreadId: string;
   encryptedQuestion: string;
   safetyClassification: string;
@@ -145,6 +154,7 @@ export interface SettingsRepository {
 export interface ConsentRepository {
   list(userId: string): Promise<ConsentRecord[]>;
   grant(userId: string, consent: ConsentRecord): Promise<void>;
+  withdraw(userId: string, policy: string, withdrawnAt: string): Promise<boolean>;
 }
 
 export interface BirthProfileRepository {
@@ -176,6 +186,11 @@ export interface ReadingSessionRepository {
     userId: string,
     readingId: string,
     status: StoredReading["generationStatus"],
+  ): Promise<void>;
+  updateRitualProgress(
+    userId: string,
+    readingId: string,
+    progress: StoredRitualProgress,
   ): Promise<void>;
 }
 

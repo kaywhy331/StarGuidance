@@ -7,6 +7,11 @@ async function signIn(page: Page) {
   await page.getByLabel("Email").fill(`reader-${randomUUID()}@example.test`);
   await page.getByLabel("Password").fill("synthetic-private-password");
   await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/consent$/, { timeout: 20_000 });
+  await page.getByLabel(/I accept the current Terms/i).check();
+  await page.getByLabel(/I have read the current Privacy Notice/i).check();
+  await page.getByLabel(/I confirm that I am at least 18/i).check();
+  await page.getByRole("button", { name: "Accept and continue" }).click();
   await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
 }
 
@@ -47,7 +52,7 @@ test("a crisis-flagged question pauses with real resources instead of the old in
   await expect(page.getByLabel("Your private question")).toHaveCount(0);
   await expect(
     page.getByText(
-      "Pause the reading and connect the person with immediate local crisis or emergency support.",
+      "If you may act on thoughts of suicide or self-harm, call emergency services now or use one of the crisis resources below. You do not need to handle this alone.",
     ),
   ).toBeVisible();
   // The heading text differs by detected locale (US/UK/international — see
@@ -68,14 +73,24 @@ test("a guarded question pauses before the shuffle, then can continue as reflect
       new URL(response.url()).pathname === "/api/readings",
   );
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
-  expect((await readingResponse).status()).toBe(201);
-  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
+  const preflight = await readingResponse;
+  expect(preflight.status()).toBe(409);
+  expect(await preflight.json()).not.toHaveProperty("readingId");
+  await expect(page).toHaveURL(/\/readings$/);
 
-  // GUARDED_CATEGORIES pauses here instead of shuffling straight in (distinct
-  // from the selfHarmCrisis interrupt above: this is paced, not blocked).
+  // The acknowledgement happens before a reading, draw, or generation job is
+  // created. Only the explicit second request may lock cards.
   await expect(page.getByText(/This question touches something the cards/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Begin the shuffle" })).toHaveCount(0);
+  const acknowledgedResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/readings" &&
+      response.status() === 201,
+  );
   await page.getByRole("button", { name: "Continue as reflection", exact: true }).click();
+  expect((await acknowledgedResponse).status()).toBe(201);
+  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
 
   await finishRitual(page);
 

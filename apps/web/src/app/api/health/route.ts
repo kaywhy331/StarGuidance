@@ -20,6 +20,7 @@ const REQUIRED_STAGING_ENVIRONMENT = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "PROFILE_ENGINE_URL",
   "PROFILE_ENGINE_SHARED_SECRET",
+  "READINESS_PROBE_SECRET",
   // Load-bearing since migration 0007: the drain route
   // (api/internal/interpretation-jobs) rejects every request when this is
   // absent or weak, and NEXT_PUBLIC_APP_URL is what the Netlify-scheduled
@@ -66,9 +67,9 @@ function runtimeAdapter(): string {
 const READINESS_TOKEN_CONTEXT = "starguidance-readiness-v1";
 
 function readinessAuthorized(request: Request): boolean {
-  const secret = process.env.PROFILE_ENGINE_SHARED_SECRET;
+  const secret = process.env.READINESS_PROBE_SECRET;
   const authorization = request.headers.get("authorization");
-  if (!secret || !authorization?.startsWith("Bearer ")) return false;
+  if (!secret || isWeakSharedSecret(secret) || !authorization?.startsWith("Bearer ")) return false;
   const received = authorization.slice("Bearer ".length);
   const expected = createHmac("sha256", secret).update(READINESS_TOKEN_CONTEXT).digest("base64url");
   const receivedBytes = Buffer.from(received);
@@ -308,6 +309,10 @@ export async function GET(request: Request) {
   if (configured("INTERPRETATION_WORKER_SECRET")) {
     if (isWeakSharedSecret(process.env.INTERPRETATION_WORKER_SECRET))
       invalidEnvironmentVariables.push("INTERPRETATION_WORKER_SECRET");
+  }
+  if (configured("READINESS_PROBE_SECRET")) {
+    if (isWeakSharedSecret(process.env.READINESS_PROBE_SECRET))
+      invalidEnvironmentVariables.push("READINESS_PROBE_SECRET");
   }
   // A dependency address that is not a base URL is a configuration fault, and
   // reporting it here is the difference between "the engine is down" and "the

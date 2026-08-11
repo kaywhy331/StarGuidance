@@ -6,7 +6,7 @@ This procedure is intentionally credential-gated. Use an explicitly non-producti
 
 Applied migrations are immutable. A correction is always a new migration; `packages/database/tests/migration-integrity.test.ts` pins the digest of every applied file so an edit fails a test instead of silently diverging databases that already ran it.
 
-Migration 0005 removes the legacy plaintext birth metadata copy from every existing profile snapshot, adds a request idempotency key to locked readings, and initially enforces one profile root per user plus one follow-up per reading. Its preflight refuses ambiguous duplicate roots/follow-ups instead of silently deleting or choosing records. Migration 0011 adds active deck/spread controls and replaces the singleton follow-up index with a non-unique reading index; the server then serializes count-and-insert on the owned reading row and enforces `READING_FOLLOW_UP_LIMIT` (default 1). Migration 0012 adds the forced-RLS paid-report queue and makes order, entitlement, and report snapshot pointers nullable with `ON DELETE SET NULL`; migration 0013 stages an encrypted minimized report source on a pending Checkout order so a paid purchase can recover after profile deletion.
+Migration 0005 removes the legacy plaintext birth metadata copy from every existing profile snapshot, adds a request idempotency key to locked readings, and initially enforces one profile root per user plus one follow-up per reading. Its preflight refuses ambiguous duplicate roots/follow-ups instead of silently deleting or choosing records. Migration 0011 adds active deck/spread controls and replaces the singleton follow-up index with a non-unique reading index; the server then serializes count-and-insert on the owned reading row and enforces `READING_FOLLOW_UP_LIMIT` (default 1). Migration 0012 adds the forced-RLS paid-report queue and makes order, entitlement, and report snapshot pointers nullable with `ON DELETE SET NULL`; migration 0013 stages an encrypted minimized report source on a pending Checkout order so a paid purchase can recover after profile deletion. Migration 0014 adds account preferences and consent withdrawals; 0015 preserves grant/withdraw/re-grant history while allowing only one active grant; 0016 persists structured question classification, the versioned entitlement decision, monotonic ritual progress, and session expiry.
 
 ## How an application user comes into existence
 
@@ -35,8 +35,12 @@ Configure these for the Netlify **Deploy Previews** context:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `PROFILE_ENGINE_URL`
 - `PROFILE_ENGINE_SHARED_SECRET`
+- `READINESS_PROBE_SECRET`
 - `INTERPRETATION_WORKER_SECRET`
 - `NEXT_PUBLIC_APP_URL`
+- `READING_ACCESS_MODE`, `READING_FREE_ALLOWANCE`, and `READING_ALLOWANCE_WINDOW_HOURS`
+- `READING_SESSION_TTL_MINUTES`
+- `SUPPORT_USER_IDS` and `OPERATOR_USER_IDS` only when named synthetic/staff identities are approved for operational verification
 
 `APP_ENV=staging` and `RUNTIME_ADAPTER=supabase` are non-secret build values committed in `netlify.toml`. Netlify serverless functions do not receive configuration-file values at runtime, so configure the same names and values in the Netlify UI for the **Deploy Previews** context with **Functions** scope. `DEPLOY_PRIME_URL` is build-only; runtime Auth redirects use the request origin on Netlify previews. Add the deploy-preview callback wildcard and exact staging callback to Supabase Auth redirect allowlists.
 
@@ -54,11 +58,11 @@ Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and b
 1. Confirm the target project name/ref twice and confirm it contains no production data.
 2. Confirm only that `DATABASE_URL` and `DATABASE_INTEGRATION_URL` are present in the operator shell; do not print their values.
 3. Run `corepack pnpm --filter @starguidance/database staging:migration-history`, which runs `drizzle-kit check` and the migration-immutability assertions.
-4. Run `corepack pnpm db:migrate` with the authorized staging `DATABASE_URL`, then confirm no `sync_authenticated_user_after_insert` trigger and no `public.sync_authenticated_user()` function remain, migration 0005's three unique indexes exist, and both background queues have forced RLS plus subject-bound actor policies.
+4. Run `corepack pnpm db:migrate` with the authorized staging `DATABASE_URL`, then confirm no `sync_authenticated_user_after_insert` trigger and no `public.sync_authenticated_user()` function remain, migration 0005's lineage/idempotency indexes exist, migration 0015 has one partial unique index for active consent rather than an all-history uniqueness constraint, migration 0016's intake/recovery columns exist, and both background queues have forced RLS plus subject-bound actor policies.
 5. Run `corepack pnpm db:seed` twice with the same URL and confirm the second execution is idempotent.
 6. Run `corepack pnpm --filter @starguidance/database test:integration` and `corepack pnpm --filter @starguidance/web test:integration` with `DATABASE_INTEGRATION_URL`. CI performs both with an isolated Postgres service; the latter directly verifies the atomic paid-report repository transaction after profile deletion and on webhook replay.
 7. Confirm `/health` on the hosted profile engine and one unauthorized/authorized synthetic compute pair. Record the hostname and status results only. A suspended free instance can need a long cold start; that is not the same as unreachable.
-   7a. Confirm public web `/api/health` returns dependency-free liveness and the commit under test. The protected suite then derives the readiness bearer as base64url HMAC-SHA256 over `starguidance-readiness-v1`, keyed by `PROFILE_ENGINE_SHARED_SECRET`, and calls `/api/health?readiness=1`. It never sends the raw shared secret to web readiness or records either bearer. The suite waits up to ten minutes for the expected build and refuses to verify an earlier one.
+   7a. Confirm public web `/api/health` returns dependency-free liveness and the commit under test. The protected suite then derives the readiness bearer as base64url HMAC-SHA256 over `starguidance-readiness-v1`, keyed by the dedicated `READINESS_PROBE_SECRET`, and calls `/api/health?readiness=1`. It never sends a raw shared secret to web readiness or records the bearer. The suite waits up to ten minutes for the expected build and refuses to verify an earlier one. `PROFILE_ENGINE_SHARED_SECRET` remains exclusive to calculator authentication.
 8. Create two temporary Supabase Auth users through an operator-only process. Do not use real people or personal email addresses. Confirm the Admin API returns a success status rather than 500, and that no `public.users` row exists for either subject until the application is first used.
 
    Synthetic addresses use the reserved `starguidance.test` domain. RFC 6761 guarantees `.test` can never resolve, so no message can reach a person, and unlike `example.com` it passes Supabase's email validator — Supabase rejects `example.com` outright with `email_address_invalid`, which silently prevented every synthetic identity from being created. `packages/database/tests/synthetic-addresses.test.ts` pins both properties.

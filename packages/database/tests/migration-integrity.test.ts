@@ -72,6 +72,11 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0011_reading_flow_controls": "07de96da150bacd6f3e028165508ddcc4d94c49b420fc5d5985f303b4f54c823",
   "0012_commerce_report_jobs": "ae71077d80d026d3cd14738521908d4aa4499b3dd2a30517adbfd8f6d115f8ff",
   "0013_checkout_report_source": "94c13c7badf5be7b7ebd86111c2c8970e724ffa15968104fd5771d60e9e0b54d",
+  "0014_account_consent_settings":
+    "79dab4d38987a7d32b807760a25d3e06d09f4a33fcebcd98ff965744737c277c",
+  "0015_consent_event_history": "826a4e1a4f186f96640ad661df47b7c6d7fce9ea8d3dd5a42d126b80f19a9b16",
+  "0016_reading_intake_recovery":
+    "783c256a90a1a8500a31ef9c12b83fd9e4020891fc612a99e2e374ed0fb8d1b6",
 };
 
 describe("migration history", () => {
@@ -79,6 +84,33 @@ describe("migration history", () => {
     for (const [tag, expected] of Object.entries(IMMUTABLE_DIGESTS)) {
       expect(digest(tag), `${tag}.sql was edited after it was applied`).toBe(expected);
     }
+  });
+
+  it("retains consent grants while recording reversible withdrawal (0014)", () => {
+    const sql = executableSql("0014_account_consent_settings");
+    expect(sql).toMatch(/alter table "consents" add column "withdrawn_at"/i);
+    expect(sql).not.toMatch(/drop|delete/i);
+  });
+
+  it("preserves every consent cycle while allowing only one active grant (0015)", () => {
+    const sql = executableSql("0015_consent_event_history");
+    expect(sql).toMatch(/drop\s+index\s+"consent_policy_version_unique"/i);
+    expect(sql).toMatch(
+      /create\s+unique\s+index\s+"consent_active_policy_version_unique"[\s\S]*where[\s\S]*withdrawn_at[\s\S]*is\s+null/i,
+    );
+    expect(sql).not.toMatch(/delete\s+from\s+"?consents"?/i);
+  });
+
+  it("stores intake classification, entitlement, expiry, and recovery separately (0016)", () => {
+    const sql = executableSql("0016_reading_intake_recovery");
+    for (const column of [
+      "question_classification",
+      "entitlement_decision",
+      "ritual_progress",
+      "expires_at",
+    ])
+      expect(sql).toMatch(new RegExp(`add column "${column}"`, "i"));
+    expect(sql).not.toMatch(/drop|delete/i);
   });
 
   it("orders the corrective migration after the migration that created the trigger", () => {

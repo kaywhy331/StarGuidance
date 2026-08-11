@@ -1353,16 +1353,30 @@ a {
 
   .sanctuary-controls {
     align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .sanctuary-controls > span {
+    min-width: 0;
+    margin-left: auto;
+    overflow-wrap: anywhere;
+    text-align: right;
   }
 
   .sanctuary-control-group {
+    flex: 1 0 100%;
+    max-width: 100%;
     justify-content: flex-end;
   }
 
   .sanctuary-control-group button {
+    max-width: 100%;
     min-height: 2rem;
     padding: 0.3rem 0.55rem;
     font-size: 0.62rem;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .sanctuary-controls a {

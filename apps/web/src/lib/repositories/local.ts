@@ -18,6 +18,7 @@ import type {
   StoredReport,
   UserSettingsRecord,
 } from "@starguidance/database";
+import type { StoredRitualProgress } from "@starguidance/contracts";
 
 import { assertLocalAdapter, localStore } from "../local-store";
 
@@ -77,17 +78,28 @@ export function createLocalRepositories(): ApplicationRepositories {
         policy: record.policy,
         version: record.version,
         grantedAt: record.grantedAt,
+        ...(record.withdrawnAt ? { withdrawnAt: record.withdrawnAt } : {}),
       }));
     },
     async grant(userId: string, consent: ConsentRecord) {
       const user = localStore.users.get(userId);
       if (!user) throw new Error("USER_NOT_FOUND");
-      if (
-        !user.consentRecords.some(
-          ({ policy, version }) => policy === consent.policy && version === consent.version,
-        )
-      )
-        user.consentRecords.push(consent);
+      const active = user.consentRecords.find(
+        ({ policy, version, withdrawnAt }) =>
+          policy === consent.policy && version === consent.version && !withdrawnAt,
+      );
+      if (!active) user.consentRecords.push({ ...consent });
+    },
+    async withdraw(userId: string, policy: string, withdrawnAt: string) {
+      const user = localStore.users.get(userId);
+      if (!user) throw new Error("USER_NOT_FOUND");
+      let changed = false;
+      for (const consent of user.consentRecords)
+        if (consent.policy === policy && !consent.withdrawnAt) {
+          consent.withdrawnAt = withdrawnAt;
+          changed = true;
+        }
+      return changed;
     },
   };
 
@@ -222,6 +234,11 @@ export function createLocalRepositories(): ApplicationRepositories {
       const reading = ownedReading(userId, readingId);
       if (!reading) throw new Error("READING_NOT_FOUND");
       reading.generationStatus = status;
+    },
+    async updateRitualProgress(userId: string, readingId: string, progress: StoredRitualProgress) {
+      const reading = ownedReading(userId, readingId);
+      if (!reading) throw new Error("READING_NOT_FOUND");
+      reading.ritualProgress = structuredClone(progress);
     },
   };
 

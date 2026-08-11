@@ -28,6 +28,7 @@ const SECRET_VALUES = {
   SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-role-key",
   PROFILE_ENGINE_URL: "https://profile-engine.synthetic.invalid",
   PROFILE_ENGINE_SHARED_SECRET: "synthetic-profile-engine-shared-secret",
+  READINESS_PROBE_SECRET: "synthetic-readiness-probe-shared-secret",
   AI_PROVIDER_API_KEY: "synthetic-ai-provider-key",
   INTERPRETATION_WORKER_SECRET: "synthetic-interpretation-worker-shared-secret",
   NEXT_PUBLIC_APP_URL: "https://app.synthetic.invalid",
@@ -49,7 +50,7 @@ function livenessRequest(): Request {
 }
 
 function readinessRequest(authorized = true): Request {
-  const token = createHmac("sha256", SECRET_VALUES.PROFILE_ENGINE_SHARED_SECRET)
+  const token = createHmac("sha256", SECRET_VALUES.READINESS_PROBE_SECRET)
     .update("starguidance-readiness-v1")
     .digest("base64url");
   return new Request("https://synthetic.invalid/api/health?readiness=1", {
@@ -255,5 +256,20 @@ describe("deployment health", () => {
     expect(await unauthorized.json()).toEqual({ status: "unauthorized", kind: "readiness" });
     expect(database.client.unsafe).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not accept the profile-engine credential at the readiness trust boundary", async () => {
+    configureStaging();
+    const wrongDomainToken = createHmac("sha256", SECRET_VALUES.PROFILE_ENGINE_SHARED_SECRET)
+      .update("starguidance-readiness-v1")
+      .digest("base64url");
+    const response = await GET(
+      new Request("https://synthetic.invalid/api/health?readiness=1", {
+        headers: { authorization: `Bearer ${wrongDomainToken}` },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(database.client.unsafe).not.toHaveBeenCalled();
   });
 });

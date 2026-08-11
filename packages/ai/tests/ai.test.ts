@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { OracleStreamEvent } from "@starguidance/contracts";
+import type { OracleStreamEvent, ProfileTrait } from "@starguidance/contracts";
 import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
 import { createLockedDraw } from "@starguidance/tarot-domain";
 import {
   classifyQuestion,
+  classifyQuestionContext,
   createFollowUpStreamEvents,
   createOracleStreamEvents,
   DeterministicFallbackProvider,
@@ -19,38 +20,87 @@ const draw = createLockedDraw({
 });
 
 describe("AI boundary", () => {
-  it("selects a small stable question-relevant lens without exposing raw calculations", () => {
+  const trait = (
+    domain: ProfileTrait["domain"],
+    statement: string,
+    lifeDomains: ProfileTrait["lifeDomains"],
+    overrides: Partial<ProfileTrait> = {},
+  ): ProfileTrait => ({
+    domain,
+    statement,
+    sourceSystem: "numerology",
+    sourceRule: `test.${domain}`,
+    calculationVersion: "test-v2",
+    stability: "stable",
+    direction: "mixed",
+    strength: 0.8,
+    confidence: "high",
+    lifeDomains,
+    ...overrides,
+  });
+
+  it("selects only career-relevant traits and permits fewer than three", () => {
     const lens = selectReadingLens("What should I consider in my career?", [
-      {
-        domain: "relationshipNeeds",
-        statement: "relationship trait",
-        sourceSystem: "numerology",
-        sourceRule: "test.relationship",
-        calculationVersion: "test-v1",
-        stability: "stable",
-      },
-      {
-        domain: "workStyle",
-        statement: "work trait",
-        sourceSystem: "numerology",
-        sourceRule: "test.work",
-        calculationVersion: "test-v1",
-        stability: "stable",
-      },
-      {
-        domain: "creativeExpression",
-        statement: "uncertain trait",
+      trait("relationshipNeeds", "relationship trait", ["relationships"]),
+      trait("decisionStyle", "career decision trait", ["career", "change"]),
+      trait("creativeExpression", "uncertain trait", ["career", "creativity"], {
         sourceSystem: "dreamspell",
-        sourceRule: "test.uncertain",
-        calculationVersion: "test-v1",
         stability: "uncertain",
+        confidence: "low",
+      }),
+    ]);
+    expect(lens).toMatchObject({
+      version: "question-trait-lens-v2",
+      statements: ["career decision trait"],
+      traitIndexes: [1],
+    });
+  });
+  it.each([
+    ["How can I communicate with my partner?", "relationship trait"],
+    ["What can help me navigate this change?", "change trait"],
+  ] as const)("selects a deterministic lens for %s", (question, expected) => {
+    const lens = selectReadingLens(question, [
+      trait("relationshipNeeds", "relationship trait", ["relationships"]),
+      trait("stabilityVsChange", "change trait", ["change"]),
+      trait("workStyle", "career trait", ["career"]),
+    ]);
+    expect(lens.statements).toEqual([expected]);
+  });
+  it("includes a relevant preserved tension without exceeding three lens statements", () => {
+    const traits = [
+      trait("coreMotivation", "independent momentum", ["general", "change"]),
+      trait("creativeExpression", "collaborative expression", ["career", "creativity"]),
+      trait("decisionStyle", "career decision trait", ["career"]),
+    ];
+    const lens = selectReadingLens("What should I consider in my career?", traits, [
+      {
+        id: "independence-vs-collaboration",
+        sideA: traits[0]!.statement,
+        sideB: traits[1]!.statement,
+        traitIndexes: [0, 1],
+        lifeDomains: ["career"],
       },
     ]);
-    expect(lens.statements[0]).toBe("work trait");
-    expect(lens.statements).not.toContain("uncertain trait");
+    expect(lens.tensionIndexes).toEqual([0]);
+    expect(lens.statements).toHaveLength(3);
+    expect(lens.statements.at(-1)).toContain("Tension to hold:");
   });
   it("interrupts crisis and compulsive rereading language", () => {
-    expect(classifyQuestion("I want to kill myself").interrupt).toBe(true);
+    for (const question of [
+      "I want to kill myself",
+      "I don't want to be alive",
+      "I think everyone would be better off dead without me",
+      "I wish I were dead",
+      "I have no reason to live",
+      "I'm planning to overdose",
+      "I might self-harm tonight",
+      "I want to take my own life",
+    ]) {
+      const safety = classifyQuestion(question);
+      expect(safety.category, question).toBe("selfHarmCrisis");
+      expect(safety.interrupt, question).toBe(true);
+      expect(safety.guidance, question).toMatch(/you/i);
+    }
     expect(classifyQuestion("Can I keep redrawing the same question again?").category).toBe(
       "compulsiveReading",
     );
@@ -58,6 +108,28 @@ describe("AI boundary", () => {
   it("reframes high-stakes and private third-party claims", () => {
     expect(classifyQuestion("Should I buy this crypto?").category).toBe("financial");
     expect(classifyQuestion("Is she cheating?").category).toBe("infidelity");
+  });
+  it("classifies topic, intent, and horizon separately from safety", () => {
+    expect(
+      classifyQuestionContext("Should I prepare to take a new role at work?", {
+        topic: "general",
+        horizon: "months",
+        generalReading: false,
+      }),
+    ).toEqual({
+      version: "question-classification-v1",
+      topic: "career",
+      horizon: "months",
+      intent: "decisionSupport",
+      generalReading: false,
+    });
+    expect(
+      classifyQuestionContext("", {
+        topic: "general",
+        horizon: "open",
+        generalReading: true,
+      }),
+    ).toMatchObject({ topic: "general", intent: "generalReflection", generalReading: true });
   });
   it("returns a schema-valid deterministic fallback from the same draw", async () => {
     const result = await new DeterministicFallbackProvider().generate({

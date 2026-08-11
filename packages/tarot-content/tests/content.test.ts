@@ -38,6 +38,9 @@ describe("tarot content integrity", () => {
   it("defines four ordered spreads without duplicate positions", () => {
     expect(spreads.map(({ positions }) => positions.length)).toEqual([1, 3, 5, 7]);
     for (const spread of spreads) {
+      expect(spread.purpose.length).toBeGreaterThan(20);
+      expect(spread.estimatedMinutes).toBeGreaterThan(0);
+      expect(spread.entitlementClass).toBe("standard");
       expect(new Set(spread.positions.map(({ id }) => id)).size).toBe(spread.positions.length);
       expect(spread.positions.map(({ order }) => order)).toEqual(
         spread.positions.map((_, index) => index),

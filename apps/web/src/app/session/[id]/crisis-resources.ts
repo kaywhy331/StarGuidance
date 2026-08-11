@@ -11,63 +11,9 @@
  * international fallback rather than a wrong-country number and nothing else.
  */
 
-export interface CrisisContact {
-  readonly label: string;
-  readonly detail: string;
-  readonly href?: string;
-}
+import { CRISIS_RESOURCE_SETS, type CrisisResourceSet } from "@/config/crisis-resources.v1";
 
-export interface CrisisResourceSet {
-  readonly region: "us" | "uk" | "international";
-  readonly heading: string;
-  readonly contacts: readonly CrisisContact[];
-}
-
-const US: CrisisResourceSet = {
-  region: "us",
-  heading: "Immediate support in the United States",
-  contacts: [
-    {
-      label: "988 Suicide & Crisis Lifeline",
-      detail: "Call or text 988 — free and available 24/7",
-      href: "tel:988",
-    },
-    {
-      label: "Crisis Text Line",
-      detail: "Text HOME to 741741",
-      href: "sms:741741&body=HOME",
-    },
-  ],
-};
-
-const UK: CrisisResourceSet = {
-  region: "uk",
-  heading: "Immediate support in the UK and Ireland",
-  contacts: [
-    {
-      label: "Samaritans",
-      detail: "Call 116 123 — free and available 24/7",
-      href: "tel:116123",
-    },
-    {
-      label: "Shout",
-      detail: "Text SHOUT to 85258",
-      href: "sms:85258&body=SHOUT",
-    },
-  ],
-};
-
-const INTERNATIONAL: CrisisResourceSet = {
-  region: "international",
-  heading: "Immediate support",
-  contacts: [
-    {
-      label: "Find A Helpline",
-      detail: "findahelpline.com lists crisis lines by country",
-      href: "https://findahelpline.com",
-    },
-  ],
-};
+export type { CrisisContact, CrisisResourceSet } from "@/config/crisis-resources.v1";
 
 /**
  * Picks a resource set from a BCP-47 locale tag (e.g. `navigator.language`).
@@ -76,8 +22,9 @@ const INTERNATIONAL: CrisisResourceSet = {
  * back to the international set rather than guessing.
  */
 export function crisisResourcesForLocale(locale?: string): CrisisResourceSet {
-  const region = locale?.split("-")[1]?.toUpperCase();
-  if (region === "US") return US;
-  if (region === "GB" || region === "IE") return UK;
-  return INTERNATIONAL;
+  const parts = locale?.trim().split("-").filter(Boolean) ?? [];
+  const region = (parts.length === 1 ? parts[0] : parts.at(-1))?.toUpperCase();
+  if (region === "US") return CRISIS_RESOURCE_SETS.us;
+  if (region === "GB" || region === "IE") return CRISIS_RESOURCE_SETS.uk;
+  return CRISIS_RESOURCE_SETS.international;
 }

@@ -114,8 +114,21 @@ export function assertSameOrigin(request: Request): void {
  */
 export function clientRateLimitKey(request: Request): string {
   const netlifyRuntime = process.env.NETLIFY === "true" || process.env.APP_ENV === "test";
-  const candidate = netlifyRuntime
-    ? request.headers.get("x-nf-client-connection-ip")?.trim().toLowerCase()
+  const configuredHeader = process.env.TRUSTED_CLIENT_IP_HEADER?.trim().toLowerCase();
+  const approvedTrustedHeaders = new Set([
+    "cf-connecting-ip",
+    "fly-client-ip",
+    "fastly-client-ip",
+    "true-client-ip",
+    "x-real-ip",
+  ]);
+  const trustedHeader = netlifyRuntime
+    ? "x-nf-client-connection-ip"
+    : configuredHeader && approvedTrustedHeaders.has(configuredHeader)
+      ? configuredHeader
+      : undefined;
+  const candidate = trustedHeader
+    ? request.headers.get(trustedHeader)?.trim().toLowerCase()
     : undefined;
   if (!candidate) return "client:unresolved";
   const mappedIpv4 = candidate.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1];

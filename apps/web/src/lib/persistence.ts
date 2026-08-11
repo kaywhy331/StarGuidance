@@ -66,8 +66,10 @@ export async function saveProfileVersion(
     profileId: active?.snapshot.profileId ?? randomUUID(),
     version: (active?.snapshot.version ?? 0) + 1,
     completeness: getProfileCompleteness(input),
+    ontologyVersion: calculation.ontology_version,
     traits: calculation.mappedTraits,
     tensions: calculation.mappedTensions,
+    convergences: calculation.mappedConvergences,
     calculationVersions: {
       numerology: calculation.numerology.algorithm_version,
       dreamspell: calculation.dreamspell.algorithm_version,
@@ -98,12 +100,20 @@ export async function saveProfileVersion(
       ] as const
     ).map(([system, component]) => ({
       system,
-      status: component.status,
-      payload: {
-        reason: component.reason,
-        calculationVersion: component.calculation_version,
-        activationRequirements: component.activation_requirements,
-      },
+      status:
+        component.status === "available" ? ("implemented" as const) : ("unavailable" as const),
+      payload:
+        component.status === "available"
+          ? {
+              calculationVersion: component.calculation_version,
+              evidence: component.evidence,
+              uncertainty: component.uncertainty,
+            }
+          : {
+              reason: component.reason,
+              calculationVersion: component.calculation_version,
+              activationRequirements: component.activation_requirements,
+            },
     })),
   ];
   const profile: StoredProfileVersion = {

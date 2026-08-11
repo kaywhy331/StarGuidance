@@ -53,6 +53,11 @@ const prohibitedClaims: readonly { code: string; pattern: RegExp }[] = [
     pattern:
       /\b(?:he|she|they|your partner)\s+(?:is|are)\s+hiding\s+(?:a|the|something|their)\b|\b(?:his|her|their)\s+secret (?:motive|is)\b/i,
   },
+  {
+    code: "invented-profile-value",
+    pattern:
+      /\b(?:your|you have(?: an?)?)\s+(?:(?:life path|expression|soul urge|personality|birthday)(?:\s+number)?\s+(?:is\s+)?(?:\d{1,3})|(?:sun|moon|rising|ascendant|midheaven)(?:\s+sign)?\s+(?:is\s+|in\s+)[a-z]+|(?:dreamspell\s+)?kin\s+(?:is\s+)?\d{1,3}|bazi\s+(?:day|year|month|hour)?\s*pillar\s+(?:is\s+)?[a-z]+|(?:principal|character|energy)\s+(?:nine star ki\s+)?star\s+(?:is\s+)?\d)\b|\byou(?:'re| are)\s+(?:a|an)\s+(?:aries|taurus|gemini|cancer|leo|virgo|libra|scorpio|sagittarius|capricorn|aquarius|pisces)\s+(?:sun|moon|rising)\b/i,
+  },
 ];
 
 function collectStrings(value: unknown, output: string[]): void {

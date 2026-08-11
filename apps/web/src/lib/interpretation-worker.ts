@@ -10,7 +10,7 @@ import {
   type ClaimedInterpretationJob,
   type DatabaseClient,
 } from "@starguidance/database";
-import { createInterpretationProvider } from "@starguidance/ai";
+import { createInterpretationProvider, readingLensStatements } from "@starguidance/ai";
 
 import { persistenceFor } from "./persistence";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "./runtime";
@@ -19,6 +19,27 @@ export interface InterpretationJobsRunSummary {
   claimed: number;
   succeeded: number;
   failed: number;
+}
+
+export function interpretationFailureCode(error: unknown): string {
+  if (!(error instanceof Error)) return "interpretation_generation_failed";
+  if (error.message === "INTERPRETATION_JOB_READING_MISSING")
+    return "interpretation_reading_missing";
+  if (error.message.includes("authenticate")) return "interpretation_source_authentication_failed";
+  if (error.name === "ZodError" || error instanceof SyntaxError)
+    return "interpretation_source_invalid";
+  if (error.message === "request-timeout") return "interpretation_provider_timeout";
+  const providerFailureClasses: Readonly<Record<string, string>> = {
+    authentication: "interpretation_provider_authentication",
+    "rate-limited": "interpretation_provider_rate_limited",
+    "provider-unavailable": "interpretation_provider_unavailable",
+    "request-rejected": "interpretation_provider_request_rejected",
+    "invalid-response": "interpretation_provider_invalid_response",
+    "unsafe-response": "interpretation_provider_unsafe_response",
+  };
+  const providerFailureClass = providerFailureClasses[error.message];
+  if (providerFailureClass) return providerFailureClass;
+  return "interpretation_generation_failed";
 }
 
 /**
@@ -38,7 +59,7 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
       await persistence.repositories.profileSnapshots.get(job.userId, reading.profileSnapshotId)
     )?.snapshot;
     const relevantTraitStatements = snapshot
-      ? reading.readingLens.traitIndexes.map((index) => snapshot.traits[index]?.statement ?? "")
+      ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
       : [];
     const generated = await createInterpretationProvider().generateWithProvenance({
       draw: reading.draw,
@@ -56,8 +77,7 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
     await completeInterpretationJob(sql, job.id);
     return true;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown interpretation job failure.";
-    const { terminal } = await failInterpretationJob(sql, job, message);
+    const { terminal } = await failInterpretationJob(sql, job, interpretationFailureCode(error));
     if (terminal)
       await actorTransaction(sql, job.userId, (tx) =>
         markReadingGenerationFailed(tx, { userId: job.userId, readingId: job.readingId }),

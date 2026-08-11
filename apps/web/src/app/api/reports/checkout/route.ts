@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
-import { requireUser } from "@/lib/auth";
+import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { persistenceFor } from "@/lib/persistence";
 import { generateProfileReport, prepareProfileReportSource } from "@/lib/report";
 import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
@@ -50,6 +50,7 @@ export async function POST(request: Request) {
         { status: 404 },
       );
     const user = await requireUser();
+    assertCurrentPolicyConsents(user);
     await assertRateLimit(`checkout:${user.id}`, 6);
     const persistence = persistenceFor(user);
     const submittedKey = request.headers.get("idempotency-key");
@@ -247,6 +248,11 @@ export async function POST(request: Request) {
     const reason = error instanceof Error ? error.message : "";
     if (reason === "UNAUTHENTICATED")
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    if (reason === POLICY_RECONSENT_REQUIRED)
+      return NextResponse.json(
+        { error: "Review the current service policies before purchasing a report." },
+        { status: 428 },
+      );
     if (reason === "INVALID_ORIGIN" || reason === "MISSING_ORIGIN")
       return NextResponse.json({ error: "Request origin was rejected." }, { status: 403 });
     if (reason === "RATE_LIMITED")

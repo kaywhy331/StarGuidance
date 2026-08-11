@@ -270,6 +270,9 @@ export const spreads: readonly Spread[] = [
   {
     id: "focus",
     name: "Single Card — Focus",
+    purpose: "A concise reflection on what deserves your attention now.",
+    estimatedMinutes: 3,
+    entitlementClass: "standard",
     version: "focus-v1",
     allowReversals: true,
     optionalCut: true,
@@ -278,6 +281,9 @@ export const spreads: readonly Spread[] = [
   {
     id: "direction",
     name: "Three Cards — Direction",
+    purpose: "See the present situation, its central challenge, and a possible direction.",
+    estimatedMinutes: 7,
+    entitlementClass: "standard",
     version: "direction-v1",
     allowReversals: true,
     optionalCut: true,
@@ -290,6 +296,9 @@ export const spreads: readonly Spread[] = [
   {
     id: "crossroads",
     name: "Five Cards — Crossroads",
+    purpose: "Compare two paths, the influences around them, and the leverage you retain.",
+    estimatedMinutes: 12,
+    entitlementClass: "standard",
     version: "crossroads-v1",
     allowReversals: true,
     optionalCut: true,
@@ -304,6 +313,9 @@ export const spreads: readonly Spread[] = [
   {
     id: "outlook",
     name: "Seven Cards — Deeper Outlook",
+    purpose: "Explore a layered situation, its pressures, and a conditional longer view.",
+    estimatedMinutes: 18,
+    entitlementClass: "standard",
     version: "outlook-v1",
     allowReversals: true,
     optionalCut: true,

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createOracleStreamEvents } from "@starguidance/ai";
 import type { FollowUpResult, OracleStreamEvent } from "@starguidance/contracts";
 
-import { useReadingPreferences } from "@/lib/reading-preferences";
+import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
 
 import { MysticSanctuaryScene } from "../../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../../session/[id]/oracle-transcript";
@@ -16,7 +16,13 @@ import { TarotSpreadStage } from "../../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 
-export function ReadingResultScene({ readingId }: { readingId: string }) {
+export function ReadingResultScene({
+  initialPreferences,
+  readingId,
+}: {
+  initialPreferences?: ReadingPreferenceSeed;
+  readingId: string;
+}) {
   const router = useRouter();
   const [reading, setReading] = useState<ReadingPayload>();
   const [error, setError] = useState<string>();
@@ -28,7 +34,8 @@ export function ReadingResultScene({ readingId }: { readingId: string }) {
   const [resonance, setResonance] = useState(0);
   const [comment, setComment] = useState("");
   const [feedbackLoading, setFeedbackLoading] = useState(false);
-  const { reducedMotion, sound, toggleReducedMotion, toggleSound } = useReadingPreferences();
+  const { displayName, reducedMotion, sound, toggleReducedMotion, toggleSound } =
+    useReadingPreferences(initialPreferences);
 
   useEffect(() => {
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
@@ -68,6 +75,10 @@ export function ReadingResultScene({ readingId }: { readingId: string }) {
         error?: string;
         safety?: { guidance: string };
       };
+      if (response.status === 428) {
+        router.push("/consent");
+        return;
+      }
       if (!response.ok || !payload.followUp)
         throw new Error(payload.safety?.guidance ?? payload.error ?? "Unable to answer follow-up.");
       setReading({
@@ -139,6 +150,7 @@ export function ReadingResultScene({ readingId }: { readingId: string }) {
         <Link className="sanctuary-exit" href="/history">
           ← History
         </Link>
+        <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
         <div className="sanctuary-control-group">
           <button aria-pressed={reducedMotion} onClick={toggleReducedMotion} type="button">
             Reduced motion <span>{reducedMotion ? "on" : "off"}</span>

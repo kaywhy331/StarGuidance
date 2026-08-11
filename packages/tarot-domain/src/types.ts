@@ -44,6 +44,9 @@ export interface SpreadPosition {
 export interface Spread {
   readonly id: string;
   readonly name: string;
+  readonly purpose: string;
+  readonly estimatedMinutes: number;
+  readonly entitlementClass: "standard";
   readonly version: string;
   readonly allowReversals: boolean;
   readonly optionalCut: boolean;

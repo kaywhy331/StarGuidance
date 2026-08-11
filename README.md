@@ -1,6 +1,6 @@
 # StarGuidance
 
-StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The safe beta supports email/password accounts, private onboarding, immutable profile snapshots, four reading types, recoverable locked rituals, direct finished-reading views, deterministic interpretation fallback, configurable same-draw follow-ups, repeat-reading cooldowns, private feedback, history, and privacy controls. A 17-section profile-report preview, test Checkout lifecycle, durable report fulfillment, and structured printable report are implemented behind a default-off release gate; owner commerce/PDF gates still block public launch.
+StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The safe beta supports email/password accounts, private onboarding and profile correction, immutable profile snapshots, four reading types, structured topic/intent/horizon intake, a question-free general-reading path, high-stakes confirmation before any draw, server-recoverable locked rituals, direct finished-reading views, deterministic interpretation fallback, configurable same-draw follow-ups and reading allowances, private feedback, history, and privacy controls. A 17-section profile report, purchased-report history, test Checkout lifecycle, durable fulfillment, and authenticated tagged PDF are implemented behind a default-off release gate; owner commerce, accessibility-review, and production-provider gates still block public launch.
 
 The reading ritual uses an original responsive cosmic Gothic sanctuary, card-specific illustrated faces, a physical 3D card system, and an authenticated streaming oracle transcript. See [artwork provenance](docs/ARTWORK-PROVENANCE.md) for sources, prompts, rights boundaries, hashes, and performance budgets.
 
@@ -22,7 +22,11 @@ The reading ritual uses an original responsive cosmic Gothic sanctuary, card-spe
 
 The credential-free adapter remains available only when `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, and the environment is local development/test. It is rejected in Netlify deploy previews and production. Every release candidate must pass the owner-credentialed staging migration and Auth-backed two-user workflow at the exact commit being promoted; the reproducible procedure remains in [Supabase staging](docs/SUPABASE-STAGING.md).
 
-Western astrology, BaZi, and planetary-angularity mapping return typed unavailable results. Dreamspell is deterministic but remains uncertified pending an approved reference dataset and rights review. Nine Star Ki deterministically returns versioned Principal, Character, and Lo Shu-derived Energy numbers with original interpretation copy; its independent convention review remains pending. No placeholder chart facts are returned, and proprietary systems that forbid the intended use are omitted.
+Western astrology, BaZi, and planetary-angularity mapping return typed unavailable results. Their service contracts also define the fully evidenced `available` variants an approved adapter must satisfy, so activation cannot bypass validation or substitute placeholder facts. Dreamspell is deterministic but remains uncertified pending an approved reference dataset and rights review. Nine Star Ki deterministically returns versioned Principal, Character, and Lo Shu-derived Energy numbers with original interpretation copy; its independent convention review remains pending. Proprietary systems that forbid the intended use are omitted.
+
+## Configuration
+
+Copy `.env.example` to `.env.local` and keep every secret blank until its local or hosted adapter is intentionally configured. The canonical inventory includes runtime selection, encryption, Supabase, readiness/worker authentication, profile-engine guards, AI, Stripe, reading allowance/session TTL, and server-only support/operator UUID allowlists. `READING_ACCESS_MODE=unlimited` is the MVP default; `free-window` uses `READING_FREE_ALLOWANCE` and `READING_ALLOWANCE_WINDOW_HOURS`. Operational configuration is visible read-only to authorized staff, but changes and rollback remain reviewed deployment operations.
 
 ## Run and verify
 
@@ -39,6 +43,8 @@ corepack pnpm db:check
 corepack pnpm build
 corepack pnpm test:e2e
 ```
+
+The default E2E command runs desktop and mobile Chromium. CI installs and runs the same suite in desktop Firefox and WebKit as well (`corepack pnpm --filter @starguidance/web test:e2e:cross-browser`).
 
 Profile engine, from `apps/profile-engine` with its virtual environment active:
 

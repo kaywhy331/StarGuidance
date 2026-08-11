@@ -63,6 +63,24 @@ describe("request metadata security", () => {
       "client:unresolved",
     );
   });
+
+  it("supports an explicitly configured edge-authenticated header off Netlify", () => {
+    vi.stubEnv("APP_ENV", "development");
+    vi.stubEnv("TRUSTED_CLIENT_IP_HEADER", "cf-connecting-ip");
+    expect(
+      clientRateLimitKey(
+        request({
+          "cf-connecting-ip": "2001:db8::1",
+          "x-forwarded-for": "203.0.113.99",
+        }),
+      ),
+    ).toBe("client:2001:db8::1");
+
+    vi.stubEnv("TRUSTED_CLIENT_IP_HEADER", "x-forwarded-for");
+    expect(clientRateLimitKey(request({ "x-forwarded-for": "203.0.113.99" }))).toBe(
+      "client:unresolved",
+    );
+  });
 });
 
 describe("bounded rate limiting", () => {

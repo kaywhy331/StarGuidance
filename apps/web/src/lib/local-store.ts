@@ -29,7 +29,12 @@ export type LocalProfileVersion = StoredProfileVersion;
 
 export interface LocalUser extends RepositoryUser {
   profile?: LocalProfileVersion;
-  consentRecords: { policy: string; version: string; grantedAt: string }[];
+  consentRecords: {
+    policy: string;
+    version: string;
+    grantedAt: string;
+    withdrawnAt?: string;
+  }[];
 }
 
 export interface LocalStore {
@@ -95,6 +100,7 @@ export function assertLocalAdapter(): void {
 export function createLocalSession(
   email: string,
   policyReceipts: readonly { policy: string; version: string; acceptedAt: string }[] = [],
+  displayName?: string,
 ): { token: string; user: LocalUser } {
   assertLocalAdapter();
   const normalized = email.trim().toLowerCase();
@@ -111,6 +117,14 @@ export function createLocalSession(
   }
   const user = localStore.users.get(userId);
   if (!user) throw new Error("USER_NOT_FOUND");
+  if (displayName) {
+    const current = localStore.settings.get(user.id);
+    localStore.settings.set(user.id, {
+      displayName,
+      soundEnabled: current?.soundEnabled ?? false,
+      reducedMotion: current?.reducedMotion ?? false,
+    });
+  }
   for (const receipt of policyReceipts)
     if (
       !user.consentRecords.some(

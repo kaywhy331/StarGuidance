@@ -125,6 +125,7 @@ describe("a service that was only waking up", () => {
   it("retries once when the first attempt times out, and succeeds", async () => {
     const payload = {
       completeness: "core",
+      ontology_version: "profile-traits-v4",
       numerology: {
         name_calculation_status: "available",
         life_path: 7,
@@ -165,7 +166,7 @@ describe("a service that was only waking up", () => {
       },
       bazi: {
         status: "unavailable",
-        capability: "bazi",
+        capability: "bazi_four_pillars",
         reason: "pending",
         calculation_version: "bazi-contract-v1",
         activation_requirements: ["reference suite"],
@@ -179,6 +180,7 @@ describe("a service that was only waking up", () => {
       },
       traits: [],
       tensions: [],
+      convergences: [],
     };
     const abort = new Error("aborted");
     abort.name = "AbortError";

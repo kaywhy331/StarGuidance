@@ -8,7 +8,11 @@ export default async function SignUpPage() {
   let authenticatedDestination: string | undefined;
   try {
     const user = await requireUser();
-    authenticatedDestination = user.profile ? "/readings" : "/onboarding";
+    authenticatedDestination = user.requiresPolicyReconsent
+      ? "/consent"
+      : user.profile
+        ? "/readings"
+        : "/onboarding";
   } catch {
     // Anonymous visitors should see the registration form.
   }

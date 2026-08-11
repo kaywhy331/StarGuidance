@@ -1,6 +1,11 @@
 import "server-only";
 
-import type { BirthProfileInput, ProfileTension, ProfileTrait } from "@starguidance/contracts";
+import type {
+  BirthProfileInput,
+  ProfileConvergence,
+  ProfileTension,
+  ProfileTrait,
+} from "@starguidance/contracts";
 
 import { calculationSchema } from "./profile-engine-contract";
 import { findServiceUrlProblem } from "./service-url";
@@ -8,6 +13,7 @@ import { findServiceUrlProblem } from "./service-url";
 export type ProfileCalculation = import("zod").z.infer<typeof calculationSchema> & {
   mappedTraits: ProfileTrait[];
   mappedTensions: ProfileTension[];
+  mappedConvergences: ProfileConvergence[];
 };
 
 function toEngineRequest(input: BirthProfileInput) {
@@ -75,12 +81,25 @@ async function attemptCalculation(
         sourceRule: trait.source_rule,
         calculationVersion: trait.calculation_version,
         stability: trait.stability,
+        direction: trait.direction,
+        strength: trait.strength,
+        confidence: trait.confidence,
+        lifeDomains: trait.life_domains,
       })),
       mappedTensions: calculation.tensions.map((tension) => ({
         id: tension.id,
         sideA: tension.side_a,
         sideB: tension.side_b,
         traitIndexes: tension.trait_indexes,
+        lifeDomains: tension.life_domains,
+      })),
+      mappedConvergences: calculation.convergences.map((convergence) => ({
+        id: convergence.id,
+        domain: convergence.domain,
+        summary: convergence.summary,
+        traitIndexes: convergence.trait_indexes,
+        sourceSystems: convergence.source_systems,
+        confidence: convergence.confidence,
       })),
     };
   } catch (error) {

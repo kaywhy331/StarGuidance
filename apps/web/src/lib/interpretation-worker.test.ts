@@ -66,6 +66,25 @@ function reading(): StoredReading {
     idempotencyKey: "synthetic-idempotency-key",
     profileSnapshotId: "d1f91755-e7f0-4731-a9c8-79ec9017d78c",
     readingLens: { version: "test-v1", traitIndexes: [] },
+    questionClassification: {
+      version: "question-classification-v1",
+      topic: "general",
+      horizon: "open",
+      intent: "clarity",
+      generalReading: false,
+    },
+    entitlementDecision: {
+      version: "reading-entitlement-v1",
+      mode: "unlimited",
+      outcome: "granted",
+      entitlementClass: "standard",
+      used: 0,
+      limit: null,
+      remaining: null,
+      windowStartsAt: null,
+      windowEndsAt: null,
+    },
+    expiresAt: "2026-08-12T00:00:00.000Z",
     spreadId: "single-focus",
     encryptedQuestion: "encrypted-question",
     safetyClassification: "ordinary",
@@ -182,7 +201,7 @@ describe("runInterpretationJobs", () => {
     expect(mocks.failInterpretationJob).toHaveBeenCalledWith(
       "synthetic-system-client",
       JOB,
-      "provider unavailable",
+      "interpretation_generation_failed",
     );
     expect(mocks.writeInterpretationResult).not.toHaveBeenCalled();
     expect(mocks.completeInterpretationJob).not.toHaveBeenCalled();
@@ -216,7 +235,7 @@ describe("runInterpretationJobs", () => {
     expect(mocks.failInterpretationJob).toHaveBeenCalledWith(
       "synthetic-system-client",
       JOB,
-      "INTERPRETATION_JOB_READING_MISSING",
+      "interpretation_reading_missing",
     );
     expect(mocks.markReadingGenerationFailed).not.toHaveBeenCalled();
   });

@@ -19,4 +19,7 @@ export const EXPECTED_MIGRATIONS = [
   "0011_reading_flow_controls",
   "0012_commerce_report_jobs",
   "0013_checkout_report_source",
+  "0014_account_consent_settings",
+  "0015_consent_event_history",
+  "0016_reading_intake_recovery",
 ] as const;

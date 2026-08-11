@@ -1,30 +1,51 @@
 import { NextResponse } from "next/server";
 import {
   classifyQuestion,
+  classifyQuestionContext,
   createInterpretationProvider,
+  GUARDED_CATEGORIES,
   selectReadingLens,
 } from "@starguidance/ai";
+import {
+  GENERAL_READING_QUESTION,
+  readingHorizonSchema,
+  readingTopicSchema,
+} from "@starguidance/contracts";
 import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
 import { createLockedDraw } from "@starguidance/tarot-domain";
 import type { StoredReading } from "@starguidance/database";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
-import { findRetainedReading } from "@/lib/reading-policy";
+import {
+  findRetainedReading,
+  readingEntitlementDecision,
+  readingSessionTtlMs,
+} from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter } from "@/lib/runtime";
 
-const inputSchema = z.object({
-  spreadId: z.string().min(1),
-  question: z.string().trim().min(1).max(500),
-});
+const inputSchema = z
+  .object({
+    spreadId: z.string().min(1),
+    question: z.string().trim().max(500).default(""),
+    topic: readingTopicSchema.optional().default("general"),
+    horizon: readingHorizonSchema.optional().default("open"),
+    generalReading: z.boolean().optional().default(false),
+    continueAsReflection: z.boolean().optional().default(false),
+  })
+  .superRefine((input, context) => {
+    if (!input.generalReading && !input.question)
+      context.addIssue({ code: "custom", message: "Enter a question or choose General reading." });
+  });
 const idempotencyKeySchema = z.string().uuid();
 
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await requireUser();
+    assertCurrentPolicyConsents(user);
     await assertRateLimit(`reading:${user.id}`, 12);
     const idempotencyKey = idempotencyKeySchema.parse(request.headers.get("idempotency-key"));
     const persistence = persistenceFor(user);
@@ -32,8 +53,15 @@ export async function POST(request: Request) {
     if (!profile)
       return NextResponse.json({ error: "Complete a private profile first." }, { status: 409 });
     const input = inputSchema.parse(await request.json());
-    const safety = classifyQuestion(input.question);
+    const question = input.generalReading ? GENERAL_READING_QUESTION : input.question;
+    const questionClassification = classifyQuestionContext(question, input);
+    const safety = classifyQuestion(question);
     if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
+    if (GUARDED_CATEGORIES.has(safety.category) && !input.continueAsReflection)
+      return NextResponse.json(
+        { safety, reflectionAcknowledgementRequired: true },
+        { status: 409 },
+      );
     const spread = spreads.find(({ id }) => id === input.spreadId);
     if (!spread) return NextResponse.json({ error: "Unknown spread." }, { status: 404 });
 
@@ -51,7 +79,16 @@ export async function POST(request: Request) {
         },
         { status: 200 },
       );
-    const retained = findRetainedReading(previousReadings, input.question, (encrypted) =>
+    const entitlementDecision = readingEntitlementDecision(previousReadings);
+    if (entitlementDecision.outcome === "limitReached")
+      return NextResponse.json(
+        {
+          error: "Your included reading allowance is used for this window.",
+          entitlementDecision,
+        },
+        { status: 429 },
+      );
+    const retained = findRetainedReading(previousReadings, question, (encrypted) =>
       persistence.decrypt(encrypted, "reading-question"),
     );
     if (retained)
@@ -66,7 +103,11 @@ export async function POST(request: Request) {
         { status: 409 },
       );
 
-    const readingLens = selectReadingLens(input.question, profile.snapshot.traits);
+    const readingLens = selectReadingLens(
+      question,
+      profile.snapshot.traits,
+      profile.snapshot.tensions,
+    );
     const draw = createLockedDraw({
       cards: tarotCards,
       deckVersion: DECK_VERSION,
@@ -80,9 +121,13 @@ export async function POST(request: Request) {
       readingLens: {
         version: readingLens.version,
         traitIndexes: readingLens.traitIndexes,
+        tensionIndexes: readingLens.tensionIndexes,
       },
+      questionClassification,
+      entitlementDecision,
+      expiresAt: new Date(Date.now() + readingSessionTtlMs()).toISOString(),
       spreadId: spread.id,
-      encryptedQuestion: persistence.encrypt(input.question, "reading-question"),
+      encryptedQuestion: persistence.encrypt(question, "reading-question"),
       safetyClassification: safety.category,
       draw,
       generationStatus: "pending",
@@ -121,7 +166,7 @@ export async function POST(request: Request) {
       try {
         const generated = await createInterpretationProvider().generateWithProvenance({
           draw,
-          question: input.question,
+          question,
           relevantTraitStatements: readingLens.statements,
         });
         await persistence.repositories.outputs.save(
@@ -162,7 +207,13 @@ export async function POST(request: Request) {
       reading.generationStatus = current?.generationStatus ?? reading.generationStatus;
     }
     return NextResponse.json(
-      { readingId: reading.id, safety, generationStatus: reading.generationStatus },
+      {
+        readingId: reading.id,
+        safety,
+        questionClassification,
+        entitlementDecision,
+        generationStatus: reading.generationStatus,
+      },
       { status: 201 },
     );
   } catch (error) {
@@ -178,6 +229,11 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
+    if (error instanceof Error && error.message === POLICY_RECONSENT_REQUIRED)
+      return NextResponse.json(
+        { error: "Review the current service policies before starting a reading." },
+        { status: 428 },
+      );
     return NextResponse.json(
       { error: status === 401 ? "Authentication required." : "Invalid reading request." },
       { status },

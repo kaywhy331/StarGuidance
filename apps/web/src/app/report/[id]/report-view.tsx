@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, LoadingState, Panel } from "@starguidance/design-system";
+import { buildReportDocumentModel } from "@/lib/report-document";
 interface Report {
   id: string;
   provider: "local" | "stripe";
@@ -88,25 +89,30 @@ export function ReportView({ reportId }: { reportId: string }) {
         </Panel>
       </main>
     );
+  const document = buildReportDocumentModel(report);
   return (
     <main className="mx-auto max-w-4xl px-6 py-12 print:max-w-none print:text-black">
-      <p className="text-sm tracking-[.2em] text-[#d8b56d] uppercase">
-        Full profile report ·{" "}
-        {report.provider === "local" ? "local test adapter" : "Stripe test purchase"}
-      </p>
-      <h1 className="mt-3 text-5xl font-semibold">Your private profile</h1>
-      <Button className="mt-5 print:hidden" onClick={() => window.print()}>
-        Print or save as PDF
-      </Button>
+      <p className="text-sm tracking-[.2em] text-[#d8b56d] uppercase">{document.eyebrow}</p>
+      <h1 className="mt-3 text-5xl font-semibold">{document.title}</h1>
+      <div className="mt-5 flex flex-wrap gap-3 print:hidden">
+        <Button onClick={() => window.print()}>Print</Button>
+        <a
+          className="min-h-11 rounded-full bg-[#f5efe1] px-5 py-2 font-semibold text-[#171121]"
+          download
+          href={`/api/reports/${reportId}/pdf`}
+        >
+          Download accessible PDF
+        </a>
+      </div>
       <div className="mt-8 grid gap-5">
-        {report.sections.map((section) => (
+        {document.sections.map((section) => (
           <Panel
             className={section.unavailable ? "border-dashed opacity-75" : ""}
             key={section.key}
           >
             <h2 className="text-2xl">{section.title}</h2>
-            {section.unavailable && (
-              <p className="mt-2 text-sm text-[#d8b56d]">Explicitly unavailable</p>
+            {section.statusLabel && (
+              <p className="mt-2 text-sm text-[#d8b56d]">{section.statusLabel}</p>
             )}
             <p className="mt-3 leading-7">{section.body}</p>
           </Panel>

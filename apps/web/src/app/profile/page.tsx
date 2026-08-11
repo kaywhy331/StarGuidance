@@ -13,6 +13,11 @@ interface ProfileView {
 }
 
 const CHECKOUT_KEY_STORAGE = "starguidance:profile-report-checkout-key";
+const COMPLETENESS_LABELS: Record<string, string> = {
+  core: "Core",
+  locationEnhanced: "Location-Enhanced",
+  complete: "Complete",
+};
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileView | null>();
@@ -55,6 +60,10 @@ export default function ProfilePage() {
         status?: "pending" | "paid" | "failed" | "refunded" | "disputed";
         error?: string;
       };
+      if (response.status === 428) {
+        router.push("/consent");
+        return "failed";
+      }
       if (payload.reportId) {
         window.sessionStorage.removeItem(CHECKOUT_KEY_STORAGE);
         setCheckoutState(payload.reportStatus === "pending" ? "pending" : "idle");
@@ -160,8 +169,15 @@ export default function ProfilePage() {
               <dd>{profile.birthTimeProvided ? "Provided" : "Not provided"}</dd>
             </div>
             <div>
+              <dt className="text-sm text-[#a99db5]">Birthplace</dt>
+              <dd>{profile.birthplaceLabel ?? "Not provided"}</dd>
+            </div>
+            <div>
               <dt className="text-sm text-[#a99db5]">Capability</dt>
-              <dd>{profile.snapshot.completeness}</dd>
+              <dd>
+                {COMPLETENESS_LABELS[profile.snapshot.completeness] ??
+                  profile.snapshot.completeness}
+              </dd>
             </div>
           </dl>
           <p className="mt-6 text-sm text-[#a99db5]">

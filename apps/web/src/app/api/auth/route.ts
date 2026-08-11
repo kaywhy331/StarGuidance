@@ -7,6 +7,7 @@ import { isHostedNetlifyRuntime } from "@/lib/hosted-runtime";
 import { createLocalSession } from "@/lib/local-store";
 import { recordSecurityAudit } from "@/lib/persistence";
 import {
+  ACCOUNT_DISPLAY_NAME_METADATA_KEY,
   POLICY_CONSENT_METADATA_KEY,
   POLICY_VERSIONS,
   signupConsentReceipts,
@@ -31,6 +32,8 @@ const signupConsentSchema = z.object({
   privacyVersion: z.literal(POLICY_VERSIONS.privacy),
   ageConfirmed: z.literal(true),
   ageEligibilityVersion: z.literal(POLICY_VERSIONS.ageEligibility),
+  marketingAccepted: z.boolean(),
+  marketingVersion: z.literal(POLICY_VERSIONS.marketing),
 });
 const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("sign-in"), email: emailSchema, password: passwordSchema }),
@@ -38,9 +41,11 @@ const requestSchema = z.discriminatedUnion("action", [
     action: z.literal("sign-up"),
     email: emailSchema,
     password: passwordSchema,
+    displayName: z.string().trim().min(1).max(80),
     consents: signupConsentSchema,
   }),
   z.object({ action: z.literal("request-password-reset"), email: emailSchema }),
+  z.object({ action: z.literal("resend-confirmation"), email: emailSchema }),
   z.object({ action: z.literal("update-password"), password: passwordSchema }),
 ]);
 
@@ -63,13 +68,16 @@ export async function POST(request: Request) {
     );
     const input = requestSchema.parse(await request.json());
     if (getRuntimeAdapter() === "local") {
-      if (input.action === "request-password-reset")
+      if (input.action === "request-password-reset" || input.action === "resend-confirmation")
         return NextResponse.json({ ok: true, pending: true });
       if (input.action === "update-password")
         return NextResponse.json({ ok: true, authenticated: true });
       const { token } = createLocalSession(
         input.email,
-        input.action === "sign-up" ? signupConsentReceipts(new Date().toISOString()) : [],
+        input.action === "sign-up"
+          ? signupConsentReceipts(new Date().toISOString(), input.consents.marketingAccepted)
+          : [],
+        input.action === "sign-up" ? input.displayName : undefined,
       );
       const response = NextResponse.json({ ok: true, authenticated: true });
       response.cookies.set(SESSION_COOKIE, token, {
@@ -134,6 +142,26 @@ export async function POST(request: Request) {
       throw new RuntimeConfigurationError("NEXT_PUBLIC_APP_URL is required for Auth redirects.");
     const callbackUrl = new URL("/auth/callback", appUrl);
 
+    if (input.action === "resend-confirmation") {
+      callbackUrl.searchParams.set("next", "/onboarding");
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: input.email,
+        options: { emailRedirectTo: callbackUrl.toString() },
+      });
+      if (error && isSendRateLimited(error))
+        return NextResponse.json(
+          {
+            error: "Too many confirmation emails have been requested. Try again shortly.",
+            retryable: true,
+          },
+          { status: 429 },
+        );
+      // Keep account existence and confirmation state private. The same
+      // response covers unknown, already-confirmed, and newly-resent cases.
+      return NextResponse.json({ ok: true, pending: true });
+    }
+
     if (input.action === "request-password-reset") {
       callbackUrl.searchParams.set("next", "/reset-password");
       const { error } = await supabase.auth.resetPasswordForEmail(input.email, {
@@ -178,7 +206,11 @@ export async function POST(request: Request) {
       const { error: receiptError } = await admin.auth.admin.updateUserById(data.user.id, {
         app_metadata: {
           ...data.user.app_metadata,
-          [POLICY_CONSENT_METADATA_KEY]: signupConsentReceipts(new Date().toISOString()),
+          [ACCOUNT_DISPLAY_NAME_METADATA_KEY]: input.displayName,
+          [POLICY_CONSENT_METADATA_KEY]: signupConsentReceipts(
+            new Date().toISOString(),
+            input.consents.marketingAccepted,
+          ),
         },
       });
       if (receiptError) {

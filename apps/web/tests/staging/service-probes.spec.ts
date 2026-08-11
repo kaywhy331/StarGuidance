@@ -120,8 +120,8 @@ interface HealthBody {
 test("the deployed preview runtime is staging, Supabase-backed, and schema ready", async ({
   request,
 }) => {
-  const readinessSecret = process.env.PROFILE_ENGINE_SHARED_SECRET;
-  if (!readinessSecret) throw new Error("PROFILE_ENGINE_SHARED_SECRET is required");
+  const readinessSecret = process.env.READINESS_PROBE_SECRET;
+  if (!readinessSecret) throw new Error("READINESS_PROBE_SECRET is required");
   const readinessToken = createHmac("sha256", readinessSecret)
     .update("starguidance-readiness-v1")
     .digest("base64url");

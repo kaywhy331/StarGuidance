@@ -32,6 +32,9 @@ const cards: TarotCard[] = Array.from({ length: 8 }, (_, index) => ({
 const spread: Spread = {
   id: "test-spread",
   name: "Test Spread",
+  purpose: "A synthetic spread used only to verify secure draw behavior.",
+  estimatedMinutes: 1,
+  entitlementClass: "standard",
   version: "test-v1",
   allowReversals: true,
   optionalCut: true,

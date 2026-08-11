@@ -11,6 +11,7 @@ export function SignUpForm() {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [pendingEmail, setPendingEmail] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
   return (
@@ -33,6 +34,8 @@ export function SignUpForm() {
           privacyVersion: POLICY_VERSIONS.privacy,
           ageConfirmed: form.get("ageConfirmed") === "on",
           ageEligibilityVersion: POLICY_VERSIONS.ageEligibility,
+          marketingAccepted: form.get("marketingAccepted") === "on",
+          marketingVersion: POLICY_VERSIONS.marketing,
         };
         setSubmitting(true);
         const response = await fetch("/api/auth", {
@@ -42,6 +45,7 @@ export function SignUpForm() {
             action: "sign-up",
             email: form.get("email"),
             password,
+            displayName: form.get("displayName"),
             consents,
           }),
         });
@@ -53,6 +57,7 @@ export function SignUpForm() {
         setSubmitting(false);
         if (!response.ok) return setError(payload.error ?? "Unable to create the account.");
         if (payload.pending) {
+          setPendingEmail(String(form.get("email") ?? ""));
           setNotice(
             "Account created. Check your email once to confirm it, then sign in with your password.",
           );
@@ -72,6 +77,14 @@ export function SignUpForm() {
         </p>
       ) : null}
       <Field autoComplete="email" label="Email" name="email" required type="email" />
+      <Field
+        autoComplete="nickname"
+        hint="Used in the reading experience; it is separate from your private birth name."
+        label="Display name"
+        maxLength={80}
+        name="displayName"
+        required
+      />
       <Field
         autoComplete="new-password"
         hint="Use 12–72 characters. A passphrase is easiest to remember."
@@ -101,6 +114,13 @@ export function SignUpForm() {
           <span>I confirm that I am at least 18 years old.</span>
         </label>
       </fieldset>
+      <label className="flex items-start gap-3 rounded-2xl border border-white/10 p-4 text-sm leading-6">
+        <input className="mt-1" name="marketingAccepted" type="checkbox" />
+        <span>
+          Send me occasional product news. This is optional, is not required for service, and can be
+          changed later in Account settings.
+        </span>
+      </label>
       <Field
         autoComplete="new-password"
         label="Confirm password"
@@ -111,9 +131,32 @@ export function SignUpForm() {
         type="password"
       />
       {notice ? (
-        <p aria-live="polite" className="text-sm leading-6 text-emerald-100">
-          {notice}
-        </p>
+        <div className="grid gap-3">
+          <p aria-live="polite" className="text-sm leading-6 text-emerald-100">
+            {notice}
+          </p>
+          <Button
+            disabled={submitting || !pendingEmail}
+            onClick={async () => {
+              if (!pendingEmail) return;
+              setSubmitting(true);
+              setError(undefined);
+              const response = await fetch("/api/auth", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ action: "resend-confirmation", email: pendingEmail }),
+              });
+              const payload = (await response.json()) as { error?: string };
+              setSubmitting(false);
+              if (!response.ok)
+                return setError(payload.error ?? "Unable to resend confirmation just now.");
+              setNotice("If this account still needs confirmation, a fresh message is on its way.");
+            }}
+            type="button"
+          >
+            {submitting ? "Resending…" : "Resend confirmation email"}
+          </Button>
+        </div>
       ) : null}
       <p className="text-sm text-[#c9bfd4]">
         Already have an account?{" "}

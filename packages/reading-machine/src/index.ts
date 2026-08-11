@@ -53,7 +53,7 @@ export const readingMachine = setup({
       on: { QUESTION_ACCEPTED: "preparingDeck", HIGH_STAKES: "highStakesQuestion" },
     },
     highStakesQuestion: {
-      on: { RESTART: "enteringQuestion", CONTINUE_AS_REFLECTION: "shuffling" },
+      on: { RESTART: "enteringQuestion", CONTINUE_AS_REFLECTION: "preparingDeck" },
     },
     preparingDeck: { on: { DECK_READY: "shuffling" } },
     shuffling: { on: { SHUFFLE_COMPLETE: "cuttingDeck" } },

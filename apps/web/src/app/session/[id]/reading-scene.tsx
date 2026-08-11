@@ -7,8 +7,12 @@ import { GUARDED_CATEGORIES, type SafetyCategory } from "@starguidance/ai";
 import type { FollowUpResult, ReadingResult } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
-import { useReadingPreferences } from "@/lib/reading-preferences";
-import { readRitualProgress, writeRitualProgress } from "@/lib/ritual-progress";
+import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
+import {
+  readRitualProgress,
+  writeRitualProgress,
+  type RitualProgress,
+} from "@/lib/ritual-progress";
 
 import { MysticSanctuaryScene } from "./mystic-sanctuary-scene";
 import { OracleTranscript } from "./oracle-transcript";
@@ -30,7 +34,13 @@ function playRevealTone() {
   oscillator.addEventListener("ended", () => void context.close());
 }
 
-export function ReadingScene({ readingId }: { readingId: string }) {
+export function ReadingScene({
+  initialPreferences,
+  readingId,
+}: {
+  initialPreferences?: ReadingPreferenceSeed;
+  readingId: string;
+}) {
   const [state, send] = useMachine(readingMachine);
   const [reading, setReading] = useState<ReadingPayload>();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
@@ -50,11 +60,12 @@ export function ReadingScene({ readingId }: { readingId: string }) {
   const bootstrapped = useRef(false);
   const revealRun = useRef(0);
   const {
+    displayName,
     reducedMotion: motionOff,
     sound,
     toggleReducedMotion,
     toggleSound,
-  } = useReadingPreferences();
+  } = useReadingPreferences(initialPreferences);
   const soundEnabled = useRef(sound);
 
   useEffect(() => {
@@ -66,11 +77,9 @@ export function ReadingScene({ readingId }: { readingId: string }) {
       .then(async (response) => {
         if (!response.ok) throw new Error("Unable to recover this reading.");
         const payload = (await response.json()) as { reading: ReadingPayload };
-        const progress = readRitualProgress(
-          window.sessionStorage,
-          readingId,
-          payload.reading.cards.length,
-        );
+        const progress =
+          payload.reading.ritualProgress ??
+          readRitualProgress(window.sessionStorage, readingId, payload.reading.cards.length);
         if (progress) {
           setRevealed(new Set(progress.revealedIndexes));
           setCutTaken(progress.cutTaken);
@@ -87,15 +96,13 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     bootstrapped.current = true;
     send({ type: "START" });
     send({ type: "SELECT" });
-    // The nine categories in GUARDED_CATEGORIES pause here instead of
-    // shuffling straight in (see the highStakesQuestion ritual-moment below).
-    // classifyQuestion's `interrupt: true` categories (selfHarmCrisis,
-    // compulsiveReading) never reach this component at all: creation itself
-    // is refused for those, before a reading or its draw exist.
-    if (reading.safetyClassification && GUARDED_CATEGORIES.has(reading.safetyClassification)) {
-      send({ type: "HIGH_STAKES" });
+    if (reading.sessionExpired) {
+      send({ type: "EXPIRE" });
       return;
     }
+    // Guarded questions are acknowledged on the intake page before this
+    // reading, its locked draw, or its generation job exists. Interrupt
+    // categories never reach this component at all.
     send({ type: "QUESTION_ACCEPTED" });
     send({ type: "DECK_READY" });
   }, [reading, send]);
@@ -140,6 +147,21 @@ export function ReadingScene({ readingId }: { readingId: string }) {
   const focusDuration = motionOff ? 90 : 1_250;
   const settleDuration = motionOff ? 40 : 400;
 
+  const persistRitualProgress = useCallback(
+    (progress: RitualProgress, phase: "cuttingDeck" | "revealingCards" | "complete") => {
+      writeRitualProgress(window.sessionStorage, readingId, progress);
+      void fetch(`/api/readings/${readingId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "progress", phase, ...progress }),
+      }).catch(() => {
+        // The local receipt remains a recovery fallback; the locked draw is
+        // already durable and is never changed by a progress-write failure.
+      });
+    },
+    [readingId],
+  );
+
   const revealCard = useCallback(
     (index: number) => {
       if (!reading || !state.matches("revealingCards") || revealedRef.current.has(index)) return;
@@ -148,10 +170,10 @@ export function ReadingScene({ readingId }: { readingId: string }) {
       setRevealed((current) => {
         const next = new Set(current).add(index);
         if (cutTaken !== undefined)
-          writeRitualProgress(window.sessionStorage, readingId, {
-            cutTaken,
-            revealedIndexes: [...next],
-          });
+          persistRitualProgress(
+            { cutTaken, revealedIndexes: [...next] },
+            next.size === reading.draw.assignments.length ? "complete" : "revealingCards",
+          );
         return next;
       });
       if (soundEnabled.current) playRevealTone();
@@ -160,7 +182,7 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         setActiveReveal(null);
       }, focusDuration);
     },
-    [cutTaken, focusDuration, reading, readingId, state],
+    [cutTaken, focusDuration, persistRitualProgress, reading, state],
   );
 
   const revealAll = useCallback(() => {
@@ -334,6 +356,7 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         <Link className="sanctuary-exit" href="/readings">
           ← Exit
         </Link>
+        <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
         <div className="sanctuary-control-group">
           <button aria-pressed={motionOff} onClick={toggleReducedMotion} type="button">
             Reduced motion <span>{motionOff ? "on" : "off"}</span>
@@ -350,22 +373,20 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         }`}
         aria-live="polite"
       >
-        {state.matches("highStakesQuestion") && (
+        {state.matches("sessionExpired") && (
           <div className="ritual-moment">
-            <p className="ritual-status" role="status">
-              This question touches something the cards can’t answer as fact. They can still offer a
-              reflection — on your terms.
+            <p className="ritual-status" role="alert">
+              This ritual session has expired. Its locked cards and completed interpretation remain
+              unchanged in your private history.
             </p>
             <div className="ritual-action-group">
-              <button
-                className="ritual-action"
-                onClick={() => send({ type: "CONTINUE_AS_REFLECTION" })}
-                type="button"
-              >
-                Continue as reflection
-              </button>
+              {reading?.result && (
+                <Link className="ritual-action" href={`/reading/${readingId}`}>
+                  Open the preserved reading
+                </Link>
+              )}
               <Link className="ritual-action" href="/readings">
-                Ask something else
+                Start a new reading
               </Link>
             </div>
           </div>
@@ -401,10 +422,10 @@ export function ReadingScene({ readingId }: { readingId: string }) {
                 className="ritual-action"
                 onClick={() => {
                   setCutTaken(true);
-                  writeRitualProgress(window.sessionStorage, readingId, {
-                    cutTaken: true,
-                    revealedIndexes: [...revealed],
-                  });
+                  persistRitualProgress(
+                    { cutTaken: true, revealedIndexes: [...revealed] },
+                    "cuttingDeck",
+                  );
                 }}
                 type="button"
               >
@@ -414,10 +435,10 @@ export function ReadingScene({ readingId }: { readingId: string }) {
                 className="ritual-action"
                 onClick={() => {
                   setCutTaken(false);
-                  writeRitualProgress(window.sessionStorage, readingId, {
-                    cutTaken: false,
-                    revealedIndexes: [...revealed],
-                  });
+                  persistRitualProgress(
+                    { cutTaken: false, revealedIndexes: [...revealed] },
+                    "cuttingDeck",
+                  );
                 }}
                 type="button"
               >

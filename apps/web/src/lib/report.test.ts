@@ -14,6 +14,7 @@ const source: ProfileReportSource = {
     profileId: "f312677a-88af-4765-95bb-50c61f185a8b",
     version: 3,
     completeness: "core",
+    ontologyVersion: "profile-traits-v4",
     traits: [
       {
         domain: "coreMotivation",
@@ -22,6 +23,10 @@ const source: ProfileReportSource = {
         sourceRule: "life-path-1",
         calculationVersion: CALCULATION_SYSTEM_VERSIONS.numerology,
         stability: "stable",
+        direction: "supportive",
+        strength: 0.9,
+        confidence: "high",
+        lifeDomains: ["general", "career"],
       },
       {
         domain: "coreMotivation",
@@ -30,6 +35,10 @@ const source: ProfileReportSource = {
         sourceRule: "tone-2",
         calculationVersion: CALCULATION_SYSTEM_VERSIONS.dreamspell,
         stability: "stable",
+        direction: "supportive",
+        strength: 0.6,
+        confidence: "medium",
+        lifeDomains: ["general"],
       },
       {
         domain: "growthLever",
@@ -38,6 +47,10 @@ const source: ProfileReportSource = {
         sourceRule: "principal-1",
         calculationVersion: CALCULATION_SYSTEM_VERSIONS.nineStarKi,
         stability: "uncertain",
+        direction: "mixed",
+        strength: 0.4,
+        confidence: "low",
+        lifeDomains: ["change"],
       },
     ],
     tensions: [
@@ -46,6 +59,17 @@ const source: ProfileReportSource = {
         sideA: "You may want room to decide independently.",
         sideB: "You may also benefit from shared confirmation.",
         traitIndexes: [0, 1],
+        lifeDomains: ["general", "relationships"],
+      },
+    ],
+    convergences: [
+      {
+        id: "core-motivation-reflection-v1",
+        domain: "coreMotivation",
+        summary: "Both represented systems invite a balance between autonomy and perspective.",
+        traitIndexes: [0, 1],
+        sourceSystems: ["numerology", "dreamspell"],
+        confidence: "medium",
       },
     ],
     calculationVersions: { ...CALCULATION_SYSTEM_VERSIONS },
@@ -53,6 +77,7 @@ const source: ProfileReportSource = {
   },
   calculation: {
     completeness: "core",
+    ontology_version: "profile-traits-v4",
     numerology: {
       name_calculation_status: "available",
       life_path: 1,
@@ -86,27 +111,28 @@ const source: ProfileReportSource = {
     },
     western_astrology: {
       status: "unavailable",
-      capability: "western-astrology",
+      capability: "western_astrology",
       reason: "validated_engine_required",
       calculation_version: CALCULATION_SYSTEM_VERSIONS.westernAstrology,
       activation_requirements: ["licensed ephemeris"],
     },
     bazi: {
       status: "unavailable",
-      capability: "bazi",
+      capability: "bazi_four_pillars",
       reason: "validated_engine_required",
       calculation_version: CALCULATION_SYSTEM_VERSIONS.bazi,
       activation_requirements: ["golden references"],
     },
     planetary_angularity: {
       status: "unavailable",
-      capability: "planetary-angularity",
+      capability: "planetary_angularity_map",
       reason: "precise_birth_time_required",
       calculation_version: CALCULATION_SYSTEM_VERSIONS.planetaryAngularity,
       activation_requirements: ["birth time"],
     },
     traits: [],
     tensions: [],
+    convergences: [],
   },
 };
 

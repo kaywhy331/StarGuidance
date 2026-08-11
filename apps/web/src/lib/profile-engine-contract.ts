@@ -1,18 +1,10 @@
-import { CALCULATION_SYSTEM_VERSIONS } from "@starguidance/contracts";
+import {
+  baziResultSchema,
+  CALCULATION_SYSTEM_VERSIONS,
+  planetaryAngularityResultSchema,
+  westernAstrologyResultSchema,
+} from "@starguidance/contracts";
 import { z } from "zod";
-
-// Version literals are pinned to the shared registry constants (gap G26):
-// an engine that starts emitting a version the registry doesn't know fails
-// this contract immediately instead of persisting an unjoinable snapshot.
-function unavailableCalculationSchema(calculationVersion: string) {
-  return z.object({
-    status: z.literal("unavailable"),
-    capability: z.string().min(1),
-    reason: z.string().min(1),
-    calculation_version: z.literal(calculationVersion),
-    activation_requirements: z.array(z.string().min(1)).min(1),
-  });
-}
 
 const nineStarKiStarSchema = z.object({
   number: z.number().int().min(1).max(9),
@@ -29,6 +21,7 @@ const nineStarKiStarSchema = z.object({
  */
 export const calculationSchema = z.object({
   completeness: z.enum(["core", "locationEnhanced", "complete"]),
+  ontology_version: z.literal("profile-traits-v4"),
   numerology: z.object({
     name_calculation_status: z.enum(["available", "unavailable"]),
     life_path: z.number().int().positive(),
@@ -60,11 +53,13 @@ export const calculationSchema = z.object({
     interpretation_version: z.string().min(1),
     certification_status: z.string().min(1),
   }),
-  western_astrology: unavailableCalculationSchema(CALCULATION_SYSTEM_VERSIONS.westernAstrology),
-  bazi: unavailableCalculationSchema(CALCULATION_SYSTEM_VERSIONS.bazi),
-  planetary_angularity: unavailableCalculationSchema(
-    CALCULATION_SYSTEM_VERSIONS.planetaryAngularity,
-  ),
+  // These discriminated unions deliberately accept a fully evidenced
+  // available result as well as today's fail-closed unavailable envelope.
+  // Activation therefore cannot bypass validation by swapping `unknown` into
+  // the response when a reviewed adapter eventually ships.
+  western_astrology: westernAstrologyResultSchema,
+  bazi: baziResultSchema,
+  planetary_angularity: planetaryAngularityResultSchema,
   traits: z.array(
     z.object({
       domain: z.enum([
@@ -94,6 +89,12 @@ export const calculationSchema = z.object({
       source_rule: z.string(),
       calculation_version: z.string(),
       stability: z.enum(["stable", "uncertain", "unavailable"]),
+      direction: z.enum(["supportive", "challenging", "mixed"]),
+      strength: z.number().min(0).max(1),
+      confidence: z.enum(["low", "medium", "high"]),
+      life_domains: z
+        .array(z.enum(["general", "career", "relationships", "change", "creativity"]))
+        .min(1),
     }),
   ),
   tensions: z.array(
@@ -102,6 +103,44 @@ export const calculationSchema = z.object({
       side_a: z.string(),
       side_b: z.string(),
       trait_indexes: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]),
+      life_domains: z
+        .array(z.enum(["general", "career", "relationships", "change", "creativity"]))
+        .min(1),
+    }),
+  ),
+  convergences: z.array(
+    z.object({
+      id: z.string(),
+      domain: z.enum([
+        "coreMotivation",
+        "emotionalProcessing",
+        "communicationStyle",
+        "decisionStyle",
+        "socialOrientation",
+        "relationshipNeeds",
+        "riskOrientation",
+        "stabilityVsChange",
+        "conflictResponse",
+        "workStyle",
+        "creativeExpression",
+        "repeatingTension",
+        "growthLever",
+      ]),
+      summary: z.string().min(1),
+      trait_indexes: z.array(z.number().int().nonnegative()).min(2),
+      source_systems: z
+        .array(
+          z.enum([
+            "numerology",
+            "dreamspell",
+            "westernAstrology",
+            "bazi",
+            "planetaryAngularity",
+            "nineStarKi",
+          ]),
+        )
+        .min(2),
+      confidence: z.enum(["low", "medium", "high"]),
     }),
   ),
 });

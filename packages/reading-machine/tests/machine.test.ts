@@ -46,12 +46,14 @@ describe("reading state machine", () => {
     expect(actor.getSnapshot().value).toBe("enteringQuestion");
   });
 
-  it("continues a high-stakes question as reflection, skipping deck preparation", () => {
+  it("continues a high-stakes question only after acknowledged deck preparation", () => {
     const actor = createActor(readingMachine).start();
     actor.send({ type: "START" });
     actor.send({ type: "SELECT" });
     actor.send({ type: "HIGH_STAKES" });
     actor.send({ type: "CONTINUE_AS_REFLECTION" });
+    expect(actor.getSnapshot().value).toBe("preparingDeck");
+    actor.send({ type: "DECK_READY" });
     expect(actor.getSnapshot().value).toBe("shuffling");
   });
 });

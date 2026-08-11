@@ -6,11 +6,16 @@ import {
   followUpResultSchema,
   normalizeFollowUpResult,
   profileSnapshotSchema,
+  profileTraitSchema,
+  questionClassificationSchema,
+  readingEntitlementDecisionSchema,
   readingOutputProvenanceSchema,
   readingResultSchema,
+  ritualProgressSchema,
   type ProfileSnapshot,
   type ReadingOutputProvenance,
   type ReadingResult,
+  type StoredRitualProgress,
 } from "@starguidance/contracts";
 import type {
   ApplicationRepositories,
@@ -226,13 +231,14 @@ export function createPostgresRepositories(
     async list(userId: string): Promise<ConsentRecord[]> {
       return userTransaction(userId, async (tx) => {
         const rows = await tx`
-          select policy, policy_version, accepted_at from consents
+          select policy, policy_version, accepted_at, withdrawn_at from consents
           where user_id = ${userId} order by accepted_at
         `;
         return rows.map((row) => ({
           policy: String(row.policy),
           version: String(row.policy_version),
           grantedAt: iso(row.accepted_at as Date),
+          ...(row.withdrawn_at ? { withdrawnAt: iso(row.withdrawn_at as Date) } : {}),
         }));
       });
     },
@@ -241,8 +247,18 @@ export function createPostgresRepositories(
         await tx`
           insert into consents (user_id, policy, policy_version, accepted_at)
           values (${userId}, ${consent.policy}, ${consent.version}, ${consent.grantedAt})
-          on conflict (user_id, policy, policy_version) do nothing
+          on conflict (user_id, policy, policy_version) where withdrawn_at is null do nothing
         `;
+      });
+    },
+    async withdraw(userId: string, policy: string, withdrawnAt: string) {
+      return userTransaction(userId, async (tx) => {
+        const rows = await tx`
+          update consents set withdrawn_at = ${withdrawnAt}
+          where user_id = ${userId} and policy = ${policy} and withdrawn_at is null
+          returning id
+        `;
+        return rows.length > 0;
       });
     },
   };
@@ -329,6 +345,10 @@ export function createPostgresRepositories(
                   sourceRule: trait.sourceRule,
                   calculationVersion: trait.calculationVersion,
                   stability: trait.stability,
+                  direction: trait.direction,
+                  strength: trait.strength,
+                  confidence: trait.confidence,
+                  lifeDomains: trait.lifeDomains,
                 }),
               )})
           `;
@@ -409,14 +429,18 @@ export function createPostgresRepositories(
           const provenance = row.provenance as JsonObject;
           return {
             snapshotId: String(row.snapshot_id),
-            trait: {
+            trait: profileTraitSchema.parse({
               domain: row.domain as ProfileTraitRecord["trait"]["domain"],
               statement: String(row.statement),
               sourceSystem: provenance.sourceSystem as ProfileTraitRecord["trait"]["sourceSystem"],
               sourceRule: String(provenance.sourceRule),
               calculationVersion: String(provenance.calculationVersion),
               stability: provenance.stability as ProfileTraitRecord["trait"]["stability"],
-            },
+              direction: provenance.direction,
+              strength: provenance.strength,
+              confidence: provenance.confidence,
+              lifeDomains: provenance.lifeDomains,
+            }),
           };
         });
       });
@@ -453,6 +477,12 @@ export function createPostgresRepositories(
       idempotencyKey: String(row.idempotency_key),
       profileSnapshotId: String(row.profile_snapshot_id),
       readingLens: row.reading_lens as StoredReading["readingLens"],
+      questionClassification: questionClassificationSchema.parse(row.question_classification),
+      entitlementDecision: readingEntitlementDecisionSchema.parse(row.entitlement_decision),
+      ...(row.ritual_progress
+        ? { ritualProgress: ritualProgressSchema.parse(row.ritual_progress) }
+        : {}),
+      expiresAt: iso(row.expires_at as Date),
       spreadId: String(row.spread_id),
       encryptedQuestion: String(row.encrypted_question),
       safetyClassification: String(row.safety_classification),
@@ -501,11 +531,15 @@ export function createPostgresRepositories(
           insert into reading_sessions (
             id, user_id, profile_snapshot_id, spread_id, spread_version, idempotency_key,
             encrypted_question,
-            reading_lens, safety_classification, state, created_at
+            reading_lens, question_classification, entitlement_decision, expires_at,
+            safety_classification, state, created_at
           ) values (
             ${reading.id}, ${reading.userId}, ${reading.profileSnapshotId}, ${reading.spreadId},
             ${reading.draw.spreadVersion}, ${reading.idempotencyKey}, ${reading.encryptedQuestion},
-            ${tx.json(json(reading.readingLens))}, ${reading.safetyClassification}, ${reading.generationStatus},
+            ${tx.json(json(reading.readingLens))},
+            ${tx.json(json(reading.questionClassification))},
+            ${tx.json(json(reading.entitlementDecision))}, ${reading.expiresAt},
+            ${reading.safetyClassification}, ${reading.generationStatus},
             ${reading.createdAt}
           )
           on conflict (user_id, idempotency_key) do nothing
@@ -571,6 +605,17 @@ export function createPostgresRepositories(
           update reading_sessions set state = ${status}, updated_at = now()
           where id = ${readingId} and user_id = ${userId}
         `;
+      });
+    },
+    async updateRitualProgress(userId: string, readingId: string, progress: StoredRitualProgress) {
+      const parsed = ritualProgressSchema.parse(progress);
+      await userTransaction(userId, async (tx) => {
+        const rows = await tx`
+          update reading_sessions set ritual_progress = ${tx.json(json(parsed))}, updated_at = now()
+          where id = ${readingId} and user_id = ${userId}
+          returning id
+        `;
+        if (rows.length !== 1) throw new Error("READING_NOT_FOUND");
       });
     },
   };

@@ -13,6 +13,12 @@ brief/PRD Must-level or integrity items to schedule before public MVP. **P2** �
 record-the-decision items. Commerce P0s are behind `ENABLE_PROFILE_REPORTS=false` today; they
 block _flag flip_, not the current reading beta.
 
+## Resolution status — 2026-08-11
+
+The findings below are retained as point-in-time audit evidence; they are not the current open-work list. All repository-actionable G1–G60 remediations have now been implemented or converted into an explicit external approval/provider gate in `docs/KNOWN-GAPS.md`. Waves 1–3 closed the safety interrupt/pre-draw high-stakes boundary, deterministic user-facing fallback, durable worker diagnostics, RLS/AAD/snapshot/retention/deletion controls, calculation correctness/version registries, regression fixtures, and the first documentation drift sweep. Waves 4–5 are recorded below. Wave 6 and the continuation audit added profile correction/prefill, `profile-traits-v4`, `question-trait-lens-v2`, append-only consent history, account settings, safe operational access, complete review screenshots, confirmation/recovery hardening, trusted-edge IP policy, dedicated readiness authentication, environment/secret-scan drift guards, expanded output grounding, calculation latency enforcement, and updated production contracts.
+
+A follow-on remediation pass added structured topic/intent/horizon intake, a question-free general-reading path, no-draw high-stakes confirmation, versioned reading allowances, persisted session TTL and server-authoritative ritual recovery, purchased-report history, tagged PDF generation with web-source parity, role-separated masked trace/retry operations, fully typed `available | unavailable` Western/BaZi/angularity activation payloads, and Firefox/WebKit CI projects. Local validation on 2026-08-11 passed install, formatting, lint, typecheck, 193 web tests plus all package tests, 35 Python tests/Ruff/mypy/latency, migration validation, production audit, build, and 61 active desktop/mobile Chromium E2E tests; Node 24 and actual Firefox/WebKit execution remain CI evidence because the local host is Node 22 and has only Chromium installed.
+
 ## Implementation update — Wave 4 (2026-08-10)
 
 G14–G19 and G43–G47 are implemented on this branch. Completed readings now have a direct pre-revealed result route; cut/reveal progress recovers per reading; revealed cards expose orientation-correct themes; follow-up cardinality and normalized reread cooldown are configurable; feedback has an authenticated encrypted route, UI, history state, and export; `result.title` heads the opening theme; Groq cardinality is exact; active deck/spread flags gate creation; motion/sound persist; and history uses spread names plus follow-up/feedback/report state. Migration `0011_reading_flow_controls` carries the database changes. The default remains one follow-up to preserve PRD DEC-007. Scheduled outcome reminders and their separate outcome research schema remain explicitly deferred as recorded in `docs/KNOWN-GAPS.md`; the new feedback surface must not be described as outcome verification.
@@ -343,15 +349,15 @@ G5–G7, G30, G31, and G53 are implemented on this branch. Checkout success/canc
 
 ---
 
-## Owner / ops actions (cannot be done from this machine)
+## Owner / ops actions (cannot be closed by repository code)
 
-1. Apply migrations `0006` + `0007` to the real Supabase staging project.
+1. Apply the authoritative migration history through `0016_reading_intake_recovery` to the real Supabase staging project and run the protected exact-commit verification.
 2. Set `INTERPRETATION_WORKER_SECRET` in Netlify (server-only, Functions scope, ≥32 chars).
-3. Confirm `NEXT_PUBLIC_APP_URL` resolves from the Netlify **Functions** runtime and that the
+3. Set the distinct `READINESS_PROBE_SECRET`, approved reading-policy values, and any named `SUPPORT_USER_IDS` / `OPERATOR_USER_IDS` in their server-only deploy scope.
+4. Confirm `NEXT_PUBLIC_APP_URL` resolves from the Netlify **Functions** runtime and that the
    `*/1 * * * *` scheduled function actually registered post-deploy.
-4. Real-inbox confirmation/recovery-link smoke test (PKCE binds to the initiating browser; cannot
-   be automated).
-5. Assign an independent reviewer before any merge (required-review count is 0 and self-approval
+5. Run the real-inbox confirmation/recovery-link smoke test, credentialed Stripe lifecycle UAT, provider dashboard/retention review, and independent tagged-PDF/manual accessibility review.
+6. Assign an independent reviewer before any merge (required-review count is 0 and self-approval
    never counts).
 
 ---
@@ -372,11 +378,11 @@ write-back.
 
 ## Suggested fix order
 
-- **Wave 1 — safety + gates + truth (this branch, no credentials needed):** G1, G2, G3, G8, G36,
+- **Wave 1 — safety + gates + truth (implemented):** G1, G2, G3, G8, G36,
   G37, G39, G41, the documentation-drift sweep, G48, G55.
-- **Wave 2 — data integrity:** G9, G10, G11, G12, G13, G26.
-- **Wave 3 — calculation correctness:** G4, G20, G21, G27, G28 (+ G38 fixtures).
+- **Wave 2 — data integrity (implemented):** G9, G10, G11, G12, G13, G26.
+- **Wave 3 — calculation correctness (implemented; certification remains external):** G4, G20, G21, G27, G28 (+ G38 fixtures).
 - **Wave 4 — reading-flow completeness (implemented 2026-08-10):** G14, G15, G16, G17, G18, G19, G43–G47.
 - **Wave 5 — commerce (implemented 2026-08-10; flag remains off):** G5, G6, G7, G30, G31, G53.
-- **Wave 6 — account & ops:** G32, G33, G34, G35, G40, G49–G52, G56–G60.
-- **Parallel, owner-side:** the five ops actions above.
+- **Wave 6 — account & ops (implemented 2026-08-11):** G23–G25, G29, G32–G35, G38, G40, G42, G49–G52, G56–G60.
+- **Parallel, owner-side:** the six external actions above.
