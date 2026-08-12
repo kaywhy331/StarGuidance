@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   getReportByOrder: vi.fn(),
   grantEntitlement: vi.fn(),
   prepareReportSource: vi.fn(),
+  generateReport: vi.fn(),
 }));
 
 vi.mock("stripe", () => ({
@@ -53,7 +54,7 @@ vi.mock("@/lib/persistence", () => ({
 }));
 
 vi.mock("@/lib/report", () => ({
-  generateProfileReport: vi.fn(),
+  generateProfileReport: mocks.generateReport,
   prepareProfileReportSource: mocks.prepareReportSource,
 }));
 vi.mock("@/lib/request-security", () => ({
@@ -91,6 +92,7 @@ beforeEach(() => {
   mocks.getReportByOrder.mockResolvedValue(undefined);
   mocks.replaceProviderSession.mockResolvedValue(true);
   mocks.prepareReportSource.mockResolvedValue("encrypted-derived-source");
+  mocks.generateReport.mockResolvedValue({ id: "local-report" });
   mocks.createCheckoutSession.mockResolvedValue({
     id: "cs_test_starguidance",
     metadata: { orderId: returnedOrderId },
@@ -116,6 +118,60 @@ describe("Stripe Checkout boundary", () => {
       error: "Profile reports are not available in this beta.",
     });
     expect(mocks.requireUser).not.toHaveBeenCalled();
+    expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "strpie"])(
+    "fails closed when the enabled payment provider is %j",
+    async (provider) => {
+      vi.stubEnv("PAYMENTS_PROVIDER", provider);
+
+      const response = await POST(request());
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error: "Profile report payments are not configured for this environment.",
+      });
+      expect(mocks.requireUser).not.toHaveBeenCalled();
+      expect(mocks.createOrder).not.toHaveBeenCalled();
+      expect(mocks.grantEntitlement).not.toHaveBeenCalled();
+      expect(mocks.generateReport).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects local fulfillment in a hosted runtime", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER", "local");
+    vi.stubEnv("APP_ENV", "test");
+    vi.stubEnv("RUNTIME_ADAPTER", "local");
+    vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
+    vi.stubEnv("SITE_ID", "hosted-site");
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(503);
+    expect(mocks.requireUser).not.toHaveBeenCalled();
+    expect(mocks.createOrder).not.toHaveBeenCalled();
+    expect(mocks.grantEntitlement).not.toHaveBeenCalled();
+    expect(mocks.generateReport).not.toHaveBeenCalled();
+  });
+
+  it("permits local fulfillment only in an explicitly authorized local test runtime", async () => {
+    vi.stubEnv("PAYMENTS_PROVIDER", "local");
+    vi.stubEnv("APP_ENV", "test");
+    vi.stubEnv("RUNTIME_ADAPTER", "local");
+    vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
+    vi.stubEnv("SITE_ID", "");
+    vi.stubEnv("SITE_NAME", "");
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ reportId: "local-report", adapter: "local" });
+    expect(mocks.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "local", status: "paid" }),
+    );
+    expect(mocks.grantEntitlement).toHaveBeenCalledOnce();
+    expect(mocks.generateReport).toHaveBeenCalledOnce();
     expect(mocks.createCheckoutSession).not.toHaveBeenCalled();
   });
 

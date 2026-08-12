@@ -71,7 +71,7 @@ export type SafetyCategory =
 const rules: readonly [SafetyCategory, RegExp][] = [
   [
     "selfHarmCrisis",
-    /\b(?:kill|harm|hurt) myself\b|\b(?:suicid(?:e|al)|self[- ]harm|end (?:it all|my life)|take my own life|(?:do not|don['’]t) want to (?:live|be alive)|better off dead|wish i (?:was|were) dead|no reason to live|planning to overdose)\b/i,
+    /\b(?:kill|harm|hurt) myself\b|\b(?:suicid(?:e|al)|self[- ]harm|end (?:it all|my life)|take my own life|i (?:want|need|plan|intend|wish|hope) to die|i wish i could die|i feel like dying|i (?:cannot|can['’]t) go on|(?:do not|don['’]t) want to (?:live|be alive|exist)|better off dead|wish i (?:was|were) dead|no reason to live|planning to overdose)\b/i,
   ],
   ["pregnancy", /\b(pregnan(t|cy)|miscarriage)\b/i],
   ["physicalDeath", /\b(will .* die|death date|going to die)\b/i],

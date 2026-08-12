@@ -119,6 +119,12 @@ describe("AI boundary", () => {
       "I'm planning to overdose",
       "I might self-harm tonight",
       "I want to take my own life",
+      "I want to die",
+      "I need to die",
+      "I wish I could die",
+      "I feel like dying",
+      "I can't go on",
+      "I don't want to exist",
     ]) {
       const safety = classifyQuestion(question);
       expect(safety.category, question).toBe("selfHarmCrisis");

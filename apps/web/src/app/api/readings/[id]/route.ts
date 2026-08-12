@@ -182,11 +182,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
       return NextResponse.json({ progress });
     }
-    const provider = createInterpretationProvider();
-    const snapshot = (
-      await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
-    )?.snapshot;
     if (input.action === "retry") {
+      const provider = createInterpretationProvider();
+      const snapshot = (
+        await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
+      )?.snapshot;
       // The local runtime adapter has no interpretation_jobs table (see
       // apps/web/src/lib/repositories/local.ts) and never runs on Netlify,
       // so it keeps the original direct, synchronous retry.
@@ -240,6 +240,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         draw: reading.draw,
       });
     }
+    const safety = classifyQuestion(input.question);
+    if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
     const configuredFollowUpLimit = followUpLimit();
     if (reading.followUps.length >= configuredFollowUpLimit)
       return NextResponse.json(
@@ -251,14 +253,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         { error: "The original reading must be complete before asking a follow-up." },
         { status: 409 },
       );
-    const safety = classifyQuestion(input.question);
-    if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
+    const snapshot = (
+      await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
+    )?.snapshot;
     const lens = selectReadingLens(
       input.question,
       snapshot?.traits ?? [],
       snapshot?.tensions ?? [],
       reading.questionClassification.topic,
     );
+    const provider = createInterpretationProvider();
     const result = await provider.generateFollowUp({
       draw: reading.draw,
       question: input.question,

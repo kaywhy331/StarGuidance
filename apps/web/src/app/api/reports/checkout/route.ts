@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
+import { isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
 import { persistenceFor } from "@/lib/persistence";
 import { generateProfileReport, prepareProfileReportSource } from "@/lib/report";
 import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
 import { isStripeTestSecret } from "@/lib/stripe-events";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function configuredPaymentsProvider(): "local" | "stripe" | undefined {
+  const provider = process.env.PAYMENTS_PROVIDER;
+  if (provider === "stripe") return provider;
+  if (provider === "local" && isLocalRuntimeAdapterAuthorized()) return provider;
+  return undefined;
+}
 
 function stripeConfiguration(): { secretKey: string; price: string; appUrl: string } | undefined {
   const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -48,6 +56,12 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Profile reports are not available in this beta." },
         { status: 404 },
+      );
+    const paymentsProvider = configuredPaymentsProvider();
+    if (!paymentsProvider)
+      return NextResponse.json(
+        { error: "Profile report payments are not configured for this environment." },
+        { status: 503 },
       );
     const user = await requireUser();
     assertCurrentPolicyConsents(user);
@@ -156,7 +170,7 @@ export async function POST(request: Request) {
       });
     }
     if (!profile) return NextResponse.json({ error: "A profile is required." }, { status: 409 });
-    if (process.env.PAYMENTS_PROVIDER === "stripe") {
+    if (paymentsProvider === "stripe") {
       const configuration = stripeConfiguration();
       if (!configuration)
         return NextResponse.json(

@@ -36,7 +36,7 @@ test("a crisis-flagged question pauses with real resources instead of the old in
   page,
 }) => {
   await createProfile(page);
-  await page.getByLabel("Your private question").fill("I've been thinking about suicide lately.");
+  await page.getByLabel("Your private question").fill("I want to die");
   const readingResponse = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
