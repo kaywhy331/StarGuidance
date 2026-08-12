@@ -9,6 +9,10 @@ export default defineConfig({
   // process budget as the browsers. Two workers keep both local and CI runs
   // parallel without starving navigation, animation, or typewriter timers.
   workers: 2,
+  // WebKit can terminate a long-lived worker after many isolated browser
+  // contexts on a shared runner. A single CI retry gets a fresh worker while
+  // still requiring every assertion to pass; local runs remain fail-fast.
+  retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3100",
     trace: "retain-on-failure",

@@ -372,47 +372,69 @@ test("the ritual waits for intentional cut and reveal, and reviews each card cin
   // timeline. Sampling several transient locators from the test runner can
   // miss the 2.2s focus window under parallel CPU load even though the ritual
   // completed correctly.
-  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
-  const cinematic = await page.evaluate(
-    () =>
-      new Promise<{
-        title: string;
-        orientation: string | null;
-        heightRatio: number;
-        titleGap: number;
-      }>((resolve, reject) => {
-        const deadline = performance.now() + 2_000;
-        const find = () => {
-          const active = document.querySelector<HTMLElement>(
-            ".physical-card-figure.is-cinematic-subject",
-          );
-          const title = document.querySelector<HTMLElement>(
-            '[data-testid="cinematic-reveal-title"]',
-          );
-          const stage = document.querySelector<HTMLElement>(".sanctuary-stage");
-          const strong = title?.querySelector("strong");
-          if (!active || !title || !stage || !strong) {
-            if (performance.now() < deadline) return requestAnimationFrame(find);
-            reject(new Error("The cinematic reveal did not become measurable."));
-            return;
-          }
-          window.setTimeout(() => {
+  const [cinematic] = await Promise.all([
+    page.evaluate(
+      () =>
+        new Promise<{
+          title: string;
+          orientation: string | null;
+          heightRatio: number;
+          titleGap: number;
+        }>((resolve, reject) => {
+          // Start observing before Playwright's actionability checks. WebKit
+          // can keep the runner-level click pending until after this brief
+          // focus state has already ended on a loaded CI worker.
+          const appearanceDeadline = performance.now() + 30_000;
+          let geometryDeadline: number | null = null;
+          const find = () => {
+            const active = document.querySelector<HTMLElement>(
+              ".physical-card-figure.is-cinematic-subject",
+            );
+            const title = document.querySelector<HTMLElement>(
+              '[data-testid="cinematic-reveal-title"]',
+            );
+            const stage = document.querySelector<HTMLElement>(".sanctuary-stage");
+            const strong = title?.querySelector("strong");
+            if (!active || !title || !stage || !strong) {
+              const deadline = geometryDeadline ?? appearanceDeadline;
+              if (performance.now() < deadline) return requestAnimationFrame(find);
+              reject(
+                new Error(
+                  geometryDeadline === null
+                    ? "The cinematic reveal did not become measurable."
+                    : "The cinematic reveal ended before reaching its target geometry.",
+                ),
+              );
+              return;
+            }
+            geometryDeadline ??= performance.now() + 2_000;
             const activeBounds = active.getBoundingClientRect();
             const titleBounds = title.getBoundingClientRect();
             const stageBounds = stage.getBoundingClientRect();
-            resolve({
+            const measurement = {
               title: strong.textContent?.trim() ?? "",
               orientation:
                 active.querySelector(".physical-tarot-card")?.getAttribute("data-orientation") ??
                 null,
               heightRatio: activeBounds.height / stageBounds.height,
               titleGap: activeBounds.y - (titleBounds.y + titleBounds.height),
-            });
-          }, 1_250);
-        };
-        find();
-      }),
-  );
+            };
+            if (measurement.heightRatio > 0.68 && measurement.titleGap >= 2) {
+              resolve(measurement);
+              return;
+            }
+            if (performance.now() < geometryDeadline) return requestAnimationFrame(find);
+            reject(
+              new Error(
+                `The cinematic reveal missed its target geometry: ${JSON.stringify(measurement)}`,
+              ),
+            );
+          };
+          find();
+        }),
+    ),
+    page.getByRole("button", { name: "Reveal card 1, face down" }).click(),
+  ]);
   expect(cinematic.title.endsWith(" (R)")).toBe(cinematic.orientation === "reversed");
   expect(cinematic.heightRatio).toBeGreaterThan(0.68);
   expect(cinematic.titleGap).toBeGreaterThanOrEqual(2);

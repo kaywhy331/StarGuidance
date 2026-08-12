@@ -508,6 +508,10 @@ a {
   filter: blur(0.35px) saturate(0.68) brightness(0.76);
 }
 
+.tarot-spread-stage.is-cinematic-review .physical-card-figure {
+  transition-duration: 560ms, 720ms, 720ms;
+}
+
 .tarot-spread-stage.is-reading-review .physical-card-figure:not(.is-cinematic-subject) {
   opacity: 0.22;
   filter: blur(0.25px) saturate(0.62) brightness(0.72);
