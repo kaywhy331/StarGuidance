@@ -157,6 +157,38 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     expect(reclaimed.attemptCount).toBe(2);
   });
 
+  it("fences stale completion and failure after a lease is reclaimed", async () => {
+    const readingId = await createReading();
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    const staleAttempt = await claimReading(readingId);
+    await asWorker(
+      (tx) => tx`
+        update interpretation_jobs set lock_expires_at = now() - interval '1 second'
+        where id = ${staleAttempt.id}
+      `,
+    );
+    const currentAttempt = await claimReading(readingId);
+
+    expect(await asWorker((tx) => completeInterpretationJob(tx, staleAttempt))).toBe(false);
+    expect(
+      await asWorker((tx) => failInterpretationJob(tx, staleAttempt, "stale-failure")),
+    ).toEqual({ terminal: false, applied: false });
+    const [processing] = await asWorker(
+      (tx) =>
+        tx`select status, attempt_count from interpretation_jobs where id = ${currentAttempt.id}`,
+    );
+    expect(processing?.status).toBe("processing");
+    expect(processing?.attempt_count).toBe(currentAttempt.attemptCount);
+
+    expect(await asWorker((tx) => completeInterpretationJob(tx, currentAttempt))).toBe(true);
+    const [completed] = await asWorker(
+      (tx) =>
+        tx`select status, attempt_count from interpretation_jobs where id = ${currentAttempt.id}`,
+    );
+    expect(completed?.status).toBe("completed");
+    expect(completed?.attempt_count).toBe(currentAttempt.attemptCount);
+  });
+
   it("returns a failed job to pending with capped exponential backoff until max_attempts, then terminates it", async () => {
     const readingId = await createReading();
     await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
@@ -166,6 +198,7 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
       const before = Date.now();
       const outcome = await asWorker((tx) => failInterpretationJob(tx, job, `attempt-${attempt}`));
       expect(outcome.terminal).toBe(false);
+      expect(outcome.applied).toBe(true);
       const [row] = await asWorker(
         (tx) =>
           tx`select status, available_at, last_error from interpretation_jobs where id = ${job.id}`,
@@ -186,6 +219,7 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     }
     const finalOutcome = await asWorker((tx) => failInterpretationJob(tx, job, "final-failure"));
     expect(finalOutcome.terminal).toBe(true);
+    expect(finalOutcome.applied).toBe(true);
     const [row] = await asWorker(
       (tx) => tx`select status from interpretation_jobs where id = ${job.id}`,
     );
@@ -197,56 +231,62 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     const readingId = await createReading();
     await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const job = await claimReading(readingId);
-    await actorTransaction(sql!, userId, (tx) =>
-      writeInterpretationResult(tx, {
-        userId,
-        readingId,
-        result: {
-          schemaVersion: "reading-result-v2",
-          title: "Synthetic",
-          passages: [
-            {
-              id: "opening",
-              role: "opening",
-              text: "Synthetic opening narration.",
-              cardReferences: ["focus"],
+    expect(
+      await actorTransaction(sql!, userId, (tx) =>
+        writeInterpretationResult(tx, {
+          userId,
+          readingId,
+          job,
+          result: {
+            schemaVersion: "reading-result-v2",
+            title: "Synthetic",
+            passages: [
+              {
+                id: "opening",
+                role: "opening",
+                text: "Synthetic opening narration.",
+                cardReferences: ["focus"],
+              },
+              {
+                id: "trajectory",
+                role: "trajectory",
+                text: "Synthetic likely trajectory.",
+                cardReferences: ["focus"],
+              },
+              {
+                id: "alternate",
+                role: "alternative",
+                text: "Synthetic alternate trajectory.",
+                cardReferences: [],
+              },
+            ],
+            cards: [
+              {
+                positionId: "focus",
+                cardId: "major-00",
+                orientation: "upright",
+                passageIds: ["opening", "trajectory"],
+              },
+            ],
+            trajectory: {
+              likelyPassageId: "trajectory",
+              conditions: ["Synthetic condition"],
+              alternatePassageId: "alternate",
             },
-            {
-              id: "trajectory",
-              role: "trajectory",
-              text: "Synthetic likely trajectory.",
-              cardReferences: ["focus"],
-            },
-            {
-              id: "alternate",
-              role: "alternative",
-              text: "Synthetic alternate trajectory.",
-              cardReferences: [],
-            },
-          ],
-          cards: [
-            {
-              positionId: "focus",
-              cardId: "major-00",
-              orientation: "upright",
-              passageIds: ["opening", "trajectory"],
-            },
-          ],
-          trajectory: {
-            likelyPassageId: "trajectory",
-            conditions: ["Synthetic condition"],
-            alternatePassageId: "alternate",
+            userAgency: ["Synthetic agency"],
+            reflectionQuestion: "Synthetic reflection question",
+            disconfirmingEvidence: ["Synthetic disconfirming evidence"],
+            uncertainty: "Synthetic uncertainty",
+            safetyFlags: [],
           },
-          userAgency: ["Synthetic agency"],
-          reflectionQuestion: "Synthetic reflection question",
-          disconfirmingEvidence: ["Synthetic disconfirming evidence"],
-          uncertainty: "Synthetic uncertainty",
-          safetyFlags: [],
-        },
-        provenance: { providerId: "test", promptVersion: "v2", schemaVersion: "reading-result-v2" },
-      }),
-    );
-    await asWorker((tx) => completeInterpretationJob(tx, job.id));
+          provenance: {
+            providerId: "test",
+            promptVersion: "v2",
+            schemaVersion: "reading-result-v2",
+          },
+        }),
+      ),
+    ).toBe(true);
     const [jobRow] = await asWorker(
       (tx) => tx`select status, completed_at from interpretation_jobs where id = ${job.id}`,
     );
@@ -257,6 +297,77 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     // zero rows here regardless of grants.
     const [reading] = await sql!`select state from reading_sessions where id = ${readingId}`;
     expect(reading?.state).toBe("ready");
+  });
+
+  it("allows only one concurrent result write for a claimed attempt", async () => {
+    const readingId = await createReading();
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
+    const job = await claimReading(readingId);
+    const input = {
+      userId,
+      readingId,
+      job,
+      result: {
+        schemaVersion: "reading-result-v2" as const,
+        title: "Authoritative synthetic result",
+        passages: [
+          {
+            id: "opening",
+            role: "opening" as const,
+            text: "Synthetic opening narration.",
+            cardReferences: ["focus"],
+          },
+          {
+            id: "trajectory",
+            role: "trajectory" as const,
+            text: "Synthetic likely trajectory.",
+            cardReferences: ["focus"],
+          },
+          {
+            id: "alternate",
+            role: "alternative" as const,
+            text: "Synthetic alternate trajectory.",
+            cardReferences: [],
+          },
+        ],
+        cards: [
+          {
+            positionId: "focus",
+            cardId: "major-00",
+            orientation: "upright" as const,
+            passageIds: ["opening", "trajectory"],
+          },
+        ],
+        trajectory: {
+          likelyPassageId: "trajectory",
+          conditions: ["Synthetic condition"],
+          alternatePassageId: "alternate",
+        },
+        userAgency: ["Synthetic agency"],
+        reflectionQuestion: "Synthetic reflection question",
+        disconfirmingEvidence: ["Synthetic disconfirming evidence"],
+        uncertainty: "Synthetic uncertainty",
+        safetyFlags: [],
+      },
+      provenance: {
+        providerId: "test",
+        promptVersion: "v2",
+        schemaVersion: "reading-result-v2" as const,
+      },
+    };
+
+    const outcomes = await Promise.all([
+      actorTransaction(sql!, userId, (tx) => writeInterpretationResult(tx, input)),
+      actorTransaction(sql!, userId, (tx) => writeInterpretationResult(tx, input)),
+    ]);
+
+    expect(outcomes.sort()).toEqual([false, true]);
+    const [row] = await sql!`
+      select count(*)::integer as count, min(payload->>'title') as title
+      from reading_outputs where reading_id = ${readingId}
+    `;
+    expect(row?.count).toBe(1);
+    expect(row?.title).toBe("Authoritative synthetic result");
   });
 
   it("marks the owning reading failed", async () => {
@@ -333,7 +444,7 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     const staleReading = await createReading();
     await asUser((tx) => insertInterpretationJob(tx, { userId, readingId: staleReading }));
     const staleJob = await claimReading(staleReading);
-    await asWorker((tx) => completeInterpretationJob(tx, staleJob.id));
+    await asWorker((tx) => completeInterpretationJob(tx, staleJob));
     await asWorker(
       (tx) => tx`
         update interpretation_jobs set completed_at = now() - interval '25 hours'
@@ -342,7 +453,7 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     const freshReading = await createReading();
     await asUser((tx) => insertInterpretationJob(tx, { userId, readingId: freshReading }));
     const freshJob = await claimReading(freshReading);
-    await asWorker((tx) => completeInterpretationJob(tx, freshJob.id));
+    await asWorker((tx) => completeInterpretationJob(tx, freshJob));
     await sql`insert into rate_limit_buckets (key_hash, window_start, count, expires_at) values
       ('prune-test-expired', now() - interval '2 hours', 1, now() - interval '1 hour'),
       ('prune-test-live', now(), 1, now() + interval '1 hour')`;

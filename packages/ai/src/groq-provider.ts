@@ -34,6 +34,18 @@ import { generatedOutputSafetyViolation } from "./output-safety";
 export const PROMPT_VERSION = "reader-voice-v3" as const;
 export const RESPONSE_SCHEMA_VERSION = "reading-result-v2" as const;
 export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v3" as const;
+export const DEFAULT_GROQ_PRIMARY_MODEL = "openai/gpt-oss-120b" as const;
+export const DEFAULT_GROQ_FALLBACK_MODELS = [
+  "llama-3.3-70b-versatile",
+  "openai/gpt-oss-20b",
+] as const;
+
+const DEFAULT_ATTEMPT_TIMEOUT_MS = 15_000;
+const DEFAULT_TOTAL_TIMEOUT_MS = 40_000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 2_600;
+const JSON_OBJECT_MODELS = new Set(["llama-3.3-70b-versatile"]);
+
+type StructuredOutputMode = "strict-json-schema" | "json-object";
 
 type FallbackReason =
   | "request-timeout"
@@ -118,9 +130,29 @@ const FOLLOW_UP_VOICE = [
 export interface GroqProviderOptions {
   readonly apiKey: string;
   readonly model: string;
+  readonly fallbackModels?: readonly string[];
   readonly baseUrl?: string;
   readonly timeoutMs?: number;
+  readonly totalTimeoutMs?: number;
   readonly maxOutputTokens?: number;
+}
+
+function positiveTimeout(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function uniqueModelChain(primary: string, fallbacks: readonly string[] = []): readonly string[] {
+  return [...new Set([primary, ...fallbacks].map((model) => model.trim()).filter(Boolean))];
+}
+
+function structuredOutputMode(model: string): StructuredOutputMode {
+  return JSON_OBJECT_MODELS.has(model) ? "json-object" : "strict-json-schema";
+}
+
+function shouldTryFallback(error: unknown): boolean {
+  // Every candidate uses the same Groq credential. Retrying another model on
+  // an authentication failure only adds latency and cannot recover the call.
+  return fallbackReason(error) !== "authentication";
 }
 
 /** The JSON Schema the model is constrained to. Mirrors readingResultSchema. */
@@ -213,9 +245,11 @@ function followUpResponseSchema(): Record<string, unknown> {
 export class GroqInterpretationProvider implements ReadingInterpretationProvider {
   readonly id: string;
   private readonly fallback = new DeterministicFallbackProvider();
+  private readonly models: readonly string[];
 
   constructor(private readonly options: GroqProviderOptions) {
-    this.id = `groq:${options.model}`;
+    this.models = uniqueModelChain(options.model, options.fallbackModels);
+    this.id = `groq:${this.models[0] ?? options.model}`;
   }
 
   /** The payload sent to the provider. Exposed so tests can assert what leaves. */
@@ -263,10 +297,14 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     signal?: AbortSignal,
   ): Promise<ReadingGenerationOutcome> {
     try {
+      const generated = await this.withModelFallback(
+        (model, mode, timeoutMs) => this.callProvider(input, model, mode, timeoutMs, signal),
+        signal,
+      );
       return {
-        result: await this.callProvider(input, signal),
+        result: generated.value,
         provenance: {
-          providerId: this.id,
+          providerId: `groq:${generated.model}`,
           promptVersion: PROMPT_VERSION,
           schemaVersion: RESPONSE_SCHEMA_VERSION,
         },
@@ -292,14 +330,53 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     signal?: AbortSignal,
   ): Promise<FollowUpResult> {
     try {
-      return await this.callFollowUpProvider(input, signal);
+      return (
+        await this.withModelFallback(
+          (model, mode, timeoutMs) =>
+            this.callFollowUpProvider(input, model, mode, timeoutMs, signal),
+          signal,
+        )
+      ).value;
     } catch {
       return this.fallback.generateFollowUp(input);
     }
   }
 
+  private async withModelFallback<T>(
+    attempt: (model: string, mode: StructuredOutputMode, timeoutMs: number) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<{ value: T; model: string }> {
+    const attemptTimeoutMs = positiveTimeout(this.options.timeoutMs, DEFAULT_ATTEMPT_TIMEOUT_MS);
+    const totalTimeoutMs = positiveTimeout(this.options.totalTimeoutMs, DEFAULT_TOTAL_TIMEOUT_MS);
+    const deadline = Date.now() + totalTimeoutMs;
+    let lastError: unknown = new ProviderRequestError("unknown");
+
+    for (const model of this.models) {
+      if (signal?.aborted) throw new ProviderRequestError("request-timeout");
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) throw new ProviderRequestError("request-timeout");
+      try {
+        return {
+          value: await attempt(
+            model,
+            structuredOutputMode(model),
+            Math.min(attemptTimeoutMs, remainingMs),
+          ),
+          model,
+        };
+      } catch (error) {
+        lastError = error;
+        if (signal?.aborted || !shouldTryFallback(error)) throw error;
+      }
+    }
+    throw lastError;
+  }
+
   private async callProvider(
     input: ReadingGenerationInput,
+    model: string,
+    mode: StructuredOutputMode,
+    timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<ReadingResult> {
     const safety = classifyQuestion(input.question);
@@ -311,27 +388,28 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
         this.buildPayload(input),
         "reading",
         responseSchema(resolved.length),
-        this.options.maxOutputTokens ?? 4000,
+        this.options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+        model,
+        mode,
+        timeoutMs,
         signal,
       ),
     );
     if (parsed.cards.length !== resolved.length) throw new ProviderRequestError("invalid-response");
+    const parsedByPosition = new Map(parsed.cards.map((card) => [card.positionId, card]));
+    for (const entry of resolved) {
+      const echoed = parsedByPosition.get(entry.position.id);
+      if (!echoed || echoed.cardId !== entry.card.id || echoed.orientation !== entry.orientation)
+        throw new ProviderRequestError("invalid-response");
+    }
     if (generatedOutputSafetyViolation(parsed)) throw new ProviderRequestError("unsafe-response");
-    // The model may not echo the locked draw faithfully; the draw is
-    // authoritative, so card identity and orientation are restored from it.
-    const positionMap = new Map(
-      parsed.cards.map((card, index) => [card.positionId, resolved[index]!.position.id]),
-    );
+    // The model may order its card threads differently, but it must echo the
+    // exact locked position/card/orientation set. Join by position ID so a
+    // harmless permutation cannot attach one card's narrative to another.
     return readingResultV2Schema.parse({
       ...parsed,
-      passages: parsed.passages.map((passage) => ({
-        ...passage,
-        cardReferences: passage.cardReferences.map(
-          (positionId) => positionMap.get(positionId) ?? positionId,
-        ),
-      })),
-      cards: resolved.map((entry, index) => ({
-        ...parsed.cards[index]!,
+      cards: resolved.map((entry) => ({
+        ...parsedByPosition.get(entry.position.id)!,
         positionId: entry.position.id,
         cardId: entry.card.id,
         orientation: entry.orientation,
@@ -342,6 +420,9 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
 
   private async callFollowUpProvider(
     input: FollowUpGenerationInput,
+    model: string,
+    mode: StructuredOutputMode,
+    timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<FollowUpResult> {
     const safety = classifyQuestion(input.question);
@@ -354,6 +435,9 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
         "follow_up",
         followUpResponseSchema(),
         Math.min(this.options.maxOutputTokens ?? 900, 1_200),
+        model,
+        mode,
+        timeoutMs,
         signal,
       ),
     );
@@ -367,12 +451,27 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     schemaName: string,
     schema: Record<string, unknown>,
     maxOutputTokens: number,
+    model: string,
+    mode: StructuredOutputMode,
+    timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 20_000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const onAbort = () => controller.abort();
     signal?.addEventListener("abort", onAbort);
+
+    const modelSystem =
+      mode === "json-object"
+        ? `${system} Return only one JSON object matching this JSON Schema exactly: ${JSON.stringify(schema)}`
+        : system;
+    const responseFormat =
+      mode === "json-object"
+        ? { type: "json_object" }
+        : {
+            type: "json_schema",
+            json_schema: { name: schemaName, strict: true, schema },
+          };
 
     try {
       const response = await fetch(
@@ -384,24 +483,21 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            model: this.options.model,
+            model,
             temperature: 0.85,
             max_completion_tokens: maxOutputTokens,
             messages: [
-              { role: "system", content: system },
+              { role: "system", content: modelSystem },
               { role: "user", content: JSON.stringify(payload) },
             ],
-            response_format: {
-              type: "json_schema",
-              json_schema: { name: schemaName, strict: true, schema },
-            },
+            response_format: responseFormat,
           }),
           signal: controller.signal,
         },
       );
       if (!response.ok) {
         const reason: FallbackReason =
-          response.status === 401 || response.status === 403
+          response.status === 401
             ? "authentication"
             : response.status === 429
               ? "rate-limited"

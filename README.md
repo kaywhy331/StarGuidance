@@ -54,7 +54,7 @@ ruff check .
 mypy .
 ```
 
-The deterministic reading provider is the default. Live AI requires credentials and `AI_SAFETY_EVALUATION_APPROVED=true`. New report purchases and Stripe webhooks require both server and UI report flags; both default off. See [known production gates](docs/KNOWN-GAPS.md) before describing a deployment as public-launch ready.
+The deterministic reading provider is the default. Live AI requires credentials and `AI_SAFETY_EVALUATION_APPROVED=true`. The reviewed Groq order is GPT-OSS 120B (strict JSON Schema), Llama 3.3 70B (JSON mode plus full application validation), GPT-OSS 20B (strict JSON Schema), then the provider-independent deterministic reader. Model attempts reuse the same locked draw and share one total latency budget. New report purchases and Stripe webhooks require both server and UI report flags; both default off. See [known production gates](docs/KNOWN-GAPS.md) before describing a deployment as public-launch ready.
 
 ## Review evidence
 

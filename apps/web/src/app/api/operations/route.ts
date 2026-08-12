@@ -4,6 +4,7 @@ import {
   reenqueueReportJob,
 } from "@starguidance/database";
 import { z } from "zod";
+import { configuredGroqModelChain } from "@starguidance/ai";
 
 import { requireUser } from "@/lib/auth";
 import { OPERATIONAL_ACCESS_DENIED, requireOperationalRole } from "@/lib/operational-access";
@@ -80,7 +81,10 @@ export async function GET(request: Request) {
           process.env.AI_PROVIDER === "groq" &&
           Boolean(process.env.AI_PROVIDER_API_KEY) &&
           process.env.AI_SAFETY_EVALUATION_APPROVED === "true",
-        aiModel: process.env.AI_PROVIDER_MODEL?.trim() || "deterministic fallback",
+        aiModels:
+          process.env.AI_PROVIDER === "groq"
+            ? configuredGroqModelChain()
+            : ["deterministic fallback"],
         profileReportsEnabled: process.env.ENABLE_PROFILE_REPORTS === "true",
         readingAccessMode:
           process.env.READING_ACCESS_MODE === "free-window" ? "free-window" : "unlimited",

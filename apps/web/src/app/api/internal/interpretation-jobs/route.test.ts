@@ -129,7 +129,8 @@ describe("POST /api/internal/interpretation-jobs", () => {
         completedReportJobs: 1,
       },
     });
-    expect(mocks.runInterpretationJobs).toHaveBeenCalledWith(10);
+    expect(mocks.runInterpretationJobs).toHaveBeenCalledWith(1);
+    expect(mocks.runReportJobs).toHaveBeenCalledWith(10);
     expect(mocks.pruneExpiredSystemRows).toHaveBeenCalledWith("synthetic-system-client");
   });
 

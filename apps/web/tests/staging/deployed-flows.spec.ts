@@ -454,14 +454,20 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     assignments > 0 &&
     reading.generationStatus !== "pending" &&
     providerRetryPreservedDraw;
+  const approvedLiveProviderIds = new Set([
+    "groq:openai/gpt-oss-120b",
+    "groq:llama-3.3-70b-versatile",
+    "groq:openai/gpt-oss-20b",
+  ]);
+  const outputProvenance = reading.outputProvenance;
   const liveProvenance =
-    reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b" &&
-    reading.outputProvenance.promptVersion === "reader-voice-v3" &&
-    reading.outputProvenance.schemaVersion === "reading-result-v2";
+    approvedLiveProviderIds.has(outputProvenance?.providerId ?? "") &&
+    outputProvenance?.promptVersion === "reader-voice-v3" &&
+    outputProvenance.schemaVersion === "reading-result-v2";
   const deterministicProvenance =
-    reading.outputProvenance?.providerId === "deterministic-fallback-v1" &&
-    reading.outputProvenance.promptVersion === "deterministic-fallback-v3" &&
-    reading.outputProvenance.schemaVersion === "reading-result-v2";
+    outputProvenance?.providerId === "deterministic-fallback-v1" &&
+    outputProvenance.promptVersion === "deterministic-fallback-v3" &&
+    outputProvenance.schemaVersion === "reading-result-v2";
   const configuredProvenance =
     interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
   const safeFallbackReasons = [
@@ -471,29 +477,28 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     "provider-unavailable",
     "request-rejected",
     "invalid-response",
+    "unsafe-response",
     "network-error",
     "unknown",
   ] as const;
   const classifiedFallbackReason = safeFallbackReasons.find(
-    (reason) =>
-      reading.outputProvenance?.providerId === `deterministic-fallback-v1:after-groq-${reason}`,
+    (reason) => outputProvenance?.providerId === `deterministic-fallback-v1:after-groq-${reason}`,
   );
-  const providerState =
-    reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b"
-      ? "approved-live"
-      : classifiedFallbackReason
-        ? `deterministic-fallback-after-groq-${classifiedFallbackReason}`
-        : reading.outputProvenance?.providerId === "deterministic-fallback-v1"
-          ? "deterministic-fallback"
-          : reading.outputProvenance?.providerId
-            ? "other"
-            : "absent";
-  const promptState =
-    reading.outputProvenance?.promptVersion === "reader-voice-v3"
-      ? "approved-live"
-      : reading.outputProvenance?.promptVersion === "deterministic-fallback-v3"
+  const providerState = approvedLiveProviderIds.has(outputProvenance?.providerId ?? "")
+    ? "approved-live"
+    : classifiedFallbackReason
+      ? `deterministic-fallback-after-groq-${classifiedFallbackReason}`
+      : outputProvenance?.providerId === "deterministic-fallback-v1"
         ? "deterministic-fallback"
-        : reading.outputProvenance?.promptVersion
+        : outputProvenance?.providerId
+          ? "other"
+          : "absent";
+  const promptState =
+    outputProvenance?.promptVersion === "reader-voice-v3"
+      ? "approved-live"
+      : outputProvenance?.promptVersion === "deterministic-fallback-v3"
+        ? "deterministic-fallback"
+        : outputProvenance?.promptVersion
           ? "other"
           : "absent";
   const schemaState =

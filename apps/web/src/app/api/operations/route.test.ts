@@ -88,6 +88,9 @@ describe("operational API boundary", () => {
     vi.stubEnv("READING_ACCESS_MODE", "free-window");
     vi.stubEnv("READING_FREE_ALLOWANCE", "2");
     vi.stubEnv("READING_ALLOWANCE_WINDOW_HOURS", "48");
+    vi.stubEnv("AI_PROVIDER", "groq");
+    vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-120b");
+    vi.stubEnv("AI_PROVIDER_FALLBACK_MODELS", "llama-3.3-70b-versatile,openai/gpt-oss-20b");
 
     const response = await GET(getRequest());
     const body = await response.json();
@@ -101,6 +104,7 @@ describe("operational API boundary", () => {
       },
       trace: null,
       configuration: {
+        aiModels: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
         readingAccessMode: "free-window",
         freeAllowance: "2",
         allowanceWindowHours: "48",

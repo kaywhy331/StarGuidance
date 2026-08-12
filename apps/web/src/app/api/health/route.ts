@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createInterpretationProvider } from "@starguidance/ai";
+import { configuredGroqModelChain, createInterpretationProvider } from "@starguidance/ai";
 import {
   APPLICATION_DATABASE_ROLE,
   createDatabaseClient,
@@ -30,7 +30,48 @@ const REQUIRED_STAGING_ENVIRONMENT = [
   "NEXT_PUBLIC_APP_URL",
 ] as const;
 
-const APPROVED_STAGING_PROVIDER_ID = "groq:openai/gpt-oss-120b";
+const APPROVED_STAGING_MODEL_CHAIN = [
+  "openai/gpt-oss-120b",
+  "llama-3.3-70b-versatile",
+  "openai/gpt-oss-20b",
+] as const;
+const APPROVED_STAGING_BASE_URL = "https://api.groq.com/openai/v1";
+const APPROVED_STAGING_ATTEMPT_TIMEOUT_MS = 15_000;
+const APPROVED_STAGING_TOTAL_TIMEOUT_MS = 40_000;
+const APPROVED_STAGING_MAX_OUTPUT_TOKENS = 2_600;
+
+function effectivePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function approvedStagingModelChainConfigured(): boolean {
+  const configured = configuredGroqModelChain();
+  return (
+    configured.length === APPROVED_STAGING_MODEL_CHAIN.length &&
+    configured.every((model, index) => model === APPROVED_STAGING_MODEL_CHAIN[index])
+  );
+}
+
+function approvedStagingProviderBudgetConfigured(): boolean {
+  const baseUrl =
+    process.env.AI_PROVIDER_BASE_URL?.trim().replace(/\/+$/, "") || APPROVED_STAGING_BASE_URL;
+  return (
+    baseUrl === APPROVED_STAGING_BASE_URL &&
+    effectivePositiveInteger(
+      process.env.AI_PROVIDER_TIMEOUT_MS,
+      APPROVED_STAGING_ATTEMPT_TIMEOUT_MS,
+    ) === APPROVED_STAGING_ATTEMPT_TIMEOUT_MS &&
+    effectivePositiveInteger(
+      process.env.AI_PROVIDER_TOTAL_TIMEOUT_MS,
+      APPROVED_STAGING_TOTAL_TIMEOUT_MS,
+    ) === APPROVED_STAGING_TOTAL_TIMEOUT_MS &&
+    effectivePositiveInteger(
+      process.env.AI_PROVIDER_MAX_OUTPUT_TOKENS,
+      APPROVED_STAGING_MAX_OUTPUT_TOKENS,
+    ) === APPROVED_STAGING_MAX_OUTPUT_TOKENS
+  );
+}
 
 type DependencyStatus = {
   healthStatus: number | null;
@@ -280,7 +321,10 @@ export async function GET(request: Request) {
   const interpretationProviderId = createInterpretationProvider().id;
   const interpretation = {
     providerKind: interpretationProviderId.startsWith("groq:") ? "groq" : "deterministic",
-    approvedLiveProviderConfigured: interpretationProviderId === APPROVED_STAGING_PROVIDER_ID,
+    approvedLiveProviderConfigured:
+      interpretationProviderId === `groq:${APPROVED_STAGING_MODEL_CHAIN[0]}` &&
+      approvedStagingModelChainConfigured() &&
+      approvedStagingProviderBudgetConfigured(),
   };
   const requiredEnvironment = REQUIRED_STAGING_ENVIRONMENT.map((name) => ({
     name,

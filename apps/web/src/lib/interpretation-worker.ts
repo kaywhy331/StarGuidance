@@ -3,7 +3,6 @@ import "server-only";
 import {
   actorTransaction,
   claimInterpretationJobs,
-  completeInterpretationJob,
   failInterpretationJob,
   markReadingGenerationFailed,
   writeInterpretationResult,
@@ -67,22 +66,28 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
       questionClassification: reading.questionClassification,
       relevantTraitStatements,
     });
-    await actorTransaction(sql, job.userId, (tx) =>
+    return await actorTransaction(sql, job.userId, (tx) =>
       writeInterpretationResult(tx, {
         userId: job.userId,
         readingId: job.readingId,
+        job,
         result: generated.result,
         provenance: generated.provenance,
       }),
     );
-    await completeInterpretationJob(sql, job.id);
-    return true;
   } catch (error) {
-    const { terminal } = await failInterpretationJob(sql, job, interpretationFailureCode(error));
-    if (terminal)
-      await actorTransaction(sql, job.userId, (tx) =>
-        markReadingGenerationFailed(tx, { userId: job.userId, readingId: job.readingId }),
+    await actorTransaction(sql, job.userId, async (tx) => {
+      const { terminal, applied } = await failInterpretationJob(
+        tx,
+        job,
+        interpretationFailureCode(error),
       );
+      if (terminal && applied)
+        await markReadingGenerationFailed(tx, {
+          userId: job.userId,
+          readingId: job.readingId,
+        });
+    });
     return false;
   }
 }
@@ -102,19 +107,26 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
  */
 export async function runInterpretationJobs(limit: number): Promise<InterpretationJobsRunSummary> {
   if (getRuntimeAdapter() !== "supabase") return { claimed: 0, succeeded: 0, failed: 0 };
-  // Claim/complete/fail run directly on the connection role, not through
-  // systemTransaction: migration 0008 subject-bound the starguidance_app
-  // policy on interpretation_jobs, so a subject-less app-role transaction
-  // sees no rows. The cross-user sweep belongs to the same trusted role the
-  // payment-webhook lease already uses (interpretation_jobs_system policy);
-  // per-user writes below still go through actorTransaction.
+  // Cross-user claims run directly on the connection role via the explicit
+  // interpretation_jobs_system policy (migration 0008). Once claimed, every
+  // result/failure transition is attempt-fenced inside actorTransaction so
+  // subject-bound RLS and the owning reading update share one transaction.
   const sql = getSystemDatabaseClient();
-  const claimed = await claimInterpretationJobs(sql, limit);
+  const maximum = Math.max(0, Math.floor(limit));
+  let claimed = 0;
   let succeeded = 0;
   let failed = 0;
-  for (const job of claimed) {
+
+  // Claim immediately before processing instead of leasing the whole batch
+  // up front. A live model chain can consume most of its 40-second deadline;
+  // pre-claiming ten serial jobs would let later leases expire before their
+  // work began and make an overlapping scheduled invocation reclaim them.
+  for (let processed = 0; processed < maximum; processed += 1) {
+    const [job] = await claimInterpretationJobs(sql, 1);
+    if (!job) break;
+    claimed += 1;
     if (await processJob(sql, job)) succeeded += 1;
     else failed += 1;
   }
-  return { claimed: claimed.length, succeeded, failed };
+  return { claimed, succeeded, failed };
 }

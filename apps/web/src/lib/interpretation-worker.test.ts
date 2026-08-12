@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   persistenceFor: vi.fn(),
   createInterpretationProvider: vi.fn(),
   claimInterpretationJobs: vi.fn(),
-  completeInterpretationJob: vi.fn(),
   failInterpretationJob: vi.fn(),
   markReadingGenerationFailed: vi.fn(),
   writeInterpretationResult: vi.fn(),
@@ -35,7 +34,6 @@ vi.mock("@starguidance/ai", () => ({
 vi.mock("@starguidance/database", () => ({
   actorTransaction: mocks.actorTransaction,
   claimInterpretationJobs: mocks.claimInterpretationJobs,
-  completeInterpretationJob: mocks.completeInterpretationJob,
   failInterpretationJob: mocks.failInterpretationJob,
   markReadingGenerationFailed: mocks.markReadingGenerationFailed,
   writeInterpretationResult: mocks.writeInterpretationResult,
@@ -52,6 +50,12 @@ const JOB = {
   readingId,
   attemptCount: 1,
   maxAttempts: 3,
+};
+
+const SECOND_JOB = {
+  ...JOB,
+  id: "job-2",
+  readingId: "f4ef0419-a583-4eb8-ae56-2fd5ddc2b3f2",
 };
 
 // Reuses the same minimal-but-valid shape as
@@ -137,7 +141,9 @@ beforeEach(() => {
   );
   mocks.getRuntimeAdapter.mockReturnValue("supabase");
   mocks.getSystemDatabaseClient.mockReturnValue("synthetic-system-client");
-  mocks.failInterpretationJob.mockResolvedValue({ terminal: false });
+  mocks.claimInterpretationJobs.mockResolvedValue([]);
+  mocks.writeInterpretationResult.mockResolvedValue(true);
+  mocks.failInterpretationJob.mockResolvedValue({ terminal: false, applied: true });
 });
 
 afterEach(() => {
@@ -158,7 +164,7 @@ describe("runInterpretationJobs", () => {
   });
 
   it("claims, generates, writes, and completes a job on the happy path", async () => {
-    mocks.claimInterpretationJobs.mockResolvedValue([JOB]);
+    mocks.claimInterpretationJobs.mockResolvedValueOnce([JOB]);
     stubPersistence(reading());
     const generateWithProvenance = vi.fn().mockResolvedValue({
       result: { cards: [] },
@@ -169,7 +175,8 @@ describe("runInterpretationJobs", () => {
     const summary = await runInterpretationJobs(10);
 
     expect(summary).toEqual({ claimed: 1, succeeded: 1, failed: 0 });
-    expect(mocks.claimInterpretationJobs).toHaveBeenCalledWith("synthetic-system-client", 10);
+    expect(mocks.claimInterpretationJobs).toHaveBeenNthCalledWith(1, "synthetic-system-client", 1);
+    expect(mocks.claimInterpretationJobs).toHaveBeenNthCalledWith(2, "synthetic-system-client", 1);
     expect(generateWithProvenance).toHaveBeenCalledWith(
       expect.objectContaining({
         question: "what does the future hold?",
@@ -184,38 +191,66 @@ describe("runInterpretationJobs", () => {
     expect(mocks.writeInterpretationResult).toHaveBeenCalledWith("synthetic-actor-tx", {
       userId,
       readingId,
+      job: JOB,
       result: { cards: [] },
       provenance: { providerId: "synthetic-provider", promptVersion: "v1", schemaVersion: "v1" },
     });
-    expect(mocks.completeInterpretationJob).toHaveBeenCalledWith("synthetic-system-client", JOB.id);
     expect(mocks.failInterpretationJob).not.toHaveBeenCalled();
     expect(mocks.markReadingGenerationFailed).not.toHaveBeenCalled();
   });
 
+  it("claims each serial job only after the prior job completes", async () => {
+    mocks.claimInterpretationJobs.mockResolvedValueOnce([JOB]).mockImplementationOnce(async () => {
+      expect(mocks.writeInterpretationResult).toHaveBeenCalledWith(
+        "synthetic-actor-tx",
+        expect.objectContaining({ job: JOB }),
+      );
+      return [SECOND_JOB];
+    });
+    stubPersistence(reading());
+    stubProvider(
+      vi.fn().mockResolvedValue({
+        result: { cards: [] },
+        provenance: { providerId: "synthetic-provider", promptVersion: "v1", schemaVersion: "v1" },
+      }),
+    );
+
+    const summary = await runInterpretationJobs(2);
+
+    expect(summary).toEqual({ claimed: 2, succeeded: 2, failed: 0 });
+    expect(mocks.claimInterpretationJobs).toHaveBeenCalledTimes(2);
+    expect(mocks.claimInterpretationJobs).toHaveBeenNthCalledWith(1, "synthetic-system-client", 1);
+    expect(mocks.claimInterpretationJobs).toHaveBeenNthCalledWith(2, "synthetic-system-client", 1);
+    expect(mocks.writeInterpretationResult).toHaveBeenNthCalledWith(
+      2,
+      "synthetic-actor-tx",
+      expect.objectContaining({ job: SECOND_JOB }),
+    );
+  });
+
   it("records a transient failure without touching the reading's generation status", async () => {
-    mocks.claimInterpretationJobs.mockResolvedValue([JOB]);
+    mocks.claimInterpretationJobs.mockResolvedValueOnce([JOB]);
     stubPersistence(reading());
     stubProvider(vi.fn().mockRejectedValue(new Error("provider unavailable")));
-    mocks.failInterpretationJob.mockResolvedValue({ terminal: false });
+    mocks.failInterpretationJob.mockResolvedValue({ terminal: false, applied: true });
 
     const summary = await runInterpretationJobs(10);
 
     expect(summary).toEqual({ claimed: 1, succeeded: 0, failed: 1 });
     expect(mocks.failInterpretationJob).toHaveBeenCalledWith(
-      "synthetic-system-client",
+      "synthetic-actor-tx",
       JOB,
       "interpretation_generation_failed",
     );
     expect(mocks.writeInterpretationResult).not.toHaveBeenCalled();
-    expect(mocks.completeInterpretationJob).not.toHaveBeenCalled();
     expect(mocks.markReadingGenerationFailed).not.toHaveBeenCalled();
   });
 
   it("marks the reading's generation failed once a job exhausts its retries", async () => {
-    mocks.claimInterpretationJobs.mockResolvedValue([JOB]);
+    mocks.claimInterpretationJobs.mockResolvedValueOnce([JOB]);
     stubPersistence(reading());
     stubProvider(vi.fn().mockRejectedValue(new Error("provider unavailable")));
-    mocks.failInterpretationJob.mockResolvedValue({ terminal: true });
+    mocks.failInterpretationJob.mockResolvedValue({ terminal: true, applied: true });
 
     const summary = await runInterpretationJobs(10);
 
@@ -226,17 +261,29 @@ describe("runInterpretationJobs", () => {
     });
   });
 
+  it("ignores a stale terminal failure after another attempt reclaimed the job", async () => {
+    mocks.claimInterpretationJobs.mockResolvedValueOnce([JOB]);
+    stubPersistence(reading());
+    stubProvider(vi.fn().mockRejectedValue(new Error("provider unavailable")));
+    mocks.failInterpretationJob.mockResolvedValue({ terminal: true, applied: false });
+
+    const summary = await runInterpretationJobs(1);
+
+    expect(summary).toEqual({ claimed: 1, succeeded: 0, failed: 1 });
+    expect(mocks.markReadingGenerationFailed).not.toHaveBeenCalled();
+  });
+
   it("fails the job without propagating when its reading no longer exists", async () => {
-    mocks.claimInterpretationJobs.mockResolvedValue([JOB]);
+    mocks.claimInterpretationJobs.mockResolvedValueOnce([JOB]);
     stubPersistence(undefined);
-    mocks.failInterpretationJob.mockResolvedValue({ terminal: false });
+    mocks.failInterpretationJob.mockResolvedValue({ terminal: false, applied: true });
 
     const summary = await runInterpretationJobs(10);
 
     expect(summary).toEqual({ claimed: 1, succeeded: 0, failed: 1 });
     expect(mocks.createInterpretationProvider).not.toHaveBeenCalled();
     expect(mocks.failInterpretationJob).toHaveBeenCalledWith(
-      "synthetic-system-client",
+      "synthetic-actor-tx",
       JOB,
       "interpretation_reading_missing",
     );

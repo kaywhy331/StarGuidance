@@ -125,13 +125,17 @@ export async function getInterpretationQueueStats(
 
 export async function completeInterpretationJob(
   client: DatabaseClient | DatabaseTransaction,
-  jobId: string,
-): Promise<void> {
-  await client`
+  job: Pick<ClaimedInterpretationJob, "id" | "attemptCount">,
+): Promise<boolean> {
+  const rows = await client<{ id: string }[]>`
     update interpretation_jobs
     set status = 'completed', completed_at = now()
-    where id = ${jobId}
+    where id = ${job.id}
+      and status = 'processing'
+      and attempt_count = ${job.attemptCount}
+    returning id
   `;
+  return rows.length === 1;
 }
 
 const BACKOFF_CAP_SECONDS = 300;
@@ -148,25 +152,31 @@ export async function failInterpretationJob(
   client: DatabaseClient | DatabaseTransaction,
   job: Pick<ClaimedInterpretationJob, "id" | "attemptCount" | "maxAttempts">,
   error: string,
-): Promise<{ terminal: boolean }> {
+): Promise<{ terminal: boolean; applied: boolean }> {
   const terminal = job.attemptCount >= job.maxAttempts;
   if (terminal) {
-    await client`
+    const rows = await client<{ id: string }[]>`
       update interpretation_jobs
       set status = 'failed', last_error = ${error}
       where id = ${job.id}
+        and status = 'processing'
+        and attempt_count = ${job.attemptCount}
+      returning id
     `;
-    return { terminal: true };
+    return { terminal: true, applied: rows.length === 1 };
   }
   const backoffSeconds = Math.min(2 ** job.attemptCount, BACKOFF_CAP_SECONDS);
-  await client`
+  const rows = await client<{ id: string }[]>`
     update interpretation_jobs
     set status = 'pending',
         available_at = now() + make_interval(secs => ${backoffSeconds}),
         last_error = ${error}
     where id = ${job.id}
+      and status = 'processing'
+      and attempt_count = ${job.attemptCount}
+    returning id
   `;
-  return { terminal: false };
+  return { terminal: false, applied: rows.length === 1 };
 }
 
 /**
@@ -186,9 +196,10 @@ export async function reenqueueInterpretationJob(
 }
 
 /**
- * Writes a successful interpretation exactly like the Next.js request path
- * does today (outputs.save in apps/web/src/lib/repositories/postgres.ts):
- * insert reading_outputs, then mark the reading ready, in one transaction.
+ * Fences a successful interpretation to its exact claimed attempt, writes
+ * the first authoritative output, marks the reading ready, and completes the
+ * job in one actor transaction. A reclaimed attempt increments attempt_count,
+ * so an older model response cannot write after its lease has expired.
  * Run this inside actorTransaction(client, job.userId, ...) — it does not
  * bind a subject itself, matching every other function in this module.
  */
@@ -197,25 +208,58 @@ export async function writeInterpretationResult(
   input: {
     userId: string;
     readingId: string;
+    job: Pick<ClaimedInterpretationJob, "id" | "attemptCount">;
     result: ReadingResult;
     provenance: ReadingOutputProvenance;
   },
-): Promise<void> {
+): Promise<boolean> {
   const provenance = readingOutputProvenanceSchema.parse(input.provenance);
   const result = readingResultSchema.parse(input.result);
-  await tx`
-    insert into reading_outputs (
-      user_id, reading_id, provider_id, prompt_version, content_version, schema_version, payload
-    ) values (
-      ${input.userId}, ${input.readingId}, ${provenance.providerId},
-      ${provenance.promptVersion}, ${TAROT_CONTENT_VERSION},
-      ${provenance.schemaVersion}, ${tx.json(JSON.parse(JSON.stringify(result)))}
-    )
+  const [activeAttempt] = await tx`
+    select id from interpretation_jobs
+    where id = ${input.job.id}
+      and user_id = ${input.userId}
+      and reading_id = ${input.readingId}
+      and status = 'processing'
+      and attempt_count = ${input.job.attemptCount}
+    for update
   `;
+  if (!activeAttempt) return false;
+  const [reading] = await tx`
+    select id from reading_sessions
+    where id = ${input.readingId} and user_id = ${input.userId}
+    for update
+  `;
+  if (!reading) throw new Error("INTERPRETATION_JOB_READING_MISSING");
+  const [existing] = await tx`
+    select id from reading_outputs
+    where reading_id = ${input.readingId} and user_id = ${input.userId}
+    limit 1
+  `;
+  if (!existing)
+    await tx`
+      insert into reading_outputs (
+        user_id, reading_id, provider_id, prompt_version, content_version, schema_version, payload
+      ) values (
+        ${input.userId}, ${input.readingId}, ${provenance.providerId},
+        ${provenance.promptVersion}, ${TAROT_CONTENT_VERSION},
+        ${provenance.schemaVersion}, ${tx.json(JSON.parse(JSON.stringify(result)))}
+      )
+    `;
   await tx`
     update reading_sessions set state = 'ready', updated_at = now()
     where id = ${input.readingId} and user_id = ${input.userId}
   `;
+  const completed = await tx<{ id: string }[]>`
+    update interpretation_jobs
+    set status = 'completed', completed_at = now()
+    where id = ${input.job.id}
+      and status = 'processing'
+      and attempt_count = ${input.job.attemptCount}
+    returning id
+  `;
+  if (completed.length !== 1) throw new Error("INTERPRETATION_JOB_FENCE_LOST");
+  return true;
 }
 
 /**
@@ -227,9 +271,16 @@ export async function writeInterpretationResult(
 export async function markReadingGenerationFailed(
   tx: DatabaseTransaction,
   input: { userId: string; readingId: string },
-): Promise<void> {
-  await tx`
+): Promise<boolean> {
+  const rows = await tx<{ id: string }[]>`
     update reading_sessions set state = 'failed', updated_at = now()
     where id = ${input.readingId} and user_id = ${input.userId}
+      and state <> 'ready'
+      and not exists (
+        select 1 from reading_outputs
+        where reading_id = ${input.readingId} and user_id = ${input.userId}
+      )
+    returning id
   `;
+  return rows.length === 1;
 }

@@ -41,6 +41,11 @@ function configureStaging() {
   vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "");
   vi.stubEnv("AI_PROVIDER", "groq");
   vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-120b");
+  vi.stubEnv("AI_PROVIDER_FALLBACK_MODELS", "llama-3.3-70b-versatile,openai/gpt-oss-20b");
+  vi.stubEnv("AI_PROVIDER_BASE_URL", "https://api.groq.com/openai/v1");
+  vi.stubEnv("AI_PROVIDER_TIMEOUT_MS", "15000");
+  vi.stubEnv("AI_PROVIDER_TOTAL_TIMEOUT_MS", "40000");
+  vi.stubEnv("AI_PROVIDER_MAX_OUTPUT_TOKENS", "2600");
   vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
   for (const [name, value] of Object.entries(SECRET_VALUES)) vi.stubEnv(name, value);
 }
@@ -143,6 +148,48 @@ describe("deployment health", () => {
       approvedLiveProviderConfigured: false,
     });
     expect(JSON.stringify(body)).not.toContain(SECRET_VALUES.AI_PROVIDER_API_KEY);
+  });
+
+  it("does not approve an unexpected live fallback model", async () => {
+    configureStaging();
+    vi.stubEnv("AI_PROVIDER_FALLBACK_MODELS", "llama-3.3-70b-versatile,unreviewed-model");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const body = await (await GET(readinessRequest())).json();
+    expect(body.interpretation).toEqual({
+      providerKind: "groq",
+      approvedLiveProviderConfigured: false,
+    });
+  });
+
+  it("does not approve an unreviewed live-provider endpoint or budget", async () => {
+    configureStaging();
+    vi.stubEnv("AI_PROVIDER_BASE_URL", "https://example.invalid/openai/v1");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const endpointBody = await (await GET(readinessRequest())).json();
+    expect(endpointBody.interpretation.approvedLiveProviderConfigured).toBe(false);
+
+    configureStaging();
+    vi.stubEnv("AI_PROVIDER_TOTAL_TIMEOUT_MS", "120000");
+    const budgetBody = await (await GET(readinessRequest())).json();
+    expect(budgetBody.interpretation.approvedLiveProviderConfigured).toBe(false);
   });
 
   it("reports the build commit in staging and withholds it elsewhere", async () => {

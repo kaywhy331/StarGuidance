@@ -662,9 +662,15 @@ export class PersistedResultStreamAdapter implements StreamingInterpretationAdap
   }
 }
 
-import { GroqInterpretationProvider } from "./groq-provider";
+import {
+  DEFAULT_GROQ_FALLBACK_MODELS,
+  DEFAULT_GROQ_PRIMARY_MODEL,
+  GroqInterpretationProvider,
+} from "./groq-provider";
 
 export {
+  DEFAULT_GROQ_FALLBACK_MODELS,
+  DEFAULT_GROQ_PRIMARY_MODEL,
   FOLLOW_UP_PROMPT_VERSION,
   GUARDED_CATEGORIES,
   GroqInterpretationProvider,
@@ -672,6 +678,19 @@ export {
   RESPONSE_SCHEMA_VERSION,
   type GroqProviderOptions,
 } from "./groq-provider";
+
+export function configuredGroqModelChain(): readonly string[] {
+  const primary = process.env.AI_PROVIDER_MODEL?.trim() || DEFAULT_GROQ_PRIMARY_MODEL;
+  const configuredFallbacks = process.env.AI_PROVIDER_FALLBACK_MODELS;
+  const fallbacks =
+    configuredFallbacks === undefined
+      ? DEFAULT_GROQ_FALLBACK_MODELS
+      : configuredFallbacks
+          .split(",")
+          .map((model) => model.trim())
+          .filter(Boolean);
+  return [...new Set([primary, ...fallbacks])];
+}
 
 /**
  * Chooses the interpretation provider from configuration.
@@ -687,14 +706,18 @@ export function createInterpretationProvider(): ReadingInterpretationProvider {
   if (selected !== "groq" || !apiKey || !safetyEvaluationApproved)
     return new DeterministicFallbackProvider();
   const timeout = Number.parseInt(process.env.AI_PROVIDER_TIMEOUT_MS ?? "", 10);
+  const totalTimeout = Number.parseInt(process.env.AI_PROVIDER_TOTAL_TIMEOUT_MS ?? "", 10);
   const maxOutput = Number.parseInt(process.env.AI_PROVIDER_MAX_OUTPUT_TOKENS ?? "", 10);
+  const [model, ...fallbackModels] = configuredGroqModelChain();
   return new GroqInterpretationProvider({
     apiKey,
-    model: process.env.AI_PROVIDER_MODEL?.trim() || "openai/gpt-oss-120b",
+    model: model ?? DEFAULT_GROQ_PRIMARY_MODEL,
+    fallbackModels,
     ...(process.env.AI_PROVIDER_BASE_URL?.trim()
       ? { baseUrl: process.env.AI_PROVIDER_BASE_URL.trim() }
       : {}),
     ...(Number.isFinite(timeout) ? { timeoutMs: timeout } : {}),
-    ...(Number.isFinite(maxOutput) ? { maxOutputTokens: maxOutput } : {}),
+    ...(Number.isFinite(totalTimeout) ? { totalTimeoutMs: totalTimeout } : {}),
+    ...(Number.isFinite(maxOutput) && maxOutput > 0 ? { maxOutputTokens: maxOutput } : {}),
   });
 }

@@ -7,7 +7,11 @@ import {
 } from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
-import { createInterpretationProvider, GroqInterpretationProvider } from "../src/index";
+import {
+  configuredGroqModelChain,
+  createInterpretationProvider,
+  GroqInterpretationProvider,
+} from "../src/index";
 
 const spread = spreads.find(({ id }) => id === "three-card")!;
 const draw = {
@@ -93,6 +97,14 @@ const followUpInput = {
 
 const provider = () =>
   new GroqInterpretationProvider({ apiKey: "synthetic-key", model: "test-model" });
+
+const fallbackProvider = (overrides: { timeoutMs?: number; totalTimeoutMs?: number } = {}) =>
+  new GroqInterpretationProvider({
+    apiKey: "synthetic-key",
+    model: "openai/gpt-oss-120b",
+    fallbackModels: ["llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
+    ...overrides,
+  });
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -190,6 +202,168 @@ describe("one-section follow-ups", () => {
     const result = await provider().generateFollowUp(followUpInput);
     expect(result.response).not.toContain("is cheating");
     expect(result.response).toContain(tarotCards[12]!.name);
+  });
+
+  it("uses the same model chain for a follow-up without changing the locked draw", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ response: "A focused answer." }) } }],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fallbackProvider().generateFollowUp(followUpInput)).resolves.toEqual({
+      response: "A focused answer.",
+    });
+    const requests = fetchMock.mock.calls.map(
+      (call) =>
+        JSON.parse(String(call[1]?.body)) as { model: string; messages: { content: string }[] },
+    );
+    expect(requests.map(({ model }) => model)).toEqual([
+      "openai/gpt-oss-120b",
+      "llama-3.3-70b-versatile",
+    ]);
+    const lockedCardIds = draw.assignments.map(({ cardId }) => cardId);
+    for (const request of requests) {
+      const sent = JSON.parse(request.messages[1]!.content) as { cards: { cardId: string }[] };
+      expect(sent.cards.map(({ cardId }) => cardId)).toEqual(lockedCardIds);
+    }
+  });
+});
+
+describe("model fallback chain", () => {
+  it("uses strict schema, then validated JSON mode, and records the successful model", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(originalResult) } }] }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, provenance } = await fallbackProvider().generateWithProvenance(input);
+    expect(result.cards).toHaveLength(draw.assignments.length);
+    expect(provenance.providerId).toBe("groq:llama-3.3-70b-versatile");
+
+    const requests = fetchMock.mock.calls.map(
+      (call) =>
+        JSON.parse(String(call[1]?.body)) as {
+          model: string;
+          messages: { content: string }[];
+          response_format: { type: string; json_schema?: { strict?: boolean } };
+        },
+    );
+    expect(requests.map(({ model }) => model)).toEqual([
+      "openai/gpt-oss-120b",
+      "llama-3.3-70b-versatile",
+    ]);
+    expect(requests[0]!.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { strict: true },
+    });
+    expect(requests[1]!.response_format).toEqual({ type: "json_object" });
+    expect(requests[1]!.messages[0]!.content).toContain(
+      "Return only one JSON object matching this JSON Schema exactly",
+    );
+
+    // Every attempt receives the same already-locked draw. A model retry is
+    // never a card retry or a chance for the question/profile to select cards.
+    const lockedCardIds = draw.assignments.map(({ cardId }) => cardId);
+    for (const request of requests) {
+      const sent = JSON.parse(request.messages[1]!.content) as { cards: { cardId: string }[] };
+      expect(sent.cards.map(({ cardId }) => cardId)).toEqual(lockedCardIds);
+    }
+  });
+
+  it("continues from invalid Llama JSON to strict GPT-OSS 20B", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 429 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ choices: [{ message: { content: '{"nonsense":true}' } }] }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(originalResult) } }] }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { provenance } = await fallbackProvider().generateWithProvenance(input);
+    expect(provenance.providerId).toBe("groq:openai/gpt-oss-20b");
+    const requests = fetchMock.mock.calls.map(
+      (call) => JSON.parse(String(call[1]?.body)) as { model: string; response_format: unknown },
+    );
+    expect(requests.map(({ model }) => model)).toEqual([
+      "openai/gpt-oss-120b",
+      "llama-3.3-70b-versatile",
+      "openai/gpt-oss-20b",
+    ]);
+    expect(requests[2]!.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { strict: true },
+    });
+  });
+
+  it("does not retry a shared authentication failure on other Groq models", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { provenance } = await fallbackProvider().generateWithProvenance(input);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-authentication");
+  });
+
+  it("continues after a model-specific authorization rejection", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 403 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(originalResult) } }] }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { provenance } = await fallbackProvider().generateWithProvenance(input);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(provenance.providerId).toBe("groq:llama-3.3-70b-versatile");
+  });
+
+  it("bounds the whole chain even when individual models hang", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))),
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const pending = fallbackProvider({
+        timeoutMs: 10_000,
+        totalTimeoutMs: 15_000,
+      }).generateWithProvenance(input);
+      await vi.runAllTimersAsync();
+      const { provenance } = await pending;
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-request-timeout");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -316,7 +490,7 @@ describe("the draw is authoritative, not the model", () => {
     expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
   });
 
-  it("restores card identity and orientation even when the model returns different ones", async () => {
+  it("rejects a model that changes locked card identity or orientation", async () => {
     const inventedPositionIds = spread.positions.map((_, index) => `invented-${index + 1}`);
     const inventedByActual = new Map(
       spread.positions.map((position, index) => [position.id, inventedPositionIds[index]!]),
@@ -348,20 +522,34 @@ describe("the draw is authoritative, not the model", () => {
         ),
       ),
     );
+    const { provenance } = await provider().generateWithProvenance(input);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
+  });
+
+  it("joins permuted model card threads to the exact locked position", async () => {
+    const permuted = {
+      ...originalResult,
+      cards: [...originalResult.cards].reverse(),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ choices: [{ message: { content: JSON.stringify(permuted) } }] }),
+            { status: 200 },
+          ),
+        ),
+    );
+
     const { result, provenance } = await provider().generateWithProvenance(input);
-    // AI-002: nothing the model says may change which cards were drawn.
-    for (const [index, position] of spread.positions.entries()) {
-      expect(result.cards[index]!.positionId).toBe(position.id);
-      expect(result.cards[index]!.cardId).toBe(tarotCards[index + 10]!.id);
-      expect(result.cards[index]!.orientation).toBe(index === 1 ? "reversed" : "upright");
-    }
-    expect(result.title).toBe("The model's title");
-    expect(result.passages[0]?.cardReferences).toEqual([spread.positions[2]!.id]);
-    expect(provenance).toEqual({
-      providerId: "groq:test-model",
-      promptVersion: "reader-voice-v3",
-      schemaVersion: "reading-result-v2",
-    });
+    expect(result.cards.map(({ positionId }) => positionId)).toEqual(
+      spread.positions.map(({ id }) => id),
+    );
+    for (const [index, card] of result.cards.entries())
+      expect(card.passageIds).toEqual(originalResult.cards[index]!.passageIds);
+    expect(provenance.providerId).toBe("groq:test-model");
   });
 });
 
@@ -435,5 +623,24 @@ describe("the staging kill switch", () => {
     vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-120b");
     vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
     expect(createInterpretationProvider().id).toBe("groq:openai/gpt-oss-120b");
+  });
+
+  it("uses the approved default chain and accepts an explicit de-duplicated override", () => {
+    expect(configuredGroqModelChain()).toEqual([
+      "openai/gpt-oss-120b",
+      "llama-3.3-70b-versatile",
+      "openai/gpt-oss-20b",
+    ]);
+
+    vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-20b");
+    vi.stubEnv(
+      "AI_PROVIDER_FALLBACK_MODELS",
+      "openai/gpt-oss-20b, llama-3.3-70b-versatile, openai/gpt-oss-120b",
+    );
+    expect(configuredGroqModelChain()).toEqual([
+      "openai/gpt-oss-20b",
+      "llama-3.3-70b-versatile",
+      "openai/gpt-oss-120b",
+    ]);
   });
 });

@@ -23,7 +23,12 @@ import { isWeakSharedSecret } from "@/lib/shared-secret";
  * the already-proven Next.js/Postgres path, sidesteps that bug rather than
  * fighting it. The scheduled function is a trivial, dependency-free fetch.
  */
-const BATCH_LIMIT = 10;
+// A Groq attempt can use the full 40-second model-chain deadline. Keep the
+// scheduled interpretation request to one job so the route stays inside the
+// host's execution envelope; the every-minute scheduler drains the backlog.
+// Report jobs remain short, deterministic work and retain their own batch.
+const INTERPRETATION_BATCH_LIMIT = 1;
+const REPORT_BATCH_LIMIT = 10;
 
 function expectedToken(secret: string): string {
   return createHmac("sha256", secret)
@@ -50,8 +55,8 @@ export async function POST(request: Request) {
       { status: 401, headers: { "cache-control": "no-store", "www-authenticate": "Bearer" } },
     );
   try {
-    const summary = await runInterpretationJobs(BATCH_LIMIT);
-    const reportSummary = await runReportJobs(BATCH_LIMIT);
+    const summary = await runInterpretationJobs(INTERPRETATION_BATCH_LIMIT);
+    const reportSummary = await runReportJobs(REPORT_BATCH_LIMIT);
     // Opportunistic garbage collection rides the same every-minute schedule
     // (gap G12): expired rate-limit buckets and completed jobs past their
     // observability window. Failed jobs are never touched here — they are
