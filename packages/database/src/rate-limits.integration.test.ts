@@ -27,13 +27,27 @@ describeDatabase("Postgres-backed rate limiting", () => {
   });
 
   it("allows up to the limit within a window and denies the next request", async () => {
-    const key = `test:${randomUUID()}`;
-    const results = [];
-    for (let attempt = 0; attempt < 4; attempt += 1)
-      results.push(await asApp((tx) => checkRateLimit(tx, key, 3, 60_000)));
+    const windowMs = 5 * 60_000;
+    let key = `test:${randomUUID()}`;
+    let first = await asApp((tx) => checkRateLimit(tx, key, 3, windowMs));
+
+    // Fixed windows align to the Unix epoch. A slow integration run can start
+    // just before a boundary and legitimately place the later calls in the
+    // next bucket. If less than 15 seconds remain, begin again just inside the
+    // next window with a fresh key so this assertion always exercises one
+    // bucket instead of depending on wall-clock timing.
+    if (first.retryAfterSeconds <= 15) {
+      await new Promise((resolve) => setTimeout(resolve, first.retryAfterSeconds * 1_000 + 100));
+      key = `test:${randomUUID()}`;
+      first = await asApp((tx) => checkRateLimit(tx, key, 3, windowMs));
+    }
+
+    const results = [first];
+    for (let attempt = 1; attempt < 4; attempt += 1)
+      results.push(await asApp((tx) => checkRateLimit(tx, key, 3, windowMs)));
     expect(results.map((result) => result.allowed)).toEqual([true, true, true, false]);
     expect(results[3]!.retryAfterSeconds).toBeGreaterThan(0);
-    expect(results[3]!.retryAfterSeconds).toBeLessThanOrEqual(60);
+    expect(results[3]!.retryAfterSeconds).toBeLessThanOrEqual(windowMs / 1_000);
   });
 
   it("resets once the fixed window elapses", async () => {
