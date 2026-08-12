@@ -87,21 +87,17 @@ test("Supabase Auth creates an identity and no application row appears", async (
 
 test("the first authenticated request provisions the row, idempotently", async () => {
   await authenticate(context, identity, baseUrl);
-  const page = await context.newPage();
-  // A page that has never navigated is on about:blank, where a relative URL has
-  // no base and fetch throws before reaching the application at all.
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-
-  const first = await page.evaluate(async () => {
-    const response = await fetch("/api/profile", { cache: "no-store" });
-    return response.status;
+  const profileUrl = new URL("/api/profile", baseUrl).toString();
+  const firstResponse = await context.request.get(profileUrl, {
+    headers: { "cache-control": "no-store" },
   });
+  const first = firstResponse.status();
   const afterFirst = await ownRow(identity.id);
 
-  const second = await page.evaluate(async () => {
-    const response = await fetch("/api/profile", { cache: "no-store" });
-    return response.status;
+  const secondResponse = await context.request.get(profileUrl, {
+    headers: { "cache-control": "no-store" },
   });
+  const second = secondResponse.status();
   const afterSecond = await ownRow(identity.id);
 
   const provisioned = first === 200 && afterFirst.count === 1;
@@ -133,7 +129,6 @@ test("the first authenticated request provisions the row, idempotently", async (
       : "the stored address was not normalised",
   });
 
-  await page.close();
   expect(provisioned, "the boundary provisions on first use").toBe(true);
   expect(idempotent, "provisioning is idempotent").toBe(true);
   expect(normalised, "address normalisation").toBe(true);
