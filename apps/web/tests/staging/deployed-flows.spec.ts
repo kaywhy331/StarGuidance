@@ -535,7 +535,7 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
 
   await navigateApp(pageA, `/session/${readingId}`);
   await reloadApp(pageA, () =>
-    expect(pageA.getByTestId("tarot-spread-stage")).toBeVisible({ timeout: 15_000 }),
+    expect(pageA.getByLabel("Reading controls")).toBeVisible({ timeout: 15_000 }),
   );
   const afterRefresh = drawDigest((await readingState(pageA, readingId)).draw);
 
