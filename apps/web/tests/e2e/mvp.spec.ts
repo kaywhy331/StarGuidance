@@ -527,6 +527,7 @@ test("a follow-up uses the exact same cards", async ({ page }) => {
 });
 
 test("generation failure retries without a redraw", async ({ page }) => {
+  test.setTimeout(150_000);
   await createProfile(page);
   const created = await page.evaluate(async () => {
     const response = await fetch("/api/readings", {

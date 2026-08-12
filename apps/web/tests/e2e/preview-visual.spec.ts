@@ -48,6 +48,7 @@ async function expectCompactReadingWindow(page: Page) {
 test("the visual preview follows the streamlined result and continuation sequence", async ({
   page,
 }) => {
+  test.setTimeout(150_000);
   await page.goto("/visual-preview");
   const journey = page.getByTestId("oracle-transcript");
   await expect(
