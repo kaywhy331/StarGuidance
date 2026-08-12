@@ -134,12 +134,25 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     assertSameOrigin(request);
+    const body: unknown = await request.json();
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "action" in body &&
+      body.action === "followUp" &&
+      "question" in body &&
+      typeof body.question === "string"
+    ) {
+      const crisisSafety = classifyQuestion(body.question);
+      if (crisisSafety.category === "selfHarmCrisis")
+        return NextResponse.json({ safety: crisisSafety }, { status: 422 });
+    }
     const owned = await ownedReading((await context.params).id);
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { persistence, reading, user } = owned;
     assertCurrentPolicyConsents(user);
     await assertRateLimit(`reading-action:${reading.userId}`, 15);
-    const input = actionSchema.parse(await request.json());
+    const input = actionSchema.parse(body);
     if (input.action === "progress") {
       if (
         reading.ritualProgress?.phase !== "complete" &&

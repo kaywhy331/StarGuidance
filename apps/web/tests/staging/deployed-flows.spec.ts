@@ -102,16 +102,51 @@ async function navigateApp(page: Page, target: string, ready?: () => Promise<voi
   throw lastError ?? new Error(`navigation to ${expectedPath} did not commit`);
 }
 
-async function reloadApp(page: Page): Promise<void> {
+async function reloadApp(page: Page, ready: () => Promise<void>): Promise<void> {
+  const expectedPath = pagePath(page);
   let lastError: unknown;
   for (let attempt = 1; attempt <= NAVIGATION_ATTEMPTS; attempt += 1) {
+    const previousDocumentMarker = `starguidance-reload-${Date.now()}-${attempt}`;
+    await page.evaluate((marker) => {
+      Object.defineProperty(window, "__starguidanceReloadMarker", {
+        configurable: true,
+        value: marker,
+      });
+    }, previousDocumentMarker);
+    let committed = false;
     try {
       await page.reload(NAVIGATION_OPTIONS);
-      return;
+      committed = true;
     } catch (error) {
       lastError = error;
-      if (attempt < NAVIGATION_ATTEMPTS) await page.waitForTimeout(attempt * 500);
+      // Netlify can abort Playwright's navigation bookkeeping after a reload's
+      // new document commits, just as it can for page.goto above. Never accept
+      // the transport error by itself: the unchanged path plus a caller-owned
+      // application marker must independently prove the old document is gone.
+      let previousDocumentGone = false;
+      try {
+        previousDocumentGone = await page.evaluate(
+          (marker) =>
+            (window as typeof window & { __starguidanceReloadMarker?: string })
+              .__starguidanceReloadMarker !== marker,
+          previousDocumentMarker,
+        );
+      } catch {
+        // A still-detached frame is not evidence of a committed replacement.
+      }
+      committed = pagePath(page) === expectedPath && previousDocumentGone;
     }
+
+    if (committed) {
+      try {
+        await ready();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (attempt < NAVIGATION_ATTEMPTS) await page.waitForTimeout(attempt * 500);
   }
   throw lastError ?? new Error("application reload did not commit");
 }
@@ -308,7 +343,9 @@ test("both identities create profiles and the profile survives refresh", async (
     detail: `active snapshot version ${created.version} for user A; user B also created`,
   });
 
-  await reloadApp(pageA);
+  await reloadApp(pageA, () =>
+    expect(pageA.getByLabel("Your private question")).toBeVisible({ timeout: 15_000 }),
+  );
   const afterRefresh = await activeSnapshot(pageA);
 
   profileSnapshotBeforeReentry = created.id;
@@ -497,7 +534,9 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   const original = drawDigest((await readingState(pageA, readingId)).draw);
 
   await navigateApp(pageA, `/session/${readingId}`);
-  await reloadApp(pageA);
+  await reloadApp(pageA, () =>
+    expect(pageA.getByTestId("tarot-spread-stage")).toBeVisible({ timeout: 15_000 }),
+  );
   const afterRefresh = drawDigest((await readingState(pageA, readingId)).draw);
 
   // The APP_ENV=test failure hooks are correctly inert in staging, so this

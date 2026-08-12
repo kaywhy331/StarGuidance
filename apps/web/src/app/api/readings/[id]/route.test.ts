@@ -78,7 +78,10 @@ beforeEach(() => {
 });
 
 describe("follow-up safety boundary", () => {
-  it("interrupts direct suicidal ideation before limits, provider work, or persistence", async () => {
+  it("interrupts direct suicidal ideation before auth, reading access, limits, or persistence", async () => {
+    mocks.requireUser.mockRejectedValue(new Error("UNAUTHENTICATED"));
+    mocks.getReading.mockResolvedValue(undefined);
+
     const response = await POST(request("I want to die"), {
       params: Promise.resolve({ id: readingId }),
     });
@@ -87,11 +90,30 @@ describe("follow-up safety boundary", () => {
     expect(await response.json()).toMatchObject({
       safety: { category: "selfHarmCrisis", interrupt: true },
     });
+    expect(mocks.requireUser).not.toHaveBeenCalled();
+    expect(mocks.getReading).not.toHaveBeenCalled();
+    expect(mocks.assertCurrentPolicyConsents).not.toHaveBeenCalled();
+    expect(mocks.assertRateLimit).not.toHaveBeenCalled();
     expect(mocks.getSnapshot).not.toHaveBeenCalled();
     expect(mocks.createInterpretationProvider).not.toHaveBeenCalled();
     expect(mocks.runInterpretationJobs).not.toHaveBeenCalled();
     expect(mocks.createFollowUp).not.toHaveBeenCalled();
     expect(mocks.encrypt).not.toHaveBeenCalled();
     expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("does not let an ordinary follow-up bypass authentication", async () => {
+    mocks.requireUser.mockRejectedValue(new Error("UNAUTHENTICATED"));
+
+    const response = await POST(request("What else should I consider?"), {
+      params: Promise.resolve({ id: readingId }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "Authentication required." });
+    expect(mocks.requireUser).toHaveBeenCalledOnce();
+    expect(mocks.getReading).not.toHaveBeenCalled();
+    expect(mocks.createInterpretationProvider).not.toHaveBeenCalled();
+    expect(mocks.createFollowUp).not.toHaveBeenCalled();
   });
 });

@@ -44,6 +44,17 @@ const idempotencyKeySchema = z.string().uuid();
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
+    const body: unknown = await request.json();
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "question" in body &&
+      typeof body.question === "string"
+    ) {
+      const crisisSafety = classifyQuestion(body.question);
+      if (crisisSafety.category === "selfHarmCrisis")
+        return NextResponse.json({ safety: crisisSafety }, { status: 422 });
+    }
     const user = await requireUser();
     assertCurrentPolicyConsents(user);
     await assertRateLimit(`reading:${user.id}`, 12);
@@ -52,7 +63,7 @@ export async function POST(request: Request) {
     const profile = await persistence.repositories.birthProfiles.getActive(user.id);
     if (!profile)
       return NextResponse.json({ error: "Complete a private profile first." }, { status: 409 });
-    const input = inputSchema.parse(await request.json());
+    const input = inputSchema.parse(body);
     const question = input.generalReading ? GENERAL_READING_QUESTION : input.question;
     const questionClassification = classifyQuestionContext(question, input);
     const safety = classifyQuestion(question);

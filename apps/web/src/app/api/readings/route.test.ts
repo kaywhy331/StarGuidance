@@ -75,18 +75,37 @@ beforeEach(() => {
 });
 
 describe("reading safety boundary", () => {
-  it("interrupts direct suicidal ideation before creating or persisting a draw or job", async () => {
+  it("interrupts direct suicidal ideation before auth, profile access, draw, persistence, or jobs", async () => {
+    mocks.requireUser.mockRejectedValue(new Error("UNAUTHENTICATED"));
+    mocks.getActiveProfile.mockResolvedValue(undefined);
+
     const response = await POST(request("I want to die"));
 
     expect(response.status).toBe(422);
     expect(await response.json()).toMatchObject({
       safety: { category: "selfHarmCrisis", interrupt: true },
     });
+    expect(mocks.requireUser).not.toHaveBeenCalled();
+    expect(mocks.assertCurrentPolicyConsents).not.toHaveBeenCalled();
+    expect(mocks.assertRateLimit).not.toHaveBeenCalled();
+    expect(mocks.getActiveProfile).not.toHaveBeenCalled();
     expect(mocks.createLockedDraw).not.toHaveBeenCalled();
     expect(mocks.listReadings).not.toHaveBeenCalled();
     expect(mocks.createLockedReading).not.toHaveBeenCalled();
     expect(mocks.runInterpretationJobs).not.toHaveBeenCalled();
     expect(mocks.createInterpretationProvider).not.toHaveBeenCalled();
     expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("does not let an ordinary question bypass authentication", async () => {
+    mocks.requireUser.mockRejectedValue(new Error("UNAUTHENTICATED"));
+
+    const response = await POST(request("What should I focus on?"));
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "Authentication required." });
+    expect(mocks.requireUser).toHaveBeenCalledOnce();
+    expect(mocks.getActiveProfile).not.toHaveBeenCalled();
+    expect(mocks.createLockedDraw).not.toHaveBeenCalled();
   });
 });
