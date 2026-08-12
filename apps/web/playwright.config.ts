@@ -5,10 +5,10 @@ export default defineConfig({
   fullyParallel: true,
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  // Firefox and WebKit compete heavily for CPU with the production Next.js
-  // server on shared CI runners. Two workers keep the full browser matrix
-  // parallel without starving individual navigations past the test timeout.
-  workers: process.env.CI ? 2 : 4,
+  // Long ritual flows run against the production Next.js server in the same
+  // process budget as the browsers. Two workers keep both local and CI runs
+  // parallel without starving navigation, animation, or typewriter timers.
+  workers: 2,
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3100",
     trace: "retain-on-failure",
