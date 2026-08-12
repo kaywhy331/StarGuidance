@@ -12,7 +12,7 @@ StarGuidance is a modular pnpm monorepo. Next.js owns product orchestration, Fas
 6. The server evaluates the versioned reading-access policy and verifies that the selected versioned deck and spread are operator-active, then the tarot domain uses CSPRNG Fisher–Yates and independent reversal bits. The domain accepts no profile, question, or AI data.
 7. The complete draw is persisted before interpretation. The reading record separately references its immutable profile snapshot.
 8. `question-trait-lens-v2` deterministically sends only relevant plain-language traits and preserved tensions to the interpretation boundary; it does not pad the lens with irrelevant traits. Raw birth facts and calculation payloads stay out.
-9. Schema-validated structured output passes a deterministic prohibited-claim scan before persistence and is rendered as components, never arbitrary provider HTML. Unsafe or failed live output falls back deterministically. Retries and follow-ups reuse the same draw.
+9. Schema-validated `reading-result-v2` output stores ordered conversational passages plus non-rendered locked-card references, conditional trajectory, agency, disconfirming evidence, uncertainty, and safety metadata. It passes a deterministic prohibited-claim scan before persistence and is rendered as components, never arbitrary provider HTML. Persisted v1 report-shaped results normalize to v2 at the repository boundary; new UI renders only natural spoken passages. Unsafe or failed live output falls back deterministically. Retries and follow-ups reuse the same draw.
 
 Step 8 now runs through a durable, idempotent job (migration `0007_interpretation_jobs`): the reading-creation request enqueues the job in the same transaction as step 7's draw, then makes one best-effort inline attempt so the common case still resolves before navigation. An interrupted or transiently failed attempt leaves the job durably claimable; a Netlify-scheduled function drains it within about a minute, and the client polls rather than assuming its first fetch is current. See [Deployment](DEPLOYMENT.md) and [Known gaps](KNOWN-GAPS.md) for the worker's authorization and remaining manual-review gates.
 
@@ -37,7 +37,7 @@ The noindex `/visual-preview` route uses synthetic, non-personal fixtures for de
 - `contracts`: boundary schemas and shared trait ontology.
 - `database`: 31-table relational model, migration metadata, RLS policy SQL, durable queues, and encryption primitives.
 - `tarot-domain`: selection, reversal, locking, and follow-up lineage invariants.
-- `tarot-content`: original content, attribution, versions, and four spreads.
+- `tarot-content`: original content, attribution, versions, six selectable spreads, spatial layout metadata, deterministic one-/three-card context templates, and retired definitions used only to resolve historical locked draws.
 - `reading-machine`: valid ritual transitions, failure, expiry, and high-stakes states.
 - `ai`: safety rules, reading-lens selection, provider interface, validation, and fallback.
 - `design-system`: reusable accessible UI primitives.

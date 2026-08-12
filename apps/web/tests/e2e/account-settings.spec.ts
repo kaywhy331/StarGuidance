@@ -29,7 +29,7 @@ test("an account missing current receipts must re-consent before protected creat
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
       body: JSON.stringify({
-        spreadId: "direction",
+        spreadId: "three-card",
         question: "What can support a grounded next step?",
       }),
     });

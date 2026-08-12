@@ -16,6 +16,17 @@ export interface DealtCardView {
   themes: readonly string[];
   positionId: string;
   positionName: string;
+  placement: {
+    column: number;
+    row: number;
+    rotation: number;
+    layer: number;
+  };
+  spreadLayout: {
+    columns: number;
+    rows: number;
+    kind: string;
+  };
   artwork: TarotArtwork;
 }
 

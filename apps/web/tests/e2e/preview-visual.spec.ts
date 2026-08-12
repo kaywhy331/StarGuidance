@@ -73,7 +73,7 @@ test("the visual preview follows the streamlined result and continuation sequenc
     await expectHorizontallyCentered(page, ".physical-card-figure.is-reading-subject");
     await expectCardAboveReading(page);
     if (index === 1) {
-      await expect(page.getByRole("heading", { name: "Wheel of Fortune (R)" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Wheel of Fortune (R)" })).toHaveCount(0);
       const reversedArtwork = page
         .locator(".physical-card-figure.is-reading-subject .physical-card-front img")
         .first();
@@ -93,7 +93,8 @@ test("the visual preview follows the streamlined result and continuation sequenc
   await page.keyboard.press("End");
   await expect(page.getByRole("heading", { name: "The Cards Answer" })).toBeVisible();
   await page.getByRole("button", { name: "Previous reading passage" }).click();
-  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
+  await expect(page.locator(".oracle-entry-text")).toBeVisible();
   await expect(page.getByRole("button", { name: "Reading details" })).toHaveCount(0);
   await expectNoBlockingAccessibilityViolations(page);
 });
@@ -104,7 +105,7 @@ test("capture the sanctuary from the Netlify Deploy Preview", async ({ page }, t
   await expect(page.getByTestId("mystic-sanctuary-scene")).toBeVisible();
   await expect(page.locator(".physical-tarot-card")).toHaveCount(3);
   await page.getByRole("button", { name: "Next reading passage" }).click();
-  await expect(page.locator('.oracle-entry[data-phase="cardInterpretation"]')).toBeVisible();
+  await expect(page.locator('.oracle-entry[data-phase="narration"]')).toBeVisible();
   await expect(page.locator(".physical-card-figure.is-reading-subject")).toBeVisible();
   await page.screenshot({
     animations: "disabled",

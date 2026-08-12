@@ -150,7 +150,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | DEC-004 | A detailed profile report is sold separately. | Confirmed |
 | DEC-005 | Profile data affects interpretation, never card selection. | Recommended / launch-critical |
 | DEC-006 | MVP begins with one original or properly licensed 78-card deck. | Recommended |
-| DEC-007 | MVP includes four spreads and one follow-up question per completed reading. | Recommended |
+| DEC-007 | MVP includes six selectable spreads and one follow-up question per completed reading. | Recommended |
 | DEC-008 | MVP is a responsive web application; native apps are deferred. | Recommended |
 | DEC-009 | The Full Profile Report is the required one-time paid SKU; reading pricing remains configurable. | Recommended |
 | DEC-010 | MVP launches in English and is architected for localization. | Recommended |
@@ -315,7 +315,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
 | **RDG-001** | The reading catalog presents a small, understandable set of reading types. | **Must** | Each card shows title, purpose, card count, approximate experience length, and free/paid entitlement state. |
-| **RDG-002** | MVP includes Single Card Focus, Three-Card Direction, Five-Card Crossroads, and Seven-Card Deeper Outlook. | **Must** | All four spreads are fully configured, content-complete, tested, and available through feature flags. |
+| **RDG-002** | MVP includes One-Card, Three-Card, Celtic Cross, Horseshoe, Relationship / Two-Party, and Nine-Card Matrix spreads. | **Must** | All six spreads are fully configured, content-complete, tested, and operator-activatable. Retired spread definitions remain available only for historical locked draws. |
 | **RDG-003** | Spread definitions are data-driven and versioned. | **Must** | Card count, positions, labels, interpretive functions, reversals, animation preset, and result sections can change without rewriting the session engine. |
 | **RDG-004** | Users may type a question or choose a general reading where the spread permits it. | **Must** | Question-required spreads block empty submission; general readings use an approved default intent. |
 | **RDG-005** | Question input supports optional topic and time-horizon chips. | **Should** | Relationship, career, money, creativity, life direction, and general topics are available; predictive questions can select a bounded horizon. |
@@ -400,7 +400,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 
 **Epic completion criteria**
 
-| **[ ]** All four spreads render correctly on supported mobile and desktop viewport/device matrices. |
+| **[ ]** All six selectable spreads render correctly on supported mobile and desktop viewport/device matrices. |
 | --- |
 | **[ ]** Keyboard, screen reader, reduced-motion, skip, and no-audio modes deliver the complete reading. |
 | **[ ]** Animation never changes the locked draw or blocks deterministic card content. |
@@ -810,7 +810,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 
 | **[ ]** All Must requirements have a passing test or documented manual acceptance record. |
 | --- |
-| **[ ]** All four spreads pass complete end-to-end journeys for Core and Complete profiles. |
+| **[ ]** All six selectable spreads pass complete end-to-end journeys for Core and Complete profiles. |
 | **[ ]** Calculation reference datasets pass at 100%; no unresolved boundary discrepancy remains hidden. |
 | **[ ]** AI and safety thresholds are approved by product, tarot/profile content, and safety owners. |
 | **[ ]** No Sev-1 or Sev-2 defect remains open; any waived lower-severity defect has an owner and target release. |

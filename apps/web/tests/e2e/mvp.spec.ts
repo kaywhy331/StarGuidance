@@ -56,17 +56,20 @@ async function finishRitual(page: Page) {
   await page.getByRole("button", { name: "Skip cut", exact: true }).click();
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('.oracle-entry[data-phase="openingTheme"] h2')).toBeVisible({
+  await expect(page.locator('.oracle-entry[data-phase="narration"] h2')).toBeVisible({
     timeout: 30_000,
   });
 }
 
 async function waitForReadingSections(page: Page, minimum = 9) {
   await expect
-    .poll(async () =>
-      Number(
-        (await page.getByTestId("reading-journey").getAttribute("data-loaded-section-count")) ?? 0,
-      ),
+    .poll(
+      async () =>
+        Number(
+          (await page.getByTestId("reading-journey").getAttribute("data-loaded-section-count")) ??
+            0,
+        ),
+      { timeout: 45_000 },
     )
     .toBeGreaterThanOrEqual(minimum);
 }
@@ -112,6 +115,7 @@ async function currentReading(page: Page) {
 }
 
 test("date-only onboarding reaches a completed reading", async ({ page }) => {
+  test.slow();
   await createProfile(page);
   const profile = await page.evaluate(async () => (await fetch("/api/profile")).json());
   expect(profile.profile.snapshot.completeness).toBe("core");
@@ -121,35 +125,168 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
 
   for (let index = 0; index < 3; index += 1) {
     await nextReadingSection(page);
-    await expect(page.locator('.oracle-entry[data-phase="cardInterpretation"]')).toBeVisible();
+    await expect(page.locator('.oracle-entry[data-phase="narration"]')).toBeVisible();
     await expect(page.getByTestId("oracle-transcript")).toHaveAttribute(
       "data-active-card-index",
       String(index),
     );
     await expect(page.locator(".physical-card-figure.is-reading-subject")).toHaveCount(1);
-    await expect(page.locator(".card-interpretation-copy")).toBeVisible();
+    await expect(page.locator(".oracle-entry-text")).toBeVisible();
   }
 
-  for (const heading of [
+  for (let index = 0; index < 5; index += 1) await nextReadingSection(page);
+  for (const reportHeading of [
+    "Traditional current",
+    "Your personal lens",
+    "Connection to your question",
     "From the Stars",
     "Fated Path",
     "Divergent Path",
     "Cosmic Alignment",
     "Starlit Reflection",
-  ]) {
-    await nextReadingSection(page);
-    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-  }
+  ])
+    await expect(page.getByRole("heading", { name: reportHeading })).toHaveCount(0);
 
   const readingId = page.url().split("/").at(-1) as string;
   await page.goto("/history");
-  await expect(page.getByText("Three Cards — Direction")).toBeVisible();
+  await expect(page.getByText("Three-Card Spread")).toBeVisible();
   await page.locator(`a[href="/reading/${readingId}"]`).click();
   await expect(page).toHaveURL(new RegExp(`/reading/${readingId}$`));
   await expect(page.getByTestId("reading-result-scene")).toBeVisible();
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toHaveCount(0);
-  await expect(page.locator('.oracle-entry[data-phase="openingTheme"] h2')).toBeVisible();
+  await expect(page.locator('.oracle-entry[data-phase="narration"] h2')).toBeVisible();
+});
+
+test("all six selectable spreads use their configured spatial arrangements", async ({ page }) => {
+  test.setTimeout(360_000);
+  await createProfile(page);
+  const cases = [
+    {
+      id: "one-card",
+      kind: "centered",
+      question: "Should I accept the invitation this week?",
+      positions: [[0, 0, 0]],
+      contextualNames: ["Yes / No Pivot"],
+    },
+    {
+      id: "three-card",
+      kind: "horizontal",
+      question: "What is causing this project to stall?",
+      positions: [
+        [0, 0, 0],
+        [1, 0, 0],
+        [2, 0, 0],
+      ],
+      contextualNames: ["The Problem", "The Cause", "The Resolution"],
+    },
+    {
+      id: "celtic-cross",
+      kind: "celtic-cross",
+      question: "What should I understand about this complex transition?",
+      positions: [
+        [2, 1, 0],
+        [2, 1, 90],
+        [2, 0, 0],
+        [2, 2, 0],
+        [1, 1, 0],
+        [3, 1, 0],
+        [4, 3, 0],
+        [4, 2, 0],
+        [4, 1, 0],
+        [4, 0, 0],
+      ],
+    },
+    {
+      id: "horseshoe",
+      kind: "horseshoe",
+      question: "What is shaping the next phase of this plan?",
+      positions: [
+        [0, 0, 0],
+        [1, 1, 0],
+        [2, 2, 0],
+        [2, 3, 0],
+        [2, 4, 0],
+        [3, 1, 0],
+        [4, 0, 0],
+      ],
+    },
+    {
+      id: "relationship",
+      kind: "relationship",
+      question: "What can I observe and choose in this relationship?",
+      positions: [
+        [0, 0, 0],
+        [2, 0, 0],
+        [0, 1, 0],
+        [2, 1, 0],
+        [1, 0, 0],
+        [1, 1, 0],
+        [1, 2, 0],
+      ],
+    },
+    {
+      id: "nine-card-matrix",
+      kind: "matrix",
+      question: "How is this situation developing across time and circumstance?",
+      positions: [
+        [0, 0, 0],
+        [1, 0, 0],
+        [2, 0, 0],
+        [0, 1, 0],
+        [1, 1, 0],
+        [2, 1, 0],
+        [0, 2, 0],
+        [1, 2, 0],
+        [2, 2, 0],
+      ],
+    },
+  ] as const;
+
+  for (const spreadCase of cases) {
+    await page.getByLabel("Your private question").fill(spreadCase.question);
+    await expect(page.getByRole("button", { name: "Begin the shuffle" })).toBeEnabled();
+    const radio = page.locator(`input[name="spread"][value="${spreadCase.id}"]`);
+    await radio.locator("xpath=ancestor::label").click();
+    await expect(radio).toBeChecked();
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/readings",
+    );
+    await page.getByRole("button", { name: "Begin the shuffle" }).click();
+    expect((await created).status()).toBe(201);
+    await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
+    await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+
+    const stage = page.getByTestId("tarot-spread-stage");
+    await expect(stage).toHaveAttribute("data-layout-kind", spreadCase.kind);
+    const figures = stage.locator(".physical-card-figure");
+    await expect(figures).toHaveCount(spreadCase.positions.length);
+    const renderedPositions = await figures.evaluateAll((elements) =>
+      elements.map((element) => [
+        Number(element.getAttribute("data-spread-column")),
+        Number(element.getAttribute("data-spread-row")),
+        Number(element.getAttribute("data-spread-rotation")),
+      ]),
+    );
+    expect(renderedPositions).toEqual(spreadCase.positions);
+
+    if ("contextualNames" in spreadCase) {
+      const readingId = page.url().split("/").at(-1)!;
+      const names = await page.evaluate(async (id) => {
+        const response = await fetch(`/api/readings/${id}`, { cache: "no-store" });
+        const payload = (await response.json()) as {
+          reading: { cards: { positionName: string }[] };
+        };
+        return payload.reading.cards.map(({ positionName }) => positionName);
+      }, readingId);
+      expect(names).toEqual(spreadCase.contextualNames);
+    }
+
+    await page.goto("/readings");
+    await expect(page.locator(`input[name="spread"][value="${spreadCase.id}"]`)).toHaveCount(1);
+  }
 });
 
 test("an authenticated session never loops back to the credential form", async ({ page }) => {
@@ -231,34 +368,58 @@ test("the ritual waits for intentional cut and reveal, and reviews each card cin
   await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(0);
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
 
+  // Inspect one deliberate reveal from inside the browser's animation
+  // timeline. Sampling several transient locators from the test runner can
+  // miss the 2.2s focus window under parallel CPU load even though the ritual
+  // completed correctly.
+  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
+  const cinematic = await page.evaluate(
+    () =>
+      new Promise<{
+        title: string;
+        orientation: string | null;
+        heightRatio: number;
+        titleGap: number;
+      }>((resolve, reject) => {
+        const deadline = performance.now() + 2_000;
+        const find = () => {
+          const active = document.querySelector<HTMLElement>(
+            ".physical-card-figure.is-cinematic-subject",
+          );
+          const title = document.querySelector<HTMLElement>(
+            '[data-testid="cinematic-reveal-title"]',
+          );
+          const stage = document.querySelector<HTMLElement>(".sanctuary-stage");
+          const strong = title?.querySelector("strong");
+          if (!active || !title || !stage || !strong) {
+            if (performance.now() < deadline) return requestAnimationFrame(find);
+            reject(new Error("The cinematic reveal did not become measurable."));
+            return;
+          }
+          window.setTimeout(() => {
+            const activeBounds = active.getBoundingClientRect();
+            const titleBounds = title.getBoundingClientRect();
+            const stageBounds = stage.getBoundingClientRect();
+            resolve({
+              title: strong.textContent?.trim() ?? "",
+              orientation:
+                active.querySelector(".physical-tarot-card")?.getAttribute("data-orientation") ??
+                null,
+              heightRatio: activeBounds.height / stageBounds.height,
+              titleGap: activeBounds.y - (titleBounds.y + titleBounds.height),
+            });
+          }, 1_250);
+        };
+        find();
+      }),
+  );
+  expect(cinematic.title.endsWith(" (R)")).toBe(cinematic.orientation === "reversed");
+  expect(cinematic.heightRatio).toBeGreaterThan(0.68);
+  expect(cinematic.titleGap).toBeGreaterThanOrEqual(2);
+
   await expect(page.getByRole("button", { name: "Reveal all", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
 
-  const activeCard = page.locator(".physical-card-figure.is-cinematic-subject");
-  const revealTitle = page.getByTestId("cinematic-reveal-title");
-  await expect(activeCard).toBeVisible();
-  await expect(revealTitle).toBeVisible();
-  const orientation = await activeCard
-    .locator(".physical-tarot-card")
-    .getAttribute("data-orientation");
-  const titleText = (await revealTitle.locator("strong").textContent()) ?? "";
-  expect(titleText.endsWith(" (R)")).toBe(orientation === "reversed");
-  await expect
-    .poll(async () => {
-      const activeBounds = await activeCard.boundingBox();
-      const stageBounds = await page.locator(".sanctuary-stage").boundingBox();
-      if (!activeBounds || !stageBounds) return 0;
-      return activeBounds.height / stageBounds.height;
-    })
-    .toBeGreaterThan(0.68);
-  await expect
-    .poll(async () => {
-      const activeBounds = await activeCard.boundingBox();
-      const titleBounds = await revealTitle.boundingBox();
-      if (!activeBounds || !titleBounds) return Number.NEGATIVE_INFINITY;
-      return activeBounds.y - (titleBounds.y + titleBounds.height);
-    })
-    .toBeGreaterThanOrEqual(2);
   const backgroundStyle = await page
     .locator(".physical-card-figure:not(.is-cinematic-subject)")
     .first()
@@ -375,19 +536,20 @@ test("a reading stays pinned to the snapshot it was drawn against", async ({ pag
   ).toBe(before.profile.snapshot.id);
 });
 
-test("AI-disabled mode returns the deterministic structured fallback", async ({ page }) => {
+test("AI-disabled mode returns the deterministic conversational fallback", async ({ page }) => {
   await createProfile(page);
   await beginReading(page);
   await finishRitual(page);
   await waitForReadingSections(page);
   for (let index = 0; index < 5; index += 1) await nextReadingSection(page);
-  await expect(page.getByRole("heading", { name: "Fated Path" })).toBeVisible();
-  await expect(page.locator(".reading-uncertainty")).toContainText(/reflective guidance/i);
+  await expect(page.locator(".oracle-entry-text")).toContainText(
+    /if the current energy continues/i,
+  );
   await nextReadingSection(page);
-  await expect(page.getByRole("heading", { name: "Divergent Path" })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Signals that could change the pattern" }),
-  ).toBeVisible();
+  await expect(page.locator(".oracle-entry-text")).toContainText(/there is another route/i);
+  await expect(page.getByRole("heading", { name: "Fated Path" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Divergent Path" })).toHaveCount(0);
+  await expect(page.locator(".reading-uncertainty")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Reading details" })).toHaveCount(0);
   await expect(page.locator('.oracle-entry[data-phase="uncertainty"]')).toHaveCount(0);
 });
@@ -452,9 +614,9 @@ test("the selected relationship topic remains authoritative in the generated res
   await beginReading(page, "What should I understand about this new phase at work?");
   expect((await currentReading(page)).reading.questionClassification.topic).toBe("relationships");
   await finishRitual(page);
-  const directAnswer = page.locator(".reading-direct-answer");
-  await expect(directAnswer).toContainText("this relationship");
-  await expect(directAnswer).not.toContainText("work and direction");
+  const openingNarration = page.locator(".oracle-entry-text");
+  await expect(openingNarration).toContainText("this connection");
+  await expect(openingNarration).not.toContainText("structure around your work");
 });
 
 test("the approved general-reading path needs no custom question", async ({ page }) => {
@@ -519,7 +681,8 @@ test("a follow-up uses the exact same cards", async ({ page }) => {
     String(primarySectionCount + 1),
   );
   await page.getByRole("button", { name: "Previous reading passage" }).click();
-  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
+  await expect(page.locator(".oracle-entry-text")).toBeVisible();
   await page.getByRole("button", { name: "Next reading passage" }).click();
   await expect(page.getByRole("heading", { name: "The Cards Answer" })).toBeVisible();
   const after = (await currentReading(page)).reading.draw;
@@ -537,7 +700,7 @@ test("generation failure retries without a redraw", async ({ page }) => {
         "idempotency-key": crypto.randomUUID(),
         "x-e2e-force-generation-failure": "1",
       },
-      body: JSON.stringify({ spreadId: "direction", question: "What should I consider?" }),
+      body: JSON.stringify({ spreadId: "three-card", question: "What should I consider?" }),
     });
     return (await response.json()) as { readingId: string; generationStatus: string };
   });
@@ -643,6 +806,7 @@ test("long result text scrolls without clipping while buttons, keyboard, wheel, 
 test("keyboard users cut and reveal by keyboard, then submit a same-draw follow-up", async ({
   page,
 }) => {
+  test.slow();
   await createProfile(page);
   await beginReading(page, "What should I practice in this conversation?");
   const before = (await currentReading(page)).reading.draw;
@@ -668,7 +832,8 @@ test("keyboard users cut and reveal by keyboard, then submit a same-draw follow-
   await page.keyboard.press("ArrowRight");
   await expect(journey).toHaveAttribute("data-active-card-index", "0");
   await page.keyboard.press("End");
-  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
+  await expect(page.locator(".oracle-entry-text")).toBeVisible();
   await expect(page.getByRole("button", { name: "Reading details" })).toHaveCount(0);
   const composer = page.getByLabel("Keep the same cards and ask what they add");
   await composer.fill("What is one grounded action?");

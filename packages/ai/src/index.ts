@@ -20,15 +20,13 @@ import {
   agencyFrom,
   answerCard,
   disconfirmingFrom,
-  drawShape,
   guardedDirectAnswer,
-  guardedQuestionConnection,
-  personalEmphasis,
-  positionalReading,
   questionSubject,
   resolveDraw,
   subjectVoices,
   trajectoryFrom,
+  type QuestionSubject,
+  type ResolvedCard,
 } from "./interpretation";
 
 export interface InterpretationProvider<TInput, TOutput> {
@@ -37,8 +35,8 @@ export interface InterpretationProvider<TInput, TOutput> {
 }
 
 export const FALLBACK_PROVIDER_ID = "deterministic-fallback-v1" as const;
-export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v2" as const;
-export const READING_RESULT_SCHEMA_VERSION = "reading-result-v1" as const;
+export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v3" as const;
+export const READING_RESULT_SCHEMA_VERSION = "reading-result-v2" as const;
 
 export interface ReadingGenerationOutcome {
   result: ReadingResult;
@@ -310,62 +308,109 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
     const safety = classifyQuestion(input.question);
     const subject = questionSubject(input.question, input.questionClassification.topic);
     const voice = subjectVoices[subject];
-    const resolved = resolveDraw(input.draw);
+    const resolved = resolveDraw(input.draw, input.questionClassification);
     const answer = answerCard(input.draw, resolved);
     const traits = input.relevantTraitStatements;
-
-    const cards = resolved.map((entry, index) => ({
-      positionId: entry.position.id,
-      cardId: entry.card.id,
-      orientation: entry.orientation,
-      traditionalMeaning: positionalReading(entry, subject, index),
-      // A different trait per card. One trait repeated under every card was a
-      // large part of why every reading sounded the same.
-      personalizedMeaning: personalEmphasis(
-        entry,
-        traits[index % Math.max(traits.length, 1)],
-        subject,
-      ),
-      questionConnection:
-        safety.category === "ordinary"
-          ? `${entry.card.reflectivePrompt} Hold that as a perspective on the question, not a verdict on it.`
-          : guardedQuestionConnection(safety.category, index, safety.guidance),
+    const trajectory = trajectoryFrom(answer, resolved, subject);
+    const agency = agencyFrom(answer, resolved, traits);
+    const openingId = "opening";
+    const turningId = "turning-point";
+    const likelyId = "likely-trajectory";
+    const alternateId = "alternate-trajectory";
+    const agencyId = "agency";
+    const closingId = "closing";
+    const cardPassages = resolved.map((entry, index) => ({
+      id: `thread-${index + 1}`,
+      role:
+        index === resolved.length - 1 && resolved.length > 1
+          ? ("development" as const)
+          : ("underlyingPattern" as const),
+      text: cardNarration(entry, subject, index, safety.category !== "ordinary"),
+      cardReferences: [entry.position.id],
     }));
-
-    // AI-007: answer first, then elaborate.
-    const directAnswer =
-      safety.category === "ordinary"
-        ? `On ${voice.about}: the answer sits in the ${answer.position.displayName} position, where ${
-            answer.orientation === "reversed"
-              ? `${answer.card.name} appears reversed`
-              : answer.card.name
-          } speaks to ${answer.themes.join(" and ")}. Under current conditions that points toward ${voice.wellPhrase}.`
-        : guardedDirectAnswer(
-            safety.category,
-            voice.about,
-            `On ${voice.about}: this reading will not answer that as a matter of fact. ${safety.guidance}`,
-          );
+    const shouldCloseWithQuestion = resolved.length === 3 || resolved.length === 9;
+    const passages = [
+      {
+        id: openingId,
+        role: safety.category === "ordinary" ? ("opening" as const) : ("safety" as const),
+        text:
+          safety.category === "ordinary"
+            ? openingNarration(answer, subject)
+            : guardedDirectAnswer(
+                safety.category,
+                voice.about,
+                `This reading won't turn that into a factual prediction. ${safety.guidance}`,
+              ),
+        cardReferences: [answer.position.id],
+      },
+      ...cardPassages,
+      {
+        id: turningId,
+        role: "turningPoint" as const,
+        text: turningPointNarration(answer, traits[0], subject),
+        cardReferences: [answer.position.id],
+      },
+      {
+        id: likelyId,
+        role: "trajectory" as const,
+        text: likelyNarration(answer, subject, safety.category !== "ordinary"),
+        cardReferences: [answer.position.id],
+      },
+      {
+        id: alternateId,
+        role: "alternative" as const,
+        text: alternateNarration(resolved, subject),
+        cardReferences: [
+          (
+            resolved.find(({ position }) =>
+              ["leverage", "horseshoe-action", "relationship-direction", "card-3"].includes(
+                position.id,
+              ),
+            ) ?? answer
+          ).position.id,
+        ],
+      },
+      {
+        id: agencyId,
+        role: "agency" as const,
+        text: agencyNarration(agency),
+        cardReferences: [answer.position.id],
+      },
+      {
+        id: closingId,
+        role: shouldCloseWithQuestion ? ("reflection" as const) : ("closing" as const),
+        text: shouldCloseWithQuestion
+          ? answer.card.reflectivePrompt
+          : closingNarration(answer, subject),
+        cardReferences: [answer.position.id],
+      },
+    ];
 
     return readingResultSchema.parse({
-      title: `${answer.card.name} in ${answer.position.displayName}`,
-      directAnswer,
-      centralTheme: drawShape(resolved),
-      cards,
-      synthesis: resolved
-        .map(
-          (entry) =>
-            `${entry.position.displayName}: ${entry.orientation === "reversed" ? `${entry.card.name} reversed` : entry.card.name} — ${entry.themes.join(" and ")}.`,
-        )
-        .join(" ")
-        .concat(
-          ` Together these describe a conditional pattern around ${voice.about}, not a fixed result. Keep what matches what you can observe and let go of the rest.`,
-        ),
-      likelyTrajectory: trajectoryFrom(answer, resolved, subject),
-      userAgency: agencyFrom(answer, resolved, traits),
+      schemaVersion: "reading-result-v2",
+      title: narrationTitle(subject, answer),
+      passages,
+      cards: resolved.map((entry, index) => ({
+        positionId: entry.position.id,
+        cardId: entry.card.id,
+        orientation: entry.orientation,
+        passageIds: [
+          `thread-${index + 1}`,
+          ...(entry.position.id === answer.position.id
+            ? [openingId, turningId, likelyId, agencyId, closingId]
+            : []),
+        ],
+      })),
+      trajectory: {
+        likelyPassageId: likelyId,
+        conditions: trajectory.conditions,
+        alternatePassageId: alternateId,
+      },
+      userAgency: agency,
       reflectionQuestion: answer.card.reflectivePrompt,
       disconfirmingEvidence: disconfirmingFrom(resolved),
       uncertainty:
-        "Tarot is reflective guidance, not factual proof or a guarantee of future events. This reading describes a pattern under current conditions, and those conditions are yours to change.",
+        "Tarot offers a conditional interpretation, not factual proof or a guarantee. New evidence, choices, and changing conditions can alter the direction described.",
       safetyFlags: safety.category === "ordinary" ? [] : [safety.category],
     });
   }
@@ -382,32 +427,176 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
   }
 
   async generateFollowUp(input: FollowUpGenerationInput): Promise<FollowUpResult> {
-    const resolved = resolveDraw(input.draw);
+    const resolved = resolveDraw(input.draw, input.questionClassification);
     const answer = answerCard(input.draw, resolved);
-    const originalCard = input.originalResult.cards.find(
+    const originalThread = input.originalResult.cards.find(
       ({ positionId }) => positionId === answer.position.id,
     );
-    const profileThread = input.relevantTraitStatements[0]
-      ? `Your profile’s pattern — ${input.relevantTraitStatements[0]} — meets this card through what the original reading named: ${
-          originalCard?.personalizedMeaning ??
-          "your response when this pattern appears in real life"
-        }`
-      : (originalCard?.personalizedMeaning ??
-        "The personal thread is how you respond when this pattern appears in real life.");
+    const originalPassage = input.originalResult.passages.find(({ id }) =>
+      originalThread?.passageIds.includes(id),
+    );
+    const trait = naturalTrait(input.relevantTraitStatements[0]);
     return followUpResultSchema.parse({
       response: [
-        `Looking again at ${answer.card.name}${
-          answer.orientation === "reversed" ? " reversed" : ""
-        } in ${answer.position.displayName}, its themes of ${answer.themes.join(" and ")} point toward ${
-          subjectVoices[questionSubject(input.question, input.questionClassification.topic)]
-            .wellPhrase
-        }.`,
-        profileThread,
-        `Within the full spread, ${input.originalResult.centralTheme}`,
-        `Your clearest alignment now is ${input.originalResult.userAgency[0]}.`,
+        `Coming back to ${answer.card.name}${answer.orientation === "reversed" ? " reversed" : ""}, the part that matters now is ${answer.themes.join(" and ")}.`,
+        originalPassage?.text ??
+          "That was already the thread carrying the original reading forward.",
+        trait
+          ? `Because ${trait}, I think the useful move is to notice the moment that familiar response begins and choose deliberately there.`
+          : "I think the useful move is to wait for one observable change, then respond to that rather than to the fear of what might happen.",
+        `For now, ${(input.originalResult.userAgency[0] ?? "Keep the next step small enough to revise").replace(/[.?!]+$/, "").replace(/^[A-Z]/, (letter) => letter.toLowerCase())}.`,
       ].join(" "),
     });
   }
+}
+
+function naturalTrait(trait: string | undefined): string | undefined {
+  if (!trait) return undefined;
+  const cleaned = trait
+    .replace(/^Tension to hold:\s*/i, "")
+    .replace(/[.?!]+$/, "")
+    .trim();
+  return cleaned.replace(/^[A-Z]/, (letter) => letter.toLowerCase());
+}
+
+function namedCard(entry: ResolvedCard): string {
+  return entry.orientation === "reversed" ? `${entry.card.name} reversed` : entry.card.name;
+}
+
+function narrationTitle(subject: QuestionSubject, answer: ResolvedCard): string {
+  if (answer.orientation === "reversed") return "What is waiting beneath the surface";
+  return {
+    work: "What is beginning to take shape",
+    relationship: "The point where the connection changes",
+    change: "The next movement is closer than it looks",
+    wellbeing: "A quieter way forward",
+    general: "What wants your attention now",
+  }[subject];
+}
+
+function focusPhrase(subject: QuestionSubject): string {
+  return {
+    work: "the structure around your work",
+    relationship: "the way this connection is unfolding",
+    change: "this transition",
+    wellbeing: "the way you've been carrying your energy",
+    general: "the situation around you",
+  }[subject];
+}
+
+function counterpoint(entry: ResolvedCard): string {
+  if (entry.card.suit === "pentacles") return "expansion for its own sake";
+  if (entry.card.suit === "wands") return "waiting for perfect certainty";
+  if (entry.card.suit === "cups") return "trying to reason your way around what you feel";
+  if (entry.card.suit === "swords") return "keeping every possibility open";
+  return "forcing an answer before the situation is ready";
+}
+
+function openingNarration(answer: ResolvedCard, subject: QuestionSubject): string {
+  const focus = focusPhrase(subject);
+  const spokenName = answer.card.name.startsWith("The ")
+    ? namedCard(answer)
+    : `The ${namedCard(answer)}`;
+  if (answer.position.displayName === "Yes / No Pivot")
+    return answer.orientation === "upright"
+      ? `${spokenName} gives this an open, actionable quality rather than a guaranteed yes. ${answer.themes[0]} seems possible around ${answer.themes[1]}, but it still needs your participation. I think the real answer will become visible through what is actually offered, agreed, or acted on next.`
+      : `${spokenName} makes this feel obstructed or premature rather than like a clean no. ${answer.themes[0]} is present around ${answer.themes[1]}, but it isn't moving freely yet. Watch what remains delayed or unspoken before you treat the situation as settled.`;
+  return answer.orientation === "upright"
+    ? `${spokenName} feels like ${focus} is entering a period where ${answer.themes[0]} is going to matter more than ${counterpoint(answer)}. You may find yourself becoming more deliberate about ${answer.themes[1]}, and I don't think that's happening by accident.`
+    : `${spokenName} makes me think something around ${focus} is present but not moving cleanly yet. ${answer.themes[0]} may be happening privately before anyone else can see it, especially around ${answer.themes[1]}. I don't think it stays hidden in quite the same way for long.`;
+}
+
+function manifestation(subject: QuestionSubject, index: number): string {
+  const options: Record<QuestionSubject, readonly string[]> = {
+    work: [
+      "a conversation about responsibility or timing",
+      "an opportunity to strengthen something already underway",
+      "a practical choice involving money, workload, or ownership",
+    ],
+    relationship: [
+      "a change in someone's follow-through",
+      "a conversation that makes the present dynamic harder to avoid",
+      "a boundary, invitation, or decision becoming visible through behavior",
+    ],
+    change: [
+      "one option becoming more concrete than the others",
+      "a decision acquiring a real deadline",
+      "an opening that asks for action before complete certainty",
+    ],
+    wellbeing: [
+      "a routine showing you what is and isn't sustainable",
+      "a need for rest or a firmer boundary becoming difficult to ignore",
+      "one small change in how you protect your time and energy",
+    ],
+    general: [
+      "a conversation, invitation, or practical change",
+      "something already in motion becoming easier to name",
+      "a realization that makes the next choice more concrete",
+    ],
+  };
+  const choices = options[subject];
+  return choices[index % choices.length]!;
+}
+
+function cardNarration(
+  entry: ResolvedCard,
+  subject: QuestionSubject,
+  index: number,
+  guarded: boolean,
+): string {
+  const movement =
+    entry.orientation === "upright"
+      ? `${entry.themes[0]} is ready to become more visible`
+      : `${entry.themes[0]} is present, but delayed, blocked, or being worked through privately`;
+  const event = guarded
+    ? "observable evidence, a qualified conversation, or a practical next step"
+    : manifestation(subject, index);
+  const frames = [
+    `You may notice that ${movement}, especially around ${entry.themes[1]}. That seems tied to ${entry.position.interpretiveFunction}, and it may first show itself through ${event}.`,
+    `There's also a thread of ${entry.themes.join(" and ")} running underneath this. Because it speaks to ${entry.position.interpretiveFunction}, I wouldn't be surprised if it becomes visible through ${event}.`,
+    `The quieter part of this is ${entry.themes.join(" and ")}. It belongs to ${entry.position.interpretiveFunction}; watch for ${event}, because that may be where the meaning stops being abstract.`,
+    `Then the energy changes. ${movement}, and it touches ${entry.position.interpretiveFunction}. The first real sign may be ${event}.`,
+    `What complicates the picture is ${entry.themes.join(" and ")}. This seems to be shaping ${entry.position.interpretiveFunction}, even if you only recognize it after ${event}.`,
+    `What helps is that ${movement}. Since this part of the spread is about ${entry.position.interpretiveFunction}, ${event} could give you something concrete to respond to.`,
+  ];
+  return frames[index % frames.length]!;
+}
+
+function turningPointNarration(
+  answer: ResolvedCard,
+  trait: string | undefined,
+  subject: QuestionSubject,
+): string {
+  const personal = naturalTrait(trait);
+  if (personal)
+    return `The interesting part is that ${answer.themes[0]} may eventually create the room for your next risk. Because ${personal}, staying with the tension may become harder than making one clear move. That may be the turning point.`;
+  return `The interesting part is that what feels protective now may eventually become the thing that makes movement possible. Watch for the moment when ${manifestation(subject, 2)}; that may be the turning point.`;
+}
+
+function likelyNarration(answer: ResolvedCard, subject: QuestionSubject, guarded: boolean): string {
+  const event = guarded
+    ? "new evidence or advice from the right professional"
+    : manifestation(subject, 1);
+  return `This feels like it's leading toward ${subjectVoices[subject].wellPhrase}. If the current energy continues, I think you're going to notice ${event}, followed by ${answer.themes[0]} becoming ${answer.orientation === "upright" ? "easier to act on" : "too important to keep postponing"}. It isn't fixed, but it is the clearest direction from where things stand now.`;
+}
+
+function alternateNarration(resolved: readonly ResolvedCard[], subject: QuestionSubject): string {
+  const lever =
+    resolved.find(({ position }) =>
+      ["leverage", "horseshoe-action", "relationship-direction", "card-3"].includes(position.id),
+    ) ?? resolved.at(-1)!;
+  return `There is another route. A direct conversation, a changed boundary, or new evidence could move this away from its present line. If that happens, ${lever.themes[0]} around ${lever.themes[1]} becomes more important than the outcome you expected, and ${manifestation(subject, 0)} may point somewhere more useful.`;
+}
+
+function agencyNarration(agency: readonly string[]): string {
+  const [first, second] = agency;
+  return `Your part is smaller—and more powerful—than controlling the outcome. ${first ?? "Name what you can verify"}. Then ${second?.replace(/^[A-Z]/, (letter) => letter.toLowerCase()) ?? "take one proportionate step and leave room to revise it"}.`;
+}
+
+function closingNarration(answer: ResolvedCard, subject: QuestionSubject): string {
+  return answer.orientation === "reversed"
+    ? `So don't mistake a delay for a final answer. I think ${manifestation(subject, 2)} will show you whether this energy is gathering strength or asking to be released.`
+    : `This doesn't feel like an ending. It feels like the point just before ${answer.themes[0]} gives you enough room to let something move again.`;
 }
 
 export class ValidatingProvider implements InterpretationProvider<
@@ -431,55 +620,19 @@ export interface StreamingInterpretationAdapter {
 
 export function createOracleStreamEvents(result: ReadingResult): readonly OracleStreamEvent[] {
   const validated = readingResultSchema.parse(result);
-  // The reading itself carries no disclaimer: the standing statement about what
-  // tarot is and is not belongs in the site terms, linked from every page,
-  // rather than appended to every reading. The `uncertainty` field is still
-  // recorded with the result; it is simply not spoken aloud.
-  const phases: Omit<Extract<OracleStreamEvent, { type: "phase" }>, "sequence">[] = [
-    {
+  // Uncertainty and audit metadata remain stored on the result, while the
+  // spoken stream contains only the ordered narration the reader authored.
+  return validated.passages.map((passage, sequence) =>
+    oracleStreamEventSchema.parse({
       type: "phase",
-      phase: "openingTheme",
-      heading: validated.title,
-      text: `${validated.directAnswer} ${validated.centralTheme}`,
-    },
-    ...validated.cards.map((card, index) => ({
-      type: "phase" as const,
-      phase: "cardInterpretation" as const,
-      heading: `Card ${index + 1} · ${card.positionId.replaceAll("-", " ")}`,
-      text: `${card.traditionalMeaning} ${card.personalizedMeaning} ${card.questionConnection}`,
-    })),
-    {
-      type: "phase",
-      phase: "overallSynthesis",
-      heading: "From the Stars",
-      text: validated.synthesis,
-    },
-    {
-      type: "phase",
-      phase: "likelyTrajectory",
-      heading: "Fated Path",
-      text: `${validated.likelyTrajectory.summary} Conditions: ${validated.likelyTrajectory.conditions.join("; ")}.`,
-    },
-    {
-      type: "phase",
-      phase: "alternateTrajectory",
-      heading: "Divergent Path",
-      text: validated.likelyTrajectory.alternateTrajectory,
-    },
-    {
-      type: "phase",
-      phase: "userAgency",
-      heading: "Cosmic Alignment",
-      text: validated.userAgency.join(" · "),
-    },
-    {
-      type: "phase",
-      phase: "reflectionPrompt",
-      heading: "Starlit Reflection",
-      text: validated.reflectionQuestion,
-    },
-  ];
-  return phases.map((phase, sequence) => oracleStreamEventSchema.parse({ ...phase, sequence }));
+      sequence,
+      phase: "narration",
+      heading: sequence === 0 ? validated.title : "The reading continues",
+      text: passage.text,
+      passageId: passage.id,
+      cardPositionIds: passage.cardReferences,
+    }),
+  );
 }
 
 export function createFollowUpStreamEvents(result: FollowUpResult): readonly OracleStreamEvent[] {
@@ -496,7 +649,7 @@ export function createFollowUpStreamEvents(result: FollowUpResult): readonly Ora
 }
 
 export class PersistedResultStreamAdapter implements StreamingInterpretationAdapter {
-  readonly id = "persisted-result-stream-v1";
+  readonly id = "persisted-result-stream-v2";
 
   async *streamPersistedResult(result: ReadingResult): AsyncIterable<OracleStreamEvent> {
     for (const event of createOracleStreamEvents(result)) yield event;

@@ -1,5 +1,5 @@
-import type { ReadingResult, ReadingTopic } from "@starguidance/contracts";
-import { spreads, tarotCards } from "@starguidance/tarot-content";
+import type { ReadingTopic } from "@starguidance/contracts";
+import { findSpread, resolveSpreadPositions, tarotCards } from "@starguidance/tarot-content";
 import type { LockedDraw, SpreadPosition, TarotCard } from "@starguidance/tarot-domain";
 
 /**
@@ -92,6 +92,12 @@ export function questionSubject(
  * the spread was designed to do.
  */
 const answerPositionBySpread: Record<string, string> = {
+  "one-card": "card-1",
+  "three-card": "card-3",
+  "celtic-cross": "celtic-outcome",
+  horseshoe: "horseshoe-outcome",
+  relationship: "relationship-direction",
+  "nine-card-matrix": "matrix-future-integration",
   focus: "focus",
   direction: "direction",
   crossroads: "leverage",
@@ -105,13 +111,17 @@ export interface ResolvedCard {
   readonly themes: readonly string[];
 }
 
-export function resolveDraw(draw: LockedDraw): readonly ResolvedCard[] {
-  const spread = spreads.find(({ id }) => id === draw.spreadId);
+export function resolveDraw(
+  draw: LockedDraw,
+  context?: { topic: string; intent: string; generalReading: boolean },
+): readonly ResolvedCard[] {
+  const spread = findSpread(draw.spreadId);
   if (!spread) throw new Error(`Unknown spread in locked draw: ${draw.spreadId}`);
+  const positions = resolveSpreadPositions(spread, context);
   return draw.assignments.map((assignment) => {
     const card = tarotCards.find(({ id }) => id === assignment.cardId);
     if (!card) throw new Error(`Unknown locked card: ${assignment.cardId}`);
-    const position = spread.positions.find(({ id }) => id === assignment.positionId);
+    const position = positions.find(({ id }) => id === assignment.positionId);
     if (!position) throw new Error(`Unknown position in locked draw: ${assignment.positionId}`);
     return {
       card,
@@ -264,7 +274,11 @@ export function trajectoryFrom(
   answer: ResolvedCard,
   resolved: readonly ResolvedCard[],
   subject: QuestionSubject,
-): ReadingResult["likelyTrajectory"] {
+): {
+  readonly summary: string;
+  readonly conditions: string[];
+  readonly alternateTrajectory: string;
+} {
   const friction = resolved.find(({ position }) =>
     ["challenge", "obstacle", "hidden-influence"].includes(position.id),
   );

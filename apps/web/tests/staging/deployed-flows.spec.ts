@@ -182,7 +182,7 @@ async function createReading(page: Page, question: string): Promise<string> {
   const { status, body } = await apiPost<{ readingId?: string }>(page, "/api/readings", {
     // One card is sufficient for persistence/isolation assertions and avoids
     // burning the live provider's staging quota on content the gate never reads.
-    spreadId: "focus",
+    spreadId: "one-card",
     question,
   });
   if (status !== 201 || !body.readingId)
@@ -419,12 +419,12 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     providerRetryPreservedDraw;
   const liveProvenance =
     reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b" &&
-    reading.outputProvenance.promptVersion === "reader-voice-v2" &&
-    reading.outputProvenance.schemaVersion === "reading-result-v1";
+    reading.outputProvenance.promptVersion === "reader-voice-v3" &&
+    reading.outputProvenance.schemaVersion === "reading-result-v2";
   const deterministicProvenance =
     reading.outputProvenance?.providerId === "deterministic-fallback-v1" &&
-    reading.outputProvenance.promptVersion === "deterministic-fallback-v2" &&
-    reading.outputProvenance.schemaVersion === "reading-result-v1";
+    reading.outputProvenance.promptVersion === "deterministic-fallback-v3" &&
+    reading.outputProvenance.schemaVersion === "reading-result-v2";
   const configuredProvenance =
     interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
   const safeFallbackReasons = [
@@ -452,15 +452,15 @@ test("a reading is created against the active snapshot with a locked draw", asyn
             ? "other"
             : "absent";
   const promptState =
-    reading.outputProvenance?.promptVersion === "reader-voice-v2"
+    reading.outputProvenance?.promptVersion === "reader-voice-v3"
       ? "approved-live"
-      : reading.outputProvenance?.promptVersion === "deterministic-fallback-v2"
+      : reading.outputProvenance?.promptVersion === "deterministic-fallback-v3"
         ? "deterministic-fallback"
         : reading.outputProvenance?.promptVersion
           ? "other"
           : "absent";
   const schemaState =
-    reading.outputProvenance?.schemaVersion === "reading-result-v1"
+    reading.outputProvenance?.schemaVersion === "reading-result-v2"
       ? "approved"
       : "absent-or-other";
 

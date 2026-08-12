@@ -7,7 +7,7 @@ import {
 } from "@starguidance/ai";
 import { actorTransaction, reenqueueInterpretationJob } from "@starguidance/database";
 import { ritualProgressSchema } from "@starguidance/contracts";
-import { spreads, tarotCards } from "@starguidance/tarot-content";
+import { findSpread, resolveSpreadPositions, tarotCards } from "@starguidance/tarot-content";
 import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
@@ -23,7 +23,7 @@ const actionSchema = z.discriminatedUnion("action", [
     action: z.literal("progress"),
     phase: z.enum(["cuttingDeck", "revealingCards", "complete"]),
     cutTaken: z.boolean(),
-    revealedIndexes: z.array(z.number().int().nonnegative()).max(7),
+    revealedIndexes: z.array(z.number().int().nonnegative()).max(10),
   }),
 ]);
 
@@ -41,7 +41,10 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     const owned = await ownedReading((await context.params).id);
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { reading } = owned;
-    const spread = spreads.find(({ id }) => id === reading.spreadId);
+    const spread = findSpread(reading.spreadId);
+    const positions = spread
+      ? resolveSpreadPositions(spread, reading.questionClassification)
+      : undefined;
     const configuredFollowUpLimit = followUpLimit();
     const feedback = await owned.persistence.repositories.feedback.list(owned.user.id, reading.id);
     return NextResponse.json({
@@ -55,7 +58,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
         draw: reading.draw,
         cards: reading.draw.assignments.map((assignment) => {
           const card = tarotCards.find(({ id }) => id === assignment.cardId);
-          const position = spread?.positions.find(({ id }) => id === assignment.positionId);
+          const position = positions?.find(({ id }) => id === assignment.positionId);
           if (!card) throw new Error("Locked draw references unavailable card content.");
           return {
             cardId: card.id,
@@ -65,6 +68,17 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
               assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes,
             positionId: assignment.positionId,
             positionName: position?.displayName ?? assignment.positionId.replaceAll("-", " "),
+            placement: position?.placement ?? {
+              column: assignment.order,
+              row: 0,
+              rotation: 0,
+              layer: 0,
+            },
+            spreadLayout: spread?.layout ?? {
+              columns: reading.draw.assignments.length,
+              rows: 1,
+              kind: "legacy",
+            },
             artwork: card.artwork,
           };
         }),

@@ -89,7 +89,7 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
   await page.getByRole("button", { name: "Next reading passage" }).click();
-  await expect(page.locator('.oracle-entry[data-phase="cardInterpretation"]')).toBeVisible();
+  await expect(page.locator('.oracle-entry[data-phase="narration"]')).toBeVisible();
   await expect(page.locator(".physical-card-figure.is-reading-subject")).toBeVisible();
   await capturePage(page, testInfo, "reading-result");
 

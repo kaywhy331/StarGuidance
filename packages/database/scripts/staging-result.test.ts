@@ -31,7 +31,7 @@ describe("evidence redaction", () => {
     for (const text of [
       "17 of 17 forced",
       "2 applied: 0000_busy_centennial, 0001_supabase_staging",
-      "cards=78 spreads=4 positions=16",
+      "cards=78 spreads=10 positions=53",
       "server reports PostgreSQL 17.6",
       "42501: permission denied for schema public",
       "port 5432; transaction pooler false",

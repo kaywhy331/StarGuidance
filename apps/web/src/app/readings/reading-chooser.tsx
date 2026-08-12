@@ -158,7 +158,7 @@ export function ReadingChooser({
                   {spread.estimatedMinutes} min
                 </small>
                 <strong>{spread.name}</strong>
-                <span>{spread.purpose}</span>
+                <span className="ritual-spread-purpose">{spread.purpose}</span>
                 <small>
                   {access.outcome === "granted"
                     ? access.mode === "unlimited"

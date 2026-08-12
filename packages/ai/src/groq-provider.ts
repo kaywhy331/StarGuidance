@@ -1,6 +1,6 @@
 import {
   followUpResultSchema,
-  readingResultSchema,
+  readingResultV2Schema,
   type FollowUpResult,
   type ReadingResult,
 } from "@starguidance/contracts";
@@ -31,9 +31,9 @@ import { generatedOutputSafetyViolation } from "./output-safety";
  * times out, or errors falls back to the deterministic reading rather than
  * showing a person a broken or empty result (AI-015).
  */
-export const PROMPT_VERSION = "reader-voice-v2" as const;
-export const RESPONSE_SCHEMA_VERSION = "reading-result-v1" as const;
-export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v2" as const;
+export const PROMPT_VERSION = "reader-voice-v3" as const;
+export const RESPONSE_SCHEMA_VERSION = "reading-result-v2" as const;
+export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v3" as const;
 
 type FallbackReason =
   | "request-timeout"
@@ -80,16 +80,23 @@ export const GUARDED_CATEGORIES = new Set([
 ]);
 
 const READER_VOICE = [
-  "You are a practised tarot reader speaking directly to one person who has come to you with a question.",
-  "Answer them. Say plainly what you see in the cards and where it is heading. Commit to a reading.",
-  "Speak warmly and in the second person, as if across a table. Be specific and concrete.",
-  "Every card must be read through the position it landed in — the position changes what the card is saying.",
-  "The supplied questionContext.topic is the reading area the person deliberately selected. Treat it as authoritative;",
-  "only infer a subject from question wording when that topic is general.",
-  "You are given a short lens describing how this person tends to operate. Use it in every card: name how",
-  "that pattern meets that card. A reading that would suit anyone is a failed reading.",
-  "Do not add disclaimers, caveats about tarot, or meta-commentary. Do not mention being an AI or a model.",
-  "Do not restate the question. Do not use the words 'reflective guidance'.",
+  "You are a conversational divination narrator speaking as an intuitive continuation of an existing conversation.",
+  "Use the locked cards to understand what appears to be happening in the person's life and where it may be heading; do not explain tarot academically.",
+  "Internally reason through the current situation, underlying pattern, remembered personal tendencies, likely next development, observable manifestation, tension, turning point, and direction afterward. Never expose that structure.",
+  "Write ordered spoken passages with no headings inside their text. The passages must join into one continuous narration, not a structured report.",
+  "Sound warm, perceptive, calm, thoughtful, slightly mysterious, and natural. Use contractions, varied sentence length, and occasional short sentences for emphasis.",
+  "Include meaningful conditional prediction. Favor concrete plausible manifestations such as a conversation, decision, opportunity, changed behavior, obstacle, work or financial development, or realization.",
+  "Use phrases such as 'I think you're going to notice', 'you may soon find', 'I wouldn't be surprised if', 'watch for', and 'the turning point may come when' where natural—not mechanically.",
+  "Silently integrate only relevant readerLens statements. Never announce a profile, personal lens, astrology, numerology, or what you know about the person.",
+  "Preserve each card's orientation, supplied traditional themes, and positional function, including both constructive and shadow expressions. The profile may change emphasis but never card meaning.",
+  "For relationship material, never claim another person's private thoughts, motives, or feelings. Speak only through observable behavior, possible signals held with uncertainty, direct communication, boundaries, evidence, and the user's choices.",
+  "Do not name every card or every position. Name the answer-bearing card once near the opening when natural, then let the interpretation become the person's story.",
+  "Never write or imply visible sections such as 'Traditional current', 'Your personal lens', 'Connection to your question', 'The advice is', 'Likely trajectory', or 'Alternate trajectory'.",
+  "Do not sound like a tarot encyclopedia, therapist, horoscope generator, academic report, or mystical performance. Do not manufacture drama.",
+  "Include tension, contradiction, reversal, foreshadowing, hidden significance, or unresolved curiosity where the draw genuinely supports it.",
+  "Vary the ending: prediction, realization, foreshadowing, gentle warning, reflection, or an open question. Do not always end with a question.",
+  "The supplied questionContext.topic is authoritative; infer from wording only when it is general.",
+  "Do not restate or quote the raw question. Do not mention being an AI. Do not put a disclaimer in the spoken passages; uncertainty is stored separately.",
 ].join(" ");
 
 const GUARDED_VOICE = [
@@ -103,9 +110,9 @@ const GUARDED_VOICE = [
 
 const FOLLOW_UP_VOICE = [
   "Answer the follow-up as one cohesive response, never as a second full reading.",
-  "Directly name at least one card and the position it occupies in the locked spread.",
-  "Connect that card to at least one supplied reader-lens trait and to the original reading.",
-  "Stay focused on the follow-up. Do not use headings, lists, disclaimers, or repeat every card.",
+  "Refer naturally to one relevant card when useful, without mechanically naming its position.",
+  "Silently carry forward the original narration and relevant reader-lens trait.",
+  "Stay focused on the follow-up. Do not use headings, lists, disclaimers, or repeat the spread.",
 ].join(" ");
 
 export interface GroqProviderOptions {
@@ -121,33 +128,49 @@ function responseSchema(cardCount: number): Record<string, unknown> {
   const card = {
     type: "object",
     additionalProperties: false,
-    required: [
-      "positionId",
-      "cardId",
-      "orientation",
-      "traditionalMeaning",
-      "personalizedMeaning",
-      "questionConnection",
-    ],
+    required: ["positionId", "cardId", "orientation", "passageIds"],
     properties: {
       positionId: { type: "string" },
       cardId: { type: "string" },
       orientation: { type: "string", enum: ["upright", "reversed"] },
-      traditionalMeaning: { type: "string" },
-      personalizedMeaning: { type: "string" },
-      questionConnection: { type: "string" },
+      passageIds: { type: "array", items: { type: "string" }, minItems: 1 },
+    },
+  };
+  const passage = {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "role", "text", "cardReferences"],
+    properties: {
+      id: { type: "string" },
+      role: {
+        type: "string",
+        enum: [
+          "opening",
+          "situation",
+          "underlyingPattern",
+          "development",
+          "turningPoint",
+          "trajectory",
+          "alternative",
+          "agency",
+          "reflection",
+          "closing",
+          "safety",
+        ],
+      },
+      text: { type: "string" },
+      cardReferences: { type: "array", items: { type: "string" }, maxItems: cardCount },
     },
   };
   return {
     type: "object",
     additionalProperties: false,
     required: [
+      "schemaVersion",
       "title",
-      "directAnswer",
-      "centralTheme",
+      "passages",
       "cards",
-      "synthesis",
-      "likelyTrajectory",
+      "trajectory",
       "userAgency",
       "reflectionQuestion",
       "disconfirmingEvidence",
@@ -155,19 +178,18 @@ function responseSchema(cardCount: number): Record<string, unknown> {
       "safetyFlags",
     ],
     properties: {
+      schemaVersion: { type: "string", enum: ["reading-result-v2"] },
       title: { type: "string" },
-      directAnswer: { type: "string" },
-      centralTheme: { type: "string" },
+      passages: { type: "array", items: passage, minItems: 3, maxItems: 24 },
       cards: { type: "array", items: card, minItems: cardCount, maxItems: cardCount },
-      synthesis: { type: "string" },
-      likelyTrajectory: {
+      trajectory: {
         type: "object",
         additionalProperties: false,
-        required: ["summary", "conditions", "alternateTrajectory"],
+        required: ["likelyPassageId", "conditions", "alternatePassageId"],
         properties: {
-          summary: { type: "string" },
+          likelyPassageId: { type: "string" },
           conditions: { type: "array", items: { type: "string" } },
-          alternateTrajectory: { type: "string" },
+          alternatePassageId: { type: "string" },
         },
       },
       userAgency: { type: "array", items: { type: "string" } },
@@ -198,7 +220,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
 
   /** The payload sent to the provider. Exposed so tests can assert what leaves. */
   buildPayload(input: ReadingGenerationInput) {
-    const resolved = resolveDraw(input.draw);
+    const resolved = resolveDraw(input.draw, input.questionClassification);
     const answer = answerCard(input.draw, resolved);
     return {
       question: input.question,
@@ -223,17 +245,10 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     return {
       ...this.buildPayload(input),
       originalReading: {
-        directAnswer: input.originalResult.directAnswer,
-        centralTheme: input.originalResult.centralTheme,
-        cards: input.originalResult.cards.map((card) => ({
-          positionId: card.positionId,
-          cardId: card.cardId,
-          orientation: card.orientation,
-          personalizedMeaning: card.personalizedMeaning,
-          questionConnection: card.questionConnection,
-        })),
-        synthesis: input.originalResult.synthesis,
-        likelyTrajectory: input.originalResult.likelyTrajectory,
+        title: input.originalResult.title,
+        passages: input.originalResult.passages,
+        cards: input.originalResult.cards,
+        trajectory: input.originalResult.trajectory,
         userAgency: input.originalResult.userAgency,
       },
     };
@@ -289,14 +304,14 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
   ): Promise<ReadingResult> {
     const safety = classifyQuestion(input.question);
     const guarded = GUARDED_CATEGORIES.has(safety.category);
-    const resolved = resolveDraw(input.draw);
-    const parsed = readingResultSchema.parse(
+    const resolved = resolveDraw(input.draw, input.questionClassification);
+    const parsed = readingResultV2Schema.parse(
       await this.requestStructured(
         guarded ? `${READER_VOICE} ${GUARDED_VOICE}` : READER_VOICE,
         this.buildPayload(input),
         "reading",
         responseSchema(resolved.length),
-        this.options.maxOutputTokens ?? 2600,
+        this.options.maxOutputTokens ?? 4000,
         signal,
       ),
     );
@@ -304,8 +319,17 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     if (generatedOutputSafetyViolation(parsed)) throw new ProviderRequestError("unsafe-response");
     // The model may not echo the locked draw faithfully; the draw is
     // authoritative, so card identity and orientation are restored from it.
-    return {
+    const positionMap = new Map(
+      parsed.cards.map((card, index) => [card.positionId, resolved[index]!.position.id]),
+    );
+    return readingResultV2Schema.parse({
       ...parsed,
+      passages: parsed.passages.map((passage) => ({
+        ...passage,
+        cardReferences: passage.cardReferences.map(
+          (positionId) => positionMap.get(positionId) ?? positionId,
+        ),
+      })),
       cards: resolved.map((entry, index) => ({
         ...parsed.cards[index]!,
         positionId: entry.position.id,
@@ -313,7 +337,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
         orientation: entry.orientation,
       })),
       safetyFlags: safety.category === "ordinary" ? parsed.safetyFlags : [safety.category],
-    };
+    });
   }
 
   private async callFollowUpProvider(

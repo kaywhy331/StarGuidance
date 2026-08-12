@@ -66,104 +66,16 @@ function TypewriterParagraph({
   );
 }
 
-function StructuredSection({
-  cardIndex,
-  entry,
-  result,
-}: {
-  cardIndex: number | null;
-  entry: TranscriptEntry;
-  result: ReadingResult;
-}) {
-  if (entry.phase === "openingTheme") {
-    return (
-      <div className="reading-section-copy opening-theme-copy">
-        <p className="reading-direct-answer">{result.directAnswer}</p>
-        <p>{result.centralTheme}</p>
-      </div>
-    );
-  }
-
-  if (entry.phase === "cardInterpretation" && cardIndex !== null) {
-    const card = result.cards[cardIndex];
-    if (card)
-      return (
-        <div className="card-interpretation-copy">
-          <section>
-            <h3>Traditional current</h3>
-            <p>{card.traditionalMeaning}</p>
-          </section>
-          <section>
-            <h3>Your personal lens</h3>
-            <p>{card.personalizedMeaning}</p>
-          </section>
-          <section>
-            <h3>Connection to your question</h3>
-            <p>{card.questionConnection}</p>
-          </section>
-        </div>
-      );
-  }
-
-  if (entry.phase === "overallSynthesis")
-    return <p className="oracle-entry-text">{result.synthesis}</p>;
-
-  if (entry.phase === "likelyTrajectory") {
-    return (
-      <div className="reading-section-copy">
-        <p>{result.likelyTrajectory.summary}</p>
-        <h3>Conditions shaping this path</h3>
-        <ul>
-          {result.likelyTrajectory.conditions.map((condition) => (
-            <li key={condition}>{condition}</li>
-          ))}
-        </ul>
-        <p className="reading-uncertainty">{result.uncertainty}</p>
-      </div>
-    );
-  }
-
-  if (entry.phase === "alternateTrajectory") {
-    return (
-      <div className="reading-section-copy">
-        <p>{result.likelyTrajectory.alternateTrajectory}</p>
-        <h3>Signals that could change the pattern</h3>
-        <ul>
-          {result.disconfirmingEvidence.map((evidence) => (
-            <li key={evidence}>{evidence}</li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
-
-  if (entry.phase === "userAgency") {
-    return (
-      <ul className="reading-agency-list">
-        {result.userAgency.map((action) => (
-          <li key={action}>{action}</li>
-        ))}
-      </ul>
-    );
-  }
-
-  if (entry.phase === "reflectionPrompt")
-    return <p className="reading-reflection-question">{result.reflectionQuestion}</p>;
-
-  return <p className="oracle-entry-text">{entry.text}</p>;
-}
-
-function cardIndexFor(entries: readonly TranscriptEntry[], activeIndex: number) {
+function cardIndexFor(
+  entries: readonly TranscriptEntry[],
+  activeIndex: number,
+  cards: readonly DealtCardView[],
+) {
   const entry = entries[activeIndex];
-  if (!entry || entry.phase !== "cardInterpretation") return null;
-  return (
-    entries
-      .slice(0, activeIndex + 1)
-      .filter(
-        (candidate) =>
-          candidate.target === entry.target && candidate.phase === "cardInterpretation",
-      ).length - 1
-  );
+  const positionId = entry?.cardPositionIds?.[0];
+  if (!positionId) return null;
+  const index = cards.findIndex((card) => card.positionId === positionId);
+  return index >= 0 ? index : null;
 }
 
 export function OracleTranscript({
@@ -285,8 +197,7 @@ export function OracleTranscript({
 
   const boundedIndex = entries.length === 0 ? 0 : Math.min(activeIndex, entries.length - 1);
   const activeEntry = entries[boundedIndex];
-  const activeCardIndex = cardIndexFor(entries, boundedIndex);
-  const activeCard = activeCardIndex === null ? undefined : cards[activeCardIndex];
+  const activeCardIndex = cardIndexFor(entries, boundedIndex, cards);
 
   useEffect(() => {
     onActiveCardChange?.(activeCardIndex);
@@ -399,27 +310,22 @@ export function OracleTranscript({
             data-phase={activeEntry.phase}
             key={activeEntry.key}
           >
-            {(activeCard || activeEntry.phase === "followUp") && (
-              <p className="reading-section-eyebrow">
-                {activeCard
-                  ? `${activeCard.positionName} · ${activeCard.orientation}`
-                  : "Same cards · one continuing thread"}
-              </p>
-            )}
-            <h2>
-              {activeCard
-                ? `${activeCard.name}${activeCard.orientation === "reversed" ? " (R)" : ""}`
-                : activeEntry.heading}
+            <h2
+              className={
+                boundedIndex === 0 || activeEntry.phase === "followUp" ? undefined : "sr-only"
+              }
+            >
+              {activeEntry.phase === "followUp"
+                ? activeEntry.heading
+                : boundedIndex === 0
+                  ? result.title
+                  : `Reading passage ${boundedIndex + 1}`}
             </h2>
-            {activeEntry.phase !== "followUp" ? (
-              <StructuredSection cardIndex={activeCardIndex} entry={activeEntry} result={result} />
-            ) : (
-              <TypewriterParagraph
-                entry={activeEntry}
-                onComplete={setAnnouncement}
-                reducedMotion={reducedMotion}
-              />
-            )}
+            <TypewriterParagraph
+              entry={activeEntry}
+              onComplete={setAnnouncement}
+              reducedMotion={reducedMotion}
+            />
           </article>
         )}
         <div aria-atomic="true" aria-live="polite" className="sr-only">

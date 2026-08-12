@@ -43,7 +43,7 @@ export const ritualProgressSchema = z.object({
   version: z.literal("ritual-progress-v1"),
   phase: z.enum(["cuttingDeck", "revealingCards", "complete"]),
   cutTaken: z.boolean(),
-  revealedIndexes: z.array(z.number().int().nonnegative()).max(7).readonly(),
+  revealedIndexes: z.array(z.number().int().nonnegative()).max(10).readonly(),
   updatedAt: z.string().datetime(),
 });
 

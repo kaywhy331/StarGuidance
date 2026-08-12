@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { renderTarotFaceSvg, spreads, tarotCards } from "../src";
+import {
+  allSpreads,
+  findSpread,
+  legacySpreads,
+  renderTarotFaceSvg,
+  resolveSpreadPositions,
+  selectSpreadContextTemplate,
+  spreads,
+  tarotCards,
+} from "../src";
 
 describe("tarot content integrity", () => {
   it("contains 78 unique cards with correct arcana and suits", () => {
@@ -35,9 +44,25 @@ describe("tarot content integrity", () => {
     }
   });
 
-  it("defines four ordered spreads without duplicate positions", () => {
-    expect(spreads.map(({ positions }) => positions.length)).toEqual([1, 3, 5, 7]);
-    for (const spread of spreads) {
+  it("defines six selectable spreads and preserves four legacy spreads", () => {
+    expect(spreads.map(({ positions }) => positions.length)).toEqual([1, 3, 10, 7, 7, 9]);
+    expect(spreads.map(({ id }) => id)).toEqual([
+      "one-card",
+      "three-card",
+      "celtic-cross",
+      "horseshoe",
+      "relationship",
+      "nine-card-matrix",
+    ]);
+    expect(legacySpreads.map(({ id }) => id)).toEqual([
+      "focus",
+      "direction",
+      "crossroads",
+      "outlook",
+    ]);
+    expect(allSpreads).toHaveLength(10);
+    expect(findSpread("outlook")?.positions).toHaveLength(7);
+    for (const spread of allSpreads) {
       expect(spread.purpose.length).toBeGreaterThan(20);
       expect(spread.estimatedMinutes).toBeGreaterThan(0);
       expect(spread.entitlementClass).toBe("standard");
@@ -45,6 +70,71 @@ describe("tarot content integrity", () => {
       expect(spread.positions.map(({ order }) => order)).toEqual(
         spread.positions.map((_, index) => index),
       );
+      for (const position of spread.positions) {
+        expect(position.placement.column).toBeGreaterThanOrEqual(0);
+        expect(position.placement.column).toBeLessThan(spread.layout.columns);
+        expect(position.placement.row).toBeGreaterThanOrEqual(0);
+        expect(position.placement.row).toBeLessThan(spread.layout.rows);
+      }
     }
+  });
+
+  it("models the requested spatial arrangements", () => {
+    const celtic = findSpread("celtic-cross")!;
+    const crossing = celtic.positions[1]!;
+    expect(crossing.placement).toEqual({ column: 2, row: 1, rotation: 90, layer: 1 });
+    expect(celtic.positions[0]!.placement).toMatchObject({ column: 2, row: 1, layer: 0 });
+
+    const horseshoe = findSpread("horseshoe")!;
+    expect(horseshoe.layout.rows).toBe(5);
+    expect(horseshoe.positions.map(({ placement }) => [placement.column, placement.row])).toEqual([
+      [0, 0],
+      [1, 1],
+      [2, 2],
+      [2, 3],
+      [2, 4],
+      [3, 1],
+      [4, 0],
+    ]);
+
+    const relationship = findSpread("relationship")!;
+    expect(
+      relationship.positions.map(({ placement }) => [placement.column, placement.row]),
+    ).toEqual([
+      [0, 0],
+      [2, 0],
+      [0, 1],
+      [2, 1],
+      [1, 0],
+      [1, 1],
+      [1, 2],
+    ]);
+  });
+
+  it("selects one- and three-card contexts deterministically", () => {
+    const one = findSpread("one-card")!;
+    expect(
+      selectSpreadContextTemplate(one, {
+        topic: "general",
+        intent: "decisionSupport",
+        generalReading: false,
+      })?.id,
+    ).toBe("binary-inquiry");
+    expect(
+      resolveSpreadPositions(one, {
+        topic: "general",
+        intent: "decisionSupport",
+        generalReading: false,
+      })[0]?.displayName,
+    ).toBe("Yes / No Pivot");
+
+    const three = findSpread("three-card")!;
+    expect(
+      selectSpreadContextTemplate(three, {
+        topic: "relationships",
+        intent: "clarity",
+        generalReading: false,
+      })?.id,
+    ).toBe("situational-anatomy");
   });
 });

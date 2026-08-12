@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 import type { DealtCardView } from "./reading-types";
 import { PhysicalTarotCard } from "./physical-tarot-card";
 
@@ -20,6 +22,15 @@ export function TarotSpreadStage({
   onReveal?: ((index: number) => void) | undefined;
 }) {
   const activeCard = activeIndex === null ? undefined : cards[activeIndex];
+  const layout = cards[0]?.spreadLayout ?? {
+    columns: Math.max(cards.length, 1),
+    rows: 1,
+    kind: "legacy",
+  };
+  const layoutStyle = {
+    "--spread-columns": layout.columns,
+    "--spread-rows": layout.rows,
+  } as CSSProperties;
   return (
     <section
       aria-label="Your locked tarot spread"
@@ -28,7 +39,9 @@ export function TarotSpreadStage({
       } ${focusMode === "reading" ? "is-reading-review" : ""}`}
       data-active-card-index={activeIndex ?? undefined}
       data-focus-mode={focusMode ?? undefined}
+      data-layout-kind={layout.kind}
       data-testid="tarot-spread-stage"
+      style={layoutStyle}
     >
       {cards.map((card, index) => (
         <PhysicalTarotCard

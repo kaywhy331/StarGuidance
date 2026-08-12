@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { OracleStreamEvent, ProfileTrait, ReadingTopic } from "@starguidance/contracts";
-import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
+import {
+  DECK_VERSION,
+  resolveSpreadPositions,
+  spreads,
+  tarotCards,
+} from "@starguidance/tarot-content";
 import { createLockedDraw } from "@starguidance/tarot-domain";
 import {
   classifyQuestion,
@@ -167,6 +172,85 @@ describe("AI boundary", () => {
     expect(result.cards[0]?.cardId).toBe(draw.assignments[0]?.cardId);
     expect(result.uncertainty).toMatch(/not factual proof/i);
   });
+  it("narrates the Four of Pentacles as a developing life pattern, not a card report", async () => {
+    const spread = spreads.find(({ id }) => id === "one-card")!;
+    const card = tarotCards.find(({ id }) => id === "pentacles-four")!;
+    const result = await new DeterministicFallbackProvider().generate({
+      draw: {
+        id: "four-of-pentacles-reading",
+        deckVersion: DECK_VERSION,
+        spreadId: spread.id,
+        spreadVersion: spread.version,
+        shuffleVersion: "secure-fisher-yates-v1",
+        lockedAt: new Date(0).toISOString(),
+        assignments: [
+          {
+            positionId: spread.positions[0]!.id,
+            cardId: card.id,
+            orientation: "upright",
+            order: 0,
+          },
+        ],
+      },
+      question: "How is my work likely to develop?",
+      questionClassification: questionClassification("How is my work likely to develop?", "career"),
+      relevantTraitStatements: [
+        "you tend to regain momentum through self-directed action and tangible movement.",
+      ],
+    });
+    const narration = result.passages.map(({ text }) => text).join(" ");
+    expect(result.passages[0]?.text).toMatch(
+      /^The Four of Pentacles feels like .*stability is going to matter more than expansion/i,
+    );
+    expect(narration).toContain(
+      "you tend to regain momentum through self-directed action and tangible movement",
+    );
+    expect(narration).toMatch(
+      /I think you're going to notice|You may notice|I wouldn't be surprised/i,
+    );
+    expect(narration).toMatch(/turning point/i);
+    expect(narration).not.toMatch(
+      /Traditional current|Your personal lens|Connection to your question|This card represents/i,
+    );
+    expect(result.cards[0]).toMatchObject({
+      positionId: "card-1",
+      cardId: "pentacles-four",
+      orientation: "upright",
+    });
+  });
+  it("treats a one-card yes/no context as qualitative resistance, never a guaranteed answer", async () => {
+    const spread = spreads.find(({ id }) => id === "one-card")!;
+    const card = tarotCards.find(({ id }) => id === "pentacles-four")!;
+    const result = await new DeterministicFallbackProvider().generate({
+      draw: {
+        id: "qualitative-pivot-reading",
+        deckVersion: DECK_VERSION,
+        spreadId: spread.id,
+        spreadVersion: spread.version,
+        shuffleVersion: "secure-fisher-yates-v1",
+        lockedAt: new Date(0).toISOString(),
+        assignments: [
+          {
+            positionId: spread.positions[0]!.id,
+            cardId: card.id,
+            orientation: "reversed",
+            order: 0,
+          },
+        ],
+      },
+      question: "Should I accept the offer?",
+      questionClassification: classifyQuestionContext("Should I accept the offer?", {
+        topic: "career",
+        horizon: "weeks",
+        generalReading: false,
+      }),
+      relevantTraitStatements: [],
+    });
+    expect(result.passages[0]?.text).toMatch(
+      /obstructed or premature rather than like a clean no/i,
+    );
+    expect(JSON.stringify(result)).not.toMatch(/guaranteed (yes|no)/i);
+  });
   it("rejects invalid provider output", async () => {
     const provider = new ValidatingProvider({
       id: "invalid",
@@ -189,36 +273,21 @@ describe("AI boundary", () => {
       relevantTraitStatements: [],
     });
     const events = createOracleStreamEvents(result);
-    expect(events[0]).toMatchObject({ phase: "openingTheme", heading: result.title });
-    expect(events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ heading: "From the Stars" }),
-        expect.objectContaining({ heading: "Fated Path" }),
-        expect.objectContaining({ heading: "Divergent Path" }),
-        expect.objectContaining({ heading: "Cosmic Alignment" }),
-        expect.objectContaining({ heading: "Starlit Reflection" }),
-      ]),
+    expect(events[0]).toMatchObject({ phase: "narration", heading: result.title });
+    expect(events).toHaveLength(result.passages.length);
+    expect(events.map((event) => (event.type === "phase" ? event.text : ""))).toEqual(
+      result.passages.map(({ text }) => text),
     );
     // The reading no longer ends on a disclaimer: the standing statement about
     // what tarot is lives in the site terms, linked from every page, so the
     // reading can close on the reflection it offers.
-    expect(events.at(-1)).toMatchObject({ phase: "reflectionPrompt" });
+    expect(events.at(-1)).toMatchObject({ phase: "narration" });
     expect(events.some((event) => event.type === "phase" && event.phase === "uncertainty")).toBe(
       false,
     );
     expect(
       new Set(events.map((event) => (event.type === "phase" ? event.phase : undefined))),
-    ).toEqual(
-      new Set([
-        "openingTheme",
-        "cardInterpretation",
-        "overallSynthesis",
-        "likelyTrajectory",
-        "alternateTrajectory",
-        "userAgency",
-        "reflectionPrompt",
-      ]),
-    );
+    ).toEqual(new Set(["narration"]));
     const streamed: OracleStreamEvent[] = [];
     for await (const event of new PersistedResultStreamAdapter().streamPersistedResult(result)) {
       streamed.push(event);
@@ -246,7 +315,7 @@ describe("AI boundary", () => {
     expect(followUp.response).toContain(
       tarotCards.find(({ id }) => id === draw.assignments[0]!.cardId)!.name,
     );
-    expect(followUp.response).toContain(trait);
+    expect(followUp.response).toContain(trait.replace(/[.?!]+$/, ""));
 
     const events = createFollowUpStreamEvents(followUp);
     expect(events).toHaveLength(1);
@@ -263,12 +332,12 @@ describe("AI boundary", () => {
 });
 
 describe("readings answer the question that was asked", () => {
-  const spread = spreads.find(({ id }) => id === "direction")!;
+  const spread = spreads.find(({ id }) => id === "three-card")!;
   const drawWith = (orientations: ("upright" | "reversed")[], ids: number[]) =>
     ({
       id: "draw",
       deckVersion: DECK_VERSION,
-      spreadId: "direction",
+      spreadId: "three-card",
       spreadVersion: spread.version,
       shuffleVersion: "secure-fisher-yates-v1",
       lockedAt: new Date(0).toISOString(),
@@ -296,6 +365,8 @@ describe("readings answer the question that was asked", () => {
       questionClassification: questionClassification(question),
       relevantTraitStatements: traits,
     });
+  const spoken = (result: Awaited<ReturnType<typeof generate>>) =>
+    result.passages.map(({ text }) => text).join(" ");
 
   it("keeps an explicitly selected relationship topic authoritative", async () => {
     const question = "What should I understand about this new phase at work?";
@@ -305,30 +376,36 @@ describe("readings answer the question that was asked", () => {
       questionClassification: questionClassification(question, "relationships"),
       relevantTraitStatements: traits,
     });
-    expect(result.directAnswer).toContain("relationship");
-    expect(result.directAnswer).not.toContain("work and direction");
+    expect(spoken(result)).toContain("connection");
+    expect(spoken(result)).not.toContain("structure around your work");
   });
 
-  it("names the position that carries the answer, before elaborating (AI-007)", async () => {
+  it("opens with the answer-bearing card without turning the position into a heading (AI-007)", async () => {
     const result = await generate("Should I take the new role at work?");
-    expect(result.directAnswer).toContain("Direction");
-    expect(result.title).toContain("Direction");
+    expect(result.passages[0]?.cardReferences).toEqual(["card-3"]);
+    expect(result.passages[0]?.text).toContain(tarotCards[17]!.name);
+    expect(result.passages[0]?.text).not.toContain("Decision Pivot");
   });
 
   it("changes the answer when the question changes, on the identical draw (AI-004)", async () => {
     const work = await generate("Should I take the new role at work?");
     const love = await generate("How do I repair things with my partner?");
-    expect(work.directAnswer).not.toBe(love.directAnswer);
-    expect(work.directAnswer).toContain("work");
-    expect(love.directAnswer).toContain("relationship");
+    expect(spoken(work)).not.toBe(spoken(love));
+    expect(spoken(work)).toContain("work");
+    expect(spoken(love)).toContain("connection");
   });
 
-  it("gives every card its position's interpretive function (AI-005)", async () => {
-    const result = await generate("What should I focus on at work?");
-    for (const [index, position] of spread.positions.entries()) {
+  it("carries every card's positional interpretation in natural passages (AI-005)", async () => {
+    const question = "What should I focus on at work?";
+    const classification = questionClassification(question);
+    const result = await generate(question);
+    const contextualPositions = resolveSpreadPositions(spread, classification);
+    for (const [index, position] of contextualPositions.entries()) {
       const card = result.cards[index]!;
-      expect(card.positionId).toBe(position.id);
-      expect(card.traditionalMeaning).toContain(position.interpretiveFunction);
+      expect(card.positionId).toBe(spread.positions[index]!.id);
+      const passages = result.passages.filter(({ id }) => card.passageIds.includes(id));
+      expect(passages.some(({ text }) => text.includes(position.interpretiveFunction))).toBe(true);
+      expect(passages.some(({ text }) => text.includes(position.displayName))).toBe(false);
     }
   });
 
@@ -343,34 +420,31 @@ describe("readings answer the question that was asked", () => {
       "upright",
       "reversed",
     ]);
-    expect(upright.directAnswer).not.toBe(reversed.directAnswer);
-    expect(upright.likelyTrajectory.summary).not.toBe(reversed.likelyTrajectory.summary);
+    expect(spoken(upright)).not.toBe(spoken(reversed));
+    expect(
+      upright.passages.find(({ id }) => id === upright.trajectory.likelyPassageId)?.text,
+    ).not.toBe(
+      reversed.passages.find(({ id }) => id === reversed.trajectory.likelyPassageId)?.text,
+    );
   });
 
-  it("uses a distinct profile trait for each card rather than repeating one", async () => {
+  it("silently integrates profile context without announcing a personal lens", async () => {
     const result = await generate("What should I focus on at work?");
-    const personalised = result.cards.map(({ personalizedMeaning }) => personalizedMeaning);
-    expect(new Set(personalised).size).toBe(personalised.length);
-    for (const [index, trait] of traits.entries()) expect(personalised[index]).toContain(trait);
-  });
-
-  it("does not reuse one sentence frame for every card", async () => {
-    const result = await generate("What should I focus on at work?");
-    const openings = result.cards.map(({ traditionalMeaning }) => traditionalMeaning.slice(0, 14));
-    expect(new Set(openings).size).toBe(openings.length);
+    expect(spoken(result)).toContain(traits[0]!.replace(/[.?!]+$/, ""));
+    expect(spoken(result)).not.toMatch(/your (personal )?lens|based on your profile/i);
   });
 
   it("derives the trajectory and its conditions from the drawn cards (AI-011)", async () => {
     const result = await generate("Should I take the new role at work?");
-    expect(result.likelyTrajectory.conditions.join(" ")).toContain("Challenge");
-    expect(result.likelyTrajectory.summary).toContain(tarotCards[17]!.uprightThemes[0]!);
+    expect(result.trajectory.conditions.join(" ")).toContain("Decision Pivot");
+    expect(
+      result.passages.find(({ id }) => id === result.trajectory.likelyPassageId)?.text,
+    ).toContain(tarotCards[17]!.uprightThemes[0]!);
   });
 
   it("keeps future language conditional and never guarantees an outcome (AI-008)", async () => {
     const result = await generate("Will I get the promotion?");
-    expect(result.likelyTrajectory.summary.toLowerCase()).toMatch(
-      /if nothing shifts|under current/,
-    );
+    expect(spoken(result).toLowerCase()).toMatch(/if the current|from where things stand/);
     expect(JSON.stringify(result).toLowerCase()).not.toMatch(
       /\b(guaranteed|certainly will|definitely will)\b/,
     );
@@ -387,7 +461,7 @@ describe("readings answer the question that was asked", () => {
   it("reframes rather than answering a high-stakes question (AI-013)", async () => {
     const result = await generate("Is my partner cheating on me?");
     expect(result.safetyFlags).toContain("infidelity");
-    expect(result.directAnswer).toMatch(/isn't theirs to say/i);
+    expect(spoken(result)).toMatch(/isn't theirs to say/i);
   });
 
   it("gives each guarded category its own reframing, not one generic sentence (G3)", async () => {
@@ -399,19 +473,18 @@ describe("readings answer the question that was asked", () => {
     const financial = await generate("Will this stock go up?");
     expect(medical.safetyFlags).toContain("medical");
     expect(financial.safetyFlags).toContain("financial");
-    expect(medical.directAnswer).not.toBe(financial.directAnswer);
-    expect(medical.cards[0]?.questionConnection).not.toBe(financial.cards[0]?.questionConnection);
+    expect(medical.passages[0]?.text).not.toBe(financial.passages[0]?.text);
     // Neither reframe is classifyQuestion()'s raw, category-agnostic guidance
     // string verbatim — the bug this fixed.
     const guidance = classifyQuestion("Will this stock go up?").guidance;
-    expect(financial.directAnswer).not.toContain(guidance);
-    expect(financial.cards[0]?.questionConnection).not.toBe(guidance);
+    expect(financial.passages[0]?.text).not.toContain(guidance);
   });
 
-  it("rotates a guarded category's card-level reframing rather than repeating one sentence (G3)", async () => {
+  it("keeps guarded narration varied and grounded in observable actions (G3)", async () => {
     const result = await generate("What is this diagnosis?");
     expect(result.safetyFlags).toContain("medical");
-    const connections = result.cards.map((card) => card.questionConnection);
-    expect(connections[0]).not.toBe(connections[1]);
+    const threads = result.passages.filter(({ id }) => id.startsWith("thread-"));
+    expect(new Set(threads.map(({ text }) => text)).size).toBe(threads.length);
+    expect(spoken(result)).toContain("qualified conversation");
   });
 });

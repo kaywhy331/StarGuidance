@@ -1,5 +1,6 @@
 import {
   DECK_VERSION,
+  legacySpreads,
   spreads,
   TAROT_CONTENT_VERSION,
   tarotCards,
@@ -44,20 +45,25 @@ try {
         )
       `;
     }
-    for (const spread of spreads) {
+    const spreadSeeds = [
+      ...spreads.map((spread) => ({ spread, active: true })),
+      ...legacySpreads.map((spread) => ({ spread, active: false })),
+    ];
+    for (const { spread, active } of spreadSeeds) {
       await transaction`
         insert into spreads (id, version, payload, active)
-        values (${spread.id}, ${spread.version}, ${transaction.json(asJson(spread))}, true)
-        on conflict (id) do update set version = excluded.version, payload = excluded.payload
+        values (${spread.id}, ${spread.version}, ${transaction.json(asJson(spread))}, ${active})
+        on conflict (id) do update
+        set version = excluded.version,
+            payload = excluded.payload,
+            active = case when excluded.active = false then false else spreads.active end
       `;
       for (const position of spread.positions) {
         await transaction`
           insert into spread_positions (spread_id, position_id, display_order, payload)
-          select ${spread.id}, ${position.id}, ${position.order}, ${transaction.json(asJson(position))}
-          where not exists (
-            select 1 from spread_positions
-            where spread_id = ${spread.id} and position_id = ${position.id}
-          )
+          values (${spread.id}, ${position.id}, ${position.order}, ${transaction.json(asJson(position))})
+          on conflict (spread_id, position_id) do update
+          set display_order = excluded.display_order, payload = excluded.payload
         `;
       }
     }
@@ -90,7 +96,10 @@ try {
         (${"reader-voice-v1"}, ${"position-aware live reading narrator with minimised trait lens"}),
         (${"deterministic-fallback-v2"}, ${"topic-authoritative credential-free reading fallback"}),
         (${"reader-voice-v2"}, ${"topic-authoritative live reading narrator with minimised trait lens"}),
-        (${"follow-up-reader-voice-v2"}, ${"topic-authoritative locked-reading follow-up narrator"})
+        (${"follow-up-reader-voice-v2"}, ${"topic-authoritative locked-reading follow-up narrator"}),
+        (${"deterministic-fallback-v3"}, ${"narration-first credential-free reading fallback"}),
+        (${"reader-voice-v3"}, ${"conversational predictive narrator with minimised private trait lens"}),
+        (${"follow-up-reader-voice-v3"}, ${"conversational continuation of a locked narration-first reading"})
       on conflict (version) do update set purpose = excluded.purpose
     `;
   });

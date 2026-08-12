@@ -304,7 +304,8 @@ test("critical deployed flows pass automated WCAG rules", async () => {
     .toBeGreaterThanOrEqual(9);
   await page.getByTestId("oracle-transcript").focus();
   await page.keyboard.press("End");
-  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
+  await expect(page.locator(".oracle-entry-text")).toBeVisible();
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();
   await scan("final reflection and follow-up entry point");
 

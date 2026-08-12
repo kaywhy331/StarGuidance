@@ -407,10 +407,11 @@ a {
 .tarot-spread-stage {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(4, auto);
-  align-items: start;
+  grid-template-columns: repeat(var(--spread-columns, 4), auto);
+  grid-template-rows: repeat(var(--spread-rows, 1), auto);
+  align-items: center;
   justify-content: center;
-  gap: clamp(0.5rem, 1.5vw, 1.15rem);
+  gap: clamp(0.28rem, 1.1vw, 0.9rem);
   width: min(100%, 72rem);
   max-height: 100%;
   transform: translateY(-1vh);
@@ -435,21 +436,16 @@ a {
   backdrop-filter: blur(1px);
 }
 
-.spread-count-1 {
-  grid-template-columns: auto;
-}
-
-.spread-count-3 {
-  grid-template-columns: repeat(3, auto);
-}
-
 .physical-card-figure {
   position: relative;
   z-index: 0;
   width: clamp(4.5rem, min(9.5vw, 10.5dvh), 8rem);
   margin: 0;
   text-align: center;
-  transform: translate3d(0, 0, 0) scale(1);
+  grid-column: var(--spread-column);
+  grid-row: var(--spread-row);
+  z-index: var(--spread-layer);
+  transform: translate3d(0, 0, 0) rotate(var(--spread-rotation, 0deg)) scale(1);
   transform-origin: center center;
   transition:
     transform 950ms cubic-bezier(0.16, 0.82, 0.2, 1),
@@ -463,8 +459,20 @@ a {
 }
 
 .spread-count-5 .physical-card-figure,
-.spread-count-7 .physical-card-figure {
+.spread-count-7 .physical-card-figure,
+.spread-count-9 .physical-card-figure,
+.spread-count-10 .physical-card-figure {
   width: clamp(3.75rem, min(8.2vw, 9dvh), 6.75rem);
+}
+
+.tarot-spread-stage[data-layout-kind="celtic-cross"] .physical-card-figure,
+.tarot-spread-stage[data-layout-kind="horseshoe"] .physical-card-figure {
+  width: clamp(3.1rem, min(6.8vw, 7.3dvh), 5.5rem);
+}
+
+.tarot-spread-stage[data-layout-kind="celtic-cross"]
+  .physical-card-figure[data-spread-rotation="90"] {
+  margin: 0 -0.6rem;
 }
 
 .sanctuary-stage.has-reading-journey .physical-card-figure {
@@ -480,8 +488,19 @@ a {
 }
 
 .sanctuary-stage.has-reading-journey .spread-count-5 .physical-card-figure,
-.sanctuary-stage.has-reading-journey .spread-count-7 .physical-card-figure {
+.sanctuary-stage.has-reading-journey .spread-count-7 .physical-card-figure,
+.sanctuary-stage.has-reading-journey .spread-count-9 .physical-card-figure,
+.sanctuary-stage.has-reading-journey .spread-count-10 .physical-card-figure {
   width: clamp(3.1rem, min(15vw, 7.6dvh), 5.5rem);
+}
+
+.sanctuary-stage.has-reading-journey
+  .tarot-spread-stage[data-layout-kind="celtic-cross"]
+  .physical-card-figure,
+.sanctuary-stage.has-reading-journey
+  .tarot-spread-stage[data-layout-kind="horseshoe"]
+  .physical-card-figure {
+  width: clamp(1.75rem, min(6.4vw, 4.4dvh), 4.6rem);
 }
 
 .tarot-spread-stage.is-cinematic-review .physical-card-figure:not(.is-cinematic-subject) {
@@ -504,7 +523,7 @@ a {
 
 .physical-card-figure.is-cinematic-positioned {
   transform: translate3d(var(--cinematic-x), var(--cinematic-y), 10rem)
-    scale(var(--cinematic-scale));
+    rotate(var(--spread-rotation, 0deg)) scale(var(--cinematic-scale));
 }
 
 .physical-tarot-card {
@@ -1195,13 +1214,19 @@ a {
 .reading-entry-stage {
   position: absolute;
   z-index: 5;
-  top: 10vh;
+  top: 4.75rem;
   right: 1rem;
-  bottom: 11rem;
+  bottom: clamp(14.5rem, 31dvh, 20rem);
   left: 1rem;
   display: grid;
-  place-content: center;
+  align-content: safe center;
   justify-items: center;
+  justify-content: center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.35rem 0 0.75rem;
+  scrollbar-width: thin;
   text-align: center;
   text-shadow: 0 3px 18px #000;
 }
@@ -1219,8 +1244,8 @@ a {
 
 .reading-entry-stage h1 {
   max-width: 44rem;
-  margin: 0.6rem 0 clamp(1.25rem, 5vh, 3.5rem);
-  font-size: clamp(2rem, 5vw, 4.2rem);
+  margin: 0.45rem 0 clamp(0.8rem, 2.4vh, 1.6rem);
+  font-size: clamp(1.8rem, 4.2vw, 3.5rem);
   font-weight: 400;
 }
 
@@ -1237,7 +1262,8 @@ a {
 
 .ritual-spread-options label > span {
   display: grid;
-  min-height: 7rem;
+  height: 100%;
+  min-height: clamp(5.25rem, 12dvh, 6.5rem);
   place-content: center;
   gap: 0.45rem;
   padding: 1rem;
@@ -1286,7 +1312,17 @@ a {
   font-weight: 400;
 }
 
+.ritual-spread-purpose {
+  color: #d2ddd8;
+  font:
+    0.76rem/1.35 Arial,
+    Helvetica,
+    sans-serif;
+}
+
 .reading-entry-console {
+  height: auto;
+  grid-template-rows: none;
   width: min(46rem, calc(100vw - 2rem));
 }
 
@@ -1444,16 +1480,9 @@ a {
   }
 
   .tarot-spread-stage {
-    grid-template-columns: repeat(4, auto);
-    gap: 0.42rem;
-  }
-
-  .spread-count-1 {
-    grid-template-columns: auto;
-  }
-
-  .spread-count-3 {
-    grid-template-columns: repeat(3, auto);
+    grid-template-columns: repeat(var(--spread-columns, 4), auto);
+    grid-template-rows: repeat(var(--spread-rows, 1), auto);
+    gap: 0.28rem;
   }
 
   .physical-card-figure {
@@ -1469,8 +1498,15 @@ a {
   }
 
   .spread-count-5 .physical-card-figure,
-  .spread-count-7 .physical-card-figure {
+  .spread-count-7 .physical-card-figure,
+  .spread-count-9 .physical-card-figure,
+  .spread-count-10 .physical-card-figure {
     width: clamp(3.25rem, min(16vw, 8.5dvh), 4.4rem);
+  }
+
+  .tarot-spread-stage[data-layout-kind="celtic-cross"] .physical-card-figure,
+  .tarot-spread-stage[data-layout-kind="horseshoe"] .physical-card-figure {
+    width: clamp(2.25rem, min(10.5vw, 5.8dvh), 3.25rem);
   }
 
   .oracle-console-stack {
@@ -1544,7 +1580,7 @@ a {
 
   .reading-entry-stage {
     top: 4rem;
-    bottom: 10rem;
+    bottom: clamp(16.5rem, 39dvh, 21rem);
   }
 
   .reading-entry-stage h1 {
@@ -1559,12 +1595,22 @@ a {
   }
 
   .ritual-spread-options label > span {
-    min-height: 5.2rem;
-    padding: 0.65rem;
+    min-height: clamp(4.25rem, 10dvh, 5.2rem);
+    padding: 0.5rem;
   }
 
   .ritual-spread-options strong {
     font-size: 0.76rem;
+  }
+
+  .ritual-spread-purpose {
+    display: -webkit-box;
+    min-height: 1.7rem;
+    overflow: hidden;
+    font-size: 0.68rem;
+    line-height: 1.25;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 }
 
@@ -1579,6 +1625,26 @@ a {
 
   .oracle-console-stack {
     top: auto;
+  }
+
+  .reading-entry-stage {
+    top: 4rem;
+    bottom: 17rem;
+  }
+
+  .reading-entry-stage h1 {
+    margin-bottom: 0.65rem;
+    font-size: clamp(1.65rem, 6vh, 2.6rem);
+  }
+
+  .ritual-spread-options {
+    gap: 0.45rem;
+  }
+
+  .ritual-spread-options label > span {
+    min-height: 4.5rem;
+    gap: 0.25rem;
+    padding: 0.45rem;
   }
 
   .reading-section-copy,

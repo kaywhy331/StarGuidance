@@ -202,24 +202,40 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
         userId,
         readingId,
         result: {
+          schemaVersion: "reading-result-v2",
           title: "Synthetic",
-          directAnswer: "Synthetic direct answer",
-          centralTheme: "Synthetic theme",
+          passages: [
+            {
+              id: "opening",
+              role: "opening",
+              text: "Synthetic opening narration.",
+              cardReferences: ["focus"],
+            },
+            {
+              id: "trajectory",
+              role: "trajectory",
+              text: "Synthetic likely trajectory.",
+              cardReferences: ["focus"],
+            },
+            {
+              id: "alternate",
+              role: "alternative",
+              text: "Synthetic alternate trajectory.",
+              cardReferences: [],
+            },
+          ],
           cards: [
             {
               positionId: "focus",
               cardId: "major-00",
               orientation: "upright",
-              traditionalMeaning: "Synthetic traditional meaning",
-              personalizedMeaning: "Synthetic personalized meaning",
-              questionConnection: "Synthetic question connection",
+              passageIds: ["opening", "trajectory"],
             },
           ],
-          synthesis: "Synthetic synthesis",
-          likelyTrajectory: {
-            summary: "Synthetic summary",
+          trajectory: {
+            likelyPassageId: "trajectory",
             conditions: ["Synthetic condition"],
-            alternateTrajectory: "Synthetic alternate trajectory",
+            alternatePassageId: "alternate",
           },
           userAgency: ["Synthetic agency"],
           reflectionQuestion: "Synthetic reflection question",
@@ -227,7 +243,7 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
           uncertainty: "Synthetic uncertainty",
           safetyFlags: [],
         },
-        provenance: { providerId: "test", promptVersion: "v1", schemaVersion: "reading-result-v1" },
+        provenance: { providerId: "test", promptVersion: "v2", schemaVersion: "reading-result-v2" },
       }),
     );
     await asWorker((tx) => completeInterpretationJob(tx, job.id));

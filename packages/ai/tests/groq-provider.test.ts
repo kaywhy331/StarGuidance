@@ -1,14 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
+import {
+  DECK_VERSION,
+  resolveSpreadPositions,
+  spreads,
+  tarotCards,
+} from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
 import { createInterpretationProvider, GroqInterpretationProvider } from "../src/index";
 
-const spread = spreads.find(({ id }) => id === "direction")!;
+const spread = spreads.find(({ id }) => id === "three-card")!;
 const draw = {
   id: "draw",
   deckVersion: DECK_VERSION,
-  spreadId: "direction",
+  spreadId: "three-card",
   spreadVersion: spread.version,
   shuffleVersion: "secure-fisher-yates-v1",
   lockedAt: new Date(0).toISOString(),
@@ -34,22 +39,44 @@ const input = {
 };
 
 const originalResult = {
+  schemaVersion: "reading-result-v2" as const,
   title: "The direction ahead",
-  directAnswer: "The spread points toward a deliberate next step.",
-  centralTheme: "Structure and courage move together here.",
+  passages: [
+    {
+      id: "opening",
+      role: "opening" as const,
+      text: "Something here is asking for a deliberate next step.",
+      cardReferences: [spread.positions[2]!.id],
+    },
+    ...spread.positions.map((position, index) => ({
+      id: `thread-${index + 1}`,
+      role: "underlyingPattern" as const,
+      text: `The ${index + 1} thread carries part of the developing pattern.`,
+      cardReferences: [position.id],
+    })),
+    {
+      id: "likely",
+      role: "trajectory" as const,
+      text: "I think preparation is going to make the next opening easier to recognize.",
+      cardReferences: [spread.positions[2]!.id],
+    },
+    {
+      id: "alternate",
+      role: "alternative" as const,
+      text: "Acting too early could scatter the effort, leaving a quieter route open.",
+      cardReferences: [spread.positions[0]!.id],
+    },
+  ],
   cards: spread.positions.map((position, index) => ({
     positionId: position.id,
     cardId: tarotCards[index + 10]!.id,
     orientation: index === 1 ? ("reversed" as const) : ("upright" as const),
-    traditionalMeaning: `${position.displayName} carries the traditional thread.`,
-    personalizedMeaning: `Your profile pattern meets ${position.displayName}.`,
-    questionConnection: `${position.displayName} clarifies the question.`,
+    passageIds: [`thread-${index + 1}`, ...(index === 2 ? ["opening", "likely"] : [])],
   })),
-  synthesis: "The cards favor preparation before commitment.",
-  likelyTrajectory: {
-    summary: "Preparation strengthens the path.",
+  trajectory: {
+    likelyPassageId: "likely",
     conditions: ["Create a workable structure."],
-    alternateTrajectory: "Acting too early scatters the effort.",
+    alternatePassageId: "alternate",
   },
   userAgency: ["Choose the next concrete milestone."],
   reflectionQuestion: "What would make you feel ready?",
@@ -92,7 +119,8 @@ describe("what leaves the machine", () => {
 
   it("carries each card's position function, so the model can read position (AI-005)", () => {
     const payload = provider().buildPayload(input);
-    for (const [index, position] of spread.positions.entries()) {
+    const contextualPositions = resolveSpreadPositions(spread, input.questionClassification);
+    for (const [index, position] of contextualPositions.entries()) {
       expect(payload.cards[index]!.positionId).toBe(position.id);
       expect(payload.cards[index]!.positionMeans).toBe(position.interpretiveFunction);
     }
@@ -100,7 +128,7 @@ describe("what leaves the machine", () => {
 
   it("sends a follow-up only the locked spread, original reading, question, and profile lens", () => {
     const payload = provider().buildFollowUpPayload(followUpInput);
-    expect(payload.originalReading.synthesis).toBe(originalResult.synthesis);
+    expect(payload.originalReading.passages).toEqual(originalResult.passages);
     expect(payload.readerLens).toEqual(input.relevantTraitStatements);
     expect(payload.cards.map(({ cardId }) => cardId)).toEqual(
       draw.assignments.map(({ cardId }) => cardId),
@@ -140,7 +168,7 @@ describe("one-section follow-ups", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 500 })));
     const result = await provider().generateFollowUp(followUpInput);
     expect(Object.keys(result)).toEqual(["response"]);
-    expect(result.response).toContain(input.relevantTraitStatements[0]!);
+    expect(result.response).toContain(input.relevantTraitStatements[0]!.replace(/[.?!]+$/, ""));
     expect(result.response).toContain(tarotCards[12]!.name);
   });
 
@@ -208,7 +236,12 @@ describe("high-risk generation safety", () => {
     ["criminal guilt", "He is guilty."],
     ["third-party secret", "She is hiding a secret from you."],
   ])("falls back on a schema-valid %s claim", async (_label, claim) => {
-    const unsafeResult = { ...originalResult, directAnswer: claim };
+    const unsafeResult = {
+      ...originalResult,
+      passages: originalResult.passages.map((passage, index) =>
+        index === 0 ? { ...passage, text: claim } : passage,
+      ),
+    };
     vi.stubGlobal(
       "fetch",
       vi
@@ -223,7 +256,7 @@ describe("high-risk generation safety", () => {
 
     const { result, provenance } = await provider().generateWithProvenance(input);
 
-    expect(result.directAnswer).not.toBe(claim);
+    expect(result.passages[0]?.text).not.toBe(claim);
     expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-unsafe-response");
   });
 });
@@ -284,25 +317,25 @@ describe("the draw is authoritative, not the model", () => {
   });
 
   it("restores card identity and orientation even when the model returns different ones", async () => {
+    const inventedPositionIds = spread.positions.map((_, index) => `invented-${index + 1}`);
+    const inventedByActual = new Map(
+      spread.positions.map((position, index) => [position.id, inventedPositionIds[index]!]),
+    );
     const invented = {
-      title: "T",
-      directAnswer: "A",
-      centralTheme: "C",
-      cards: spread.positions.map(() => ({
-        positionId: "invented",
+      ...originalResult,
+      title: "The model's title",
+      passages: originalResult.passages.map((passage) => ({
+        ...passage,
+        cardReferences: passage.cardReferences.map((positionId) =>
+          inventedByActual.get(positionId)!,
+        ),
+      })),
+      cards: spread.positions.map((_, index) => ({
+        positionId: inventedPositionIds[index]!,
         cardId: "major-00",
         orientation: "upright",
-        traditionalMeaning: "m",
-        personalizedMeaning: "p",
-        questionConnection: "q",
+        passageIds: ["opening"],
       })),
-      synthesis: "S",
-      likelyTrajectory: { summary: "s", conditions: ["c"], alternateTrajectory: "a" },
-      userAgency: ["u"],
-      reflectionQuestion: "r",
-      disconfirmingEvidence: ["d"],
-      uncertainty: "u",
-      safetyFlags: [],
     };
     vi.stubGlobal(
       "fetch",
@@ -322,11 +355,12 @@ describe("the draw is authoritative, not the model", () => {
       expect(result.cards[index]!.cardId).toBe(tarotCards[index + 10]!.id);
       expect(result.cards[index]!.orientation).toBe(index === 1 ? "reversed" : "upright");
     }
-    expect(result.directAnswer).toBe("A");
+    expect(result.title).toBe("The model's title");
+    expect(result.passages[0]?.cardReferences).toEqual([spread.positions[2]!.id]);
     expect(provenance).toEqual({
       providerId: "groq:test-model",
-      promptVersion: "reader-voice-v2",
-      schemaVersion: "reading-result-v1",
+      promptVersion: "reader-voice-v3",
+      schemaVersion: "reading-result-v2",
     });
   });
 });
@@ -335,12 +369,12 @@ describe("a person always gets a reading (AI-015)", () => {
   it("falls back to the deterministic reader when the provider errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 500 })));
     const { result, provenance } = await provider().generateWithProvenance(input);
-    expect(result.directAnswer.length).toBeGreaterThan(0);
+    expect(result.passages[0]?.text.length).toBeGreaterThan(0);
     expect(result.cards).toHaveLength(spread.positions.length);
     expect(provenance).toEqual({
       providerId: "deterministic-fallback-v1:after-groq-provider-unavailable",
-      promptVersion: "deterministic-fallback-v2",
-      schemaVersion: "reading-result-v1",
+      promptVersion: "deterministic-fallback-v3",
+      schemaVersion: "reading-result-v2",
     });
   });
 

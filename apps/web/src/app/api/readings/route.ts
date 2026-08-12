@@ -11,7 +11,7 @@ import {
   readingHorizonSchema,
   readingTopicSchema,
 } from "@starguidance/contracts";
-import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
+import { DECK_VERSION, findSpread, spreads, tarotCards } from "@starguidance/tarot-content";
 import { createLockedDraw } from "@starguidance/tarot-domain";
 import type { StoredReading } from "@starguidance/database";
 import { z } from "zod";
@@ -256,7 +256,7 @@ export async function GET() {
       ({ id, spreadId, encryptedQuestion, draw, generationStatus, createdAt }) => {
         const stored = storedReadings.find((reading) => reading.id === id)!;
         const question = persistence.decrypt(encryptedQuestion, "reading-question");
-        const spread = spreads.find((candidate) => candidate.id === spreadId);
+        const spread = findSpread(spreadId);
         const report = reports.find(
           (candidate) => candidate.snapshotId === stored.profileSnapshotId,
         );

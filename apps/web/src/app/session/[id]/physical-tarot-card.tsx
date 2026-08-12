@@ -36,6 +36,10 @@ export function PhysicalTarotCard({
     "--focal-x": `${card.artwork.focalPoint.x * 100}%`,
     "--focal-y": `${card.artwork.focalPoint.y * 100}%`,
     "--card-order": index,
+    "--spread-column": card.placement.column + 1,
+    "--spread-row": card.placement.row + 1,
+    "--spread-rotation": `${card.placement.rotation}deg`,
+    "--spread-layer": card.placement.layer,
   } as CSSProperties;
 
   useLayoutEffect(() => {
@@ -58,7 +62,10 @@ export function PhysicalTarotCard({
         : compact
           ? window.innerWidth * 0.78
           : Math.min(window.innerWidth * 0.38, 24 * 16);
-      const targetHeight = availableHeight * 0.74;
+      // Leave a stable title band above a reveal-focused card. The previous
+      // 74% height centered at 56% could let the scaled card overlap its
+      // position/name on shorter or heavily loaded viewports.
+      const targetHeight = availableHeight * (readingFocus ? 0.74 : 0.7);
       const scale = Math.max(
         readingFocus ? 0.75 : 1,
         Math.min(
@@ -70,7 +77,7 @@ export function PhysicalTarotCard({
       const targetCenter = stageBounds
         ? {
             x: stageBounds.left + stageBounds.width / 2,
-            y: stageBounds.top + stageBounds.height * (readingFocus ? 0.45 : 0.56),
+            y: stageBounds.top + stageBounds.height * (readingFocus ? 0.45 : 0.64),
           }
         : {
             x: window.innerWidth / 2,
@@ -91,15 +98,14 @@ export function PhysicalTarotCard({
       figureElement.classList.add("is-cinematic-positioned");
       return () => figureElement.classList.remove("is-cinematic-positioned");
     }
-    let positionFrame = 0;
-    const measurementFrame = window.requestAnimationFrame(() => {
-      positionFrame = window.requestAnimationFrame(() =>
-        figureElement.classList.add("is-cinematic-positioned"),
-      );
-    });
+    // Commit the untransformed base style before applying the focus class.
+    // A two-requestAnimationFrame handoff can be throttled for more than a
+    // second in Firefox/WebKit under load, leaving most of the intentional
+    // 2.2s reveal window at the small spread size. Forcing the base style here
+    // starts the same CSS transition immediately and consistently.
+    void window.getComputedStyle(figureElement).transform;
+    figureElement.classList.add("is-cinematic-positioned");
     return () => {
-      window.cancelAnimationFrame(measurementFrame);
-      window.cancelAnimationFrame(positionFrame);
       figureElement.classList.remove("is-cinematic-positioned");
     };
   }, [focusMode, reducedMotion]);
@@ -138,6 +144,9 @@ export function PhysicalTarotCard({
       className={`physical-card-figure ${active ? "is-cinematic-subject" : ""} ${
         focusMode === "reading" ? "is-reading-subject" : ""
       }`}
+      data-spread-column={card.placement.column}
+      data-spread-row={card.placement.row}
+      data-spread-rotation={card.placement.rotation}
       ref={figureRef}
       style={focalStyle}
     >
