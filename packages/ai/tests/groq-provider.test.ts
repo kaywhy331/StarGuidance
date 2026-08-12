@@ -23,6 +23,13 @@ const draw = {
 const input = {
   draw,
   question: "Should I take the new role at work?",
+  questionClassification: {
+    version: "question-classification-v1" as const,
+    topic: "career" as const,
+    horizon: "open" as const,
+    intent: "decisionSupport" as const,
+    generalReading: false,
+  },
   relevantTraitStatements: ["you commit quickly once a direction feels right."],
 };
 
@@ -72,9 +79,11 @@ describe("what leaves the machine", () => {
       "answerPositionId",
       "cards",
       "question",
+      "questionContext",
       "readerLens",
       "spreadId",
     ]);
+    expect(payload.questionContext.topic).toBe("career");
     // AI-003: no raw birth name, birth date, birthplace, or account identifier.
     const serialised = JSON.stringify(payload);
     for (const forbidden of ["birthDate", "fullBirthName", "birthplace", "userId", "email"])
@@ -316,7 +325,7 @@ describe("the draw is authoritative, not the model", () => {
     expect(result.directAnswer).toBe("A");
     expect(provenance).toEqual({
       providerId: "groq:test-model",
-      promptVersion: "reader-voice-v1",
+      promptVersion: "reader-voice-v2",
       schemaVersion: "reading-result-v1",
     });
   });
@@ -330,7 +339,7 @@ describe("a person always gets a reading (AI-015)", () => {
     expect(result.cards).toHaveLength(spread.positions.length);
     expect(provenance).toEqual({
       providerId: "deterministic-fallback-v1:after-groq-provider-unavailable",
-      promptVersion: "deterministic-fallback-v1",
+      promptVersion: "deterministic-fallback-v2",
       schemaVersion: "reading-result-v1",
     });
   });

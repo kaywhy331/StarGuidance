@@ -412,6 +412,7 @@ a {
   justify-content: center;
   gap: clamp(0.5rem, 1.5vw, 1.15rem);
   width: min(100%, 72rem);
+  max-height: 100%;
   transform: translateY(-1vh);
 }
 
@@ -425,13 +426,13 @@ a {
   opacity: 0;
   backdrop-filter: blur(0);
   transition:
-    opacity 320ms ease,
-    backdrop-filter 520ms ease;
+    opacity 520ms ease,
+    backdrop-filter 780ms ease;
 }
 
 .cinematic-card-scrim.is-visible {
   opacity: 1;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(1px);
 }
 
 .spread-count-1 {
@@ -445,34 +446,56 @@ a {
 .physical-card-figure {
   position: relative;
   z-index: 0;
-  width: clamp(5.25rem, 9.5vw, 8rem);
+  width: clamp(4.5rem, min(9.5vw, 10.5dvh), 8rem);
   margin: 0;
   text-align: center;
   transform: translate3d(0, 0, 0) scale(1);
   transform-origin: center center;
   transition:
-    transform 650ms cubic-bezier(0.2, 0.82, 0.2, 1),
-    filter 420ms ease,
-    opacity 420ms ease;
+    transform 950ms cubic-bezier(0.16, 0.82, 0.2, 1),
+    filter 720ms ease,
+    opacity 720ms ease;
   will-change: transform;
 }
 
 .spread-count-1 .physical-card-figure {
-  width: clamp(8rem, 13vw, 11rem);
+  width: clamp(7rem, min(13vw, 18dvh), 11rem);
+}
+
+.spread-count-5 .physical-card-figure,
+.spread-count-7 .physical-card-figure {
+  width: clamp(3.75rem, min(8.2vw, 9dvh), 6.75rem);
+}
+
+.sanctuary-stage.has-reading-journey .physical-card-figure {
+  width: clamp(3.4rem, min(8.5vw, 8.5dvh), 6rem);
+}
+
+.sanctuary-stage.has-reading-journey .spread-count-1 .physical-card-figure {
+  width: clamp(6rem, min(17vw, 16dvh), 9rem);
+}
+
+.sanctuary-stage.has-reading-journey .spread-count-3 .physical-card-figure {
+  width: clamp(4.4rem, min(19vw, 10.5dvh), 6.5rem);
+}
+
+.sanctuary-stage.has-reading-journey .spread-count-5 .physical-card-figure,
+.sanctuary-stage.has-reading-journey .spread-count-7 .physical-card-figure {
+  width: clamp(3.1rem, min(15vw, 7.6dvh), 5.5rem);
 }
 
 .tarot-spread-stage.is-cinematic-review .physical-card-figure:not(.is-cinematic-subject) {
-  opacity: 0.18;
-  filter: blur(2px) saturate(0.55);
+  opacity: 0.32;
+  filter: blur(0.35px) saturate(0.68) brightness(0.76);
 }
 
 .tarot-spread-stage.is-reading-review .physical-card-figure:not(.is-cinematic-subject) {
-  opacity: 0.1;
-  filter: blur(2px) saturate(0.45);
+  opacity: 0.22;
+  filter: blur(0.25px) saturate(0.62) brightness(0.72);
 }
 
 .physical-card-figure.is-cinematic-subject {
-  z-index: 2;
+  z-index: 6;
 }
 
 .physical-card-figure.is-reading-subject {
@@ -504,11 +527,15 @@ a {
   height: 100%;
   border-radius: inherit;
   transform-style: preserve-3d;
-  transition: transform 780ms cubic-bezier(0.2, 0.82, 0.2, 1);
+  transition: transform 1.1s cubic-bezier(0.16, 0.82, 0.2, 1);
 }
 
 .physical-tarot-card.is-revealed .physical-card-inner {
   transform: rotateY(180deg);
+}
+
+.physical-card-figure.is-cinematic-subject .physical-tarot-card.is-revealed .physical-card-inner {
+  transition-delay: 280ms;
 }
 
 .physical-tarot-card.is-revealable {
@@ -555,7 +582,7 @@ a {
 }
 
 .physical-card-front img {
-  transition: transform 600ms ease;
+  transition: transform 900ms ease;
 }
 
 .physical-card-front img.card-art-reversed {
@@ -578,44 +605,47 @@ a {
   transform: translateX(35%) rotate(8deg);
 }
 
+.cinematic-reveal-title {
+  position: fixed;
+  z-index: 45;
+  top: clamp(4.75rem, 9dvh, 7rem);
+  left: 50%;
+  display: grid;
+  width: min(88vw, 34rem);
+  gap: 0.28rem;
+  pointer-events: none;
+  translate: -50% 0;
+  animation: reveal-title-arrive 1.3s 420ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+  text-align: center;
+  text-shadow:
+    0 0.2rem 1rem #000,
+    0 0 2.4rem rgb(109 218 194 / 0.38);
+}
+
+.cinematic-reveal-title span {
+  color: #9ed7ca;
+  font:
+    0.64rem/1.35 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.cinematic-reveal-title strong {
+  overflow-wrap: anywhere;
+  color: #f5dfaa;
+  font:
+    400 clamp(1.15rem, 3vw, 2rem) / 1.12 Georgia,
+    "Times New Roman",
+    serif;
+  letter-spacing: 0.025em;
+}
+
 .physical-tarot-card.motion-off .physical-card-inner,
 .physical-tarot-card.motion-off .card-sheen,
 .physical-tarot-card.motion-off img {
   transition: none;
-}
-
-.physical-card-caption {
-  display: grid;
-  gap: 0.15rem;
-  min-height: 2.35rem;
-  margin-top: 0.55rem;
-  color: #e9dec3;
-  font-size: 0.76rem;
-  letter-spacing: 0.04em;
-  text-shadow: 0 2px 8px #000;
-}
-
-.physical-card-caption small {
-  overflow: hidden;
-  color: #a7c9c4;
-  font:
-    0.62rem Arial,
-    Helvetica,
-    sans-serif;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.physical-card-caption em {
-  overflow: hidden;
-  color: #d9bc79;
-  font:
-    0.62rem/1.35 Georgia,
-    "Times New Roman",
-    serif;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .stage-whisper,
@@ -649,11 +679,11 @@ a {
   bottom: max(0.75rem, env(safe-area-inset-bottom));
   left: 50%;
   display: grid;
-  height: clamp(23rem, 42dvh, 24rem);
+  height: clamp(21rem, 46dvh, 32rem);
   min-width: 0;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 0.75rem;
-  width: min(44rem, calc(100vw - 2rem));
+  width: min(52rem, calc(100vw - 2rem));
   filter: drop-shadow(0 1rem 2.5rem rgb(0 0 0 / 0.5));
   translate: -50% 0;
 }
@@ -740,8 +770,10 @@ a {
   display: grid;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
-  place-items: center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-content: start;
+  justify-items: center;
   padding: clamp(0.9rem, 2vw, 1.35rem);
   border: 1px solid rgb(218 192 127 / 0.25);
   border-radius: 1.5rem;
@@ -754,7 +786,9 @@ a {
     0 1.8rem 5rem rgb(0 0 0 / 0.28);
   backdrop-filter: blur(20px) saturate(1.15);
   overscroll-behavior: contain;
-  touch-action: pinch-zoom;
+  scrollbar-color: rgb(218 192 127 / 0.52) rgb(255 255 255 / 0.06);
+  scrollbar-width: thin;
+  touch-action: pan-y pinch-zoom;
 }
 
 .oracle-transcript:focus {
@@ -783,6 +817,7 @@ a {
     "Times New Roman",
     serif;
   letter-spacing: 0.015em;
+  overflow-wrap: anywhere;
 }
 
 .oracle-entry-text {
@@ -1340,6 +1375,18 @@ a {
   }
 }
 
+@keyframes reveal-title-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(0.7rem) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes cursor-pulse {
   50% {
     opacity: 0;
@@ -1410,25 +1457,20 @@ a {
   }
 
   .physical-card-figure {
-    width: clamp(3.65rem, 17vw, 4.8rem);
+    width: clamp(3.5rem, min(17vw, 10dvh), 4.8rem);
   }
 
   .spread-count-1 .physical-card-figure {
-    width: clamp(6.5rem, 30vw, 8.5rem);
+    width: clamp(6.25rem, min(30vw, 17dvh), 8.5rem);
   }
 
   .spread-count-3 .physical-card-figure {
-    width: clamp(4.8rem, 23vw, 6.2rem);
+    width: clamp(4.5rem, min(23vw, 13dvh), 6.2rem);
   }
 
-  .physical-card-caption {
-    min-height: 1.8rem;
-    margin-top: 0.3rem;
-    font-size: 0.58rem;
-  }
-
-  .physical-card-caption small {
-    font-size: 0.5rem;
+  .spread-count-5 .physical-card-figure,
+  .spread-count-7 .physical-card-figure {
+    width: clamp(3.25rem, min(16vw, 8.5dvh), 4.4rem);
   }
 
   .oracle-console-stack {
@@ -1442,6 +1484,11 @@ a {
 
   .oracle-transcript {
     border-radius: 1.15rem;
+  }
+
+  .cinematic-reveal-title {
+    top: clamp(4.6rem, 9dvh, 6.5rem);
+    width: calc(100vw - 1.5rem);
   }
 
   .oracle-entry h2 {

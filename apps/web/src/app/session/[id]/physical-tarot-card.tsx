@@ -45,36 +45,48 @@ export function PhysicalTarotCard({
     if (!focusMode) return;
     const cardElement = cardRef.current;
     if (!cardElement) return;
-    const bounds = cardElement.getBoundingClientRect();
-    const compact = window.innerWidth < 768;
-    const readingFocus = focusMode === "reading";
-    const targetWidth = readingFocus
-      ? compact
-        ? Math.min(window.innerWidth * 0.34, 9 * 16)
-        : Math.min(window.innerWidth * 0.15, 10.5 * 16)
-      : compact
-        ? window.innerWidth * 0.7
-        : window.innerWidth * 0.34;
-    const targetHeight = window.innerHeight * (readingFocus ? (compact ? 0.32 : 0.26) : 0.68);
-    const scale = Math.max(
-      readingFocus ? 0.75 : 1,
-      Math.min(targetWidth / bounds.width, targetHeight / bounds.height, readingFocus ? 3 : 3.8),
-    );
-    const targetCenter = readingFocus
-      ? {
-          x: window.innerWidth / 2,
-          y: window.innerHeight * 0.25,
-        }
-      : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    figureElement.style.setProperty(
-      "--cinematic-x",
-      `${targetCenter.x - (bounds.left + bounds.width / 2)}px`,
-    );
-    figureElement.style.setProperty(
-      "--cinematic-y",
-      `${targetCenter.y - (bounds.top + bounds.height / 2)}px`,
-    );
-    figureElement.style.setProperty("--cinematic-scale", String(scale));
+    const positionCard = () => {
+      const bounds = cardElement.getBoundingClientRect();
+      const stageBounds = figureElement.closest(".sanctuary-stage")?.getBoundingClientRect();
+      const compact = window.innerWidth < 768;
+      const readingFocus = focusMode === "reading";
+      const availableHeight = stageBounds?.height ?? window.innerHeight;
+      const targetWidth = readingFocus
+        ? compact
+          ? Math.min(window.innerWidth * 0.36, 9 * 16)
+          : Math.min(window.innerWidth * 0.16, 10.5 * 16)
+        : compact
+          ? window.innerWidth * 0.78
+          : Math.min(window.innerWidth * 0.38, 24 * 16);
+      const targetHeight = availableHeight * 0.74;
+      const scale = Math.max(
+        readingFocus ? 0.75 : 1,
+        Math.min(
+          targetWidth / bounds.width,
+          targetHeight / bounds.height,
+          readingFocus ? 3.2 : 4.5,
+        ),
+      );
+      const targetCenter = stageBounds
+        ? {
+            x: stageBounds.left + stageBounds.width / 2,
+            y: stageBounds.top + stageBounds.height * (readingFocus ? 0.45 : 0.56),
+          }
+        : {
+            x: window.innerWidth / 2,
+            y: window.innerHeight * (readingFocus ? 0.25 : 0.46),
+          };
+      figureElement.style.setProperty(
+        "--cinematic-x",
+        `${targetCenter.x - (bounds.left + bounds.width / 2)}px`,
+      );
+      figureElement.style.setProperty(
+        "--cinematic-y",
+        `${targetCenter.y - (bounds.top + bounds.height / 2)}px`,
+      );
+      figureElement.style.setProperty("--cinematic-scale", String(scale));
+    };
+    positionCard();
     if (reducedMotion) {
       figureElement.classList.add("is-cinematic-positioned");
       return () => figureElement.classList.remove("is-cinematic-positioned");
@@ -157,17 +169,11 @@ export function PhysicalTarotCard({
           {inner}
         </div>
       )}
-      <figcaption className="physical-card-caption" id={`card-position-${index}`}>
-        <span>{card.positionName}</span>
-        {revealed && (
-          <>
-            <small>
-              {card.name}
-              {card.orientation === "reversed" ? " · reversed" : ""}
-            </small>
-            <em>{card.themes.join(" · ")}</em>
-          </>
-        )}
+      <figcaption className="sr-only" id={`card-position-${index}`}>
+        {card.positionName}.{" "}
+        {revealed
+          ? `${card.name}${card.orientation === "reversed" ? ", reversed" : ""}.`
+          : "Face down."}
       </figcaption>
     </figure>
   );

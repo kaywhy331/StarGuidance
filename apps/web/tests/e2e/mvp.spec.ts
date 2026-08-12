@@ -234,6 +234,42 @@ test("the ritual waits for intentional cut and reveal, and reviews each card cin
   await expect(page.getByRole("button", { name: "Reveal all", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
 
+  const activeCard = page.locator(".physical-card-figure.is-cinematic-subject");
+  const revealTitle = page.getByTestId("cinematic-reveal-title");
+  await expect(activeCard).toBeVisible();
+  await expect(revealTitle).toBeVisible();
+  const orientation = await activeCard
+    .locator(".physical-tarot-card")
+    .getAttribute("data-orientation");
+  const titleText = (await revealTitle.locator("strong").textContent()) ?? "";
+  expect(titleText.endsWith(" (R)")).toBe(orientation === "reversed");
+  await expect
+    .poll(async () => {
+      const activeBounds = await activeCard.boundingBox();
+      const stageBounds = await page.locator(".sanctuary-stage").boundingBox();
+      if (!activeBounds || !stageBounds) return 0;
+      return activeBounds.height / stageBounds.height;
+    })
+    .toBeGreaterThan(0.68);
+  await expect
+    .poll(async () => {
+      const activeBounds = await activeCard.boundingBox();
+      const titleBounds = await revealTitle.boundingBox();
+      if (!activeBounds || !titleBounds) return Number.NEGATIVE_INFINITY;
+      return activeBounds.y - (titleBounds.y + titleBounds.height);
+    })
+    .toBeGreaterThanOrEqual(2);
+  const backgroundStyle = await page
+    .locator(".physical-card-figure:not(.is-cinematic-subject)")
+    .first()
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { opacity: Number(style.opacity), filter: style.filter };
+    });
+  expect(backgroundStyle.opacity).toBeGreaterThanOrEqual(0.25);
+  expect(backgroundStyle.filter).not.toContain("blur(2px)");
+  await expect(page.locator(".physical-card-figure figcaption:not(.sr-only)")).toHaveCount(0);
+
   await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   await expect(page.getByRole("button", { name: "Reveal all" })).toHaveCount(0);
   const revealOrder = await page.evaluate(
@@ -375,7 +411,7 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
   await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
   expect((await revealProgress).status()).toBe(200);
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
-  await expect(page.locator(".physical-card-caption em").first()).toBeVisible();
+  await expect(page.locator(".physical-card-caption")).toHaveCount(0);
   const durableProgress = (await currentReading(page)).reading.ritualProgress;
   expect(durableProgress).toMatchObject({
     cutTaken: false,
@@ -406,6 +442,19 @@ test("reading intake stores topic, horizon, intent, and entitlement apart from s
     generalReading: false,
   });
   expect(intake.entitlementDecision).toMatchObject({ outcome: "granted", mode: "unlimited" });
+});
+
+test("the selected relationship topic remains authoritative in the generated result", async ({
+  page,
+}) => {
+  await createProfile(page);
+  await page.getByLabel("Topic").selectOption("relationships");
+  await beginReading(page, "What should I understand about this new phase at work?");
+  expect((await currentReading(page)).reading.questionClassification.topic).toBe("relationships");
+  await finishRitual(page);
+  const directAnswer = page.locator(".reading-direct-answer");
+  await expect(directAnswer).toContainText("this relationship");
+  await expect(directAnswer).not.toContainText("work and direction");
 });
 
 test("the approved general-reading path needs no custom question", async ({ page }) => {
@@ -530,7 +579,7 @@ test("stream interruption preserves received paragraphs and retries the same dra
   expect((await currentReading(page)).reading.draw).toEqual(before);
 });
 
-test("buttons, keyboard, wheel, and touch move sequentially without a text scrollbar", async ({
+test("long result text scrolls without clipping while buttons, keyboard, wheel, and touch navigate", async ({
   page,
 }) => {
   await createProfile(page);
@@ -538,7 +587,7 @@ test("buttons, keyboard, wheel, and touch move sequentially without a text scrol
   await finishRitual(page);
   await waitForReadingSections(page);
   const journey = page.getByTestId("oracle-transcript");
-  await expect(journey).toHaveCSS("overflow", "hidden");
+  await expect(journey).toHaveCSS("overflow-y", "auto");
 
   await nextReadingSection(page);
   await expect(journey).toHaveAttribute("data-active-card-index", "0");
@@ -550,6 +599,14 @@ test("buttons, keyboard, wheel, and touch move sequentially without a text scrol
   const bounds = await journey.boundingBox();
   expect(bounds).not.toBeNull();
   await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2);
+  const scrollMetrics = await journey.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(scrollMetrics.scrollHeight).toBeGreaterThanOrEqual(scrollMetrics.clientHeight);
+  await journey.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
   await page.mouse.wheel(0, 500);
   await expect(journey).toHaveAttribute("data-active-card-index", "2");
 
@@ -619,7 +676,7 @@ test("keyboard users cut and reveal by keyboard, then submit a same-draw follow-
   expect((await currentReading(page)).reading.draw).toEqual(before);
 });
 
-test("physical card faces are specific illustrated assets with external position labels", async ({
+test("physical card faces use specific illustrated assets without persistent captions", async ({
   page,
 }) => {
   await createProfile(page);
@@ -651,7 +708,16 @@ test("physical card faces are specific illustrated assets with external position
     }, index);
     expect(ratio).toBeGreaterThan(1.45);
     expect(ratio).toBeLessThan(1.55);
-    await expect(cards.nth(index).locator("figcaption")).toBeVisible();
+    const caption = cards.nth(index).locator("figcaption.sr-only");
+    await expect(caption).toHaveCount(1);
+    const captionStyle = await caption.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const bounds = element.getBoundingClientRect();
+      return { width: bounds.width, height: bounds.height, overflow: style.overflow };
+    });
+    expect(captionStyle.width).toBeLessThanOrEqual(1);
+    expect(captionStyle.height).toBeLessThanOrEqual(1);
+    expect(captionStyle.overflow).toBe("hidden");
   }
 });
 

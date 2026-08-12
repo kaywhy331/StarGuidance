@@ -68,7 +68,7 @@ function reading(): StoredReading {
     readingLens: { version: "test-v1", traitIndexes: [] },
     questionClassification: {
       version: "question-classification-v1",
-      topic: "general",
+      topic: "relationships",
       horizon: "open",
       intent: "clarity",
       generalReading: false,
@@ -171,7 +171,10 @@ describe("runInterpretationJobs", () => {
     expect(summary).toEqual({ claimed: 1, succeeded: 1, failed: 0 });
     expect(mocks.claimInterpretationJobs).toHaveBeenCalledWith("synthetic-system-client", 10);
     expect(generateWithProvenance).toHaveBeenCalledWith(
-      expect.objectContaining({ question: "what does the future hold?" }),
+      expect.objectContaining({
+        question: "what does the future hold?",
+        questionClassification: expect.objectContaining({ topic: "relationships" }),
+      }),
     );
     expect(mocks.actorTransaction).toHaveBeenCalledWith(
       "synthetic-system-client",

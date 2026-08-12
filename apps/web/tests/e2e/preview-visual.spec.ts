@@ -71,7 +71,21 @@ test("the visual preview follows the streamlined result and continuation sequenc
     await expect(journey).toHaveAttribute("data-active-card-index", String(index));
     await expectHorizontallyCentered(page, ".physical-card-figure.is-reading-subject");
     await expectCardAboveReading(page);
+    if (index === 1) {
+      await expect(page.getByRole("heading", { name: "Wheel of Fortune (R)" })).toBeVisible();
+      const reversedArtwork = page
+        .locator(".physical-card-figure.is-reading-subject .physical-card-front img")
+        .first();
+      await expect(reversedArtwork).toHaveClass(/card-art-reversed/);
+      const rotation = await reversedArtwork.evaluate((element) => {
+        const matrix = new DOMMatrix(getComputedStyle(element).transform);
+        return { a: matrix.a, d: matrix.d };
+      });
+      expect(rotation.a).toBeLessThan(0);
+      expect(rotation.d).toBeLessThan(0);
+    }
   }
+  await expect(page.locator(".physical-card-figure figcaption:not(.sr-only)")).toHaveCount(0);
   await expectNoBlockingAccessibilityViolations(page);
 
   await journey.focus();

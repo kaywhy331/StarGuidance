@@ -107,6 +107,7 @@ export async function POST(request: Request) {
       question,
       profile.snapshot.traits,
       profile.snapshot.tensions,
+      questionClassification.topic,
     );
     const draw = createLockedDraw({
       cards: tarotCards,
@@ -167,6 +168,7 @@ export async function POST(request: Request) {
         const generated = await createInterpretationProvider().generateWithProvenance({
           draw,
           question,
+          questionClassification,
           relevantTraitStatements: readingLens.statements,
         });
         await persistence.repositories.outputs.save(

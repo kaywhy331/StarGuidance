@@ -87,7 +87,10 @@ try {
       insert into prompt_versions (version, purpose)
       values
         (${"deterministic-fallback-v1"}, ${"schema-valid credential-free reading fallback"}),
-        (${"reader-voice-v1"}, ${"position-aware live reading narrator with minimised trait lens"})
+        (${"reader-voice-v1"}, ${"position-aware live reading narrator with minimised trait lens"}),
+        (${"deterministic-fallback-v2"}, ${"topic-authoritative credential-free reading fallback"}),
+        (${"reader-voice-v2"}, ${"topic-authoritative live reading narrator with minimised trait lens"}),
+        (${"follow-up-reader-voice-v2"}, ${"topic-authoritative locked-reading follow-up narrator"})
       on conflict (version) do update set purpose = excluded.purpose
     `;
   });

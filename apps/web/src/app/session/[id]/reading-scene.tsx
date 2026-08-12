@@ -144,8 +144,8 @@ export function ReadingScene({
     revealedRef.current = revealed;
   }, [revealed]);
 
-  const focusDuration = motionOff ? 90 : 1_250;
-  const settleDuration = motionOff ? 40 : 400;
+  const focusDuration = motionOff ? 90 : 2_200;
+  const settleDuration = motionOff ? 40 : 650;
 
   const persistRitualProgress = useCallback(
     (progress: RitualProgress, phase: "cuttingDeck" | "revealingCards" | "complete") => {
@@ -200,9 +200,12 @@ export function ReadingScene({
   useEffect(() => {
     if (!reading || !state.matches("revealingCards")) return;
     if (revealed.size < reading.draw.assignments.length) return;
-    const timer = window.setTimeout(() => send({ type: "ALL_REVEALED" }), settleDuration);
+    const timer = window.setTimeout(
+      () => send({ type: "ALL_REVEALED" }),
+      focusDuration + settleDuration,
+    );
     return () => window.clearTimeout(timer);
-  }, [reading, revealed, send, settleDuration, state]);
+  }, [focusDuration, reading, revealed, send, settleDuration, state]);
 
   // Interpretation generation now happens through a durable job (see
   // docs/KNOWN-GAPS.md): the reading fetched on mount may still say
@@ -345,6 +348,7 @@ export function ReadingScene({
   const focusedCardIndex = activeReveal ?? activeReadingCard;
   const focusMode =
     activeReveal !== null ? "reveal" : activeReadingCard !== null ? "reading" : null;
+  const activeRevealCard = activeReveal === null ? undefined : reading.cards[activeReveal];
 
   return (
     <MysticSanctuaryScene reducedMotion={motionOff} testId="mystic-sanctuary-scene">
@@ -352,6 +356,20 @@ export function ReadingScene({
         aria-hidden="true"
         className={`cinematic-card-scrim ${activeReveal === null ? "" : "is-visible"}`}
       />
+      {activeRevealCard && (
+        <div
+          aria-hidden="true"
+          className="cinematic-reveal-title"
+          data-testid="cinematic-reveal-title"
+          key={`${activeRevealCard.positionId}-${activeRevealCard.cardId}`}
+        >
+          <span>{activeRevealCard.positionName}</span>
+          <strong>
+            {activeRevealCard.name}
+            {activeRevealCard.orientation === "reversed" ? " (R)" : ""}
+          </strong>
+        </div>
+      )}
       <header className="sanctuary-controls" aria-label="Reading controls">
         <Link className="sanctuary-exit" href="/readings">
           ← Exit

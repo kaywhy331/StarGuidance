@@ -419,11 +419,11 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     providerRetryPreservedDraw;
   const liveProvenance =
     reading.outputProvenance?.providerId === "groq:openai/gpt-oss-120b" &&
-    reading.outputProvenance.promptVersion === "reader-voice-v1" &&
+    reading.outputProvenance.promptVersion === "reader-voice-v2" &&
     reading.outputProvenance.schemaVersion === "reading-result-v1";
   const deterministicProvenance =
     reading.outputProvenance?.providerId === "deterministic-fallback-v1" &&
-    reading.outputProvenance.promptVersion === "deterministic-fallback-v1" &&
+    reading.outputProvenance.promptVersion === "deterministic-fallback-v2" &&
     reading.outputProvenance.schemaVersion === "reading-result-v1";
   const configuredProvenance =
     interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
@@ -452,9 +452,9 @@ test("a reading is created against the active snapshot with a locked draw", asyn
             ? "other"
             : "absent";
   const promptState =
-    reading.outputProvenance?.promptVersion === "reader-voice-v1"
+    reading.outputProvenance?.promptVersion === "reader-voice-v2"
       ? "approved-live"
-      : reading.outputProvenance?.promptVersion === "deterministic-fallback-v1"
+      : reading.outputProvenance?.promptVersion === "deterministic-fallback-v2"
         ? "deterministic-fallback"
         : reading.outputProvenance?.promptVersion
           ? "other"

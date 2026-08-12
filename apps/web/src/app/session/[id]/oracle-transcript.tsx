@@ -206,6 +206,7 @@ export function OracleTranscript({
   const forcedFailureRef = useRef<string | null | undefined>(undefined);
   const wheelReadyAt = useRef(0);
   const touchOrigin = useRef<{ x: number; y: number } | undefined>(undefined);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   const updateState = useCallback(
     (state: StreamState) => {
@@ -304,6 +305,7 @@ export function OracleTranscript({
     const nextIndex = Math.max(0, Math.min(requestedIndex, currentEntries.length - 1));
     activeIndexRef.current = nextIndex;
     setActiveIndex(nextIndex);
+    if (viewportRef.current) viewportRef.current.scrollTop = 0;
     const next = currentEntries[nextIndex];
     if (next) setAnnouncement(`${next.heading}. ${nextIndex + 1} of ${currentEntries.length}.`);
   }, []);
@@ -333,6 +335,10 @@ export function OracleTranscript({
       Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
     const movement = rawMovement * deltaScale;
     if (Math.abs(movement) < 12) return;
+    const viewport = event.currentTarget;
+    const canScrollUp = viewport.scrollTop > 1;
+    const canScrollDown = viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 1;
+    if ((movement > 0 && canScrollDown) || (movement < 0 && canScrollUp)) return;
     event.preventDefault();
     const now = Date.now();
     if (now < wheelReadyAt.current) return;
@@ -356,9 +362,8 @@ export function OracleTranscript({
     if (!origin || !touch || event.touches.length > 0) return;
     const x = origin.x - touch.clientX;
     const y = origin.y - touch.clientY;
-    const movement = Math.abs(y) >= Math.abs(x) ? y : x;
-    if (Math.abs(movement) < 42) return;
-    if (movement > 0) goNext();
+    if (Math.abs(x) < 42 || Math.abs(x) <= Math.abs(y)) return;
+    if (x > 0) goNext();
     else goPrevious();
   };
 
@@ -381,6 +386,7 @@ export function OracleTranscript({
         onTouchEnd={handleTouchEnd}
         onTouchStart={handleTouchStart}
         onWheel={handleWheel}
+        ref={viewportRef}
         role="region"
         tabIndex={0}
       >
@@ -400,7 +406,11 @@ export function OracleTranscript({
                   : "Same cards · one continuing thread"}
               </p>
             )}
-            <h2>{activeCard?.name ?? activeEntry.heading}</h2>
+            <h2>
+              {activeCard
+                ? `${activeCard.name}${activeCard.orientation === "reversed" ? " (R)" : ""}`
+                : activeEntry.heading}
+            </h2>
             {activeEntry.phase !== "followUp" ? (
               <StructuredSection cardIndex={activeCardIndex} entry={activeEntry} result={result} />
             ) : (

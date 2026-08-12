@@ -1,4 +1,4 @@
-import type { ReadingResult } from "@starguidance/contracts";
+import type { ReadingResult, ReadingTopic } from "@starguidance/contracts";
 import { spreads, tarotCards } from "@starguidance/tarot-content";
 import type { LockedDraw, SpreadPosition, TarotCard } from "@starguidance/tarot-domain";
 
@@ -18,7 +18,7 @@ import type { LockedDraw, SpreadPosition, TarotCard } from "@starguidance/tarot-
  */
 
 /** The subject a question is about, inferred from its wording. */
-export type QuestionSubject = "work" | "relationship" | "change" | "general";
+export type QuestionSubject = "work" | "relationship" | "change" | "wellbeing" | "general";
 
 interface SubjectVoice {
   /** Opens a sentence: "On {about}: ...". */
@@ -49,6 +49,11 @@ const subjectVoices: Record<QuestionSubject, SubjectVoice> = {
     noun: "this change",
     wellPhrase: "a next step that is yours rather than one the circumstances chose",
   },
+  wellbeing: {
+    about: "what you asked about your wellbeing and inner balance",
+    noun: "your wellbeing and inner balance",
+    wellPhrase: "more room to respond with steadiness instead of running on depletion",
+  },
   general: {
     about: "the question you brought",
     noun: "the question you brought",
@@ -62,7 +67,20 @@ const subjectPatterns: readonly [RegExp, QuestionSubject][] = [
   [/\b(change|move|choice|decide|direction|future|next|should i)\b/i, "change"],
 ];
 
-export function questionSubject(question: string): QuestionSubject {
+const selectedTopicSubjects: Partial<Record<ReadingTopic, QuestionSubject>> = {
+  career: "work",
+  relationships: "relationship",
+  change: "change",
+  wellbeing: "wellbeing",
+};
+
+/** The selected reading area is authoritative; wording is inference-only for General. */
+export function questionSubject(
+  question: string,
+  selectedTopic: ReadingTopic = "general",
+): QuestionSubject {
+  const selectedSubject = selectedTopicSubjects[selectedTopic];
+  if (selectedSubject) return selectedSubject;
   return subjectPatterns.find(([pattern]) => pattern.test(question))?.[1] ?? "general";
 }
 

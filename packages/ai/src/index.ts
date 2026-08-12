@@ -37,7 +37,7 @@ export interface InterpretationProvider<TInput, TOutput> {
 }
 
 export const FALLBACK_PROVIDER_ID = "deterministic-fallback-v1" as const;
-export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v1" as const;
+export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v2" as const;
 export const READING_RESULT_SCHEMA_VERSION = "reading-result-v1" as const;
 
 export interface ReadingGenerationOutcome {
@@ -159,6 +159,7 @@ export function classifyQuestionContext(
 export interface ReadingGenerationInput {
   readonly draw: LockedDraw;
   readonly question: string;
+  readonly questionClassification: QuestionClassification;
   readonly relevantTraitStatements: readonly string[];
 }
 
@@ -174,6 +175,7 @@ export interface ReadingLens {
 }
 
 interface LensFocus {
+  readonly topic: ReadingTopic;
   readonly pattern?: RegExp;
   readonly lifeDomain: ProfileLifeDomain;
   readonly traitDomains: readonly ProfileTrait["domain"][];
@@ -181,6 +183,7 @@ interface LensFocus {
 
 const questionDomains: readonly LensFocus[] = [
   {
+    topic: "career",
     pattern: /\b(work|career|job|business|project|lead|decision)\b/i,
     lifeDomain: "career",
     traitDomains: [
@@ -192,6 +195,7 @@ const questionDomains: readonly LensFocus[] = [
     ],
   },
   {
+    topic: "relationships",
     pattern: /\b(love|relationship|partner|friend|family|communicat|conflict)\b/i,
     lifeDomain: "relationships",
     traitDomains: [
@@ -203,6 +207,7 @@ const questionDomains: readonly LensFocus[] = [
     ],
   },
   {
+    topic: "change",
     pattern: /\b(change|move|choice|direction|future|next)\b/i,
     lifeDomain: "change",
     traitDomains: [
@@ -213,9 +218,16 @@ const questionDomains: readonly LensFocus[] = [
       "riskOrientation",
     ],
   },
+  {
+    topic: "wellbeing",
+    pattern: /\b(wellbeing|well-being|balance|rest|energy|habit|stress)\b/i,
+    lifeDomain: "general",
+    traitDomains: ["emotionalProcessing", "stabilityVsChange", "growthLever", "coreMotivation"],
+  },
 ];
 
 const generalFocus: LensFocus = {
+  topic: "general",
   lifeDomain: "general",
   traitDomains: ["coreMotivation", "growthLever"],
 };
@@ -248,8 +260,12 @@ export function selectReadingLens(
   question: string,
   traits: readonly ProfileTrait[],
   tensions: readonly ProfileTension[] = [],
+  selectedTopic: ReadingTopic = "general",
 ): ReadingLens {
-  const focus = questionDomains.find(({ pattern }) => pattern?.test(question)) ?? generalFocus;
+  const focus =
+    (selectedTopic === "general"
+      ? questionDomains.find(({ pattern }) => pattern?.test(question))
+      : questionDomains.find(({ topic }) => topic === selectedTopic)) ?? generalFocus;
   const relevantTensions = tensions
     .map((tension, index) => ({ tension, index }))
     .filter(({ tension }) => tension.lifeDomains.includes(focus.lifeDomain))
@@ -292,7 +308,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
 
   async generate(input: ReadingGenerationInput): Promise<ReadingResult> {
     const safety = classifyQuestion(input.question);
-    const subject = questionSubject(input.question);
+    const subject = questionSubject(input.question, input.questionClassification.topic);
     const voice = subjectVoices[subject];
     const resolved = resolveDraw(input.draw);
     const answer = answerCard(input.draw, resolved);
@@ -383,7 +399,8 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
         `Looking again at ${answer.card.name}${
           answer.orientation === "reversed" ? " reversed" : ""
         } in ${answer.position.displayName}, its themes of ${answer.themes.join(" and ")} point toward ${
-          subjectVoices[questionSubject(input.question)].wellPhrase
+          subjectVoices[questionSubject(input.question, input.questionClassification.topic)]
+            .wellPhrase
         }.`,
         profileThread,
         `Within the full spread, ${input.originalResult.centralTheme}`,

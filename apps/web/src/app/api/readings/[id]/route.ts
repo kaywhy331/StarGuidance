@@ -180,6 +180,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         const generated = await provider.generateWithProvenance({
           draw: reading.draw,
           question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
+          questionClassification: reading.questionClassification,
           relevantTraitStatements: snapshot
             ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
             : [],
@@ -242,10 +243,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       input.question,
       snapshot?.traits ?? [],
       snapshot?.tensions ?? [],
+      reading.questionClassification.topic,
     );
     const result = await provider.generateFollowUp({
       draw: reading.draw,
       question: input.question,
+      questionClassification: reading.questionClassification,
       relevantTraitStatements: lens.statements,
       originalResult: reading.result,
     });

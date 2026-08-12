@@ -31,9 +31,9 @@ import { generatedOutputSafetyViolation } from "./output-safety";
  * times out, or errors falls back to the deterministic reading rather than
  * showing a person a broken or empty result (AI-015).
  */
-export const PROMPT_VERSION = "reader-voice-v1" as const;
+export const PROMPT_VERSION = "reader-voice-v2" as const;
 export const RESPONSE_SCHEMA_VERSION = "reading-result-v1" as const;
-export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v1" as const;
+export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v2" as const;
 
 type FallbackReason =
   | "request-timeout"
@@ -84,6 +84,8 @@ const READER_VOICE = [
   "Answer them. Say plainly what you see in the cards and where it is heading. Commit to a reading.",
   "Speak warmly and in the second person, as if across a table. Be specific and concrete.",
   "Every card must be read through the position it landed in — the position changes what the card is saying.",
+  "The supplied questionContext.topic is the reading area the person deliberately selected. Treat it as authoritative;",
+  "only infer a subject from question wording when that topic is general.",
   "You are given a short lens describing how this person tends to operate. Use it in every card: name how",
   "that pattern meets that card. A reading that would suit anyone is a failed reading.",
   "Do not add disclaimers, caveats about tarot, or meta-commentary. Do not mention being an AI or a model.",
@@ -200,6 +202,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     const answer = answerCard(input.draw, resolved);
     return {
       question: input.question,
+      questionContext: input.questionClassification,
       spreadId: input.draw.spreadId,
       answerPositionId: answer.position.id,
       cards: resolved.map((entry) => ({

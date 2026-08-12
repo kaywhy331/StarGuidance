@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { OracleStreamEvent, ProfileTrait } from "@starguidance/contracts";
+import type { OracleStreamEvent, ProfileTrait, ReadingTopic } from "@starguidance/contracts";
 import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
 import { createLockedDraw } from "@starguidance/tarot-domain";
 import {
@@ -18,6 +18,13 @@ const draw = createLockedDraw({
   deckVersion: DECK_VERSION,
   spread: spreads[0]!,
 });
+
+const questionClassification = (question: string, topic: ReadingTopic = "general") =>
+  classifyQuestionContext(question, {
+    topic,
+    horizon: "open",
+    generalReading: false,
+  });
 
 describe("AI boundary", () => {
   const trait = (
@@ -85,6 +92,18 @@ describe("AI boundary", () => {
     expect(lens.statements).toHaveLength(3);
     expect(lens.statements.at(-1)).toContain("Tension to hold:");
   });
+  it("uses the selected topic for the profile lens when the question is ambiguous", () => {
+    const lens = selectReadingLens(
+      "What should I understand about this?",
+      [
+        trait("workStyle", "career trait", ["career"]),
+        trait("relationshipNeeds", "relationship trait", ["relationships"]),
+      ],
+      [],
+      "relationships",
+    );
+    expect(lens.statements).toEqual(["relationship trait"]);
+  });
   it("interrupts crisis and compulsive rereading language", () => {
     for (const question of [
       "I want to kill myself",
@@ -130,11 +149,19 @@ describe("AI boundary", () => {
         generalReading: true,
       }),
     ).toMatchObject({ topic: "general", intent: "generalReflection", generalReading: true });
+    expect(
+      classifyQuestionContext("What should I do about this situation at work?", {
+        topic: "relationships",
+        horizon: "open",
+        generalReading: false,
+      }).topic,
+    ).toBe("relationships");
   });
   it("returns a schema-valid deterministic fallback from the same draw", async () => {
     const result = await new DeterministicFallbackProvider().generate({
       draw,
       question: "What should I focus on?",
+      questionClassification: questionClassification("What should I focus on?"),
       relevantTraitStatements: [],
     });
     expect(result.cards[0]?.cardId).toBe(draw.assignments[0]?.cardId);
@@ -146,13 +173,19 @@ describe("AI boundary", () => {
       generate: async () => ({ arbitrary: "html" }),
     });
     await expect(
-      provider.generate({ draw, question: "General", relevantTraitStatements: [] }),
+      provider.generate({
+        draw,
+        question: "General",
+        questionClassification: questionClassification("General"),
+        relevantTraitStatements: [],
+      }),
     ).rejects.toThrow();
   });
   it("streams a persisted result in all required oracle phases", async () => {
     const result = await new DeterministicFallbackProvider().generate({
       draw,
       question: "What should I notice?",
+      questionClassification: questionClassification("What should I notice?"),
       relevantTraitStatements: [],
     });
     const events = createOracleStreamEvents(result);
@@ -199,11 +232,13 @@ describe("AI boundary", () => {
     const originalResult = await provider.generate({
       draw,
       question: "What should I notice?",
+      questionClassification: questionClassification("What should I notice?"),
       relevantTraitStatements: [trait],
     });
     const followUp = await provider.generateFollowUp({
       draw,
       question: "What do I do next?",
+      questionClassification: questionClassification("What should I notice?"),
       relevantTraitStatements: [trait],
       originalResult,
     });
@@ -258,8 +293,21 @@ describe("readings answer the question that was asked", () => {
     new DeterministicFallbackProvider().generate({
       draw: drawWith(orientations, ids),
       question,
+      questionClassification: questionClassification(question),
       relevantTraitStatements: traits,
     });
+
+  it("keeps an explicitly selected relationship topic authoritative", async () => {
+    const question = "What should I understand about this new phase at work?";
+    const result = await new DeterministicFallbackProvider().generate({
+      draw: drawWith(["upright", "upright", "upright"], [16, 45, 17]),
+      question,
+      questionClassification: questionClassification(question, "relationships"),
+      relevantTraitStatements: traits,
+    });
+    expect(result.directAnswer).toContain("relationship");
+    expect(result.directAnswer).not.toContain("work and direction");
+  });
 
   it("names the position that carries the answer, before elaborating (AI-007)", async () => {
     const result = await generate("Should I take the new role at work?");
