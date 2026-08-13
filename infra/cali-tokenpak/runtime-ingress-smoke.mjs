@@ -7,7 +7,11 @@ assert.ok(["success", "forced-failure"].includes(testCase));
 const gatewayToken = readFileSync("/run/secrets/gateway_shared_secret", "utf8").trim();
 const payload = readFileSync("/tmp/chain-payload.json");
 const accessJwt = readFileSync("/tmp/access.jwt", "utf8").trim();
-const requestIdentifier = `ci-chain-${testCase}-12345678`;
+const requestIdentifiers = {
+  success: "ci-chain-ingress-success-12345678",
+  "forced-failure": "ci-chain-forced-failure-12345678",
+};
+const requestIdentifier = requestIdentifiers[testCase];
 
 const response = await fetch("http://ingress:8787/v1/chat/completions", {
   method: "POST",

@@ -91,10 +91,22 @@ describe("Cali TokenPak Compose isolation", () => {
   });
 
   it("probes success and upstream failure through the same authenticated ingress", () => {
+    const expectedRequestIdentifiers = [
+      "ci-chain-ingress-success-12345678",
+      "ci-chain-forced-failure-12345678",
+    ];
+    const requestIdentifierPattern = /ci-chain-[a-z-]+-12345678/g;
+
     expect(runtimeIngressSmoke).toContain('["success", "forced-failure"]');
     expect(runtimeIngressSmoke).toContain('code: "UPSTREAM_REJECTED"');
     expect(ciWorkflow).toContain("runtime-ingress-smoke.mjs success");
     expect(ciWorkflow).toContain("runtime-ingress-smoke.mjs forced-failure");
+    expect(new Set(runtimeIngressSmoke.match(requestIdentifierPattern))).toEqual(
+      new Set(expectedRequestIdentifiers),
+    );
+    expect(new Set(ciWorkflow.match(requestIdentifierPattern))).toEqual(
+      new Set(expectedRequestIdentifiers),
+    );
     expect(ciWorkflow).not.toContain("runtime-chain-request.py");
   });
 
