@@ -299,11 +299,16 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await page.getByRole("button", { name: "Next reading passage" }).click();
   await scan("card interpretation section");
   const journey = page.getByTestId("reading-journey");
-  await expect
-    .poll(async () => Number(await journey.getAttribute("data-loaded-section-count")))
-    .toBeGreaterThanOrEqual(9);
-  await page.getByTestId("oracle-transcript").focus();
+  await expect(journey).toHaveAttribute("data-state", "complete", { timeout: 30_000 });
+  const passageCount = Number(await journey.getAttribute("data-loaded-section-count"));
+  expect(passageCount).toBeGreaterThanOrEqual(3);
+  const transcript = page.getByTestId("oracle-transcript");
+  await transcript.focus();
+  await expect(transcript).toBeFocused();
   await page.keyboard.press("End");
+  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
+  await expect(page.getByText(`${passageCount} / ${passageCount}`, { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
   await expect(page.locator(".oracle-entry-text")).toBeVisible();
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();

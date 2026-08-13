@@ -460,8 +460,9 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     "groq:openai/gpt-oss-20b",
   ]);
   const outputProvenance = reading.outputProvenance;
+  const persistedProviderId = outputProvenance?.providerId ?? "";
   const liveProvenance =
-    approvedLiveProviderIds.has(outputProvenance?.providerId ?? "") &&
+    approvedLiveProviderIds.has(persistedProviderId) &&
     outputProvenance?.promptVersion === "reader-voice-v3" &&
     outputProvenance.schemaVersion === "reading-result-v2";
   const deterministicProvenance =
@@ -520,7 +521,7 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     status: configuredProvenance ? "pass" : "fail",
     detail: configuredProvenance
       ? interpretationContract === "approved-live"
-        ? `the persisted output identifies the approved provider model, prompt, and response schema${
+        ? `the persisted output identifies ${persistedProviderId}, the approved prompt, and response schema${
             providerRetryStatus === undefined
               ? ""
               : ` after one same-draw quota retry returned ${providerRetryStatus}`
