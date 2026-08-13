@@ -21,7 +21,10 @@ read_secret /run/secrets/tokenpak_proxy_auth_token TOKENPAK_PROXY_AUTH_TOKEN
 read_secret /run/secrets/tokenpak_egress_token TOKENPAK_EGRESS_TOKEN
 export TOKENPAK_CONFIG=/etc/tokenpak/config.yaml
 
-required_settings='TOKENPAK_PROFILE=safe
+required_settings='HOME=/proc/tokenpak-home-disabled
+TOKENPAK_PROFILE=safe
+TOKENPAK_HOME=/proc/tokenpak-home-disabled
+TOKENPAK_DB=/proc/tokenpak-monitor-disabled.db
 TOKENPAK_UPSTREAM_RETRIES=1
 TOKENPAK_UPSTREAM_RECOVERY_DIR=/proc/tokenpak-recovery-disabled
 TOKENPAK_RETRY_PERSIST_BODY=0
@@ -38,8 +41,4 @@ printf '%s\n' "$required_settings" | while IFS='=' read -r setting expected; do
   fi
 done
 
-exec python -m tokenpak.proxy.server \
-  --config /etc/tokenpak/config.yaml \
-  --port 8766 \
-  --profile safe \
-  --log-level error
+exec python -c 'from tokenpak.proxy.server import start_proxy; start_proxy(host="0.0.0.0", port=8766, blocking=True)'

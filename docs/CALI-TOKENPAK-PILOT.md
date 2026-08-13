@@ -140,11 +140,19 @@ This instance explicitly sets:
   feature overridden off;
 - `TOKENPAK_UPSTREAM_RETRIES=1`;
 - `TOKENPAK_RETRY_PERSIST_BODY=0`;
-- recovery and monitor paths under unwritable `/proc` targets;
+- recovery, monitor, process-home, and TokenPak-home paths under unwritable
+  `/proc` targets,
+  so TokenPak 1.18.5 cannot fall back from the monitor override to writable
+  home storage;
 - compaction, query expansion/rewriting, term resolution, caches, capsules,
   failure memory, vault injection/indexing, request logging, traces, and
   optimization hooks off; and
-- an ephemeral TokenPak home on a bounded `tmpfs`.
+- bounded ephemeral scratch at `/tmp` only, with no writable TokenPak home.
+
+The container starts TokenPak through its public `start_proxy` API. Its stock
+CLI always writes a PID file below `TOKENPAK_HOME`, while Compose already owns
+the process lifecycle; bypassing that CLI-only artifact allows the home to stay
+fail-closed instead of creating persistence just to satisfy PID bookkeeping.
 
 The StarGuidance model chain may still make one separately bounded request per
 reviewed model using the immutable draw. TokenPak itself does not repeat an

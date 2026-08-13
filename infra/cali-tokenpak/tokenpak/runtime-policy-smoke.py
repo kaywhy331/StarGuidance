@@ -11,7 +11,7 @@ os.environ["TOKENPAK_EGRESS_TOKEN"] = egress_token
 
 from tokenpak.proxy import config
 from tokenpak.proxy.router import ProviderRouter
-from tokenpak.proxy.server import _inject_custom_provider_credential
+from tokenpak.proxy.server import ProxyServer, _inject_custom_provider_credential
 from tokenpak.proxy.upstream_retry import (
     UpstreamRetryPolicy,
     persist_failed_request_metadata,
@@ -48,7 +48,23 @@ for disabled in (
 assert config.VAULT_AUTO_REINDEX_INTERVAL == 0
 assert config.VAULT_CACHE_MAX_BYTES == 0
 assert config.VAULT_CACHE_PRELOAD == 0
-assert str(config.MONITOR_DB) == "/proc/tokenpak-monitor-disabled.db"
+assert os.environ["HOME"] == "/proc/tokenpak-home-disabled"
+assert os.environ["TOKENPAK_HOME"] == "/proc/tokenpak-home-disabled"
+assert os.environ["TOKENPAK_DB"] == "/proc/tokenpak-monitor-disabled.db"
+try:
+    config.MONITOR_DB
+except OSError:
+    pass
+else:
+    raise AssertionError("TokenPak monitor storage unexpectedly resolved to a writable path")
+proxy = ProxyServer(host="127.0.0.1", port=8766)
+assert proxy.monitor is None
+assert str(proxy.compression_stats.log_path) == (
+    "/proc/tokenpak-home-disabled/compression_events.jsonl"
+)
+from tokenpak.proxy import server
+
+assert "start_proxy" in server.start_proxy.__name__
 assert UpstreamRetryPolicy.from_env().max_attempts == 1
 assert config.CUSTOM_PROVIDER_CONFIGURED_COUNT == 1
 assert config.CUSTOM_PROVIDER_REGISTERED_COUNT == 1

@@ -9,6 +9,10 @@ const tokenpakEntrypoint = readFileSync(
   new URL("./tokenpak/entrypoint.sh", import.meta.url),
   "utf8",
 );
+const tokenpakRuntimePolicy = readFileSync(
+  new URL("./tokenpak/runtime-policy-smoke.py", import.meta.url),
+  "utf8",
+);
 const runtimeDockerfile = readFileSync(new URL("./runtime.Dockerfile", import.meta.url), "utf8");
 const tokenpakDockerfile = readFileSync(new URL("./tokenpak/Dockerfile", import.meta.url), "utf8");
 const tokenpakDockerignore = readFileSync(
@@ -104,11 +108,25 @@ describe("Cali TokenPak Compose isolation", () => {
       'TOKENPAK_TRACE: "0"',
       'TOKENPAK_VAULT_INJECTION: "0"',
       "TOKENPAK_DLP_MODE: block",
+      "HOME: /proc/tokenpak-home-disabled",
+      "TOKENPAK_HOME: /proc/tokenpak-home-disabled",
+      "TOKENPAK_DB: /proc/tokenpak-monitor-disabled.db",
     ])
       expect(tokenpak).toContain(setting);
+    expect(tokenpak).not.toContain("/var/lib/tokenpak");
+    expect(tokenpakDockerfile).toContain("HOME=/proc/tokenpak-home-disabled");
+    expect(tokenpakDockerfile).toContain("TOKENPAK_HOME=/proc/tokenpak-home-disabled");
     expect(tokenpakConfig).toContain("include_request_body: false");
     expect(tokenpakConfig).toContain("include_response_body: false");
     expect(tokenpakConfig).toContain("retention_days: 0");
     expect(tokenpakEntrypoint).toContain("unsafe TokenPak runtime setting");
+    expect(tokenpakEntrypoint).toContain("HOME=/proc/tokenpak-home-disabled");
+    expect(tokenpakEntrypoint).toContain("TOKENPAK_HOME=/proc/tokenpak-home-disabled");
+    expect(tokenpakEntrypoint).toContain("from tokenpak.proxy.server import start_proxy");
+    expect(tokenpakEntrypoint).not.toContain("python -m tokenpak.proxy.server");
+    expect(tokenpakRuntimePolicy).toContain("assert proxy.monitor is None");
+    expect(tokenpakRuntimePolicy).toContain(
+      '"/proc/tokenpak-home-disabled/compression_events.jsonl"',
+    );
   });
 });

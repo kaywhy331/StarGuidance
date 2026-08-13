@@ -1,14 +1,15 @@
 FROM python:3.12-slim@sha256:d657ab0ade19f404a6ccc883ab399540de667aff751748ce23c07330c5a89e64
 
-ENV HOME=/var/lib/tokenpak \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    TOKENPAK_HOME=/var/lib/tokenpak
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /srv/tokenpak
 
 COPY requirements.lock ./requirements.lock
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
+
+ENV HOME=/proc/tokenpak-home-disabled \
+    TOKENPAK_HOME=/proc/tokenpak-home-disabled
 
 COPY config.yaml /etc/tokenpak/config.yaml
 COPY entrypoint.sh /usr/local/bin/starguidance-tokenpak

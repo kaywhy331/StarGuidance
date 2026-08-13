@@ -173,8 +173,15 @@ blueprint does not claim price/cost enforcement; provider-account caps and
 alerts remain a separate operations control.
 
 The blueprint sets TokenPak to a one-attempt, no-recovery-persistence policy,
-an unwritable monitor database path, disabled compaction/query expansion/term
-resolution/caches/vault injection/traces, and an ephemeral bounded home. DLP is
+an unwritable monitor database path, process home, and TokenPak home, disabled
+compaction/query
+expansion/term resolution/caches/vault injection/traces, and bounded ephemeral
+scratch at `/tmp` only. The whole home is unwritable because TokenPak 1.18.5
+falls back from an invalid `TOKENPAK_DB` candidate to `TOKENPAK_HOME`; the
+container smoke test verifies that this fallback also fails and the runtime
+monitor remains absent. The container calls TokenPak's public `start_proxy`
+API directly because its stock CLI unconditionally creates a PID file beneath
+`TOKENPAK_HOME`; the container supervisor already owns process lifecycle. DLP is
 `block`: email, formatted phone, SSN, or secret-like question text can therefore
 produce deterministic same-draw fallback. Neither the matching text nor raw
 TokenPak error is returned by StarGuidance. Exact settings and smoke tests are

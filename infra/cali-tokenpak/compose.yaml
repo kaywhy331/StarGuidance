@@ -89,6 +89,7 @@ services:
       context: tokenpak
       dockerfile: Dockerfile
     environment:
+      HOME: /proc/tokenpak-home-disabled
       TOKENPAK_CONFIG: /etc/tokenpak/config.yaml
       TOKENPAK_BIND_ADDRESS: 0.0.0.0
       TOKENPAK_BUDGET_CONTROLLER: "0"
@@ -108,6 +109,7 @@ services:
       TOKENPAK_LOG_ENABLED: "0"
       TOKENPAK_MODEL_DISCOVERY: "0"
       TOKENPAK_DB: /proc/tokenpak-monitor-disabled.db
+      TOKENPAK_HOME: /proc/tokenpak-home-disabled
       TOKENPAK_OPTIMIZATION_PIPELINE: "0"
       TOKENPAK_PLATFORM_ADAPTERS: "0"
       TOKENPAK_PREFIX_REGISTRY: "0"
@@ -158,7 +160,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=32m,mode=0700,uid=65532,gid=65532
-      - /var/lib/tokenpak:size=32m,mode=0700,uid=65532,gid=65532
     user: "65532:65532"
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
