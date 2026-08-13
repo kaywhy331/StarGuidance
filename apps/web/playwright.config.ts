@@ -8,6 +8,9 @@ export default defineConfig({
   // Long ritual flows run against the production Next.js server in the same
   // process budget as the browsers. Two workers keep both local and CI runs
   // parallel without starving navigation, animation, or typewriter timers.
+  // The cross-browser package script runs WebKit separately with one worker;
+  // concurrent long-lived WebKit contexts can exhaust a shared CI runner and
+  // terminate unrelated pages in different spec files at the same instant.
   workers: 2,
   // WebKit can terminate a long-lived worker after many isolated browser
   // contexts on a shared runner. A single CI retry gets a fresh worker while
