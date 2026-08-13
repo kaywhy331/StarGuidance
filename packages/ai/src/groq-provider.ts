@@ -4,6 +4,7 @@ import {
   type FollowUpResult,
   type ReadingResult,
 } from "@starguidance/contracts";
+import { z } from "zod";
 
 import {
   classifyQuestion,
@@ -44,6 +45,7 @@ const DEFAULT_ATTEMPT_TIMEOUT_MS = 15_000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 40_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 2_600;
 const JSON_OBJECT_MODELS = new Set(["llama-3.3-70b-versatile"]);
+const GPT_OSS_MODEL_PREFIX = "openai/gpt-oss-";
 
 type StructuredOutputMode = "strict-json-schema" | "json-object";
 
@@ -108,6 +110,9 @@ const READER_VOICE = [
   "Include tension, contradiction, reversal, foreshadowing, hidden significance, or unresolved curiosity where the draw genuinely supports it.",
   "Vary the ending: prediction, realization, foreshadowing, gentle warning, reflection, or an open question. Do not always end with a question.",
   "The supplied questionContext.topic is authoritative; infer from wording only when it is general.",
+  "Echo every supplied positionId, cardId, and orientation exactly. Use only supplied position IDs in cardReferences.",
+  "Return unique passage IDs; passageIds and trajectory passage IDs must reference passages in the same response.",
+  "Every required prose string and every list the schema marks as non-empty must contain a meaningful value.",
   "Do not restate or quote the raw question. Do not mention being an AI. Do not put a disclaimer in the spoken passages; uncertainty is stored separately.",
 ].join(" ");
 
@@ -155,25 +160,37 @@ function shouldTryFallback(error: unknown): boolean {
   return fallbackReason(error) !== "authentication";
 }
 
-/** The JSON Schema the model is constrained to. Mirrors readingResultSchema. */
-function responseSchema(cardCount: number): Record<string, unknown> {
-  const card = {
+type ResolvedDraw = ReturnType<typeof resolveDraw>;
+
+function exactCardSchema(entry: ResolvedDraw[number]): Record<string, unknown> {
+  return {
     type: "object",
     additionalProperties: false,
     required: ["positionId", "cardId", "orientation", "passageIds"],
     properties: {
-      positionId: { type: "string" },
-      cardId: { type: "string" },
-      orientation: { type: "string", enum: ["upright", "reversed"] },
-      passageIds: { type: "array", items: { type: "string" }, minItems: 1 },
+      positionId: { type: "string", enum: [entry.position.id], minLength: 1 },
+      cardId: { type: "string", enum: [entry.card.id], minLength: 1 },
+      orientation: { type: "string", enum: [entry.orientation] },
+      passageIds: {
+        type: "array",
+        items: { type: "string", minLength: 1 },
+        minItems: 1,
+      },
     },
   };
+}
+
+/** The JSON Schema the model is constrained to. Mirrors readingResultSchema. */
+function responseSchema(resolved: ResolvedDraw): Record<string, unknown> {
+  const cardCount = resolved.length;
+  const positionIds = resolved.map(({ position }) => position.id);
+  const exactCards = resolved.map(exactCardSchema);
   const passage = {
     type: "object",
     additionalProperties: false,
     required: ["id", "role", "text", "cardReferences"],
     properties: {
-      id: { type: "string" },
+      id: { type: "string", minLength: 1 },
       role: {
         type: "string",
         enum: [
@@ -190,8 +207,12 @@ function responseSchema(cardCount: number): Record<string, unknown> {
           "safety",
         ],
       },
-      text: { type: "string" },
-      cardReferences: { type: "array", items: { type: "string" }, maxItems: cardCount },
+      text: { type: "string", minLength: 1 },
+      cardReferences: {
+        type: "array",
+        items: { type: "string", enum: positionIds },
+        maxItems: cardCount,
+      },
     },
   };
   return {
@@ -211,26 +232,131 @@ function responseSchema(cardCount: number): Record<string, unknown> {
     ],
     properties: {
       schemaVersion: { type: "string", enum: ["reading-result-v2"] },
-      title: { type: "string" },
+      title: { type: "string", minLength: 1 },
       passages: { type: "array", items: passage, minItems: 3, maxItems: 24 },
-      cards: { type: "array", items: card, minItems: cardCount, maxItems: cardCount },
+      cards: {
+        type: "array",
+        items: exactCards.length === 1 ? exactCards[0] : { anyOf: exactCards },
+        minItems: cardCount,
+        maxItems: cardCount,
+      },
       trajectory: {
         type: "object",
         additionalProperties: false,
         required: ["likelyPassageId", "conditions", "alternatePassageId"],
         properties: {
-          likelyPassageId: { type: "string" },
-          conditions: { type: "array", items: { type: "string" } },
-          alternatePassageId: { type: "string" },
+          likelyPassageId: { type: "string", minLength: 1 },
+          conditions: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            minItems: 1,
+          },
+          alternatePassageId: { type: "string", minLength: 1 },
         },
       },
-      userAgency: { type: "array", items: { type: "string" } },
-      reflectionQuestion: { type: "string" },
-      disconfirmingEvidence: { type: "array", items: { type: "string" } },
-      uncertainty: { type: "string" },
+      userAgency: {
+        type: "array",
+        items: { type: "string", minLength: 1 },
+        minItems: 1,
+      },
+      reflectionQuestion: { type: "string", minLength: 1 },
+      disconfirmingEvidence: {
+        type: "array",
+        items: { type: "string", minLength: 1 },
+        minItems: 1,
+      },
+      uncertainty: { type: "string", minLength: 1 },
       safetyFlags: { type: "array", items: { type: "string" } },
     },
   };
+}
+
+// The public contract deliberately adds relational refinements (unique passage
+// IDs and valid cross-references) on top of this structural shape. Parse the
+// provider's authored content first, then rebuild only that internal metadata
+// before applying the complete contract. Prose, safety fields, card identity,
+// and card orientation are never repaired or invented here.
+const providerReadingResultSchema = z.object(readingResultV2Schema.shape).strict();
+
+function canonicalizeProviderReading(value: unknown, resolved: ResolvedDraw): ReadingResult {
+  const parsed = providerReadingResultSchema.parse(value);
+  if (parsed.cards.length !== resolved.length) throw new ProviderRequestError("invalid-response");
+
+  const parsedByPosition = new Map(parsed.cards.map((card) => [card.positionId, card]));
+  for (const entry of resolved) {
+    const echoed = parsedByPosition.get(entry.position.id);
+    if (!echoed || echoed.cardId !== entry.card.id || echoed.orientation !== entry.orientation)
+      throw new ProviderRequestError("invalid-response");
+  }
+
+  const orderedCards = resolved.map((entry) => ({
+    ...parsedByPosition.get(entry.position.id)!,
+    // Re-assert the locked tuple so no later refactor can make provider
+    // metadata authoritative over the persisted draw.
+    positionId: entry.position.id,
+    cardId: entry.card.id,
+    orientation: entry.orientation,
+  }));
+  const fullyValid = readingResultV2Schema.safeParse({ ...parsed, cards: orderedCards });
+  if (fullyValid.success) return fullyValid.data;
+
+  // At this point every authored field has passed the structural contract and
+  // every card has echoed the locked draw exactly. Only relational metadata
+  // covered by readingResultV2Schema.superRefine can be invalid. Repair only
+  // links that have unambiguous authored evidence; never attach arbitrary
+  // prose to a card or trajectory to make a response pass validation.
+  const expectedPositionIds = resolved.map(({ position }) => position.id);
+  const expectedPositionSet = new Set(expectedPositionIds);
+  const positionByCardId = new Map(resolved.map(({ card, position }) => [card.id, position.id]));
+  const passageIds = new Set(parsed.passages.map(({ id }) => id));
+  if (passageIds.size !== parsed.passages.length)
+    throw new ProviderRequestError("invalid-response");
+
+  const passages = parsed.passages.map((passage) => {
+    return {
+      ...passage,
+      cardReferences: [
+        ...new Set(
+          passage.cardReferences
+            .map((reference) =>
+              expectedPositionSet.has(reference) ? reference : positionByCardId.get(reference),
+            )
+            .filter((positionId): positionId is string => Boolean(positionId)),
+        ),
+      ],
+    };
+  });
+
+  const trajectoryPassageId = (requested: string, role: "trajectory" | "alternative"): string => {
+    if (passageIds.has(requested)) return requested;
+    const roleMatches = passages.filter((passage) => passage.role === role);
+    if (roleMatches.length !== 1) throw new ProviderRequestError("invalid-response");
+    return roleMatches[0]!.id;
+  };
+
+  const cards = orderedCards.map((card) => {
+    const directPassageIds = card.passageIds.filter((passageId) => passageIds.has(passageId));
+    const reciprocalPassageIds = passages
+      .filter(({ cardReferences }) => cardReferences.includes(card.positionId))
+      .map(({ id }) => id);
+    const authoredPassageIds = [...new Set([...directPassageIds, ...reciprocalPassageIds])];
+    if (authoredPassageIds.length === 0) throw new ProviderRequestError("invalid-response");
+    return {
+      ...card,
+      passageIds: authoredPassageIds,
+    };
+  });
+
+  return readingResultV2Schema.parse({
+    ...parsed,
+    passages,
+    cards,
+    trajectory: {
+      ...parsed.trajectory,
+      likelyPassageId: trajectoryPassageId(parsed.trajectory.likelyPassageId, "trajectory"),
+      alternatePassageId: trajectoryPassageId(parsed.trajectory.alternatePassageId, "alternative"),
+    },
+  });
 }
 
 function followUpResponseSchema(): Record<string, unknown> {
@@ -238,7 +364,7 @@ function followUpResponseSchema(): Record<string, unknown> {
     type: "object",
     additionalProperties: false,
     required: ["response"],
-    properties: { response: { type: "string" } },
+    properties: { response: { type: "string", minLength: 1 } },
   };
 }
 
@@ -382,38 +508,23 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     const safety = classifyQuestion(input.question);
     const guarded = GUARDED_CATEGORIES.has(safety.category);
     const resolved = resolveDraw(input.draw, input.questionClassification);
-    const parsed = readingResultV2Schema.parse(
+    const parsed = canonicalizeProviderReading(
       await this.requestStructured(
         guarded ? `${READER_VOICE} ${GUARDED_VOICE}` : READER_VOICE,
         this.buildPayload(input),
         "reading",
-        responseSchema(resolved.length),
+        responseSchema(resolved),
         this.options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
         model,
         mode,
         timeoutMs,
         signal,
       ),
+      resolved,
     );
-    if (parsed.cards.length !== resolved.length) throw new ProviderRequestError("invalid-response");
-    const parsedByPosition = new Map(parsed.cards.map((card) => [card.positionId, card]));
-    for (const entry of resolved) {
-      const echoed = parsedByPosition.get(entry.position.id);
-      if (!echoed || echoed.cardId !== entry.card.id || echoed.orientation !== entry.orientation)
-        throw new ProviderRequestError("invalid-response");
-    }
     if (generatedOutputSafetyViolation(parsed)) throw new ProviderRequestError("unsafe-response");
-    // The model may order its card threads differently, but it must echo the
-    // exact locked position/card/orientation set. Join by position ID so a
-    // harmless permutation cannot attach one card's narrative to another.
     return readingResultV2Schema.parse({
       ...parsed,
-      cards: resolved.map((entry) => ({
-        ...parsedByPosition.get(entry.position.id)!,
-        positionId: entry.position.id,
-        cardId: entry.card.id,
-        orientation: entry.orientation,
-      })),
       safetyFlags: safety.category === "ordinary" ? parsed.safetyFlags : [safety.category],
     });
   }
@@ -486,6 +597,9 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
             model,
             temperature: 0.85,
             max_completion_tokens: maxOutputTokens,
+            ...(model.startsWith(GPT_OSS_MODEL_PREFIX)
+              ? { reasoning_effort: "low", include_reasoning: false }
+              : {}),
             messages: [
               { role: "system", content: modelSystem },
               { role: "user", content: JSON.stringify(payload) },
@@ -507,9 +621,15 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
         throw new ProviderRequestError(reason);
       }
       const body = (await response.json()) as {
-        choices?: { message?: { content?: string } }[];
+        choices?: {
+          finish_reason?: string | null;
+          message?: { content?: string };
+        }[];
       };
-      const content = body.choices?.[0]?.message?.content;
+      const choice = body.choices?.[0];
+      if (choice?.finish_reason !== undefined && choice.finish_reason !== "stop")
+        throw new ProviderRequestError("invalid-response");
+      const content = choice?.message?.content;
       if (!content) throw new ProviderRequestError("invalid-response");
 
       return JSON.parse(content) as unknown;

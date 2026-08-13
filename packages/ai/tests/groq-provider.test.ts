@@ -89,6 +89,27 @@ const originalResult = {
   safetyFlags: [],
 };
 
+const repairableLinkResult = {
+  ...originalResult,
+  passages: originalResult.passages.map((passage) => ({
+    ...passage,
+    cardReferences:
+      passage.id === "thread-1"
+        ? [originalResult.cards[0]!.cardId]
+        : passage.cardReferences.filter(
+            (positionId) => positionId !== draw.assignments[0]!.positionId,
+          ),
+  })),
+  cards: originalResult.cards.map((card, index) =>
+    index === 0 ? { ...card, passageIds: ["missing-passage"] } : card,
+  ),
+  trajectory: {
+    ...originalResult.trajectory,
+    likelyPassageId: "missing-likely",
+    alternatePassageId: "missing-alternate",
+  },
+};
+
 const followUpInput = {
   ...input,
   question: "What is the next concrete move?",
@@ -166,12 +187,17 @@ describe("one-section follow-ups", () => {
       response: "One focused answer.",
     });
     const request = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body)) as {
-      response_format: { json_schema: { name: string; schema: { required: string[] } } };
+      response_format: {
+        json_schema: {
+          name: string;
+          schema: { required: string[]; properties: { response: { minLength: number } } };
+        };
+      };
       messages: { content: string }[];
     };
     expect(request.response_format.json_schema).toMatchObject({
       name: "follow_up",
-      schema: { required: ["response"] },
+      schema: { required: ["response"], properties: { response: { minLength: 1 } } },
     });
     expect(request.messages[0]!.content).toContain("one cohesive response");
   });
@@ -304,7 +330,13 @@ describe("model fallback chain", () => {
     const { provenance } = await fallbackProvider().generateWithProvenance(input);
     expect(provenance.providerId).toBe("groq:openai/gpt-oss-20b");
     const requests = fetchMock.mock.calls.map(
-      (call) => JSON.parse(String(call[1]?.body)) as { model: string; response_format: unknown },
+      (call) =>
+        JSON.parse(String(call[1]?.body)) as {
+          model: string;
+          response_format: unknown;
+          reasoning_effort?: string;
+          include_reasoning?: boolean;
+        },
     );
     expect(requests.map(({ model }) => model)).toEqual([
       "openai/gpt-oss-120b",
@@ -315,6 +347,47 @@ describe("model fallback chain", () => {
       type: "json_schema",
       json_schema: { strict: true },
     });
+    for (const request of [requests[0]!, requests[2]!])
+      expect(request).toMatchObject({ reasoning_effort: "low", include_reasoning: false });
+    expect(requests[1]).toEqual(
+      expect.not.objectContaining({
+        reasoning_effort: expect.anything(),
+        include_reasoning: expect.anything(),
+      }),
+    );
+  });
+
+  it("rejects a truncated completion and advances to the next model", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "length",
+                message: { content: JSON.stringify(originalResult) },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              { finish_reason: "stop", message: { content: JSON.stringify(originalResult) } },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { provenance } = await fallbackProvider().generateWithProvenance(input);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(provenance.providerId).toBe("groq:llama-3.3-70b-versatile");
   });
 
   it("does not retry a shared authentication failure on other Groq models", async () => {
@@ -452,32 +525,134 @@ describe("the draw is authoritative, not the model", () => {
     const request = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body)) as {
       response_format: {
         json_schema: {
-          schema: { properties: { cards: { minItems: number; maxItems: number } } };
+          schema: {
+            properties: {
+              title: { minLength: number };
+              passages: {
+                items: {
+                  properties: {
+                    id: { minLength: number };
+                    text: { minLength: number };
+                  };
+                };
+              };
+              cards: {
+                minItems: number;
+                maxItems: number;
+                items: {
+                  anyOf: {
+                    properties: Record<
+                      string,
+                      { enum?: string[]; minLength?: number; items?: { minLength: number } }
+                    >;
+                  }[];
+                };
+              };
+              trajectory: {
+                properties: {
+                  likelyPassageId: { minLength: number };
+                  conditions: { minItems: number; items: { minLength: number } };
+                  alternatePassageId: { minLength: number };
+                };
+              };
+              userAgency: { minItems: number; items: { minLength: number } };
+              reflectionQuestion: { minLength: number };
+              disconfirmingEvidence: {
+                minItems: number;
+                items: { minLength: number };
+              };
+              uncertainty: { minLength: number };
+            };
+          };
         };
       };
     };
-    expect(request.response_format.json_schema.schema.properties.cards).toMatchObject({
+    const properties = request.response_format.json_schema.schema.properties;
+    expect(properties.cards).toMatchObject({
       minItems: draw.assignments.length,
       maxItems: draw.assignments.length,
     });
+    expect(properties.cards.items.anyOf).toHaveLength(draw.assignments.length);
+    expect(
+      properties.cards.items.anyOf.map(({ properties }) => ({
+        positionId: properties.positionId!.enum![0],
+        cardId: properties.cardId!.enum![0],
+        orientation: properties.orientation!.enum![0],
+      })),
+    ).toEqual(
+      draw.assignments.map(({ positionId, cardId, orientation }) => ({
+        positionId,
+        cardId,
+        orientation,
+      })),
+    );
+    expect(properties.title.minLength).toBe(1);
+    expect(properties.passages.items.properties.id.minLength).toBe(1);
+    expect(properties.passages.items.properties.text.minLength).toBe(1);
+    for (const cardSchema of properties.cards.items.anyOf) {
+      expect(cardSchema.properties.positionId!.minLength).toBe(1);
+      expect(cardSchema.properties.cardId!.minLength).toBe(1);
+      expect(cardSchema.properties.passageIds!.items!.minLength).toBe(1);
+    }
+    expect(properties.trajectory.properties.likelyPassageId.minLength).toBe(1);
+    expect(properties.trajectory.properties.conditions.minItems).toBe(1);
+    expect(properties.trajectory.properties.conditions.items.minLength).toBe(1);
+    expect(properties.trajectory.properties.alternatePassageId.minLength).toBe(1);
+    expect(properties.userAgency.minItems).toBe(1);
+    expect(properties.userAgency.items.minLength).toBe(1);
+    expect(properties.reflectionQuestion.minLength).toBe(1);
+    expect(properties.disconfirmingEvidence.minItems).toBe(1);
+    expect(properties.disconfirmingEvidence.items.minLength).toBe(1);
+    expect(properties.uncertainty.minLength).toBe(1);
   });
 
-  it("rejects a short provider card array instead of duplicating a card interpretation", async () => {
+  it.each([
+    [
+      "changed position ID",
+      () => ({
+        ...originalResult,
+        cards: originalResult.cards.map((card, index) =>
+          index === 0 ? { ...card, positionId: "invented-position" } : card,
+        ),
+      }),
+    ],
+    [
+      "changed card ID",
+      () => ({
+        ...originalResult,
+        cards: originalResult.cards.map((card, index) =>
+          index === 0 ? { ...card, cardId: "major-00" } : card,
+        ),
+      }),
+    ],
+    [
+      "changed orientation",
+      () => ({
+        ...originalResult,
+        cards: originalResult.cards.map((card, index) =>
+          index === 0 ? { ...card, orientation: "reversed" as const } : card,
+        ),
+      }),
+    ],
+    [
+      "duplicate tuple",
+      () => ({
+        ...originalResult,
+        cards: [originalResult.cards[0]!, originalResult.cards[0]!, originalResult.cards[2]!],
+      }),
+    ],
+    ["missing tuple", () => ({ ...originalResult, cards: originalResult.cards.slice(0, -1) })],
+    [
+      "extra tuple",
+      () => ({ ...originalResult, cards: [...originalResult.cards, originalResult.cards[0]!] }),
+    ],
+  ])("rejects a provider response with a %s", async (_label, makeResult) => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({
-                    ...originalResult,
-                    cards: originalResult.cards.slice(0, 1),
-                  }),
-                },
-              },
-            ],
+            choices: [{ message: { content: JSON.stringify(makeResult()) } }],
           }),
           { status: 200 },
         ),
@@ -485,44 +660,7 @@ describe("the draw is authoritative, not the model", () => {
     );
 
     const { result, provenance } = await provider().generateWithProvenance(input);
-
     expect(result.cards).toHaveLength(draw.assignments.length);
-    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
-  });
-
-  it("rejects a model that changes locked card identity or orientation", async () => {
-    const inventedPositionIds = spread.positions.map((_, index) => `invented-${index + 1}`);
-    const inventedByActual = new Map(
-      spread.positions.map((position, index) => [position.id, inventedPositionIds[index]!]),
-    );
-    const invented = {
-      ...originalResult,
-      title: "The model's title",
-      passages: originalResult.passages.map((passage) => ({
-        ...passage,
-        cardReferences: passage.cardReferences.map((positionId) =>
-          inventedByActual.get(positionId)!,
-        ),
-      })),
-      cards: spread.positions.map((_, index) => ({
-        positionId: inventedPositionIds[index]!,
-        cardId: "major-00",
-        orientation: "upright",
-        passageIds: ["opening"],
-      })),
-    };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: JSON.stringify(invented) } }] }),
-          {
-            status: 200,
-          },
-        ),
-      ),
-    );
-    const { provenance } = await provider().generateWithProvenance(input);
     expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
   });
 
@@ -550,6 +688,184 @@ describe("the draw is authoritative, not the model", () => {
     for (const [index, card] of result.cards.entries())
       expect(card.passageIds).toEqual(originalResult.cards[index]!.passageIds);
     expect(provenance.providerId).toBe("groq:test-model");
+  });
+
+  it("repairs unambiguous authored links without changing prose, lists, safety, or draw", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(repairableLinkResult) } }],
+          }),
+          {
+            status: 200,
+          },
+        ),
+      ),
+    );
+
+    const { result, provenance } = await provider().generateWithProvenance(input);
+    expect(provenance.providerId).toBe("groq:test-model");
+    expect(result).toEqual({
+      ...repairableLinkResult,
+      passages: repairableLinkResult.passages.map((passage) =>
+        passage.id === "thread-1"
+          ? { ...passage, cardReferences: [draw.assignments[0]!.positionId] }
+          : { ...passage, cardReferences: [...passage.cardReferences] },
+      ),
+      cards: repairableLinkResult.cards.map((card, index) =>
+        index === 0 ? { ...card, passageIds: ["thread-1"] } : card,
+      ),
+      trajectory: {
+        ...repairableLinkResult.trajectory,
+        likelyPassageId: "likely",
+        alternatePassageId: "alternate",
+      },
+    });
+  });
+
+  it("rejects a card thread with no valid direct or reciprocal authored link", async () => {
+    const irreparable = {
+      ...originalResult,
+      cards: originalResult.cards.map((card, index) =>
+        index === 0 ? { ...card, passageIds: ["missing-passage"] } : card,
+      ),
+      passages: originalResult.passages.map((passage) => ({
+        ...passage,
+        cardReferences: passage.cardReferences.filter(
+          (positionId) => positionId !== draw.assignments[0]!.positionId,
+        ),
+      })),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(irreparable) } }] }),
+          {
+            status: 200,
+          },
+        ),
+      ),
+    );
+
+    const { provenance } = await provider().generateWithProvenance(input);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
+  });
+
+  it("rejects duplicate passage IDs instead of guessing which passage a link meant", async () => {
+    const ambiguous = {
+      ...originalResult,
+      passages: originalResult.passages.map((passage, index) =>
+        index < 2 ? { ...passage, id: "duplicate" } : passage,
+      ),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(ambiguous) } }] }),
+          {
+            status: 200,
+          },
+        ),
+      ),
+    );
+
+    const { provenance } = await provider().generateWithProvenance(input);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
+  });
+
+  it.each(["missing", "ambiguous"])(
+    "rejects a dangling trajectory link when its expected role is %s",
+    async (kind) => {
+      const originalTrajectory = originalResult.passages.find(({ role }) => role === "trajectory")!;
+      const trajectoryPassages =
+        kind === "missing"
+          ? originalResult.passages.map((passage) =>
+              passage.role === "trajectory"
+                ? { ...passage, role: "development" as const }
+                : passage,
+            )
+          : [...originalResult.passages, { ...originalTrajectory, id: "second-likely" }];
+      const invalidTrajectory = {
+        ...originalResult,
+        passages: trajectoryPassages,
+        trajectory: { ...originalResult.trajectory, likelyPassageId: "missing-likely" },
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: JSON.stringify(invalidTrajectory) } }],
+            }),
+            { status: 200 },
+          ),
+        ),
+      );
+
+      const { provenance } = await provider().generateWithProvenance(input);
+      expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-invalid-response");
+    },
+  );
+
+  it("still rejects unsafe prose after repairing metadata", async () => {
+    const unsafeRepairable = {
+      ...repairableLinkResult,
+      passages: repairableLinkResult.passages.map((passage, index) =>
+        index === 0 ? { ...passage, text: "You will get the job." } : passage,
+      ),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(unsafeRepairable) } }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const { provenance } = await provider().generateWithProvenance(input);
+    expect(provenance.providerId).toBe("deterministic-fallback-v1:after-groq-unsafe-response");
+  });
+
+  it("uses low hidden reasoning for GPT-OSS without sending it to Llama", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify(originalResult) } }] }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fallbackProvider().generateWithProvenance(input);
+    const requests = fetchMock.mock.calls.map(
+      (call) =>
+        JSON.parse(String(call[1]!.body)) as {
+          model: string;
+          reasoning_effort?: string;
+          include_reasoning?: boolean;
+        },
+    );
+    expect(requests[0]).toMatchObject({
+      model: "openai/gpt-oss-120b",
+      reasoning_effort: "low",
+      include_reasoning: false,
+    });
+    expect(requests[1]).toEqual(
+      expect.not.objectContaining({ reasoning_effort: expect.anything() }),
+    );
+    expect(requests[1]).toEqual(
+      expect.not.objectContaining({ include_reasoning: expect.anything() }),
+    );
   });
 });
 
