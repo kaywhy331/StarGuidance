@@ -104,6 +104,7 @@ describe("deployment health", () => {
       invalidEnvironmentVariables: [],
       interpretation: {
         providerKind: "groq",
+        transport: "direct-groq",
         approvedLiveProviderConfigured: true,
       },
       profileEngine: {
@@ -145,6 +146,7 @@ describe("deployment health", () => {
     expect(body.missingEnvironmentVariables).toEqual([]);
     expect(body.interpretation).toEqual({
       providerKind: "deterministic",
+      transport: "deterministic",
       approvedLiveProviderConfigured: false,
     });
     expect(JSON.stringify(body)).not.toContain(SECRET_VALUES.AI_PROVIDER_API_KEY);
@@ -166,6 +168,7 @@ describe("deployment health", () => {
     const body = await (await GET(readinessRequest())).json();
     expect(body.interpretation).toEqual({
       providerKind: "groq",
+      transport: "direct-groq",
       approvedLiveProviderConfigured: false,
     });
   });
@@ -190,6 +193,112 @@ describe("deployment health", () => {
     vi.stubEnv("AI_PROVIDER_TOTAL_TIMEOUT_MS", "120000");
     const budgetBody = await (await GET(readinessRequest())).json();
     expect(budgetBody.interpretation.approvedLiveProviderConfigured).toBe(false);
+  });
+
+  it("fails readiness closed on an unapproved or incomplete custom AI gateway", async () => {
+    configureStaging();
+    vi.stubEnv("AI_PROVIDER_API_KEY", "");
+    vi.stubEnv("AI_PROVIDER_BASE_URL", "https://reader-gateway.synthetic.invalid/v1");
+    vi.stubEnv("AI_PROVIDER_TRANSPORT", "tokenpak");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_HOST", "reader-gateway.synthetic.invalid");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_KEY", "short");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_ID", "synthetic-access-client-id");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_SECRET", "");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_APPROVED", "false");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const response = await GET(readinessRequest());
+    const body = await response.json();
+    const serialized = JSON.stringify(body);
+
+    expect(response.status).toBe(503);
+    expect(body.interpretation).toEqual({
+      providerKind: "deterministic",
+      transport: "deterministic",
+      approvedLiveProviderConfigured: false,
+    });
+    expect(body.invalidEnvironmentVariables).toEqual([
+      "AI_PROVIDER_GATEWAY_APPROVED",
+      "AI_PROVIDER_GATEWAY_KEY",
+      "AI_PROVIDER_CF_ACCESS_CLIENT_SECRET",
+    ]);
+    expect(serialized).not.toContain("short");
+    expect(serialized).not.toContain("synthetic-access-client-id");
+  });
+
+  it("does not send stale gateway credentials to the approved direct-Groq endpoint", async () => {
+    configureStaging();
+    vi.stubEnv("AI_PROVIDER_GATEWAY_KEY", "synthetic-gateway-key-at-least-32-bytes");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_ID", "synthetic-access-client-id");
+    vi.stubEnv(
+      "AI_PROVIDER_CF_ACCESS_CLIENT_SECRET",
+      "synthetic-access-client-secret-at-least-32-bytes",
+    );
+    vi.stubEnv("AI_PROVIDER_GATEWAY_APPROVED", "true");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const response = await GET(readinessRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.interpretation.providerKind).toBe("deterministic");
+    expect(body.invalidEnvironmentVariables).toEqual([
+      "AI_PROVIDER_GATEWAY_KEY",
+      "AI_PROVIDER_CF_ACCESS_CLIENT_ID",
+      "AI_PROVIDER_CF_ACCESS_CLIENT_SECRET",
+      "AI_PROVIDER_GATEWAY_APPROVED",
+    ]);
+  });
+
+  it("approves the reviewed model and budget contract over a complete Access gateway", async () => {
+    configureStaging();
+    vi.stubEnv("AI_PROVIDER_API_KEY", "");
+    vi.stubEnv("AI_PROVIDER_BASE_URL", "https://reader-gateway.synthetic.invalid/v1");
+    vi.stubEnv("AI_PROVIDER_TRANSPORT", "tokenpak");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_HOST", "reader-gateway.synthetic.invalid");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_KEY", "synthetic-gateway-key-at-least-32-bytes");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_ID", "synthetic-access-client-id");
+    vi.stubEnv(
+      "AI_PROVIDER_CF_ACCESS_CLIENT_SECRET",
+      "synthetic-access-client-secret-at-least-32-bytes",
+    );
+    vi.stubEnv("AI_PROVIDER_GATEWAY_APPROVED", "true");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const response = await GET(readinessRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.invalidEnvironmentVariables).toEqual([]);
+    expect(body.interpretation).toEqual({
+      providerKind: "groq",
+      transport: "access-gateway",
+      approvedLiveProviderConfigured: true,
+    });
   });
 
   it("reports the build commit in staging and withholds it elsewhere", async () => {

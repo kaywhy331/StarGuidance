@@ -663,12 +663,16 @@ export class PersistedResultStreamAdapter implements StreamingInterpretationAdap
 }
 
 import {
+  classifyAiProviderBaseUrl,
   DEFAULT_GROQ_FALLBACK_MODELS,
   DEFAULT_GROQ_PRIMARY_MODEL,
   GroqInterpretationProvider,
+  normalizedAiProviderBaseUrl,
 } from "./groq-provider";
 
 export {
+  classifyAiProviderBaseUrl,
+  DEFAULT_GROQ_BASE_URL,
   DEFAULT_GROQ_FALLBACK_MODELS,
   DEFAULT_GROQ_PRIMARY_MODEL,
   FOLLOW_UP_PROMPT_VERSION,
@@ -676,8 +680,106 @@ export {
   GroqInterpretationProvider,
   PROMPT_VERSION,
   RESPONSE_SCHEMA_VERSION,
+  REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+  normalizedAiProviderBaseUrl,
+  reviewedFollowUpResponseSchema,
+  reviewedReadingResponseSchema,
+  type AiProviderEndpointKind,
   type GroqProviderOptions,
 } from "./groq-provider";
+
+export interface ConfiguredAiProviderRoute {
+  readonly kind: "direct-groq" | "access-gateway" | "invalid";
+  readonly transport: "direct" | "tokenpak" | "invalid";
+  readonly baseUrl: string;
+  readonly accessProtected: boolean;
+  readonly invalidEnvironmentVariables: readonly string[];
+}
+
+interface ResolvedAiProviderRoute extends ConfiguredAiProviderRoute {
+  readonly authorizationToken?: string;
+  readonly cloudflareAccessClientId?: string;
+  readonly cloudflareAccessClientSecret?: string;
+  readonly approvedGatewayHostname?: string;
+}
+
+function configuredSecret(name: string): string | undefined {
+  return process.env[name]?.trim() || undefined;
+}
+
+function resolveAiProviderRoute(): ResolvedAiProviderRoute {
+  const configuredTransport = process.env.AI_PROVIDER_TRANSPORT?.trim() || "direct";
+  const transport =
+    configuredTransport === "direct" || configuredTransport === "tokenpak"
+      ? configuredTransport
+      : "invalid";
+  const baseUrl = normalizedAiProviderBaseUrl(process.env.AI_PROVIDER_BASE_URL);
+  const kind = classifyAiProviderBaseUrl(baseUrl);
+  const directApiKey = configuredSecret("AI_PROVIDER_API_KEY");
+  const gatewayKey = configuredSecret("AI_PROVIDER_GATEWAY_KEY");
+  const cloudflareAccessClientId = configuredSecret("AI_PROVIDER_CF_ACCESS_CLIENT_ID");
+  const cloudflareAccessClientSecret = configuredSecret("AI_PROVIDER_CF_ACCESS_CLIENT_SECRET");
+  const approvedGatewayHostname = configuredSecret("AI_PROVIDER_GATEWAY_HOST")?.toLowerCase();
+  const gatewayApproved = process.env.AI_PROVIDER_GATEWAY_APPROVED === "true";
+  const invalidEnvironmentVariables: string[] = [];
+
+  if (transport === "invalid") invalidEnvironmentVariables.push("AI_PROVIDER_TRANSPORT");
+  if (kind === "invalid") invalidEnvironmentVariables.push("AI_PROVIDER_BASE_URL");
+  if (kind === "direct-groq") {
+    if (transport !== "direct") invalidEnvironmentVariables.push("AI_PROVIDER_TRANSPORT");
+    for (const [name, value] of [
+      ["AI_PROVIDER_GATEWAY_KEY", gatewayKey],
+      ["AI_PROVIDER_CF_ACCESS_CLIENT_ID", cloudflareAccessClientId],
+      ["AI_PROVIDER_CF_ACCESS_CLIENT_SECRET", cloudflareAccessClientSecret],
+      ["AI_PROVIDER_GATEWAY_HOST", approvedGatewayHostname],
+      ["AI_PROVIDER_GATEWAY_APPROVED", gatewayApproved ? "true" : undefined],
+    ] as const)
+      if (value) invalidEnvironmentVariables.push(name);
+  }
+  if (kind === "access-gateway") {
+    if (transport !== "tokenpak") invalidEnvironmentVariables.push("AI_PROVIDER_TRANSPORT");
+    if (directApiKey) invalidEnvironmentVariables.push("AI_PROVIDER_API_KEY");
+    if (!gatewayApproved) invalidEnvironmentVariables.push("AI_PROVIDER_GATEWAY_APPROVED");
+    if (!gatewayKey || gatewayKey.length < 32)
+      invalidEnvironmentVariables.push("AI_PROVIDER_GATEWAY_KEY");
+    if (!cloudflareAccessClientId || cloudflareAccessClientId.length < 16)
+      invalidEnvironmentVariables.push("AI_PROVIDER_CF_ACCESS_CLIENT_ID");
+    if (!cloudflareAccessClientSecret || cloudflareAccessClientSecret.length < 32)
+      invalidEnvironmentVariables.push("AI_PROVIDER_CF_ACCESS_CLIENT_SECRET");
+    const routeHostname = kind === "access-gateway" ? new URL(baseUrl).hostname.toLowerCase() : "";
+    if (
+      !approvedGatewayHostname ||
+      approvedGatewayHostname.endsWith(".") ||
+      approvedGatewayHostname !== routeHostname
+    )
+      invalidEnvironmentVariables.push("AI_PROVIDER_GATEWAY_HOST");
+  }
+
+  return {
+    kind,
+    transport,
+    baseUrl,
+    accessProtected: kind === "access-gateway",
+    invalidEnvironmentVariables,
+    ...(kind === "direct-groq" && directApiKey ? { authorizationToken: directApiKey } : {}),
+    ...(kind === "access-gateway" && gatewayKey ? { authorizationToken: gatewayKey } : {}),
+    ...(cloudflareAccessClientId ? { cloudflareAccessClientId } : {}),
+    ...(cloudflareAccessClientSecret ? { cloudflareAccessClientSecret } : {}),
+    ...(approvedGatewayHostname ? { approvedGatewayHostname } : {}),
+  };
+}
+
+/** Returns only non-secret transport state for readiness and operator checks. */
+export function configuredAiProviderRoute(): ConfiguredAiProviderRoute {
+  const route = resolveAiProviderRoute();
+  return {
+    kind: route.kind,
+    transport: route.transport,
+    baseUrl: route.baseUrl,
+    accessProtected: route.accessProtected,
+    invalidEnvironmentVariables: route.invalidEnvironmentVariables,
+  };
+}
 
 export function configuredGroqModelChain(): readonly string[] {
   const primary = process.env.AI_PROVIDER_MODEL?.trim() || DEFAULT_GROQ_PRIMARY_MODEL;
@@ -701,20 +803,32 @@ export function configuredGroqModelChain(): readonly string[] {
  */
 export function createInterpretationProvider(): ReadingInterpretationProvider {
   const selected = process.env.AI_PROVIDER?.trim();
-  const apiKey = process.env.AI_PROVIDER_API_KEY?.trim();
+  const route = resolveAiProviderRoute();
   const safetyEvaluationApproved = process.env.AI_SAFETY_EVALUATION_APPROVED === "true";
-  if (selected !== "groq" || !apiKey || !safetyEvaluationApproved)
+  if (
+    selected !== "groq" ||
+    !route.authorizationToken ||
+    !safetyEvaluationApproved ||
+    route.invalidEnvironmentVariables.length > 0
+  )
     return new DeterministicFallbackProvider();
   const timeout = Number.parseInt(process.env.AI_PROVIDER_TIMEOUT_MS ?? "", 10);
   const totalTimeout = Number.parseInt(process.env.AI_PROVIDER_TOTAL_TIMEOUT_MS ?? "", 10);
   const maxOutput = Number.parseInt(process.env.AI_PROVIDER_MAX_OUTPUT_TOKENS ?? "", 10);
   const [model, ...fallbackModels] = configuredGroqModelChain();
   return new GroqInterpretationProvider({
-    apiKey,
+    apiKey: route.authorizationToken,
     model: model ?? DEFAULT_GROQ_PRIMARY_MODEL,
     fallbackModels,
-    ...(process.env.AI_PROVIDER_BASE_URL?.trim()
-      ? { baseUrl: process.env.AI_PROVIDER_BASE_URL.trim() }
+    baseUrl: route.baseUrl,
+    ...(route.approvedGatewayHostname
+      ? { approvedGatewayHostname: route.approvedGatewayHostname }
+      : {}),
+    ...(route.cloudflareAccessClientId
+      ? { cloudflareAccessClientId: route.cloudflareAccessClientId }
+      : {}),
+    ...(route.cloudflareAccessClientSecret
+      ? { cloudflareAccessClientSecret: route.cloudflareAccessClientSecret }
       : {}),
     ...(Number.isFinite(timeout) ? { timeoutMs: timeout } : {}),
     ...(Number.isFinite(totalTimeout) ? { totalTimeoutMs: totalTimeout } : {}),

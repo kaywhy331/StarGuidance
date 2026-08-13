@@ -127,6 +127,18 @@ importers:
         specifier: 4.3.3
         version: 4.3.3
 
+  infra/cali-tokenpak:
+    devDependencies:
+      '@starguidance/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@starguidance/tarot-content':
+        specifier: workspace:*
+        version: link:../../packages/tarot-content
+      '@starguidance/tarot-domain':
+        specifier: workspace:*
+        version: link:../../packages/tarot-domain
+
   netlify:
     devDependencies:
       '@netlify/functions':

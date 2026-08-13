@@ -4,7 +4,11 @@ import {
   reenqueueReportJob,
 } from "@starguidance/database";
 import { z } from "zod";
-import { configuredGroqModelChain } from "@starguidance/ai";
+import {
+  configuredAiProviderRoute,
+  configuredGroqModelChain,
+  createInterpretationProvider,
+} from "@starguidance/ai";
 
 import { requireUser } from "@/lib/auth";
 import { OPERATIONAL_ACCESS_DENIED, requireOperationalRole } from "@/lib/operational-access";
@@ -43,6 +47,8 @@ export async function GET(request: Request) {
     const traceId = new URL(request.url).searchParams.get("traceId");
     const parsedTraceId = traceId ? traceIdSchema.parse(traceId) : undefined;
     const diagnostics = await inspectJobQueues(client);
+    const providerRoute = configuredAiProviderRoute();
+    const interpretationProvider = createInterpretationProvider();
     const traces = parsedTraceId
       ? await client<{ entity_type: string; status: string; created_at: Date }[]>`
           select entity_type, status, created_at from (
@@ -78,9 +84,14 @@ export async function GET(request: Request) {
         : null,
       configuration: {
         aiGenerationEnabled:
-          process.env.AI_PROVIDER === "groq" &&
-          Boolean(process.env.AI_PROVIDER_API_KEY) &&
-          process.env.AI_SAFETY_EVALUATION_APPROVED === "true",
+          interpretationProvider.id.startsWith("groq:") ||
+          interpretationProvider.id.startsWith("groq-gateway:"),
+        aiTransport:
+          (interpretationProvider.id.startsWith("groq:") ||
+            interpretationProvider.id.startsWith("groq-gateway:")) &&
+          providerRoute.invalidEnvironmentVariables.length === 0
+            ? providerRoute.kind
+            : "deterministic",
         aiModels:
           process.env.AI_PROVIDER === "groq"
             ? configuredGroqModelChain()

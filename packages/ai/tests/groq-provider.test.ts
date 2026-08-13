@@ -8,8 +8,11 @@ import {
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
 import {
+  classifyAiProviderBaseUrl,
+  configuredAiProviderRoute,
   configuredGroqModelChain,
   createInterpretationProvider,
+  DEFAULT_GROQ_BASE_URL,
   GroqInterpretationProvider,
 } from "../src/index";
 
@@ -169,6 +172,103 @@ describe("what leaves the machine", () => {
     const serialised = JSON.stringify(payload);
     for (const forbidden of ["birthDate", "fullBirthName", "birthplace", "userId", "email"])
       expect(serialised).not.toContain(forbidden);
+  });
+});
+
+describe("the provider transport boundary", () => {
+  const successfulResponse = () =>
+    new Response(
+      JSON.stringify({ choices: [{ message: { content: JSON.stringify(originalResult) } }] }),
+      { status: 200 },
+    );
+
+  it("sends only the provider bearer when calling Groq directly", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(successfulResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await provider().generateWithProvenance(input);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${DEFAULT_GROQ_BASE_URL}/chat/completions`);
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("authorization")).toBe("Bearer synthetic-key");
+    expect(headers.get("CF-Access-Client-Id")).toBeNull();
+    expect(headers.get("CF-Access-Client-Secret")).toBeNull();
+  });
+
+  it("uses separate gateway and Cloudflare Access credentials on a custom HTTPS /v1 route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(successfulResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new GroqInterpretationProvider({
+      apiKey: "synthetic-gateway-bearer-at-least-32-bytes",
+      model: "test-model",
+      baseUrl: "https://reader-gateway.example.test/v1/",
+      approvedGatewayHostname: "reader-gateway.example.test",
+      cloudflareAccessClientId: "synthetic-access-client-id",
+      cloudflareAccessClientSecret: "synthetic-access-client-secret-at-least-32-bytes",
+    });
+
+    await gateway.generateWithProvenance(input);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://reader-gateway.example.test/v1/chat/completions",
+    );
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("authorization")).toBe("Bearer synthetic-gateway-bearer-at-least-32-bytes");
+    expect(headers.get("CF-Access-Client-Id")).toBe("synthetic-access-client-id");
+    expect(headers.get("CF-Access-Client-Secret")).toBe(
+      "synthetic-access-client-secret-at-least-32-bytes",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      cache: "no-store",
+      redirect: "error",
+    });
+    expect(gateway.id).toBe("groq-gateway:test-model");
+  });
+
+  it.each([
+    "http://reader-gateway.example.test/v1",
+    "https://localhost/v1",
+    "https://127.0.0.1/v1",
+    "https://169.254.169.254/v1",
+    "https://[::1]/v1",
+    "https://reader-gateway.example.test/openai/v1",
+    "https://user:pass@reader-gateway.example.test/v1",
+    "https://reader-gateway.example.test/v1?target=internal",
+  ])("rejects an unsafe custom provider base URL: %s", (baseUrl) => {
+    expect(classifyAiProviderBaseUrl(baseUrl)).toBe("invalid");
+    expect(
+      () =>
+        new GroqInterpretationProvider({
+          apiKey: "synthetic-key",
+          model: "test-model",
+          baseUrl,
+          approvedGatewayHostname: "reader-gateway.example.test",
+          cloudflareAccessClientId: "synthetic-access-client-id",
+          cloudflareAccessClientSecret: "synthetic-access-client-secret-at-least-32-bytes",
+        }),
+    ).toThrow("AI_PROVIDER_BASE_URL_INVALID");
+  });
+
+  it("requires the complete Access pair on a custom origin and refuses it on direct Groq", () => {
+    expect(
+      () =>
+        new GroqInterpretationProvider({
+          apiKey: "synthetic-gateway-key",
+          model: "test-model",
+          baseUrl: "https://reader-gateway.example.test/v1",
+          approvedGatewayHostname: "reader-gateway.example.test",
+          cloudflareAccessClientId: "synthetic-access-client-id",
+        }),
+    ).toThrow("AI_PROVIDER_ACCESS_CREDENTIALS_INCOMPLETE");
+    expect(
+      () =>
+        new GroqInterpretationProvider({
+          apiKey: "synthetic-provider-key",
+          model: "test-model",
+          cloudflareAccessClientId: "synthetic-access-client-id",
+          cloudflareAccessClientSecret: "synthetic-access-client-secret-at-least-32-bytes",
+        }),
+    ).toThrow("AI_PROVIDER_ACCESS_CREDENTIALS_FOR_DIRECT_GROQ");
   });
 });
 
@@ -958,5 +1058,55 @@ describe("the staging kill switch", () => {
       "llama-3.3-70b-versatile",
       "openai/gpt-oss-120b",
     ]);
+  });
+
+  it("selects a custom gateway only with separated credentials and no provider key", () => {
+    vi.stubEnv("AI_PROVIDER", "groq");
+    vi.stubEnv("AI_PROVIDER_API_KEY", "");
+    vi.stubEnv("AI_PROVIDER_BASE_URL", "https://reader-gateway.example.test/v1");
+    vi.stubEnv("AI_PROVIDER_TRANSPORT", "tokenpak");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_HOST", "reader-gateway.example.test");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_KEY", "synthetic-gateway-key-at-least-32-bytes");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_ID", "synthetic-access-client-id");
+    vi.stubEnv(
+      "AI_PROVIDER_CF_ACCESS_CLIENT_SECRET",
+      "synthetic-access-client-secret-at-least-32-bytes",
+    );
+    vi.stubEnv("AI_PROVIDER_GATEWAY_APPROVED", "true");
+    vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
+
+    expect(configuredAiProviderRoute()).toEqual({
+      kind: "access-gateway",
+      transport: "tokenpak",
+      baseUrl: "https://reader-gateway.example.test/v1",
+      accessProtected: true,
+      invalidEnvironmentVariables: [],
+    });
+    expect(createInterpretationProvider().id).toBe("groq-gateway:openai/gpt-oss-120b");
+
+    vi.stubEnv("AI_PROVIDER_API_KEY", "provider-key-must-not-remain-on-the-web-host");
+    expect(configuredAiProviderRoute().invalidEnvironmentVariables).toContain(
+      "AI_PROVIDER_API_KEY",
+    );
+    expect(createInterpretationProvider().id).toBe("deterministic-fallback-v1");
+  });
+
+  it("fails closed when a custom gateway credential is missing or too weak", () => {
+    vi.stubEnv("AI_PROVIDER", "groq");
+    vi.stubEnv("AI_PROVIDER_API_KEY", "");
+    vi.stubEnv("AI_PROVIDER_BASE_URL", "https://reader-gateway.example.test/v1");
+    vi.stubEnv("AI_PROVIDER_TRANSPORT", "tokenpak");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_HOST", "reader-gateway.example.test");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_KEY", "short");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_ID", "synthetic-access-client-id");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_SECRET", "");
+    vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
+
+    expect(configuredAiProviderRoute().invalidEnvironmentVariables).toEqual([
+      "AI_PROVIDER_GATEWAY_APPROVED",
+      "AI_PROVIDER_GATEWAY_KEY",
+      "AI_PROVIDER_CF_ACCESS_CLIENT_SECRET",
+    ]);
+    expect(createInterpretationProvider().id).toBe("deterministic-fallback-v1");
   });
 });

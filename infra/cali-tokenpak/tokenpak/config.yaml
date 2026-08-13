@@ -1,0 +1,60 @@
+core:
+  mode: safe
+  port: 8766
+  rate_limit_rpm: 30
+
+compression:
+  enabled: false
+  cache_size: 0
+  max_chars: 0
+  max_tokens: 0
+
+cache:
+  enabled: false
+
+features:
+  budget_controller: false
+  cache_registry: false
+  capsule_builder: false
+  compression_dict: false
+  error_normalizer: false
+  failure_memory: false
+  fidelity_tiers: false
+  prefix_registry: false
+  query_expansion: false
+  query_rewriter: false
+  request_logger: false
+  retrieval_watchdog: false
+  router: true
+  salience_router: false
+  semantic_cache: false
+  session_capsules: false
+  shadow_reader: false
+  skeleton: false
+  stability_scorer: false
+  stable_cache_control_auto: false
+  term_resolver: false
+  trace: false
+  validation_gate: true
+
+logging:
+  enabled: false
+  include_request_body: false
+  include_response_body: false
+  retention_days: 0
+
+spend_guard:
+  enabled: false
+
+vault:
+  index_path: /nonexistent/vault-index
+  auto_reindex_interval: 0
+  cache_max_bytes: 0
+  cache_preload: 0
+  inject_budget: 0
+
+providers:
+  groq-egress:
+    endpoint: http://groq-egress:8080/openai/v1
+    format: openai
+    api_key_env: TOKENPAK_EGRESS_TOKEN

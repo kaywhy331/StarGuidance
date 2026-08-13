@@ -1,0 +1,14 @@
+{
+  "name": "@starguidance/cali-tokenpak",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@starguidance/ai": "workspace:*",
+    "@starguidance/tarot-content": "workspace:*",
+    "@starguidance/tarot-domain": "workspace:*"
+  }
+}

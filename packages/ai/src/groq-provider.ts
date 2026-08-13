@@ -40,10 +40,12 @@ export const DEFAULT_GROQ_FALLBACK_MODELS = [
   "llama-3.3-70b-versatile",
   "openai/gpt-oss-20b",
 ] as const;
+export const DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1" as const;
 
 const DEFAULT_ATTEMPT_TIMEOUT_MS = 15_000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 40_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 2_600;
+const MAX_PROVIDER_RESPONSE_BYTES = 2 * 1024 * 1024;
 const JSON_OBJECT_MODELS = new Set(["llama-3.3-70b-versatile"]);
 const GPT_OSS_MODEL_PREFIX = "openai/gpt-oss-";
 
@@ -132,14 +134,124 @@ const FOLLOW_UP_VOICE = [
   "Stay focused on the follow-up. Do not use headings, lists, disclaimers, or repeat the spread.",
 ].join(" ");
 
+export const REVIEWED_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
+  reading: READER_VOICE,
+  guardedReading: `${READER_VOICE} ${GUARDED_VOICE}`,
+  followUp: `${READER_VOICE} ${FOLLOW_UP_VOICE}`,
+  guardedFollowUp: `${READER_VOICE} ${FOLLOW_UP_VOICE} ${GUARDED_VOICE}`,
+});
+
 export interface GroqProviderOptions {
   readonly apiKey: string;
   readonly model: string;
   readonly fallbackModels?: readonly string[];
   readonly baseUrl?: string;
+  readonly approvedGatewayHostname?: string;
+  readonly cloudflareAccessClientId?: string;
+  readonly cloudflareAccessClientSecret?: string;
   readonly timeoutMs?: number;
   readonly totalTimeoutMs?: number;
   readonly maxOutputTokens?: number;
+}
+
+export type AiProviderEndpointKind = "direct-groq" | "access-gateway" | "invalid";
+
+export function normalizedAiProviderBaseUrl(baseUrl?: string): string {
+  return (baseUrl?.trim() || DEFAULT_GROQ_BASE_URL).replace(/\/+$/, "");
+}
+
+/**
+ * Classifies the only two network paths this adapter may use.
+ *
+ * A custom origin is deliberately narrow: an HTTPS hostname with an exact
+ * `/v1` base path. Loopback, IP literals, userinfo, query strings, fragments,
+ * and local-only names are rejected before fetch can turn a configuration
+ * typo into SSRF. DNS and egress policy remain mandatory at the gateway host.
+ */
+export function classifyAiProviderBaseUrl(baseUrl?: string): AiProviderEndpointKind {
+  const normalized = normalizedAiProviderBaseUrl(baseUrl);
+  if (normalized === DEFAULT_GROQ_BASE_URL) return "direct-groq";
+
+  try {
+    const url = new URL(normalized);
+    const hostname = url.hostname.toLowerCase();
+    const localHostname =
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") ||
+      hostname === "0.0.0.0" ||
+      hostname.endsWith(".") ||
+      hostname.includes(":") ||
+      /^\d+(?:\.\d+){3}$/.test(hostname);
+    if (
+      url.protocol !== "https:" ||
+      !hostname.includes(".") ||
+      localHostname ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== "/v1"
+    )
+      return "invalid";
+    return "access-gateway";
+  } catch {
+    return "invalid";
+  }
+}
+
+function validateTransportOptions(options: GroqProviderOptions): AiProviderEndpointKind {
+  const endpointKind = classifyAiProviderBaseUrl(options.baseUrl);
+  const accessClientId = options.cloudflareAccessClientId?.trim();
+  const accessClientSecret = options.cloudflareAccessClientSecret?.trim();
+  const approvedGatewayHostname = options.approvedGatewayHostname?.trim().toLowerCase();
+  if (endpointKind === "invalid") throw new Error("AI_PROVIDER_BASE_URL_INVALID");
+  if (
+    endpointKind === "direct-groq" &&
+    (accessClientId || accessClientSecret || approvedGatewayHostname)
+  )
+    throw new Error("AI_PROVIDER_ACCESS_CREDENTIALS_FOR_DIRECT_GROQ");
+  if (
+    endpointKind === "access-gateway" &&
+    (!accessClientId ||
+      !accessClientSecret ||
+      !approvedGatewayHostname ||
+      new URL(normalizedAiProviderBaseUrl(options.baseUrl)).hostname.toLowerCase() !==
+        approvedGatewayHostname)
+  )
+    throw new Error("AI_PROVIDER_ACCESS_CREDENTIALS_INCOMPLETE");
+  return endpointKind;
+}
+
+async function readBoundedProviderJson(response: Response): Promise<unknown> {
+  const declared = response.headers.get("content-length");
+  if (declared !== null) {
+    if (!/^(?:0|[1-9]\d*)$/.test(declared) || Number(declared) > MAX_PROVIDER_RESPONSE_BYTES)
+      throw new ProviderRequestError("invalid-response");
+  }
+  if (!response.body) throw new ProviderRequestError("invalid-response");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_PROVIDER_RESPONSE_BYTES) throw new ProviderRequestError("invalid-response");
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
 }
 
 function positiveTimeout(value: number | undefined, fallback: number): number {
@@ -181,7 +293,7 @@ function exactCardSchema(entry: ResolvedDraw[number]): Record<string, unknown> {
 }
 
 /** The JSON Schema the model is constrained to. Mirrors readingResultSchema. */
-function responseSchema(resolved: ResolvedDraw): Record<string, unknown> {
+export function reviewedReadingResponseSchema(resolved: ResolvedDraw): Record<string, unknown> {
   const cardCount = resolved.length;
   const positionIds = resolved.map(({ position }) => position.id);
   const exactCards = resolved.map(exactCardSchema);
@@ -359,7 +471,7 @@ function canonicalizeProviderReading(value: unknown, resolved: ResolvedDraw): Re
   });
 }
 
-function followUpResponseSchema(): Record<string, unknown> {
+export function reviewedFollowUpResponseSchema(): Record<string, unknown> {
   return {
     type: "object",
     additionalProperties: false,
@@ -372,10 +484,23 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
   readonly id: string;
   private readonly fallback = new DeterministicFallbackProvider();
   private readonly models: readonly string[];
+  private readonly baseUrl: string;
+  private readonly endpointKind: AiProviderEndpointKind;
+  private readonly transportId: "direct" | "gateway";
+  private readonly cloudflareAccessClientId: string | undefined;
+  private readonly cloudflareAccessClientSecret: string | undefined;
+  private readonly authorizationToken: string;
 
   constructor(private readonly options: GroqProviderOptions) {
+    this.endpointKind = validateTransportOptions(options);
+    this.authorizationToken = options.apiKey.trim();
+    this.transportId = this.endpointKind === "access-gateway" ? "gateway" : "direct";
+    this.baseUrl = normalizedAiProviderBaseUrl(options.baseUrl);
+    this.cloudflareAccessClientId = options.cloudflareAccessClientId?.trim();
+    this.cloudflareAccessClientSecret = options.cloudflareAccessClientSecret?.trim();
     this.models = uniqueModelChain(options.model, options.fallbackModels);
-    this.id = `groq:${this.models[0] ?? options.model}`;
+    const transport = this.endpointKind === "access-gateway" ? "groq-gateway" : "groq";
+    this.id = `${transport}:${this.models[0] ?? options.model}`;
   }
 
   /** The payload sent to the provider. Exposed so tests can assert what leaves. */
@@ -430,7 +555,10 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
       return {
         result: generated.value,
         provenance: {
-          providerId: `groq:${generated.model}`,
+          providerId:
+            this.transportId === "gateway"
+              ? `groq-gateway:${generated.model}`
+              : `groq:${generated.model}`,
           promptVersion: PROMPT_VERSION,
           schemaVersion: RESPONSE_SCHEMA_VERSION,
         },
@@ -445,7 +573,10 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
           // The output remains deterministic, while this fixed identifier says
           // why the configured live path did not produce it. It contains no
           // response body, request data, credential, URL or exception text.
-          providerId: `${FALLBACK_PROVIDER_ID}:after-groq-${fallbackReason(error)}`,
+          providerId:
+            this.transportId === "gateway"
+              ? `${FALLBACK_PROVIDER_ID}:after-groq-gateway-${fallbackReason(error)}`
+              : `${FALLBACK_PROVIDER_ID}:after-groq-${fallbackReason(error)}`,
         },
       };
     }
@@ -510,10 +641,12 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     const resolved = resolveDraw(input.draw, input.questionClassification);
     const parsed = canonicalizeProviderReading(
       await this.requestStructured(
-        guarded ? `${READER_VOICE} ${GUARDED_VOICE}` : READER_VOICE,
+        guarded
+          ? REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedReading
+          : REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading,
         this.buildPayload(input),
         "reading",
-        responseSchema(resolved),
+        reviewedReadingResponseSchema(resolved),
         this.options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
         model,
         mode,
@@ -538,13 +671,15 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
   ): Promise<FollowUpResult> {
     const safety = classifyQuestion(input.question);
     const guarded = GUARDED_CATEGORIES.has(safety.category);
-    const system = `${READER_VOICE} ${FOLLOW_UP_VOICE}${guarded ? ` ${GUARDED_VOICE}` : ""}`;
+    const system = guarded
+      ? REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp
+      : REVIEWED_GATEWAY_SYSTEM_PROMPTS.followUp;
     const parsed = followUpResultSchema.parse(
       await this.requestStructured(
         system,
         this.buildFollowUpPayload(input),
         "follow_up",
-        followUpResponseSchema(),
+        reviewedFollowUpResponseSchema(),
         Math.min(this.options.maxOutputTokens ?? 900, 1_200),
         model,
         mode,
@@ -585,30 +720,34 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
           };
 
     try {
-      const response = await fetch(
-        `${(this.options.baseUrl ?? "https://api.groq.com/openai/v1").replace(/\/+$/, "")}/chat/completions`,
-        {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${this.options.apiKey}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.85,
-            max_completion_tokens: maxOutputTokens,
-            ...(model.startsWith(GPT_OSS_MODEL_PREFIX)
-              ? { reasoning_effort: "low", include_reasoning: false }
-              : {}),
-            messages: [
-              { role: "system", content: modelSystem },
-              { role: "user", content: JSON.stringify(payload) },
-            ],
-            response_format: responseFormat,
-          }),
-          signal: controller.signal,
-        },
-      );
+      const headers = new Headers({
+        authorization: `Bearer ${this.authorizationToken}`,
+        "content-type": "application/json",
+      });
+      if (this.endpointKind === "access-gateway") {
+        headers.set("CF-Access-Client-Id", this.cloudflareAccessClientId ?? "");
+        headers.set("CF-Access-Client-Secret", this.cloudflareAccessClientSecret ?? "");
+      }
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          temperature: 0.85,
+          max_completion_tokens: maxOutputTokens,
+          ...(model.startsWith(GPT_OSS_MODEL_PREFIX)
+            ? { reasoning_effort: "low", include_reasoning: false }
+            : {}),
+          messages: [
+            { role: "system", content: modelSystem },
+            { role: "user", content: JSON.stringify(payload) },
+          ],
+          response_format: responseFormat,
+        }),
+        cache: "no-store",
+        redirect: "error",
+        signal: controller.signal,
+      });
       if (!response.ok) {
         const reason: FallbackReason =
           response.status === 401
@@ -620,7 +759,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
                 : "request-rejected";
         throw new ProviderRequestError(reason);
       }
-      const body = (await response.json()) as {
+      const body = (await readBoundedProviderJson(response)) as {
         choices?: {
           finish_reason?: string | null;
           message?: { content?: string };

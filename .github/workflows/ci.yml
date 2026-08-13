@@ -81,6 +81,95 @@ jobs:
       - run: ruff check .
       - run: mypy .
 
+  cali-tokenpak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @starguidance/cali-tokenpak test
+      - name: Create disposable synthetic Compose secrets
+        working-directory: infra/cali-tokenpak
+        run: |
+          mkdir -p secrets
+          for name in gateway_shared_secret groq_api_key tokenpak_proxy_auth_token tokenpak_egress_token cloudflared_tunnel_token; do
+            node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url')+'\\n')" > "secrets/${name}.txt"
+          done
+      - name: Validate the resolved Compose graph
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: docker compose config --quiet
+      - name: Build pinned gateway and TokenPak images
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: docker compose build --pull ingress access-jwks tokenpak groq-egress
+      - name: Verify installed TokenPak, routing, and fail-closed runtime policy
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: docker compose run --rm --no-deps --entrypoint python tokenpak /srv/tokenpak/runtime-policy-smoke.py
+      - name: Prove the live TokenPak, egress, and content-blind provider chain
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: |
+          node create-ci-access-fixture.mjs \
+            "$CLOUDFLARE_ACCESS_AUD" \
+            "$CLOUDFLARE_ACCESS_TEAM_DOMAIN" \
+            /tmp/starguidance-ci-access-jwks.json \
+            /tmp/starguidance-ci-access.jwt
+          CI_ACCESS_JWKS="$(tr -d '\n' < /tmp/starguidance-ci-access-jwks.json)"
+          export CI_ACCESS_JWKS
+          docker compose -f compose.yaml -f compose.ci.yaml config --quiet
+          docker compose -f compose.yaml -f compose.ci.yaml build --pull access-jwks groq-egress mock-groq ci-client
+          docker compose -f compose.yaml -f compose.ci.yaml up --detach --wait mock-groq groq-egress tokenpak ingress ci-client
+          corepack pnpm exec tsx runtime-chain-payload.ts > chain-payload.json
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T tokenpak sh -c 'umask 077; dd of=/tmp/chain-payload.json status=none' < chain-payload.json
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T ci-client sh -c 'umask 077; dd of=/tmp/chain-payload.json status=none' < chain-payload.json
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T ci-client sh -c 'umask 077; dd of=/tmp/access.jwt status=none' < /tmp/starguidance-ci-access.jwt
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T ci-client node /app/runtime-ingress-smoke.mjs
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T groq-egress node -e \
+            "fetch('http://mock-groq:8082/__ci/observation/ci-chain-ingress-success-12345678').then(async r=>{if(!r.ok)process.exit(1);const v=await r.json();if(v.count!==1||v.providerBearerAccepted!==true||v.proxyBearerRejected!==true||v.path!=='/openai/v1/chat/completions'||v.host!=='mock-groq:8082')process.exit(1)})"
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T tokenpak python /srv/tokenpak/runtime-chain-request.py forced-failure request
+          sleep 1
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T groq-egress node -e \
+            "fetch('http://mock-groq:8082/__ci/observation/ci-chain-forced-failure-12345678').then(async r=>{if(!r.ok)process.exit(1);const v=await r.json();if(v.count!==1||v.providerBearerAccepted!==true||v.proxyBearerRejected!==true||v.path!=='/openai/v1/chat/completions'||v.host!=='mock-groq:8082')process.exit(1)})"
+          rm chain-payload.json
+          rm /tmp/starguidance-ci-access-jwks.json /tmp/starguidance-ci-access.jwt
+      - name: Verify DLP block behavior at the TokenPak HTTP boundary
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: |
+          docker compose up --detach --wait groq-egress tokenpak
+          for attempt in $(seq 1 30); do
+            if docker compose exec -T tokenpak python /srv/tokenpak/runtime-http-smoke.py; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs --no-color --tail 100
+          exit 1
+      - name: Tear down synthetic runtime
+        if: always()
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: docker compose down --volumes --remove-orphans
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30

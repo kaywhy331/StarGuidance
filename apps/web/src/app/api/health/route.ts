@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { configuredGroqModelChain, createInterpretationProvider } from "@starguidance/ai";
+import {
+  configuredAiProviderRoute,
+  configuredGroqModelChain,
+  createInterpretationProvider,
+} from "@starguidance/ai";
 import {
   APPLICATION_DATABASE_ROLE,
   createDatabaseClient,
@@ -54,10 +58,35 @@ function approvedStagingModelChainConfigured(): boolean {
 }
 
 function approvedStagingProviderBudgetConfigured(): boolean {
+  const route = configuredAiProviderRoute();
   const baseUrl =
     process.env.AI_PROVIDER_BASE_URL?.trim().replace(/\/+$/, "") || APPROVED_STAGING_BASE_URL;
   return (
+    route.kind === "direct-groq" &&
+    route.transport === "direct" &&
+    route.invalidEnvironmentVariables.length === 0 &&
     baseUrl === APPROVED_STAGING_BASE_URL &&
+    effectivePositiveInteger(
+      process.env.AI_PROVIDER_TIMEOUT_MS,
+      APPROVED_STAGING_ATTEMPT_TIMEOUT_MS,
+    ) === APPROVED_STAGING_ATTEMPT_TIMEOUT_MS &&
+    effectivePositiveInteger(
+      process.env.AI_PROVIDER_TOTAL_TIMEOUT_MS,
+      APPROVED_STAGING_TOTAL_TIMEOUT_MS,
+    ) === APPROVED_STAGING_TOTAL_TIMEOUT_MS &&
+    effectivePositiveInteger(
+      process.env.AI_PROVIDER_MAX_OUTPUT_TOKENS,
+      APPROVED_STAGING_MAX_OUTPUT_TOKENS,
+    ) === APPROVED_STAGING_MAX_OUTPUT_TOKENS
+  );
+}
+
+function approvedGatewayProviderBudgetConfigured(): boolean {
+  const route = configuredAiProviderRoute();
+  return (
+    route.kind === "access-gateway" &&
+    route.transport === "tokenpak" &&
+    route.invalidEnvironmentVariables.length === 0 &&
     effectivePositiveInteger(
       process.env.AI_PROVIDER_TIMEOUT_MS,
       APPROVED_STAGING_ATTEMPT_TIMEOUT_MS,
@@ -320,11 +349,21 @@ export async function GET(request: Request) {
 
   const interpretationProviderId = createInterpretationProvider().id;
   const interpretation = {
-    providerKind: interpretationProviderId.startsWith("groq:") ? "groq" : "deterministic",
+    providerKind:
+      interpretationProviderId.startsWith("groq:") ||
+      interpretationProviderId.startsWith("groq-gateway:")
+        ? "groq"
+        : "deterministic",
+    transport: interpretationProviderId.startsWith("groq-gateway:")
+      ? "access-gateway"
+      : interpretationProviderId.startsWith("groq:")
+        ? "direct-groq"
+        : "deterministic",
     approvedLiveProviderConfigured:
-      interpretationProviderId === `groq:${APPROVED_STAGING_MODEL_CHAIN[0]}` &&
+      (interpretationProviderId === `groq:${APPROVED_STAGING_MODEL_CHAIN[0]}` ||
+        interpretationProviderId === `groq-gateway:${APPROVED_STAGING_MODEL_CHAIN[0]}`) &&
       approvedStagingModelChainConfigured() &&
-      approvedStagingProviderBudgetConfigured(),
+      (approvedStagingProviderBudgetConfigured() || approvedGatewayProviderBudgetConfigured()),
   };
   const requiredEnvironment = REQUIRED_STAGING_ENVIRONMENT.map((name) => ({
     name,
@@ -334,6 +373,8 @@ export async function GET(request: Request) {
     .filter(({ present }) => !present)
     .map(({ name }) => name);
   const invalidEnvironmentVariables: string[] = [];
+  if (process.env.AI_PROVIDER?.trim() === "groq")
+    invalidEnvironmentVariables.push(...configuredAiProviderRoute().invalidEnvironmentVariables);
   if (configured("DATA_ENCRYPTION_KEY")) {
     if (!isValidEncryptionKey(process.env.DATA_ENCRYPTION_KEY as string))
       invalidEnvironmentVariables.push("DATA_ENCRYPTION_KEY");

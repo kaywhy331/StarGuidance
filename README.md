@@ -54,11 +54,11 @@ ruff check .
 mypy .
 ```
 
-The deterministic reading provider is the default. Live AI requires credentials and `AI_SAFETY_EVALUATION_APPROVED=true`. The reviewed Groq order is GPT-OSS 120B (strict JSON Schema), Llama 3.3 70B (JSON mode plus full application validation), GPT-OSS 20B (strict JSON Schema), then the provider-independent deterministic reader. Model attempts reuse the same locked draw and share one total latency budget. New report purchases and Stripe webhooks require both server and UI report flags; both default off. See [known production gates](docs/KNOWN-GAPS.md) before describing a deployment as public-launch ready.
+The deterministic reading provider is the default. Live AI requires credentials and `AI_SAFETY_EVALUATION_APPROVED=true`. The reviewed Groq order is GPT-OSS 120B (strict JSON Schema), Llama 3.3 70B (JSON mode plus full application validation), GPT-OSS 20B (strict JSON Schema), then the provider-independent deterministic reader. Model attempts reuse the same locked draw and share one total latency budget. An optional default-off Cali/TokenPak blueprint requires a pinned gateway host, separate bearer, Cloudflare Access service identity, synthetic pilot, and the [gateway contract](docs/AI-GATEWAY-SECURITY.md) plus [pilot runbook](docs/CALI-TOKENPAK-PILOT.md); raw TokenPak must never be tunneled. It is not a live deployment. New report purchases and Stripe webhooks require both server and UI report flags; both default off. See [known production gates](docs/KNOWN-GAPS.md) before describing a deployment as public-launch ready.
 
 ## Review evidence
 
 - [Desktop completed reading](docs/screenshots/completed-reading-desktop-chromium.png)
 - [Mobile completed reading](docs/screenshots/completed-reading-mobile-chromium.png)
 
-See [architecture](docs/ARCHITECTURE.md), [security](docs/SECURITY.md), [operations and recovery](docs/OPERATIONS.md), [commerce verification](docs/COMMERCE.md), [calculation status](docs/PROFILE-CALCULATIONS.md), [draw integrity](docs/TAROT-INTEGRITY.md), and [known production gates](docs/KNOWN-GAPS.md).
+See [architecture](docs/ARCHITECTURE.md), [security](docs/SECURITY.md), [AI gateway and tunnel security](docs/AI-GATEWAY-SECURITY.md), [Cali TokenPak pilot](docs/CALI-TOKENPAK-PILOT.md), [operations and recovery](docs/OPERATIONS.md), [commerce verification](docs/COMMERCE.md), [calculation status](docs/PROFILE-CALCULATIONS.md), [draw integrity](docs/TAROT-INTEGRITY.md), and [known production gates](docs/KNOWN-GAPS.md).

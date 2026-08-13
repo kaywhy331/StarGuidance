@@ -89,6 +89,8 @@ describe("operational API boundary", () => {
     vi.stubEnv("READING_FREE_ALLOWANCE", "2");
     vi.stubEnv("READING_ALLOWANCE_WINDOW_HOURS", "48");
     vi.stubEnv("AI_PROVIDER", "groq");
+    vi.stubEnv("AI_PROVIDER_API_KEY", "synthetic-provider-key");
+    vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
     vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-120b");
     vi.stubEnv("AI_PROVIDER_FALLBACK_MODELS", "llama-3.3-70b-versatile,openai/gpt-oss-20b");
 
@@ -104,11 +106,59 @@ describe("operational API boundary", () => {
       },
       trace: null,
       configuration: {
+        aiGenerationEnabled: true,
+        aiTransport: "direct-groq",
         aiModels: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
         readingAccessMode: "free-window",
         freeAllowance: "2",
         allowanceWindowHours: "48",
       },
+    });
+  });
+
+  it("reports an approved gateway as live without requiring a direct Groq key", async () => {
+    vi.stubEnv("AI_PROVIDER", "groq");
+    vi.stubEnv("AI_PROVIDER_API_KEY", "");
+    vi.stubEnv("AI_PROVIDER_BASE_URL", "https://reader-gateway.example.test/v1");
+    vi.stubEnv("AI_PROVIDER_TRANSPORT", "tokenpak");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_HOST", "reader-gateway.example.test");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_APPROVED", "true");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_KEY", "synthetic-gateway-key-at-least-32-bytes");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_ID", "synthetic-access-client-id");
+    vi.stubEnv(
+      "AI_PROVIDER_CF_ACCESS_CLIENT_SECRET",
+      "synthetic-access-client-secret-at-least-32-bytes",
+    );
+    vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
+
+    const response = await GET(getRequest());
+    const body = await response.json();
+
+    expect(body.configuration).toMatchObject({
+      aiGenerationEnabled: true,
+      aiTransport: "access-gateway",
+    });
+  });
+
+  it("reports an unsafe mixed provider configuration as deterministic", async () => {
+    vi.stubEnv("AI_PROVIDER", "groq");
+    vi.stubEnv("AI_PROVIDER_API_KEY", "provider-key-must-not-coexist");
+    vi.stubEnv("AI_PROVIDER_BASE_URL", "https://reader-gateway.example.test/v1");
+    vi.stubEnv("AI_PROVIDER_TRANSPORT", "tokenpak");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_HOST", "reader-gateway.example.test");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_APPROVED", "true");
+    vi.stubEnv("AI_PROVIDER_GATEWAY_KEY", "synthetic-gateway-key-at-least-32-bytes");
+    vi.stubEnv("AI_PROVIDER_CF_ACCESS_CLIENT_ID", "synthetic-access-client-id");
+    vi.stubEnv(
+      "AI_PROVIDER_CF_ACCESS_CLIENT_SECRET",
+      "synthetic-access-client-secret-at-least-32-bytes",
+    );
+    vi.stubEnv("AI_SAFETY_EVALUATION_APPROVED", "true");
+
+    const body = await (await GET(getRequest())).json();
+    expect(body.configuration).toMatchObject({
+      aiGenerationEnabled: false,
+      aiTransport: "deterministic",
     });
   });
 
