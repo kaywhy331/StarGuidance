@@ -13,6 +13,11 @@ const tokenpakRuntimePolicy = readFileSync(
   new URL("./tokenpak/runtime-policy-smoke.py", import.meta.url),
   "utf8",
 );
+const runtimeIngressSmoke = readFileSync(
+  new URL("./runtime-ingress-smoke.mjs", import.meta.url),
+  "utf8",
+);
+const ciWorkflow = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
 const runtimeDockerfile = readFileSync(new URL("./runtime.Dockerfile", import.meta.url), "utf8");
 const tokenpakDockerfile = readFileSync(new URL("./tokenpak/Dockerfile", import.meta.url), "utf8");
 const tokenpakDockerignore = readFileSync(
@@ -85,15 +90,21 @@ describe("Cali TokenPak Compose isolation", () => {
     expect(composeCi).toContain('/app/access-jwks-ci.mjs"');
   });
 
+  it("probes success and upstream failure through the same authenticated ingress", () => {
+    expect(runtimeIngressSmoke).toContain('["success", "forced-failure"]');
+    expect(runtimeIngressSmoke).toContain('code: "UPSTREAM_REJECTED"');
+    expect(ciWorkflow).toContain("runtime-ingress-smoke.mjs success");
+    expect(ciWorkflow).toContain("runtime-ingress-smoke.mjs forced-failure");
+    expect(ciWorkflow).not.toContain("runtime-chain-request.py");
+  });
+
   it("includes every copied TokenPak runtime smoke in its allowlist build context", () => {
-    for (const file of [
-      "runtime-chain-request.py",
-      "runtime-policy-smoke.py",
-      "runtime-http-smoke.py",
-    ]) {
+    for (const file of ["runtime-policy-smoke.py", "runtime-http-smoke.py"]) {
       expect(tokenpakDockerfile).toContain(`COPY ${file}`);
       expect(tokenpakDockerignore).toContain(`!${file}`);
     }
+    expect(tokenpakDockerfile).not.toContain("runtime-chain-request.py");
+    expect(tokenpakDockerignore).not.toContain("runtime-chain-request.py");
   });
 
   it("pins the fail-closed TokenPak privacy and retry policy", () => {

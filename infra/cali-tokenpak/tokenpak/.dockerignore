@@ -3,6 +3,5 @@
 !config.yaml
 !entrypoint.sh
 !requirements.lock
-!runtime-chain-request.py
 !runtime-http-smoke.py
 !runtime-policy-smoke.py
