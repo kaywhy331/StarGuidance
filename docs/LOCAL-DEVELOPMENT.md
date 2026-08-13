@@ -77,7 +77,7 @@ ruff check .
 mypy .
 ```
 
-Playwright starts both FastAPI and Next.js and leaves external AI/Stripe/Supabase disabled. `pnpm test:e2e` runs desktop and Pixel-sized Chromium; CI installs Firefox and WebKit and runs `pnpm --filter @starguidance/web test:e2e:cross-browser` across all four projects. Install those additional browser binaries locally before using the cross-browser command. To refresh review screenshots:
+Playwright starts both FastAPI and Next.js and leaves external AI/Stripe/Supabase disabled. `pnpm test:e2e` runs desktop and Pixel-sized Chromium. The full local cross-browser command also runs desktop Firefox, then three fresh-process serial WebKit shards so long-lived WebKit contexts cannot accumulate in one worker. CI runs the same project coverage as one Chromium/Firefox lane plus three parallel one-worker WebKit shards and requires them all through the `e2e` aggregate check. Install those additional browser binaries locally before using `pnpm --filter @starguidance/web test:e2e:cross-browser`. To refresh review screenshots:
 
 ```powershell
 $env:CAPTURE_SCREENSHOTS="1"

@@ -17,7 +17,7 @@ jobs:
   # configured as required checks even though the credentialed staging
   # workflow is workflow_dispatch-only. Keep normal PRs mergeable without
   # weakening the separate owner-approved staging promotion gate: substantive
-  # repository validation still runs in the five jobs below, while protected
+  # repository validation still runs in the jobs below, while protected
   # staging evidence remains an explicit pre-promotion artifact.
   guard:
     runs-on: ubuntu-latest
@@ -169,9 +169,10 @@ jobs:
           CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
         run: docker compose down --volumes --remove-orphans
 
-  e2e:
+  e2e_core:
+    name: e2e-core
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -185,8 +186,51 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
-      - run: pnpm exec playwright install --with-deps chromium firefox webkit
-      - run: pnpm --filter @starguidance/web test:e2e:cross-browser
+      - run: pnpm exec playwright install --with-deps chromium firefox
+      - run: pnpm --filter @starguidance/web test:e2e:core
+
+  e2e_webkit:
+    name: e2e-webkit-${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
+      - run: pnpm exec playwright install --with-deps webkit
+      - run: >-
+          pnpm --filter @starguidance/web exec playwright test
+          --project=desktop-webkit
+          --workers=1
+          --shard=${{ matrix.shard }}/3
+
+  e2e:
+    name: e2e
+    if: ${{ always() }}
+    needs: [e2e_core, e2e_webkit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every browser lane
+        env:
+          CORE_RESULT: ${{ needs.e2e_core.result }}
+          WEBKIT_RESULT: ${{ needs.e2e_webkit.result }}
+        run: |
+          test "$CORE_RESULT" = success
+          test "$WEBKIT_RESULT" = success
 
   migration:
     runs-on: ubuntu-latest

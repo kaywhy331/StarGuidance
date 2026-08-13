@@ -10,7 +10,9 @@
     "test": "vitest run --passWithNoTests",
     "test:integration": "vitest run --no-file-parallelism --testTimeout=120000 --hookTimeout=180000 src/lib/repositories/postgres.integration.test.ts",
     "test:e2e": "playwright test --project=desktop-chromium --project=mobile-chromium",
-    "test:e2e:cross-browser": "playwright test --project=desktop-chromium --project=mobile-chromium --project=desktop-firefox && playwright test --project=desktop-webkit --workers=1",
+    "test:e2e:core": "playwright test --project=desktop-chromium --project=mobile-chromium --project=desktop-firefox",
+    "test:e2e:webkit": "playwright test --project=desktop-webkit --workers=1 --shard=1/3 && playwright test --project=desktop-webkit --workers=1 --shard=2/3 && playwright test --project=desktop-webkit --workers=1 --shard=3/3",
+    "test:e2e:cross-browser": "pnpm test:e2e:core && pnpm test:e2e:webkit",
     "test:staging": "playwright test --config=playwright.staging.config.ts"
   },
   "dependencies": {

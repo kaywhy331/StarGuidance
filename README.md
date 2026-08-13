@@ -44,7 +44,7 @@ corepack pnpm build
 corepack pnpm test:e2e
 ```
 
-The default E2E command runs desktop and mobile Chromium. CI installs and runs the same suite in desktop Firefox and WebKit as well (`corepack pnpm --filter @starguidance/web test:e2e:cross-browser`).
+The default E2E command runs desktop and mobile Chromium. The local cross-browser command (`corepack pnpm --filter @starguidance/web test:e2e:cross-browser`) adds desktop Firefox and fresh-process serial WebKit shards. CI runs the same coverage as one core lane plus three parallel one-worker WebKit shards, then requires every lane through the aggregate `e2e` check.
 
 Profile engine, from `apps/profile-engine` with its virtual environment active:
 
