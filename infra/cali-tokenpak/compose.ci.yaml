@@ -58,7 +58,9 @@ services:
     build:
       context: .
       dockerfile: runtime-ci.Dockerfile
-    command: ["node", "-e", "setInterval(()=>{}, 60000)"]
+    # Keep the network namespace alive without consuming Node's worker threads;
+    # the actual Node probe runs below the same deliberately small PID ceiling.
+    command: ["sleep", "2147483647"]
     secrets:
       - gateway_shared_secret
     networks:

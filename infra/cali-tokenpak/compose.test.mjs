@@ -80,6 +80,8 @@ describe("Cali TokenPak Compose isolation", () => {
     expect(composeCi).toContain("internal: true");
     expect(composeCi).toContain("CI_ACCESS_JWKS");
     expect(composeCi).toContain("ci-client:");
+    expect(composeCi).toContain('command: ["sleep", "2147483647"]');
+    expect(composeCi).not.toContain("setInterval(()=>{}, 60000)");
     expect(composeCi).toContain('/app/access-jwks-ci.mjs"');
   });
 
