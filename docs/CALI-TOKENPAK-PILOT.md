@@ -92,7 +92,8 @@ mounts, internal network segmentation, disabled persistence/recovery, and the
 real TokenPak DLP HTTP boundary. A CI-only overlay also creates an ephemeral
 RSA Access identity and a content-blind mock provider, then proves the live
 `ingress -> TokenPak -> egress` success path, credential replacement, canonical
-response minimization, and exactly one mock-provider call after a retryable 503.
+response minimization, and exactly one mock-provider call when a forced
+retryable 503 is propagated as the canonical upstream-failure response.
 The mock route and synthetic JWKS hook are absent/default-off in the production
 Compose graph. A successful build is necessary but does not prove host firewall
 or Cloudflare account configuration.
