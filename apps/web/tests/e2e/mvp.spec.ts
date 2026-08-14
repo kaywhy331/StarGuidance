@@ -637,9 +637,9 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
   });
   await page.evaluate(() => window.sessionStorage.clear());
   // The recovered application marker below is the meaningful readiness
-  // boundary. Firefox can finish navigation while a non-critical resource
-  // keeps the browser-level load event pending indefinitely.
-  await page.reload({ waitUntil: "domcontentloaded" });
+  // boundary. Firefox can commit the replacement document while a
+  // non-critical resource keeps DOMContentLoaded pending indefinitely.
+  await page.reload({ waitUntil: "commit" });
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toHaveCount(0);
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
