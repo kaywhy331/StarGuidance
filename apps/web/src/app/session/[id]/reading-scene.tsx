@@ -44,6 +44,7 @@ export function ReadingScene({
   const [state, send] = useMachine(readingMachine);
   const [reading, setReading] = useState<ReadingPayload>();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  const revealedRef = useRef<ReadonlySet<number>>(revealed);
   const [cutTaken, setCutTaken] = useState<boolean>();
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
   const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
@@ -59,6 +60,7 @@ export function ReadingScene({
   const [primaryJourneyReady, setPrimaryJourneyReady] = useState(false);
   const bootstrapped = useRef(false);
   const revealRun = useRef(0);
+  const revealCompletionTimer = useRef<number | undefined>(undefined);
   const {
     displayName,
     reducedMotion: motionOff,
@@ -81,7 +83,9 @@ export function ReadingScene({
           payload.reading.ritualProgress ??
           readRitualProgress(window.sessionStorage, readingId, payload.reading.cards.length);
         if (progress) {
-          setRevealed(new Set(progress.revealedIndexes));
+          const recoveredRevealed = new Set(progress.revealedIndexes);
+          revealedRef.current = recoveredRevealed;
+          setRevealed(recoveredRevealed);
           setCutTaken(progress.cutTaken);
         }
         setReading(payload.reading);
@@ -134,18 +138,30 @@ export function ReadingScene({
   }, [motionOff, send, state]);
 
   // PRD UX-006: cards are revealed by intentional click/tap/keyboard, not a
-  // timer. `revealedRef` mirrors `revealed` synchronously so the async
-  // callbacks below always guard against the latest set, not a stale closure
-  // — matters because "Reveal all" schedules several reveals ahead of time,
-  // and the user can still click an individual not-yet-revealed card while
-  // that schedule is in flight.
-  const revealedRef = useRef<ReadonlySet<number>>(revealed);
-  useEffect(() => {
-    revealedRef.current = revealed;
-  }, [revealed]);
+  // timer. Every write updates `revealedRef` and React state together so the
+  // async callbacks below always guard against the latest set, not a stale
+  // closure. A passive mirroring effect is deliberately avoided: under a
+  // throttled render it could commit an older set after a reveal callback had
+  // already reserved another card.
 
   const focusDuration = motionOff ? 90 : 2_200;
   const settleDuration = motionOff ? 40 : 650;
+
+  const scheduleRevealCompletion = useCallback(() => {
+    if (revealCompletionTimer.current !== undefined) return;
+    revealCompletionTimer.current = window.setTimeout(() => {
+      revealCompletionTimer.current = undefined;
+      send({ type: "ALL_REVEALED" });
+    }, focusDuration + settleDuration);
+  }, [focusDuration, send, settleDuration]);
+
+  useEffect(
+    () => () => {
+      if (revealCompletionTimer.current !== undefined)
+        window.clearTimeout(revealCompletionTimer.current);
+    },
+    [],
+  );
 
   const persistRitualProgress = useCallback(
     (progress: RitualProgress, phase: "cuttingDeck" | "revealingCards" | "complete") => {
@@ -175,18 +191,23 @@ export function ReadingScene({
       // the ritual can never advance past revealingCards.
       revealedRef.current = next;
       setRevealed(next);
+      const complete = next.size === reading.draw.assignments.length;
       if (cutTaken !== undefined)
         persistRitualProgress(
           { cutTaken, revealedIndexes: [...next] },
-          next.size === reading.draw.assignments.length ? "complete" : "revealingCards",
+          complete ? "complete" : "revealingCards",
         );
+      // Schedule the state-machine transition from the same callback that
+      // reserves the final card. A passive effect alone can have its cleanup
+      // race a throttled WebKit render and cancel the only completion timer.
+      if (complete) scheduleRevealCompletion();
       if (soundEnabled.current) playRevealTone();
       window.setTimeout(() => {
         if (revealRun.current !== run) return;
         setActiveReveal(null);
       }, focusDuration);
     },
-    [cutTaken, focusDuration, persistRitualProgress, reading, state],
+    [cutTaken, focusDuration, persistRitualProgress, reading, scheduleRevealCompletion, state],
   );
 
   const revealAll = useCallback(() => {
@@ -199,17 +220,14 @@ export function ReadingScene({
     );
   }, [focusDuration, reading, revealCard, settleDuration]);
 
-  // Once every card has been individually revealed — however the user got
-  // there, one at a time or via "Reveal all" — advance the ritual onward.
+  // Recovery may hydrate a session whose final card was already persisted,
+  // so retain an idempotent effect as a backstop. It does not own cleanup;
+  // incidental rerenders must not cancel an already scheduled transition.
   useEffect(() => {
     if (!reading || !state.matches("revealingCards")) return;
     if (revealed.size < reading.draw.assignments.length) return;
-    const timer = window.setTimeout(
-      () => send({ type: "ALL_REVEALED" }),
-      focusDuration + settleDuration,
-    );
-    return () => window.clearTimeout(timer);
-  }, [focusDuration, reading, revealed, send, settleDuration, state]);
+    scheduleRevealCompletion();
+  }, [reading, revealed, scheduleRevealCompletion, state]);
 
   // Interpretation generation now happens through a durable job (see
   // docs/KNOWN-GAPS.md): the reading fetched on mount may still say
