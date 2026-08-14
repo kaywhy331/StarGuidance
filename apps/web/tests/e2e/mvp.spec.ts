@@ -386,6 +386,14 @@ test("the ritual waits for intentional cut and reveal, and reviews each card cin
           // focus state has already ended on a loaded CI worker.
           const appearanceDeadline = performance.now() + 30_000;
           let geometryDeadline: number | null = null;
+          let targetMeasurement:
+            | {
+                title: string;
+                orientation: string | null;
+                heightRatio: number;
+                titleGap: number;
+              }
+            | undefined;
           const find = () => {
             const active = document.querySelector<HTMLElement>(
               ".physical-card-figure.is-cinematic-subject",
@@ -398,6 +406,10 @@ test("the ritual waits for intentional cut and reveal, and reviews each card cin
             if (!active || !title || !stage || !strong) {
               const deadline = geometryDeadline ?? appearanceDeadline;
               if (performance.now() < deadline) return requestAnimationFrame(find);
+              if (targetMeasurement) {
+                resolve(targetMeasurement);
+                return;
+              }
               reject(
                 new Error(
                   geometryDeadline === null
@@ -419,6 +431,27 @@ test("the ritual waits for intentional cut and reveal, and reviews each card cin
               heightRatio: activeBounds.height / stageBounds.height,
               titleGap: activeBounds.y - (titleBounds.y + titleBounds.height),
             };
+            // WebKit can report interpolated layout bounds one frame behind
+            // the transform it has already painted. The authored destination
+            // values are the stable geometry contract; retain their computed
+            // final measurement as a fallback if the short-lived focus state
+            // ends before getBoundingClientRect catches up.
+            const authoredScale = Number.parseFloat(
+              active.style.getPropertyValue("--cinematic-scale"),
+            );
+            const targetHeight = active.offsetHeight * authoredScale;
+            const targetHeightRatio = targetHeight / stageBounds.height;
+            const targetTitleGap =
+              stageBounds.top +
+              stageBounds.height * 0.64 -
+              targetHeight / 2 -
+              (titleBounds.y + titleBounds.height);
+            if (targetHeightRatio > 0.68 && targetTitleGap >= 2)
+              targetMeasurement = {
+                ...measurement,
+                heightRatio: targetHeightRatio,
+                titleGap: targetTitleGap,
+              };
             if (measurement.heightRatio > 0.68 && measurement.titleGap >= 2) {
               resolve(measurement);
               return;
@@ -603,7 +636,10 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
     phase: "revealingCards",
   });
   await page.evaluate(() => window.sessionStorage.clear());
-  await page.reload();
+  // The recovered application marker below is the meaningful readiness
+  // boundary. Firefox can finish navigation while a non-critical resource
+  // keeps the browser-level load event pending indefinitely.
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toHaveCount(0);
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);

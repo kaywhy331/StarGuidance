@@ -167,15 +167,19 @@ export function ReadingScene({
       if (!reading || !state.matches("revealingCards") || revealedRef.current.has(index)) return;
       const run = ++revealRun.current;
       setActiveReveal(index);
-      setRevealed((current) => {
-        const next = new Set(current).add(index);
-        if (cutTaken !== undefined)
-          persistRitualProgress(
-            { cutTaken, revealedIndexes: [...next] },
-            next.size === reading.draw.assignments.length ? "complete" : "revealingCards",
-          );
-        return next;
-      });
+      const next = new Set(revealedRef.current).add(index);
+      // Reserve the card synchronously as well as updating React state. A
+      // reveal-all sequence can fire multiple timer callbacks before React
+      // commits the first update (notably in throttled WebKit contexts). If
+      // every callback sees the same stale ref, later cards are dropped and
+      // the ritual can never advance past revealingCards.
+      revealedRef.current = next;
+      setRevealed(next);
+      if (cutTaken !== undefined)
+        persistRitualProgress(
+          { cutTaken, revealedIndexes: [...next] },
+          next.size === reading.draw.assignments.length ? "complete" : "revealingCards",
+        );
       if (soundEnabled.current) playRevealTone();
       window.setTimeout(() => {
         if (revealRun.current !== run) return;
