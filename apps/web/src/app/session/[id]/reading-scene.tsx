@@ -147,13 +147,16 @@ export function ReadingScene({
   const focusDuration = motionOff ? 90 : 2_200;
   const settleDuration = motionOff ? 40 : 650;
 
-  const scheduleRevealCompletion = useCallback(() => {
-    if (revealCompletionTimer.current !== undefined) return;
-    revealCompletionTimer.current = window.setTimeout(() => {
-      revealCompletionTimer.current = undefined;
-      send({ type: "ALL_REVEALED" });
-    }, focusDuration + settleDuration);
-  }, [focusDuration, send, settleDuration]);
+  const scheduleRevealCompletion = useCallback(
+    (delay = focusDuration + settleDuration) => {
+      if (revealCompletionTimer.current !== undefined) return;
+      revealCompletionTimer.current = window.setTimeout(() => {
+        revealCompletionTimer.current = undefined;
+        send({ type: "ALL_REVEALED" });
+      }, delay);
+    },
+    [focusDuration, send, settleDuration],
+  );
 
   useEffect(
     () => () => {
@@ -185,10 +188,10 @@ export function ReadingScene({
       setActiveReveal(index);
       const next = new Set(revealedRef.current).add(index);
       // Reserve the card synchronously as well as updating React state. A
-      // reveal-all sequence can fire multiple timer callbacks before React
-      // commits the first update (notably in throttled WebKit contexts). If
-      // every callback sees the same stale ref, later cards are dropped and
-      // the ritual can never advance past revealingCards.
+      // Rapid multi-card interactions can land before React commits the first
+      // update (notably in throttled WebKit contexts). If every callback sees
+      // the same stale ref, later cards are dropped and the ritual can never
+      // advance past revealingCards.
       revealedRef.current = next;
       setRevealed(next);
       const complete = next.size === reading.draw.assignments.length;
@@ -211,14 +214,35 @@ export function ReadingScene({
   );
 
   const revealAll = useCallback(() => {
-    if (!reading) return;
-    const remaining = reading.draw.assignments
-      .map((_, index) => index)
-      .filter((index) => !revealedRef.current.has(index));
-    remaining.forEach((index, position) =>
-      window.setTimeout(() => revealCard(index), position * (focusDuration + settleDuration)),
-    );
-  }, [focusDuration, reading, revealCard, settleDuration]);
+    if (!reading || !state.matches("revealingCards")) return;
+    const allIndexes = reading.draw.assignments.map((_, index) => index);
+    const next = new Set(allIndexes);
+    if (next.size === revealedRef.current.size) {
+      scheduleRevealCompletion(motionOff ? 0 : settleDuration);
+      return;
+    }
+
+    // "Reveal all" is an explicit shortcut, so reserve and persist the full
+    // set in one callback instead of chaining one wall-clock timer per card.
+    // The collective flip still gets a brief visual settle, while throttled
+    // browsers cannot strand the ritual between scheduled card callbacks.
+    ++revealRun.current;
+    revealedRef.current = next;
+    setRevealed(next);
+    setActiveReveal(null);
+    if (cutTaken !== undefined)
+      persistRitualProgress({ cutTaken, revealedIndexes: allIndexes }, "complete");
+    if (soundEnabled.current) playRevealTone();
+    scheduleRevealCompletion(motionOff ? 0 : settleDuration);
+  }, [
+    cutTaken,
+    motionOff,
+    persistRitualProgress,
+    reading,
+    scheduleRevealCompletion,
+    settleDuration,
+    state,
+  ]);
 
   // Recovery may hydrate a session whose final card was already persisted,
   // so retain an idempotent effect as a backstop. It does not own cleanup;

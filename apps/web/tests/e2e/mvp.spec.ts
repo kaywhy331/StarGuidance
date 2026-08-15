@@ -372,30 +372,10 @@ test("password recovery does not reveal whether an email exists", async ({ page 
   await expect(page.getByText(/if an account exists/i)).toBeVisible();
 });
 
-test("the ritual waits for intentional cut and reveal, and reviews each card cinematically", async ({
+test("the ritual waits for intentional cut and supports deliberate or collective reveal", async ({
   page,
 }) => {
   test.slow();
-  await page.addInitScript(() => {
-    const observed: string[] = [];
-    Object.defineProperty(window, "__sgRevealOrder", { value: observed, writable: false });
-    const observer = new MutationObserver(() => {
-      const index = document
-        .querySelector('[data-testid="tarot-spread-stage"]')
-        ?.getAttribute("data-active-card-index");
-      if (index !== null && index !== undefined && observed.at(-1) !== index) observed.push(index);
-    });
-    const observe = () =>
-      observer.observe(document.documentElement, {
-        attributeFilter: ["data-active-card-index"],
-        attributes: true,
-        childList: true,
-        subtree: true,
-      });
-    if (document.readyState === "loading")
-      document.addEventListener("DOMContentLoaded", observe, { once: true });
-    else observe();
-  });
   await createProfile(page);
   await beginReading(page);
 
@@ -542,15 +522,10 @@ test("the ritual waits for intentional cut and reveal, and reviews each card cin
 
   await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   await expect(page.getByRole("button", { name: "Reveal all" })).toHaveCount(0);
-  const revealOrder = await page.evaluate(
-    () => (window as typeof window & { __sgRevealOrder: string[] }).__sgRevealOrder,
-  );
-  expect(revealOrder.slice(0, 3)).toEqual(["0", "1", "2"]);
-  const cinematicScales = await physicalCards.evaluateAll((cards) =>
-    cards.map((card) => Number(card.style.getPropertyValue("--cinematic-scale"))),
-  );
-  expect(cinematicScales).toHaveLength(3);
-  expect(cinematicScales.every((scale) => scale > 1)).toBe(true);
+  const deliberateRevealScale = await physicalCards
+    .first()
+    .evaluate((card) => Number(card.style.getPropertyValue("--cinematic-scale")));
+  expect(deliberateRevealScale).toBeGreaterThan(1);
 
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 });
@@ -884,6 +859,11 @@ test("long result text scrolls without clipping while buttons, keyboard, wheel, 
   await journey.focus();
   await page.keyboard.press("ArrowRight");
   await expect(journey).toHaveAttribute("data-active-card-index", "1");
+  // The active passage grows while its typewriter is running. Wait for a
+  // stable scroll height before testing the boundary gesture; otherwise a
+  // newly appended line can correctly consume the wheel event as scrolling
+  // instead of advancing the guided thread.
+  await expect(journey.locator(".oracle-cursor")).toHaveCount(0);
 
   const bounds = await journey.boundingBox();
   expect(bounds).not.toBeNull();
@@ -896,6 +876,13 @@ test("long result text scrolls without clipping while buttons, keyboard, wheel, 
   await journey.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
+  await expect
+    .poll(async () =>
+      journey.evaluate(
+        (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+      ),
+    )
+    .toBeLessThanOrEqual(1);
   await page.mouse.wheel(0, 500);
   await expect(journey).toHaveAttribute("data-active-card-index", "2");
 
