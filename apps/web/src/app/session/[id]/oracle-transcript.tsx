@@ -26,6 +26,28 @@ interface TranscriptEntry extends PhaseEvent {
   target: string;
 }
 
+type ReadingPassage = ReadingResult["passages"][number];
+
+const passageRoleLabels: Record<ReadingPassage["role"], string> = {
+  opening: "Opening insight",
+  situation: "The situation",
+  underlyingPattern: "Underlying pattern",
+  development: "How this develops",
+  turningPoint: "Turning point",
+  trajectory: "Likely trajectory",
+  alternative: "Alternative path",
+  agency: "Your agency",
+  reflection: "Reflection",
+  closing: "Closing note",
+  safety: "Scope and care",
+};
+
+const cardThreadRoles = new Set<ReadingPassage["role"]>([
+  "situation",
+  "underlyingPattern",
+  "development",
+]);
+
 function TypewriterParagraph({
   entry,
   reducedMotion,
@@ -63,6 +85,178 @@ function TypewriterParagraph({
       </span>
       {complete && <span className="sr-only">{entry.text}</span>}
     </p>
+  );
+}
+
+function passagesByIds(result: ReadingResult, ids: readonly string[]) {
+  const byId = new Map(result.passages.map((passage) => [passage.id, passage]));
+  return ids.flatMap((id) => {
+    const passage = byId.get(id);
+    return passage ? [passage] : [];
+  });
+}
+
+function ReadingOverview({
+  activeCardIndex,
+  activeIndex,
+  cards,
+  entries,
+  onSelectCard,
+  result,
+}: {
+  activeCardIndex: number | null;
+  activeIndex: number;
+  cards: readonly DealtCardView[];
+  entries: readonly TranscriptEntry[];
+  onSelectCard: (index: number) => void;
+  result: ReadingResult;
+}) {
+  const opening = result.passages.find(({ role }) => role === "opening") ?? result.passages[0];
+  const likely = result.passages.find(({ id }) => id === result.trajectory.likelyPassageId);
+  const alternate = result.passages.find(({ id }) => id === result.trajectory.alternatePassageId);
+  const passageUseCounts = new Map<string, number>();
+  for (const passageId of result.cards.flatMap(({ passageIds }) => passageIds))
+    passageUseCounts.set(passageId, (passageUseCounts.get(passageId) ?? 0) + 1);
+  const reservedPassageIds = new Set([
+    opening?.id,
+    likely?.id,
+    alternate?.id,
+    ...result.cards.flatMap(({ passageIds }) => passageIds),
+  ]);
+  const synthesis = result.passages.filter(
+    ({ id, role }) =>
+      role === "turningPoint" ||
+      ((passageUseCounts.get(id) ?? 0) > 1 && cardThreadRoles.has(role)) ||
+      (!reservedPassageIds.has(id) && !["agency", "reflection", "safety"].includes(role)),
+  );
+
+  return (
+    <article
+      className={`reading-result-overview ${activeIndex === 0 ? "oracle-entry is-active" : ""}`}
+      data-phase={activeIndex === 0 ? "narration" : undefined}
+      data-testid="reading-result-overview"
+    >
+      <header className="reading-result-header">
+        <p className="reading-section-eyebrow">Your reading</p>
+        <h2>{result.title}</h2>
+        {opening && (
+          <p className={`reading-opening-summary ${activeIndex === 0 ? "oracle-entry-text" : ""}`}>
+            {opening.text}
+          </p>
+        )}
+      </header>
+
+      <section aria-labelledby="locked-card-overview-heading" className="reading-card-overview">
+        <div className="reading-overview-heading-row">
+          <h3 id="locked-card-overview-heading">Your locked cards</h3>
+          <span>Profile shaped the interpretation, never the draw.</span>
+        </div>
+        <div className="reading-card-strip">
+          {cards.map((card, cardIndex) => {
+            const passageIndex = entries.findIndex(
+              (entry, index) => index > 0 && entry.cardPositionIds?.includes(card.positionId),
+            );
+            return (
+              <button
+                aria-label={`Focus ${card.positionName}: ${card.name}, ${card.orientation}`}
+                aria-pressed={activeCardIndex === cardIndex}
+                disabled={passageIndex < 0}
+                key={card.positionId}
+                onClick={() => onSelectCard(passageIndex)}
+                type="button"
+              >
+                <small>{card.positionName}</small>
+                <strong>{card.name}</strong>
+                <span>{card.orientation}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <details className="reading-details">
+        <summary>Explore the complete interpretation</summary>
+        <div className="reading-details-body">
+          <section aria-labelledby="card-by-card-heading">
+            <h3 id="card-by-card-heading">Card by card</h3>
+            <div className="reading-card-threads">
+              {result.cards.map((thread) => {
+                const card = cards.find(({ positionId }) => positionId === thread.positionId);
+                const passages = passagesByIds(result, thread.passageIds).filter(
+                  ({ id, role }) =>
+                    id !== opening?.id &&
+                    cardThreadRoles.has(role) &&
+                    (passageUseCounts.get(id) ?? 0) === 1,
+                );
+                if (!card || passages.length === 0) return null;
+                return (
+                  <article key={thread.positionId}>
+                    <p>{card.positionName}</p>
+                    <h4>
+                      {card.name}
+                      {card.orientation === "reversed" ? " · Reversed" : ""}
+                    </h4>
+                    {passages.map((passage) => (
+                      <p key={`${thread.positionId}-${passage.id}`}>{passage.text}</p>
+                    ))}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          {synthesis.length > 0 && (
+            <section>
+              <h3>Overall synthesis</h3>
+              {synthesis.map((passage) => (
+                <p key={passage.id}>{passage.text}</p>
+              ))}
+            </section>
+          )}
+
+          {likely && (
+            <section>
+              <h3>Likely trajectory</h3>
+              <p>{likely.text}</p>
+              <ul>
+                {result.trajectory.conditions.map((condition) => (
+                  <li key={condition}>{condition}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {alternate && (
+            <section>
+              <h3>Alternative path</h3>
+              <p>{alternate.text}</p>
+              <h4>What could change the pattern</h4>
+              <ul>
+                {result.disconfirmingEvidence.map((evidence) => (
+                  <li key={evidence}>{evidence}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <section>
+            <h3>Your agency</h3>
+            <ul>
+              {result.userAgency.map((action) => (
+                <li key={action}>{action}</li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="reading-reflection-section">
+            <h3>A question to carry</h3>
+            <p>{result.reflectionQuestion}</p>
+          </section>
+
+          <p className="reading-uncertainty">{result.uncertainty}</p>
+        </div>
+      </details>
+    </article>
   );
 }
 
@@ -197,7 +391,11 @@ export function OracleTranscript({
 
   const boundedIndex = entries.length === 0 ? 0 : Math.min(activeIndex, entries.length - 1);
   const activeEntry = entries[boundedIndex];
-  const activeCardIndex = cardIndexFor(entries, boundedIndex, cards);
+  const activeCardIndex = boundedIndex === 0 ? null : cardIndexFor(entries, boundedIndex, cards);
+  const activeCard = activeCardIndex === null ? undefined : cards[activeCardIndex];
+  const activePassage = activeEntry?.passageId
+    ? result.passages.find(({ id }) => id === activeEntry.passageId)
+    : undefined;
 
   useEffect(() => {
     onActiveCardChange?.(activeCardIndex);
@@ -210,16 +408,26 @@ export function OracleTranscript({
     [onActiveCardChange],
   );
 
-  const goTo = useCallback((requestedIndex: number) => {
-    const currentEntries = entriesRef.current;
-    if (currentEntries.length === 0) return;
-    const nextIndex = Math.max(0, Math.min(requestedIndex, currentEntries.length - 1));
-    activeIndexRef.current = nextIndex;
-    setActiveIndex(nextIndex);
-    if (viewportRef.current) viewportRef.current.scrollTop = 0;
-    const next = currentEntries[nextIndex];
-    if (next) setAnnouncement(`${next.heading}. ${nextIndex + 1} of ${currentEntries.length}.`);
-  }, []);
+  const goTo = useCallback(
+    (requestedIndex: number) => {
+      const currentEntries = entriesRef.current;
+      if (currentEntries.length === 0) return;
+      const nextIndex = Math.max(0, Math.min(requestedIndex, currentEntries.length - 1));
+      activeIndexRef.current = nextIndex;
+      setActiveIndex(nextIndex);
+      window.requestAnimationFrame(() => {
+        const viewport = viewportRef.current;
+        if (!viewport) return;
+        viewport.scrollTo({
+          behavior: reducedMotion ? "auto" : "smooth",
+          top: nextIndex === 0 ? 0 : viewport.scrollHeight,
+        });
+      });
+      const next = currentEntries[nextIndex];
+      if (next) setAnnouncement(`${next.heading}. ${nextIndex + 1} of ${currentEntries.length}.`);
+    },
+    [reducedMotion],
+  );
   const goPrevious = () => goTo(activeIndexRef.current - 1);
   const goNext = () => goTo(activeIndexRef.current + 1);
 
@@ -301,25 +509,36 @@ export function OracleTranscript({
         role="region"
         tabIndex={0}
       >
-        {entries.length === 0 && streamState === "streaming" && (
-          <p className="oracle-awaiting">The opening theme is forming…</p>
-        )}
-        {activeEntry && (
+        <ReadingOverview
+          activeCardIndex={activeCardIndex}
+          activeIndex={boundedIndex}
+          cards={cards}
+          entries={entries}
+          onSelectCard={goTo}
+          result={result}
+        />
+        {activeEntry && boundedIndex > 0 && (
           <article
-            className="oracle-entry is-active"
+            className="oracle-entry guided-passage is-active"
             data-phase={activeEntry.phase}
             key={activeEntry.key}
           >
-            <h2
-              className={
-                boundedIndex === 0 || activeEntry.phase === "followUp" ? undefined : "sr-only"
-              }
-            >
+            <p className="reading-section-eyebrow">
+              {activeEntry.phase === "followUp"
+                ? "Same cards · continuing reflection"
+                : [
+                    activePassage ? passageRoleLabels[activePassage.role] : "Guided passage",
+                    activeCard?.positionName,
+                    activeCard?.orientation,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+            </p>
+            <h2>
               {activeEntry.phase === "followUp"
                 ? activeEntry.heading
-                : boundedIndex === 0
-                  ? result.title
-                  : `Reading passage ${boundedIndex + 1}`}
+                : (activeCard?.name ??
+                  (activePassage ? passageRoleLabels[activePassage.role] : activeEntry.heading))}
             </h2>
             <TypewriterParagraph
               entry={activeEntry}
@@ -343,6 +562,7 @@ export function OracleTranscript({
           <span aria-hidden="true">‹</span>
         </button>
         <div>
+          <em>Guided thread</em>
           <span>
             {entries.length === 0 ? 0 : boundedIndex + 1} / {entries.length}
           </span>

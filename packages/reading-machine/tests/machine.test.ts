@@ -46,6 +46,14 @@ describe("reading state machine", () => {
     expect(actor.getSnapshot().value).toBe("enteringQuestion");
   });
 
+  it("returns from question entry to reading selection", () => {
+    const actor = createActor(readingMachine).start();
+    actor.send({ type: "START" });
+    actor.send({ type: "SELECT" });
+    actor.send({ type: "CHANGE_READING" });
+    expect(actor.getSnapshot().value).toBe("selectingReading");
+  });
+
   it("continues a high-stakes question only after acknowledged deck preparation", () => {
     const actor = createActor(readingMachine).start();
     actor.send({ type: "START" });

@@ -31,7 +31,16 @@ async function createProfile(page: Page, kind: ProfileKind = "date-only") {
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
 }
 
+async function enterQuestionStep(page: Page) {
+  const question = page.getByLabel("Your private question");
+  if ((await question.count()) === 0) {
+    await page.getByRole("button", { name: /^Continue with / }).click();
+  }
+  await expect(question).toBeVisible();
+}
+
 async function beginReading(page: Page, question = "What should I focus on next?") {
+  await enterQuestionStep(page);
   await page.getByLabel("Your private question").fill(question);
   const readingResponse = page.waitForResponse(
     (response) =>
@@ -114,6 +123,31 @@ async function currentReading(page: Page) {
   }, id);
 }
 
+test("reading selection and question entry stay focused, reversible steps", async ({ page }) => {
+  await createProfile(page);
+  await expect(
+    page.getByRole("heading", { name: "What kind of space do you need?" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Your private question")).toHaveCount(0);
+
+  const relationshipSpread = page.locator('input[name="spread"][value="relationship"]');
+  await relationshipSpread.locator("xpath=ancestor::label").click();
+  await expect(relationshipSpread).toBeChecked();
+  await page.getByRole("button", { name: "Continue with Relationship / Two-Party Spread" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "What would you like the cards to illuminate?" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Your private question")).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "Reading type" })).toHaveCount(0);
+  const chosenRitual = page.locator(".selected-ritual-summary");
+  await expect(chosenRitual).toContainText("Relationship / Two-Party Spread");
+  await chosenRitual.click();
+
+  await expect(page.getByRole("radiogroup", { name: "Reading type" })).toBeVisible();
+  await expect(relationshipSpread).toBeChecked();
+});
+
 test("date-only onboarding reaches a completed reading", async ({ page }) => {
   test.slow();
   await createProfile(page);
@@ -135,17 +169,36 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   }
 
   for (let index = 0; index < 5; index += 1) await nextReadingSection(page);
+
+  const transcript = page.getByTestId("oracle-transcript");
+  await transcript.focus();
+  await page.keyboard.press("Home");
+  const overview = page.getByTestId("reading-result-overview");
+  await expect(overview).toBeVisible();
+  await expect(overview.getByRole("heading", { name: "Your locked cards" })).toBeVisible();
+  const lockedCards = overview.locator(".reading-card-strip button");
+  await expect(lockedCards).toHaveCount(3);
+  await expect(lockedCards.first().locator("small")).not.toBeEmpty();
+  await expect(lockedCards.first().locator("strong")).not.toBeEmpty();
+  await expect(lockedCards.first().locator("span")).toHaveText(/upright|reversed/);
+
+  const completeInterpretation = overview.locator(".reading-details");
+  await expect(
+    completeInterpretation.getByText("Explore the complete interpretation", { exact: true }),
+  ).toBeVisible();
+  await completeInterpretation.locator("summary").click();
   for (const reportHeading of [
-    "Traditional current",
-    "Your personal lens",
-    "Connection to your question",
-    "From the Stars",
-    "Fated Path",
-    "Divergent Path",
-    "Cosmic Alignment",
-    "Starlit Reflection",
+    "Card by card",
+    "Overall synthesis",
+    "Likely trajectory",
+    "Alternative path",
+    "Your agency",
+    "A question to carry",
   ])
-    await expect(page.getByRole("heading", { name: reportHeading })).toHaveCount(0);
+    await expect(
+      completeInterpretation.getByRole("heading", { name: reportHeading }),
+    ).toBeVisible();
+  await expect(completeInterpretation.locator(".reading-uncertainty")).toBeVisible();
 
   const readingId = page.url().split("/").at(-1) as string;
   await page.goto("/history");
@@ -244,11 +297,12 @@ test("all six selectable spreads use their configured spatial arrangements", asy
   ] as const;
 
   for (const spreadCase of cases) {
-    await page.getByLabel("Your private question").fill(spreadCase.question);
-    await expect(page.getByRole("button", { name: "Begin the shuffle" })).toBeEnabled();
     const radio = page.locator(`input[name="spread"][value="${spreadCase.id}"]`);
     await radio.locator("xpath=ancestor::label").click();
     await expect(radio).toBeChecked();
+    await enterQuestionStep(page);
+    await page.getByLabel("Your private question").fill(spreadCase.question);
+    await expect(page.getByRole("button", { name: "Begin the shuffle" })).toBeEnabled();
     const created = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
@@ -604,8 +658,18 @@ test("AI-disabled mode returns the deterministic conversational fallback", async
   await expect(page.locator(".oracle-entry-text")).toContainText(/there is another route/i);
   await expect(page.getByRole("heading", { name: "Fated Path" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Divergent Path" })).toHaveCount(0);
-  await expect(page.locator(".reading-uncertainty")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Reading details" })).toHaveCount(0);
+  const completeInterpretation = page.locator(".reading-details");
+  await expect(
+    completeInterpretation.getByText("Explore the complete interpretation", { exact: true }),
+  ).toBeVisible();
+  await completeInterpretation.locator("summary").click();
+  await expect(
+    completeInterpretation.getByRole("heading", { name: "Likely trajectory" }),
+  ).toBeVisible();
+  await expect(
+    completeInterpretation.getByRole("heading", { name: "Alternative path" }),
+  ).toBeVisible();
+  await expect(completeInterpretation.locator(".reading-uncertainty")).toBeVisible();
   await expect(page.locator('.oracle-entry[data-phase="uncertainty"]')).toHaveCount(0);
 });
 
@@ -651,6 +715,7 @@ test("reading intake stores topic, horizon, intent, and entitlement apart from s
   page,
 }) => {
   await createProfile(page);
+  await enterQuestionStep(page);
   await page.getByLabel("Topic").selectOption("career");
   await page.getByLabel("Time horizon").selectOption("months");
   await beginReading(page, "How should I prepare for a possible new role?");
@@ -668,6 +733,7 @@ test("the selected relationship topic remains authoritative in the generated res
   page,
 }) => {
   await createProfile(page);
+  await enterQuestionStep(page);
   await page.getByLabel("Topic").selectOption("relationships");
   await beginReading(page, "What should I understand about this new phase at work?");
   expect((await currentReading(page)).reading.questionClassification.topic).toBe("relationships");
@@ -679,6 +745,7 @@ test("the selected relationship topic remains authoritative in the generated res
 
 test("the approved general-reading path needs no custom question", async ({ page }) => {
   await createProfile(page);
+  await enterQuestionStep(page);
   await page
     .getByLabel("Use a general reading when you do not want to ask a specific question.")
     .check();
@@ -892,7 +959,9 @@ test("keyboard users cut and reveal by keyboard, then submit a same-draw follow-
   await page.keyboard.press("End");
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
   await expect(page.locator(".oracle-entry-text")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reading details" })).toHaveCount(0);
+  await expect(
+    page.getByText("Explore the complete interpretation", { exact: true }),
+  ).toBeVisible();
   const composer = page.getByLabel("Keep the same cards and ask what they add");
   await composer.fill("What is one grounded action?");
   await composer.press("Enter");

@@ -22,6 +22,7 @@ async function createProfile(page: Page) {
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
   await page.getByRole("button", { name: "Check profile capability" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
+  await page.getByRole("button", { name: /^Continue with / }).click();
 }
 
 /** Mirrors mvp.spec.ts's helper of the same name: the shuffle completes on its

@@ -240,11 +240,16 @@ test("critical deployed flows pass automated WCAG rules", async () => {
         "did not settle; the scanner resumed through a directly committed application route",
     });
     await navigateForScan(page, "/readings", () =>
-      expect(page.getByLabel("Your private question")).toBeVisible({ timeout: 15_000 }),
+      expect(page.getByRole("button", { name: /^Continue with / })).toBeVisible({
+        timeout: 15_000,
+      }),
     );
   }
   await scan("reading selection");
 
+  await page.getByRole("button", { name: /^Continue with / }).click();
+  await expect(page.getByLabel("Your private question")).toBeVisible();
+  await scan("reading question");
   await page.getByLabel("Your private question").fill("What deserves my attention now?");
   const readingResponsePromise = page
     .waitForResponse(

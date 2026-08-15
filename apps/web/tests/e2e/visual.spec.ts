@@ -65,6 +65,7 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   ).toBeVisible();
   await capturePage(page, testInfo, "reading-selection");
 
+  await page.getByRole("button", { name: /^Continue with / }).click();
   await page.getByLabel("Your private question").fill("What can support my next grounded step?");
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });

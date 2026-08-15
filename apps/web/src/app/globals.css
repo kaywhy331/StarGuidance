@@ -220,17 +220,18 @@ a {
   justify-content: space-between;
   gap: 1rem;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 0.74rem;
+  font-size: 0.8125rem;
   letter-spacing: 0.05em;
 }
 
 .sanctuary-controls a,
 .sanctuary-controls button {
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   border: 1px solid rgb(222 211 172 / 0.2);
   border-radius: 999px;
   background: rgb(3 13 19 / 0.58);
   color: #eee7d5;
+  font-size: 1rem;
   backdrop-filter: blur(14px);
 }
 
@@ -285,6 +286,10 @@ a {
   left: 1rem;
 }
 
+.sanctuary-content:has(.reading-result-overview) .sanctuary-stage.has-reading-journey {
+  bottom: 63dvh;
+}
+
 .ritual-moment {
   display: grid;
   place-items: center;
@@ -304,7 +309,7 @@ a {
 .stage-whisper {
   color: #c8d6d0;
   font:
-    0.9rem/1.5 Arial,
+    1rem/1.55 Arial,
     Helvetica,
     sans-serif;
 }
@@ -317,7 +322,7 @@ a {
 }
 
 .generation-recovery button {
-  min-height: 2.65rem;
+  min-height: 2.75rem;
   margin-top: 1rem;
   padding: 0.65rem 1.25rem;
   border: 1px solid rgb(235 210 146 / 0.65);
@@ -327,14 +332,14 @@ a {
   color: #f5e7ba;
   cursor: pointer;
   font:
-    0.84rem Arial,
+    1rem Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.06em;
 }
 
 .ritual-action {
-  min-height: 2.65rem;
+  min-height: 2.75rem;
   margin-top: 1rem;
   padding: 0.65rem 1.25rem;
   border: 1px solid rgb(235 210 146 / 0.65);
@@ -344,7 +349,7 @@ a {
   color: #f5e7ba;
   cursor: pointer;
   font:
-    0.84rem Arial,
+    1rem Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.06em;
@@ -648,7 +653,7 @@ a {
 .cinematic-reveal-title span {
   color: #9ed7ca;
   font:
-    0.64rem/1.35 Arial,
+    0.75rem/1.35 Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.18em;
@@ -689,7 +694,7 @@ a {
   border-radius: 1rem;
   background: rgb(4 14 20 / 0.82);
   font:
-    0.85rem Arial,
+    0.875rem/1.45 Arial,
     Helvetica,
     sans-serif;
 }
@@ -709,6 +714,10 @@ a {
   width: min(52rem, calc(100vw - 2rem));
   filter: drop-shadow(0 1rem 2.5rem rgb(0 0 0 / 0.5));
   translate: -50% 0;
+}
+
+.oracle-console-stack:has(.reading-result-overview) {
+  height: clamp(28rem, 58dvh, 38rem);
 }
 
 .oracle-console-stack.is-inactive {
@@ -731,7 +740,7 @@ a {
   border-radius: 0.85rem;
   background: rgb(3 14 19 / 0.88);
   color: #d9e3df;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 
 .result-followups summary,
@@ -765,6 +774,7 @@ a {
   border-radius: 0.4rem;
   background: #071015;
   color: #edf5ec;
+  font-size: 1rem;
 }
 
 .reading-feedback-panel .feedback-comment-field,
@@ -836,7 +846,7 @@ a {
   margin: 0 0 clamp(0.65rem, 1.2vh, 0.9rem);
   color: #f0dfae;
   font:
-    400 clamp(1.15rem, 1.6vw, 1.4rem) / 1.15 Georgia,
+    400 clamp(1.35rem, 1.8vw, 1.65rem) / 1.1 Georgia,
     "Times New Roman",
     serif;
   letter-spacing: 0.015em;
@@ -847,16 +857,237 @@ a {
   margin: 0;
   color: #d9e3df;
   font:
-    clamp(0.9rem, 1.35vw, 1.06rem) / 1.65 Arial,
+    clamp(1.0625rem, 1.3vw, 1.125rem) / 1.65 Arial,
     Helvetica,
     sans-serif;
+}
+
+.reading-result-overview {
+  display: grid;
+  width: min(100%, 44rem);
+  min-width: 0;
+  gap: 1.15rem;
+  margin: 0 auto;
+  color: #edf5ec;
+  text-align: left;
+  text-shadow: 0 2px 12px #000;
+}
+
+.reading-result-header {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.reading-result-header .reading-section-eyebrow {
+  margin: 0;
+}
+
+.reading-result-header h2 {
+  max-width: 18ch;
+  margin: 0;
+  color: #f2dfaa;
+  font:
+    400 clamp(1.65rem, 3.2vw, 2.65rem) / 1.06 Georgia,
+    "Times New Roman",
+    serif;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.reading-opening-summary {
+  max-width: 62ch;
+  margin: 0;
+  color: #e5ece8;
+  font:
+    clamp(1.0625rem, 1.4vw, 1.125rem) / 1.62 Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.reading-card-overview {
+  display: grid;
+  min-width: 0;
+  gap: 0.65rem;
+}
+
+.reading-overview-heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.reading-overview-heading-row h3,
+.reading-details-body h3 {
+  margin: 0;
+  color: #e8ce8a;
+  font:
+    600 0.75rem/1.35 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.reading-overview-heading-row span {
+  color: #9ebbb4;
+  font:
+    0.8125rem/1.45 Arial,
+    Helvetica,
+    sans-serif;
+  text-align: right;
+}
+
+.reading-card-strip {
+  display: grid;
+  grid-auto-columns: minmax(9.5rem, 1fr);
+  grid-auto-flow: column;
+  gap: 0.55rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0.15rem 0.15rem 0.45rem;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: rgb(218 192 127 / 0.45) transparent;
+  scrollbar-width: thin;
+  scroll-snap-type: inline proximity;
+}
+
+.reading-card-strip button {
+  display: grid;
+  min-height: 4.8rem;
+  align-content: center;
+  gap: 0.2rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgb(218 192 127 / 0.2);
+  border-radius: 0.85rem;
+  background: linear-gradient(145deg, rgb(4 21 24 / 0.84), rgb(18 17 37 / 0.8));
+  color: #e9efec;
+  cursor: pointer;
+  scroll-snap-align: start;
+  text-align: left;
+}
+
+.reading-card-strip button[aria-pressed="true"] {
+  border-color: rgb(239 214 143 / 0.82);
+  background: linear-gradient(145deg, rgb(11 57 54 / 0.94), rgb(31 28 58 / 0.92));
+  box-shadow: 0 0 1.5rem rgb(104 203 184 / 0.12);
+}
+
+.reading-card-strip button:disabled {
+  cursor: wait;
+}
+
+.reading-card-strip small,
+.reading-card-strip span {
+  color: #9fc9c0;
+  font:
+    0.75rem/1.35 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.reading-card-strip strong {
+  color: #f1e8d1;
+  font:
+    400 1rem/1.25 Georgia,
+    "Times New Roman",
+    serif;
+}
+
+.reading-details {
+  border: 1px solid rgb(218 192 127 / 0.22);
+  border-radius: 1rem;
+  background: rgb(2 13 18 / 0.5);
+}
+
+.reading-details > summary {
+  padding: 0.85rem 1rem;
+  color: #f0dfae;
+  cursor: pointer;
+  font:
+    600 1rem/1.4 Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.reading-details-body {
+  display: grid;
+  gap: 1.25rem;
+  padding: 0 1rem 1rem;
+  color: #d9e3df;
+  font:
+    clamp(1.0625rem, 1.3vw, 1.125rem) / 1.62 Arial,
+    Helvetica,
+    sans-serif;
+}
+
+.reading-details-body > section,
+.reading-card-threads,
+.reading-card-threads article {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.reading-details-body p,
+.reading-details-body ul,
+.reading-card-threads h4 {
+  margin: 0;
+}
+
+.reading-details-body ul {
+  display: grid;
+  gap: 0.35rem;
+  padding-left: 1.15rem;
+}
+
+.reading-card-threads article {
+  padding: 0.85rem;
+  border-left: 2px solid rgb(124 202 187 / 0.38);
+  background: rgb(255 255 255 / 0.025);
+}
+
+.reading-card-threads article > p:first-child,
+.reading-details-body h4 {
+  color: #9fc9c0;
+  font:
+    600 0.75rem/1.35 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reading-card-threads h4 {
+  color: #f0dfae;
+  font:
+    400 1.125rem/1.3 Georgia,
+    "Times New Roman",
+    serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.reading-reflection-section p {
+  color: #f3e2b5;
+  font:
+    italic 1.25rem/1.5 Georgia,
+    "Times New Roman",
+    serif;
+}
+
+.guided-passage {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgb(218 192 127 / 0.18);
 }
 
 .reading-section-eyebrow {
   margin: 0 0 0.55rem;
   color: #8fcec0;
   font:
-    0.65rem/1.4 Arial,
+    0.75rem/1.4 Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.16em;
@@ -869,7 +1100,7 @@ a {
   gap: clamp(0.5rem, 1vh, 0.75rem);
   color: #d4dfdb;
   font:
-    clamp(0.82rem, 1.15vw, 1rem) / 1.55 Arial,
+    clamp(1.0625rem, 1.3vw, 1.125rem) / 1.62 Arial,
     Helvetica,
     sans-serif;
 }
@@ -886,7 +1117,7 @@ a {
   margin: 0 0 0.22rem;
   color: #d9bc79;
   font:
-    600 0.62rem/1.4 Arial,
+    600 0.75rem/1.4 Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.13em;
@@ -903,7 +1134,7 @@ a {
 .reading-direct-answer {
   color: #f4ead0;
   font:
-    italic clamp(1rem, 1.55vw, 1.25rem) / 1.5 Georgia,
+    italic clamp(1.125rem, 1.55vw, 1.3rem) / 1.5 Georgia,
     "Times New Roman",
     serif;
 }
@@ -912,14 +1143,15 @@ a {
   padding-top: 0.65rem;
   border-top: 1px solid rgb(255 255 255 / 0.09);
   color: #a9bfba;
-  font-size: 0.82em;
+  font-size: 0.875rem;
+  line-height: 1.55;
 }
 
 .reading-agency-list {
   margin: 0;
   color: #dbe6e1;
   font:
-    clamp(0.9rem, 1.3vw, 1.08rem) / 1.6 Arial,
+    clamp(1.0625rem, 1.3vw, 1.125rem) / 1.62 Arial,
     Helvetica,
     sans-serif;
 }
@@ -969,11 +1201,18 @@ a {
   gap: 0.35rem;
   color: #afc6c0;
   font:
-    0.62rem Arial,
+    0.75rem Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.12em;
   text-align: center;
+}
+
+.reading-journey-controls > div em {
+  color: #d5c18b;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .reading-journey-controls i {
@@ -1007,7 +1246,7 @@ a {
 .oracle-console-placeholder {
   margin: 0;
   color: #bed3ce;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
   font-style: italic;
   text-align: center;
   text-shadow: 0 2px 12px #000;
@@ -1032,7 +1271,7 @@ a {
   background: rgb(3 14 20 / 0.9);
   color: #c8d6d0;
   font:
-    0.68rem Arial,
+    0.75rem Arial,
     Helvetica,
     sans-serif;
 }
@@ -1099,7 +1338,7 @@ a {
   background: transparent;
   color: #f5f1e7;
   font:
-    0.94rem/1.45 Arial,
+    1rem/1.5 Arial,
     Helvetica,
     sans-serif;
 }
@@ -1130,7 +1369,8 @@ a {
   grid-column: 1 / -1;
   margin: 0.15rem 0.45rem 0.05rem;
   color: #8fa8a4;
-  font-size: 0.64rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
 }
 
 .sanctuary-error {
@@ -1139,7 +1379,7 @@ a {
   border-radius: 0.75rem;
   background: rgb(72 23 42 / 0.9);
   font:
-    0.75rem Arial,
+    0.875rem/1.45 Arial,
     Helvetica,
     sans-serif;
 }
@@ -1152,7 +1392,7 @@ a {
   background: rgb(26 25 48 / 0.85);
   color: #e9dec3;
   font:
-    0.75rem Arial,
+    0.875rem/1.45 Arial,
     Helvetica,
     sans-serif;
 }
@@ -1181,7 +1421,7 @@ a {
   margin: 0;
   color: #f7f1df;
   font:
-    0.85rem Arial,
+    1rem Arial,
     Helvetica,
     sans-serif;
   line-height: 1.5;
@@ -1196,7 +1436,7 @@ a {
 .safety-interrupt-resources h3 {
   margin: 0 0 0.5rem;
   color: #e9cd84;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
 }
 
 .safety-interrupt-resources ul {
@@ -1205,7 +1445,7 @@ a {
   margin: 0;
   padding: 0;
   font:
-    0.8rem Arial,
+    1rem/1.5 Arial,
     Helvetica,
     sans-serif;
   list-style: none;
@@ -1221,7 +1461,6 @@ a {
   top: 4.75rem;
   right: 1rem;
   bottom: clamp(14.5rem, 31dvh, 20rem);
-  left: 1rem;
   display: grid;
   align-content: safe center;
   justify-items: center;
@@ -1239,10 +1478,21 @@ a {
   margin: 0;
   color: #d8bc78;
   font:
-    0.68rem Arial,
+    0.75rem Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.reading-question-stage > div > p {
+  margin: 0;
+  color: #d8bc78;
+  font:
+    0.75rem Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
@@ -1251,11 +1501,33 @@ a {
   margin: 0.45rem 0 clamp(0.8rem, 2.4vh, 1.6rem);
   font-size: clamp(1.8rem, 4.2vw, 3.5rem);
   font-weight: 400;
+  line-height: 1.08;
+}
+
+.reading-selection-stage {
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-bottom: 0.5rem;
+}
+
+.reading-question-stage {
+  bottom: clamp(17rem, 39dvh, 22rem);
+  overflow: hidden;
+}
+
+.reading-question-stage > div {
+  width: min(46rem, calc(100vw - 2rem));
+  text-align: left;
+}
+
+.reading-question-stage h1 {
+  max-width: 42rem;
+  margin: 0.55rem 0 1.1rem;
+  text-wrap: balance;
 }
 
 .ritual-spread-options {
   display: grid;
-  grid-template-columns: repeat(4, minmax(8rem, 1fr));
+  grid-template-columns: repeat(3, minmax(12rem, 1fr));
   gap: 0.75rem;
   width: min(68rem, calc(100vw - 2rem));
 }
@@ -1267,8 +1539,8 @@ a {
 .ritual-spread-options label > span {
   display: grid;
   height: 100%;
-  min-height: clamp(5.25rem, 12dvh, 6.5rem);
-  place-content: center;
+  min-height: clamp(7.5rem, 15dvh, 9rem);
+  align-content: start;
   gap: 0.45rem;
   padding: 1rem;
   border: 1px solid rgb(228 214 171 / 0.24);
@@ -1276,6 +1548,7 @@ a {
   background: rgb(3 17 22 / 0.5);
   box-shadow: 0 1rem 2rem rgb(0 0 0 / 0.2);
   backdrop-filter: blur(10px);
+  text-align: left;
   transition:
     border-color 180ms ease,
     background 180ms ease,
@@ -1303,23 +1576,28 @@ a {
 .ritual-spread-options small {
   color: #9fc9c0;
   font:
-    0.62rem Arial,
+    0.75rem/1.35 Arial,
     Helvetica,
     sans-serif;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
+.ritual-spread-options small:last-child {
+  margin-top: auto;
+  padding-top: 0.2rem;
+}
+
 .ritual-spread-options strong {
   color: #f2e9d2;
-  font-size: 0.92rem;
+  font-size: 1.0625rem;
   font-weight: 400;
 }
 
 .ritual-spread-purpose {
   color: #d2ddd8;
   font:
-    0.76rem/1.35 Arial,
+    0.875rem/1.5 Arial,
     Helvetica,
     sans-serif;
 }
@@ -1330,11 +1608,66 @@ a {
   width: min(46rem, calc(100vw - 2rem));
 }
 
+.reading-entry-continue,
+.selected-ritual-summary {
+  border: 1px solid rgb(239 214 143 / 0.7);
+  background: linear-gradient(145deg, rgb(11 56 53 / 0.94), rgb(30 27 58 / 0.94));
+  box-shadow:
+    0 1rem 2.5rem rgb(0 0 0 / 0.38),
+    0 0 0 1px rgb(255 255 255 / 0.04) inset;
+  color: #f5e7ba;
+  cursor: pointer;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.reading-entry-continue {
+  min-height: 3rem;
+  margin-top: 0.9rem;
+  padding: 0.75rem 1.4rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.selected-ritual-summary {
+  display: grid;
+  width: min(100%, 28rem);
+  gap: 0.22rem;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  text-align: left;
+}
+
+.selected-ritual-summary span {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.05rem;
+}
+
+.selected-ritual-summary small {
+  color: #abd2c9;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+}
+
+.reading-question-console .entry-privacy-note {
+  text-align: left;
+}
+
+.reading-question-console select {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgb(220 199 138 / 0.3);
+  border-radius: 0.7rem;
+  background: rgb(4 17 22 / 0.9);
+  color: #f5f1e7;
+  font-size: 1rem;
+}
+
 .entry-privacy-note {
   margin: 0 0 0.55rem;
   color: #bed3ce;
   font:
-    0.72rem Arial,
+    0.875rem/1.45 Arial,
     Helvetica,
     sans-serif;
   text-align: center;
@@ -1459,16 +1792,16 @@ a {
 
   .sanctuary-control-group button {
     max-width: 100%;
-    min-height: 2rem;
-    padding: 0.3rem 0.55rem;
-    font-size: 0.62rem;
+    min-height: 2.75rem;
+    padding: 0.45rem 0.65rem;
+    font-size: 1rem;
     overflow-wrap: anywhere;
     white-space: normal;
   }
 
   .sanctuary-controls a {
-    min-height: 2rem;
-    padding: 0.35rem 0.6rem;
+    min-height: 2.75rem;
+    padding: 0.45rem 0.65rem;
   }
 
   .sanctuary-stage {
@@ -1481,6 +1814,10 @@ a {
     right: 0.5rem;
     bottom: 55dvh;
     left: 0.5rem;
+  }
+
+  .sanctuary-content:has(.reading-result-overview) .sanctuary-stage.has-reading-journey {
+    bottom: 64dvh;
   }
 
   .tarot-spread-stage {
@@ -1522,6 +1859,10 @@ a {
     translate: -50% 0;
   }
 
+  .oracle-console-stack:has(.reading-result-overview) {
+    height: min(63dvh, 36rem);
+  }
+
   .oracle-transcript {
     border-radius: 1.15rem;
   }
@@ -1533,25 +1874,48 @@ a {
 
   .oracle-entry h2 {
     margin-bottom: 0.65rem;
-    font-size: clamp(1.05rem, 4.5vw, 1.3rem);
+    font-size: clamp(1.35rem, 5.5vw, 1.65rem);
   }
 
   .oracle-entry-text {
-    font-size: 0.82rem;
-    line-height: 1.45;
+    font-size: 1.0625rem;
+    line-height: 1.62;
+  }
+
+  .reading-result-overview {
+    gap: 0.9rem;
+  }
+
+  .reading-result-header h2 {
+    max-width: none;
+    font-size: clamp(1.65rem, 7vw, 2.1rem);
+    line-height: 1.08;
+  }
+
+  .reading-overview-heading-row {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .reading-overview-heading-row span {
+    text-align: left;
+  }
+
+  .reading-card-strip {
+    grid-auto-columns: minmax(8.6rem, 44vw);
   }
 
   .reading-section-copy,
   .card-interpretation-copy {
     gap: 0.45rem;
-    font-size: 0.74rem;
-    line-height: 1.42;
+    font-size: 1.0625rem;
+    line-height: 1.62;
   }
 
   .reading-section-copy h3,
   .card-interpretation-copy h3 {
     margin-bottom: 0.1rem;
-    font-size: 0.53rem;
+    font-size: 0.75rem;
   }
 
   .reading-uncertainty {
@@ -1560,17 +1924,17 @@ a {
 
   .reading-agency-list {
     gap: 0.28rem;
-    font-size: 0.78rem;
-    line-height: 1.45;
+    font-size: 1.0625rem;
+    line-height: 1.62;
   }
 
   .reading-reflection-question {
-    font-size: clamp(1rem, 4.8vw, 1.3rem);
+    font-size: clamp(1.2rem, 5.2vw, 1.4rem);
   }
 
   .reading-journey-controls button {
-    width: 2.35rem;
-    height: 2.35rem;
+    width: 2.75rem;
+    height: 2.75rem;
     font-size: 1.45rem;
   }
 
@@ -1578,13 +1942,22 @@ a {
     border-radius: 1rem;
   }
 
-  .question-composer-hint {
-    display: none;
+  .reading-entry-stage {
+    top: 5.5rem;
+    bottom: clamp(16.5rem, 39dvh, 21rem);
   }
 
-  .reading-entry-stage {
-    top: 4rem;
-    bottom: clamp(16.5rem, 39dvh, 21rem);
+  .reading-selection-stage {
+    bottom: max(0.45rem, env(safe-area-inset-bottom));
+    padding-top: 0.6rem;
+  }
+
+  .reading-question-stage {
+    bottom: clamp(17.5rem, 40dvh, 21rem);
+  }
+
+  .reading-question-stage > div {
+    width: min(100%, 31rem);
   }
 
   .reading-entry-stage h1 {
@@ -1593,28 +1966,37 @@ a {
   }
 
   .ritual-spread-options {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
     width: min(27rem, calc(100vw - 1.2rem));
     gap: 0.5rem;
   }
 
   .ritual-spread-options label > span {
-    min-height: clamp(4.25rem, 10dvh, 5.2rem);
-    padding: 0.5rem;
+    min-height: 0;
+    gap: 0.32rem;
+    padding: 0.75rem 0.85rem;
   }
 
   .ritual-spread-options strong {
-    font-size: 0.76rem;
+    font-size: 1rem;
   }
 
   .ritual-spread-purpose {
-    display: -webkit-box;
-    min-height: 1.7rem;
-    overflow: hidden;
-    font-size: 0.68rem;
-    line-height: 1.25;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    min-height: 0;
+  }
+
+  .reading-entry-continue {
+    position: sticky;
+    bottom: 0.25rem;
+    width: min(27rem, calc(100vw - 1.2rem));
+    margin-top: 0.55rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .reading-card-strip {
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: row;
   }
 }
 
@@ -1636,6 +2018,10 @@ a {
     bottom: 17rem;
   }
 
+  .reading-selection-stage {
+    bottom: max(0.45rem, env(safe-area-inset-bottom));
+  }
+
   .reading-entry-stage h1 {
     margin-bottom: 0.65rem;
     font-size: clamp(1.65rem, 6vh, 2.6rem);
@@ -1653,8 +2039,8 @@ a {
 
   .reading-section-copy,
   .card-interpretation-copy {
-    font-size: 0.7rem;
-    line-height: 1.35;
+    font-size: 1.0625rem;
+    line-height: 1.58;
   }
 
   .physical-card-figure {

@@ -56,7 +56,6 @@ export function ReadingChooser({
 
   useEffect(() => {
     sendIntake({ type: "START" });
-    sendIntake({ type: "SELECT" });
   }, [sendIntake]);
 
   const beginReading = async (continueAsReflection = false) => {
@@ -124,6 +123,9 @@ export function ReadingChooser({
       />
     );
 
+  const selectingReading = intakeState.matches("selectingReading");
+  const selectedSpread = spreads.find(({ id }) => id === selected) ?? spreads[0];
+
   return (
     <MysticSanctuaryScene reducedMotion={reducedMotion} testId="mystic-sanctuary-scene">
       <header className="sanctuary-controls" aria-label="Reading setup controls">
@@ -138,158 +140,199 @@ export function ReadingChooser({
           </button>
         </div>
       </header>
-      <section className="reading-entry-stage" data-intake-state={String(intakeState.value)}>
-        <p>Choose a ritual</p>
-        <h1>What kind of space do you need?</h1>
-        <div aria-label="Reading type" className="ritual-spread-options" role="radiogroup">
-          {spreads.map((spread) => (
-            <label key={spread.id}>
-              <input
-                checked={selected === spread.id}
-                className="sr-only"
-                name="spread"
-                onChange={() => setSelected(spread.id)}
-                type="radio"
-                value={spread.id}
-              />
-              <span>
-                <small>
-                  {spread.count} {spread.count === 1 ? "card" : "cards"} · about{" "}
-                  {spread.estimatedMinutes} min
-                </small>
-                <strong>{spread.name}</strong>
-                <span className="ritual-spread-purpose">{spread.purpose}</span>
-                <small>
-                  {access.outcome === "granted"
-                    ? access.mode === "unlimited"
-                      ? "Included"
-                      : `${access.remaining ?? 0} included this window`
-                    : "Allowance used"}
-                </small>
-              </span>
-            </label>
-          ))}
-        </div>
-      </section>
-      <div className="oracle-console-stack reading-entry-console">
-        <p className="entry-privacy-note">
-          Your question stays private and can shape interpretation—never the card selection.
-        </p>
-        {!guardedPrompt && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1 text-sm">
-              <span>Topic</span>
-              <select
-                onChange={(event) => setTopic(event.target.value as ReadingTopic)}
-                value={topic}
-              >
-                <option value="general">General</option>
-                <option value="career">Career and work</option>
-                <option value="relationships">Relationships</option>
-                <option value="change">Change and decisions</option>
-                <option value="wellbeing">Balance and wellbeing</option>
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span>Time horizon</span>
-              <select
-                onChange={(event) => setHorizon(event.target.value as ReadingHorizon)}
-                value={horizon}
-              >
-                <option value="open">Open-ended</option>
-                <option value="immediate">Right now</option>
-                <option value="weeks">Next few weeks</option>
-                <option value="months">Next few months</option>
-              </select>
-            </label>
-            <label className="flex items-start gap-2 text-sm sm:col-span-2">
-              <input
-                checked={generalReading}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  setGeneralReading(checked);
-                  if (checked) {
-                    setQuestion(GENERAL_READING_QUESTION);
-                    setTopic("general");
-                    setHorizon("open");
-                  } else setQuestion("");
-                }}
-                type="checkbox"
-              />
-              Use a general reading when you do not want to ask a specific question.
-            </label>
+      {selectingReading ? (
+        <section
+          className="reading-entry-stage reading-selection-stage"
+          data-intake-state={String(intakeState.value)}
+        >
+          <p>Choose a ritual</p>
+          <h1>What kind of space do you need?</h1>
+          <div aria-label="Reading type" className="ritual-spread-options" role="radiogroup">
+            {spreads.map((spread) => (
+              <label key={spread.id}>
+                <input
+                  checked={selected === spread.id}
+                  className="sr-only"
+                  name="spread"
+                  onChange={() => setSelected(spread.id)}
+                  type="radio"
+                  value={spread.id}
+                />
+                <span>
+                  <small>
+                    {spread.count} {spread.count === 1 ? "card" : "cards"} · about{" "}
+                    {spread.estimatedMinutes} min
+                  </small>
+                  <strong>{spread.name}</strong>
+                  <span className="ritual-spread-purpose">{spread.purpose}</span>
+                  <small>
+                    {access.outcome === "granted"
+                      ? access.mode === "unlimited"
+                        ? "Included"
+                        : `${access.remaining ?? 0} included this window`
+                      : "Allowance used"}
+                  </small>
+                </span>
+              </label>
+            ))}
           </div>
-        )}
-        {guardedPrompt ? (
-          <div className="ritual-moment" data-safety-category={guardedPrompt.category}>
-            <p className="ritual-status" role="status">
-              This question touches something the cards can’t establish as fact. A reading can still
-              reflect on evidence, preparation, boundaries, and choices; it cannot replace qualified
-              professional support.
-            </p>
-            <div className="ritual-action-group">
+          <button
+            className="reading-entry-continue"
+            disabled={!selectedSpread}
+            onClick={() => sendIntake({ type: "SELECT" })}
+            type="button"
+          >
+            Continue with {selectedSpread?.name ?? "this reading"}
+          </button>
+        </section>
+      ) : (
+        <section
+          className="reading-entry-stage reading-question-stage"
+          data-intake-state={String(intakeState.value)}
+        >
+          <div>
+            <p>Set your intention</p>
+            <h1>What would you like the cards to illuminate?</h1>
+            {selectedSpread && (
               <button
-                className="ritual-action"
-                disabled={loading}
-                onClick={() => void beginReading(true)}
-                type="button"
-              >
-                {loading ? "Preparing reflection…" : "Continue as reflection"}
-              </button>
-              <button
-                className="ritual-action"
-                disabled={loading}
+                className="selected-ritual-summary"
                 onClick={() => {
                   setGuardedPrompt(undefined);
-                  sendIntake({ type: "RESTART" });
+                  sendIntake({ type: "CHANGE_READING" });
                 }}
                 type="button"
               >
-                Revise the question
+                <span>{selectedSpread.name}</span>
+                <small>
+                  {selectedSpread.count} {selectedSpread.count === 1 ? "card" : "cards"} · about{" "}
+                  {selectedSpread.estimatedMinutes} min · change
+                </small>
               </button>
-            </div>
-          </div>
-        ) : (
-          <QuestionComposer
-            disabled={access.outcome !== "granted"}
-            hint="Shift+Enter adds a line. Enter begins the locked draw."
-            label="Your private question"
-            loading={loading}
-            onChange={(value) => {
-              setGeneralReading(false);
-              setQuestion(value);
-            }}
-            onSubmit={() => void beginReading()}
-            placeholder="What can I understand or do about…"
-            submitLabel="Begin the shuffle"
-            testId="initial-question-composer"
-            value={question}
-          />
-        )}
-        {access.outcome === "limitReached" && access.windowEndsAt && (
-          <p className="sanctuary-error" role="status">
-            Your included reading allowance renews{" "}
-            <time dateTime={access.windowEndsAt}>
-              {new Date(access.windowEndsAt).toLocaleString()}
-            </time>
-            . Your history and locked cards remain available.
-          </p>
-        )}
-        {message && (
-          <div className="sanctuary-error" role="alert">
-            <p>{message}</p>
-            {retained && (
-              <p>
-                <Link href={`/reading/${retained.readingId}`}>Open the retained reading</Link>
-                {" · another draw becomes available "}
-                <time dateTime={retained.availableAt}>
-                  {new Date(retained.availableAt).toLocaleString()}
-                </time>
-              </p>
             )}
           </div>
-        )}
-      </div>
+        </section>
+      )}
+      {!selectingReading && (
+        <div className="oracle-console-stack reading-entry-console reading-question-console">
+          <p className="entry-privacy-note">
+            Your question stays private and can shape interpretation—never the card selection.
+          </p>
+          {!guardedPrompt && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-sm">
+                <span>Topic</span>
+                <select
+                  onChange={(event) => setTopic(event.target.value as ReadingTopic)}
+                  value={topic}
+                >
+                  <option value="general">General</option>
+                  <option value="career">Career and work</option>
+                  <option value="relationships">Relationships</option>
+                  <option value="change">Change and decisions</option>
+                  <option value="wellbeing">Balance and wellbeing</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span>Time horizon</span>
+                <select
+                  onChange={(event) => setHorizon(event.target.value as ReadingHorizon)}
+                  value={horizon}
+                >
+                  <option value="open">Open-ended</option>
+                  <option value="immediate">Right now</option>
+                  <option value="weeks">Next few weeks</option>
+                  <option value="months">Next few months</option>
+                </select>
+              </label>
+              <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                <input
+                  checked={generalReading}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setGeneralReading(checked);
+                    if (checked) {
+                      setQuestion(GENERAL_READING_QUESTION);
+                      setTopic("general");
+                      setHorizon("open");
+                    } else setQuestion("");
+                  }}
+                  type="checkbox"
+                />
+                Use a general reading when you do not want to ask a specific question.
+              </label>
+            </div>
+          )}
+          {guardedPrompt ? (
+            <div className="ritual-moment" data-safety-category={guardedPrompt.category}>
+              <p className="ritual-status" role="status">
+                This question touches something the cards can’t establish as fact. A reading can
+                still reflect on evidence, preparation, boundaries, and choices; it cannot replace
+                qualified professional support.
+              </p>
+              <div className="ritual-action-group">
+                <button
+                  className="ritual-action"
+                  disabled={loading}
+                  onClick={() => void beginReading(true)}
+                  type="button"
+                >
+                  {loading ? "Preparing reflection…" : "Continue as reflection"}
+                </button>
+                <button
+                  className="ritual-action"
+                  disabled={loading}
+                  onClick={() => {
+                    setGuardedPrompt(undefined);
+                    sendIntake({ type: "RESTART" });
+                  }}
+                  type="button"
+                >
+                  Revise the question
+                </button>
+              </div>
+            </div>
+          ) : (
+            <QuestionComposer
+              disabled={access.outcome !== "granted"}
+              hint="Shift+Enter adds a line. Enter begins the locked draw."
+              label="Your private question"
+              loading={loading}
+              onChange={(value) => {
+                setGeneralReading(false);
+                setQuestion(value);
+              }}
+              onSubmit={() => void beginReading()}
+              placeholder="What can I understand or do about…"
+              submitLabel="Begin the shuffle"
+              testId="initial-question-composer"
+              value={question}
+            />
+          )}
+          {access.outcome === "limitReached" && access.windowEndsAt && (
+            <p className="sanctuary-error" role="status">
+              Your included reading allowance renews{" "}
+              <time dateTime={access.windowEndsAt}>
+                {new Date(access.windowEndsAt).toLocaleString()}
+              </time>
+              . Your history and locked cards remain available.
+            </p>
+          )}
+          {message && (
+            <div className="sanctuary-error" role="alert">
+              <p>{message}</p>
+              {retained && (
+                <p>
+                  <Link href={`/reading/${retained.readingId}`}>Open the retained reading</Link>
+                  {" · another draw becomes available "}
+                  <time dateTime={retained.availableAt}>
+                    {new Date(retained.availableAt).toLocaleString()}
+                  </time>
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </MysticSanctuaryScene>
   );
 }

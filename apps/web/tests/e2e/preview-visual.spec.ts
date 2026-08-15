@@ -34,7 +34,15 @@ async function expectCardAboveReading(page: Page) {
     .toBeGreaterThanOrEqual(2);
 }
 
-async function expectCompactReadingWindow(page: Page) {
+async function expectLayeredReadingWindow(page: Page) {
+  await expect
+    .poll(async () => {
+      const bounds = await page.getByTestId("oracle-transcript").boundingBox();
+      const viewport = page.viewportSize();
+      if (!bounds || !viewport) return Number.NEGATIVE_INFINITY;
+      return bounds.height / viewport.height;
+    })
+    .toBeGreaterThanOrEqual(0.38);
   await expect
     .poll(async () => {
       const bounds = await page.getByTestId("oracle-transcript").boundingBox();
@@ -42,13 +50,17 @@ async function expectCompactReadingWindow(page: Page) {
       if (!bounds || !viewport) return Number.POSITIVE_INFINITY;
       return bounds.height / viewport.height;
     })
-    .toBeLessThanOrEqual(0.32);
+    .toBeLessThanOrEqual(0.65);
 }
 
 test("the visual preview follows the streamlined result and continuation sequence", async ({
   page,
-}) => {
+}, testInfo) => {
   test.setTimeout(150_000);
+  const mobileViewport = testInfo.project.name.startsWith("mobile");
+  await page.setViewportSize(
+    mobileViewport ? { width: 393, height: 852 } : { width: 1440, height: 900 },
+  );
   await page.goto("/visual-preview");
   const journey = page.getByTestId("oracle-transcript");
   await expect(
@@ -61,11 +73,60 @@ test("the visual preview follows the streamlined result and continuation sequenc
   await expect(page.getByText(/^Section \d+$/)).toHaveCount(0);
   await expectHorizontallyCentered(page, '[data-testid="oracle-transcript"]');
   await expectHorizontallyCentered(page, ".question-composer");
-  await expectCompactReadingWindow(page);
-  const titleSize = await page
-    .locator(".oracle-entry h2")
+  await expectLayeredReadingWindow(page);
+
+  const overview = page.getByTestId("reading-result-overview");
+  await expect(overview).toBeVisible();
+  await expect(overview).toHaveCSS("text-align", "left");
+  await expect(overview.getByRole("heading", { name: "Your locked cards" })).toBeVisible();
+  const lockedCards = overview.locator(".reading-card-strip button");
+  await expect(lockedCards).toHaveCount(3);
+  await expect(lockedCards.first().locator("small")).not.toBeEmpty();
+  await expect(lockedCards.first().locator("strong")).not.toBeEmpty();
+  await expect(lockedCards.first().locator("span")).toHaveText(/upright|reversed/);
+
+  const titleMetrics = await overview.locator(".reading-result-header h2").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      fontSize: Number.parseFloat(style.fontSize),
+      lineHeight: Number.parseFloat(style.lineHeight),
+    };
+  });
+  expect(titleMetrics.fontSize).toBeGreaterThanOrEqual(26);
+  expect(titleMetrics.fontSize).toBeLessThanOrEqual(44);
+  expect(titleMetrics.lineHeight / titleMetrics.fontSize).toBeLessThanOrEqual(1.12);
+
+  const narrativeSize = await overview
+    .locator(".reading-opening-summary")
     .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
-  expect(titleSize).toBeLessThanOrEqual(25);
+  expect(narrativeSize).toBeGreaterThanOrEqual(mobileViewport ? 17 : 18);
+  const composerTextSize = await page
+    .locator(".question-composer-field textarea")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  expect(composerTextSize).toBeGreaterThanOrEqual(16);
+  const composerHint = page.locator(".question-composer-hint");
+  await expect(composerHint).toBeVisible();
+  const composerHintSize = await composerHint.evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element).fontSize),
+  );
+  expect(composerHintSize).toBeGreaterThanOrEqual(14);
+
+  const completeInterpretation = overview.locator(".reading-details");
+  await expect(
+    completeInterpretation.getByText("Explore the complete interpretation", { exact: true }),
+  ).toBeVisible();
+  await completeInterpretation.locator("summary").click();
+  for (const heading of [
+    "Card by card",
+    "Overall synthesis",
+    "Likely trajectory",
+    "Alternative path",
+    "Your agency",
+    "A question to carry",
+  ])
+    await expect(completeInterpretation.getByRole("heading", { name: heading })).toBeVisible();
+  await expect(completeInterpretation.locator(".reading-uncertainty")).toBeVisible();
+  await completeInterpretation.locator("summary").click();
 
   for (let index = 0; index < 3; index += 1) {
     await page.getByRole("button", { name: "Next reading passage" }).click();
@@ -95,7 +156,9 @@ test("the visual preview follows the streamlined result and continuation sequenc
   await page.getByRole("button", { name: "Previous reading passage" }).click();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
   await expect(page.locator(".oracle-entry-text")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reading details" })).toHaveCount(0);
+  await expect(
+    page.getByText("Explore the complete interpretation", { exact: true }),
+  ).toBeVisible();
   await expectNoBlockingAccessibilityViolations(page);
 });
 

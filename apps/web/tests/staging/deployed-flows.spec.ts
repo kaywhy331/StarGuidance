@@ -332,7 +332,9 @@ test("both identities create profiles and the profile survives refresh", async (
   // persistence suite commits the post-profile UI route without depending on
   // Netlify's injected preview toolbar to observe a duplicate client transition.
   await navigateApp(pageA, "/readings", () =>
-    expect(pageA.getByLabel("Your private question")).toBeVisible({ timeout: 15_000 }),
+    expect(pageA.getByRole("button", { name: /^Continue with / })).toBeVisible({
+      timeout: 15_000,
+    }),
   );
 
   const created = await activeSnapshot(pageA);
@@ -344,7 +346,9 @@ test("both identities create profiles and the profile survives refresh", async (
   });
 
   await reloadApp(pageA, () =>
-    expect(pageA.getByLabel("Your private question")).toBeVisible({ timeout: 15_000 }),
+    expect(pageA.getByRole("button", { name: /^Continue with / })).toBeVisible({
+      timeout: 15_000,
+    }),
   );
   const afterRefresh = await activeSnapshot(pageA);
 

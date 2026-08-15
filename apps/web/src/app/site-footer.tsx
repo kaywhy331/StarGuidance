@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 /**
  * Present on every page, so the standing terms are always one click away.
@@ -7,6 +10,15 @@ import Link from "next/link";
  * here instead of interrupting the reading itself.
  */
 export function SiteFooter() {
+  const pathname = usePathname();
+  const fullscreenExperience =
+    pathname === "/readings" ||
+    pathname === "/visual-preview" ||
+    pathname.startsWith("/session/") ||
+    pathname.startsWith("/reading/");
+
+  if (fullscreenExperience) return null;
+
   return (
     <footer className="border-t border-white/10 px-6 py-6 text-sm text-[#8f86a0]">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-2">
