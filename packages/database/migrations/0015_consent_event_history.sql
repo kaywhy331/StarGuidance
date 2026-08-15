@@ -1,0 +1,2 @@
+DROP INDEX "consent_policy_version_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "consent_active_policy_version_unique" ON "consents" USING btree ("user_id","policy","policy_version") WHERE "consents"."withdrawn_at" is null;

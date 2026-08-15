@@ -158,13 +158,13 @@ Provide a deterministic reading fallback when no AI credentials are configured o
 
 ## Birth-time rules
 
-Support:
+Present one optional birth-time field. A blank value means no birth time was supplied. Do not ask
+the user to classify the time as unknown, exact, or approximate, and do not request a timezone in
+onboarding.
 
-- exact time
-- approximate time range
-- unknown time
-
-If a user enters a birth time, birthplace or an authoritative timezone is required before time-sensitive astrology can be calculated.
+A supplied birth time is accepted independently of birthplace. Calculations that require historical
+timezone context must remain unavailable unless a validated calculation integration can derive that
+context safely; profile creation itself must not be blocked.
 
 Never invent a birth time.
 
@@ -222,32 +222,13 @@ Still unavailable:
 - Placidus houses
 - BaZi hour pillar
 
-### Approximate time
-
-Available:
-
-- Birth name
-- Birth date
-- Birthplace
-- time range
-
-Calculate multiple points across the range and distinguish:
-
-- stable traits
-- uncertain traits
-- possible Ascendants
-- possible house placements
-- possible BaZi hour pillars
-
-Do not calculate the midpoint and present it as exact.
-
 ### Complete
 
 Available:
 
 - Birth name
 - Birth date
-- exact birth time
+- birth time
 - birthplace
 
 Capabilities may include:
@@ -288,7 +269,9 @@ Define and document behavior for:
 - master numbers
 - birth name versus current name
 
-Do not silently transliterate or strip non-Latin names.
+Do not silently transliterate or strip non-Latin names. Preserve the original name and mark
+unsupported name-derived calculations unavailable without asking the user for a Latin rendering or
+blocking profile creation.
 
 ## Dreamspell Galactic Signature
 
@@ -768,9 +751,8 @@ Create automated tests for:
 
 - date-only profile
 - location-only enhancement
-- unknown birth time
-- approximate birth-time range
-- exact time with place
+- omitted optional birth time
+- time with place
 - time without place
 - profile snapshot versioning
 - leap-day birth
@@ -804,8 +786,8 @@ Create automated tests for:
 At minimum:
 
 1. Date-only onboarding through completed reading.
-2. Exact birth details through completed reading.
-3. Approximate birth time through completed reading.
+2. All four birth fields through completed reading.
+3. Birth time without birthplace or timezone through completed reading.
 4. AI-disabled deterministic fallback.
 5. Interrupted reading recovery.
 6. Reduced-motion reading.
@@ -937,8 +919,8 @@ The implementation is complete only when:
 - Profile-engine tests succeed.
 - The four tarot reading types work.
 - Birthplace and birth time are optional.
-- Exact-time features are not used without sufficient location data.
-- Approximate time is treated as a range.
+- Birth time is accepted without birthplace or user-entered timezone.
+- Time-sensitive features remain unavailable without validated context.
 - The profile never affects card selection.
 - The draw is locked before AI generation.
 - AI failure preserves the same cards.

@@ -38,15 +38,53 @@ export interface SpreadPosition {
   readonly interpretiveFunction: string;
   readonly description: string;
   readonly order: number;
-  readonly placement: { readonly x: number; readonly y: number; readonly rotation: number };
+  readonly placement: {
+    /** Zero-based visual grid column. Multiple cards may intentionally share a cell. */
+    readonly column: number;
+    /** Zero-based visual grid row. */
+    readonly row: number;
+    /** Clockwise rotation in degrees; Celtic Cross card two uses 90. */
+    readonly rotation: number;
+    /** Stacking order for cards occupying the same grid cell. */
+    readonly layer: number;
+  };
+}
+
+export interface SpreadContextPosition {
+  readonly positionId: string;
+  readonly displayName: string;
+  readonly interpretiveFunction: string;
+  readonly description: string;
+}
+
+export interface SpreadContextTemplate {
+  readonly id: string;
+  readonly name: string;
+  readonly positions: readonly SpreadContextPosition[];
 }
 
 export interface Spread {
   readonly id: string;
   readonly name: string;
+  readonly purpose: string;
+  readonly estimatedMinutes: number;
+  readonly entitlementClass: "standard";
   readonly version: string;
   readonly allowReversals: boolean;
   readonly optionalCut: boolean;
+  readonly layout: {
+    readonly columns: number;
+    readonly rows: number;
+    readonly kind:
+      | "centered"
+      | "horizontal"
+      | "celtic-cross"
+      | "horseshoe"
+      | "relationship"
+      | "matrix"
+      | "legacy";
+  };
+  readonly contextTemplates?: readonly SpreadContextTemplate[];
   readonly positions: readonly SpreadPosition[];
 }
 

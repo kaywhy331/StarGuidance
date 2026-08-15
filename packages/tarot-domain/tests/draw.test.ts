@@ -32,16 +32,20 @@ const cards: TarotCard[] = Array.from({ length: 8 }, (_, index) => ({
 const spread: Spread = {
   id: "test-spread",
   name: "Test Spread",
+  purpose: "A synthetic spread used only to verify secure draw behavior.",
+  estimatedMinutes: 1,
+  entitlementClass: "standard",
   version: "test-v1",
   allowReversals: true,
   optionalCut: true,
+  layout: { columns: 3, rows: 1, kind: "horizontal" },
   positions: [0, 1, 2].map((order) => ({
     id: `position-${order}`,
     displayName: `Position ${order}`,
     interpretiveFunction: "test",
     description: "test",
     order,
-    placement: { x: order, y: 0, rotation: 0 },
+    placement: { column: order, row: 0, rotation: 0, layer: 0 },
   })),
 };
 

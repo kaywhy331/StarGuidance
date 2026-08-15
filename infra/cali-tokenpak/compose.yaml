@@ -1,0 +1,256 @@
+name: starguidance-cali-tokenpak
+
+services:
+  ingress:
+    build:
+      context: .
+      dockerfile: runtime.Dockerfile
+    command: ["node", "/app/gateway.mjs"]
+    environment:
+      ALLOWED_MODELS: openai/gpt-oss-120b,llama-3.3-70b-versatile,openai/gpt-oss-20b
+      CLOUDFLARE_ACCESS_AUD: ${CLOUDFLARE_ACCESS_AUD:?set the Access application audience}
+      CLOUDFLARE_ACCESS_JWKS_URL: http://access-jwks:8081/certs
+      CLOUDFLARE_ACCESS_TEAM_DOMAIN: ${CLOUDFLARE_ACCESS_TEAM_DOMAIN:?set the https team domain}
+      GATEWAY_SHARED_SECRET_FILE: /run/secrets/gateway_shared_secret
+      PORT: "8787"
+      TOKENPAK_PROXY_AUTH_TOKEN_FILE: /run/secrets/tokenpak_proxy_auth_token
+    secrets:
+      - gateway_shared_secret
+      - tokenpak_proxy_auth_token
+    networks:
+      - tunnel_edge
+      - ingress_proxy
+    depends_on:
+      access-jwks:
+        condition: service_healthy
+      tokenpak:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/healthz').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=65532,gid=65532
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.50
+    init: true
+    restart: unless-stopped
+
+  access-jwks:
+    build:
+      context: .
+      dockerfile: runtime.Dockerfile
+    command: ["node", "/app/access-jwks.mjs"]
+    environment:
+      CLOUDFLARE_ACCESS_TEAM_DOMAIN: ${CLOUDFLARE_ACCESS_TEAM_DOMAIN:?set the https team domain}
+      PORT: "8081"
+    networks:
+      - ingress_proxy
+      - access_external
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8081/healthz').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=65532,gid=65532
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.50
+    init: true
+    restart: unless-stopped
+
+  tokenpak:
+    build:
+      context: tokenpak
+      dockerfile: Dockerfile
+    environment:
+      HOME: /proc/tokenpak-home-disabled
+      TOKENPAK_CONFIG: /etc/tokenpak/config.yaml
+      TOKENPAK_BIND_ADDRESS: 0.0.0.0
+      TOKENPAK_BUDGET_CONTROLLER: "0"
+      TOKENPAK_CACHE_ENABLED: "0"
+      TOKENPAK_CACHE_REGISTRY: "0"
+      TOKENPAK_CAPSULE_BUILDER: "0"
+      TOKENPAK_CHAT_FOOTER: "0"
+      TOKENPAK_COMPACT: "0"
+      TOKENPAK_COMPACT_CACHE_SIZE: "0"
+      TOKENPAK_COMPRESSION_DICT: "0"
+      TOKENPAK_CREDS_ROUTER_ENABLED: "0"
+      TOKENPAK_DLP_ENABLED: "1"
+      TOKENPAK_DLP_MODE: block
+      TOKENPAK_ERROR_NORMALIZER: "0"
+      TOKENPAK_FAILURE_MEMORY: "0"
+      TOKENPAK_FIDELITY_TIERS: "0"
+      TOKENPAK_LOG_ENABLED: "0"
+      TOKENPAK_MODEL_DISCOVERY: "0"
+      TOKENPAK_DB: /proc/tokenpak-monitor-disabled.db
+      TOKENPAK_HOME: /proc/tokenpak-home-disabled
+      TOKENPAK_OPTIMIZATION_PIPELINE: "0"
+      TOKENPAK_PLATFORM_ADAPTERS: "0"
+      TOKENPAK_PREFIX_REGISTRY: "0"
+      TOKENPAK_PROFILE: safe
+      TOKENPAK_QUERY_EXPANSION_ENABLED: "0"
+      TOKENPAK_QUERY_REWRITER: "0"
+      TOKENPAK_REQUEST_LOGGER: "0"
+      TOKENPAK_RETRIEVAL_WATCHDOG: "0"
+      TOKENPAK_RETRY_PERSIST_BODY: "0"
+      TOKENPAK_ROUTER_ENABLED: "1"
+      TOKENPAK_SALIENCE_ROUTER: "0"
+      TOKENPAK_SEMANTIC_CACHE: "0"
+      TOKENPAK_SESSION_CAPSULES: "0"
+      TOKENPAK_SHADOW_ENABLED: "0"
+      TOKENPAK_SKELETON_ENABLED: "0"
+      TOKENPAK_SPEND_GUARD_ENABLED: "0"
+      TOKENPAK_STABLE_CACHE_CONTROL_AUTO: "0"
+      TOKENPAK_STABILITY_SCORER: "0"
+      TOKENPAK_TERM_RESOLVER_ENABLED: "0"
+      TOKENPAK_TRACE: "0"
+      TOKENPAK_UPSTREAM_RECOVERY_DIR: /proc/tokenpak-recovery-disabled
+      TOKENPAK_UPSTREAM_RETRIES: "1"
+      TOKENPAK_VAULT_AUTO_REINDEX: "0"
+      TOKENPAK_VAULT_CACHE_PRELOAD: "0"
+      TOKENPAK_VAULT_MEMORY_MAX: "0"
+      TOKENPAK_VAULT_INJECTION: "0"
+    secrets:
+      - tokenpak_egress_token
+      - tokenpak_proxy_auth_token
+    networks:
+      - ingress_proxy
+      - proxy_egress
+    depends_on:
+      groq-egress:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/health', timeout=2)",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=0700,uid=65532,gid=65532
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 96
+    mem_limit: 384m
+    cpus: 1.00
+    init: true
+    restart: unless-stopped
+
+  groq-egress:
+    build:
+      context: .
+      dockerfile: runtime.Dockerfile
+    command: ["node", "/app/egress.mjs"]
+    environment:
+      GROQ_API_KEY_FILE: /run/secrets/groq_api_key
+      PORT: "8080"
+      TOKENPAK_EGRESS_TOKEN_FILE: /run/secrets/tokenpak_egress_token
+    secrets:
+      - groq_api_key
+      - tokenpak_egress_token
+    networks:
+      - proxy_egress
+      - provider_external
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/healthz').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=65532,gid=65532
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.50
+    init: true
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.7.3@sha256:b392761b711c0e5649d9b64e1fc9a10ba0563fa3e712ed7c26bde5cc1fbe9059
+    profiles: ["tunnel"]
+    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/tunnel_token"]
+    secrets:
+      - tunnel_token
+    networks:
+      - tunnel_edge
+      - tunnel_external
+    depends_on:
+      ingress:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=65532,gid=65532
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.50
+    init: true
+    restart: unless-stopped
+
+networks:
+  tunnel_edge:
+    internal: true
+  ingress_proxy:
+    internal: true
+  proxy_egress:
+    internal: true
+  tunnel_external: {}
+  provider_external: {}
+  access_external: {}
+
+secrets:
+  gateway_shared_secret:
+    file: ${GATEWAY_SHARED_SECRET_FILE:-./secrets/gateway_shared_secret.txt}
+  groq_api_key:
+    file: ${GROQ_API_KEY_FILE:-./secrets/groq_api_key.txt}
+  tokenpak_proxy_auth_token:
+    file: ${TOKENPAK_PROXY_AUTH_TOKEN_FILE:-./secrets/tokenpak_proxy_auth_token.txt}
+  tokenpak_egress_token:
+    file: ${TOKENPAK_EGRESS_TOKEN_FILE:-./secrets/tokenpak_egress_token.txt}
+  tunnel_token:
+    file: ${CLOUDFLARED_TUNNEL_TOKEN_FILE:-./secrets/cloudflared_tunnel_token.txt}

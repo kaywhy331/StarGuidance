@@ -1,0 +1,82 @@
+services:
+  access-jwks:
+    build:
+      context: .
+      dockerfile: runtime-ci.Dockerfile
+    command: ["node", "/app/access-jwks-ci.mjs"]
+    environment:
+      CI_ACCESS_JWKS: ${CI_ACCESS_JWKS:?set the synthetic CI Access JWKS}
+
+  groq-egress:
+    build:
+      context: .
+      dockerfile: runtime-ci.Dockerfile
+    command: ["node", "/app/egress-ci.mjs"]
+    networks:
+      - proxy_egress
+      - ci_provider
+
+  mock-groq:
+    build:
+      context: .
+      dockerfile: runtime-ci.Dockerfile
+    command: ["node", "/app/mock-groq.mjs"]
+    environment:
+      EXPECTED_GROQ_API_KEY_FILE: /run/secrets/groq_api_key
+      PORT: "8082"
+      REJECTED_PROXY_TOKEN_FILE: /run/secrets/tokenpak_proxy_auth_token
+    secrets:
+      - groq_api_key
+      - tokenpak_proxy_auth_token
+    networks:
+      - ci_provider
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8082/healthz').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+      start_period: 2s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=65532,gid=65532
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 64m
+    cpus: 0.25
+    init: true
+    restart: "no"
+
+  ci-client:
+    build:
+      context: .
+      dockerfile: runtime-ci.Dockerfile
+    # Keep the network namespace alive without consuming Node's worker threads;
+    # the actual Node probe runs below the same deliberately small PID ceiling.
+    command: ["sleep", "2147483647"]
+    secrets:
+      - gateway_shared_secret
+    networks:
+      - tunnel_edge
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=65532,gid=65532
+    user: "65532:65532"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 16
+    mem_limit: 64m
+    cpus: 0.25
+    init: true
+    restart: "no"
+
+networks:
+  ci_provider:
+    internal: true

@@ -25,6 +25,7 @@ export const readingMachine = setup({
     events: {} as
       | { type: "START" }
       | { type: "SELECT" }
+      | { type: "CHANGE_READING" }
       | { type: "QUESTION_ACCEPTED" }
       | { type: "HIGH_STAKES" }
       | { type: "DECK_READY" }
@@ -39,7 +40,8 @@ export const readingMachine = setup({
       | { type: "RETRY_GENERATION" }
       | { type: "RESULT_REVEALED" }
       | { type: "EXPIRE" }
-      | { type: "RESTART" },
+      | { type: "RESTART" }
+      | { type: "CONTINUE_AS_REFLECTION" },
   },
 }).createMachine({
   id: "reading",
@@ -49,9 +51,19 @@ export const readingMachine = setup({
     idle: { on: { START: "selectingReading" } },
     selectingReading: { on: { SELECT: "enteringQuestion" } },
     enteringQuestion: {
-      on: { QUESTION_ACCEPTED: "preparingDeck", HIGH_STAKES: "highStakesQuestion" },
+      on: {
+        CHANGE_READING: "selectingReading",
+        QUESTION_ACCEPTED: "preparingDeck",
+        HIGH_STAKES: "highStakesQuestion",
+      },
     },
-    highStakesQuestion: { on: { RESTART: "enteringQuestion" } },
+    highStakesQuestion: {
+      on: {
+        CHANGE_READING: "selectingReading",
+        RESTART: "enteringQuestion",
+        CONTINUE_AS_REFLECTION: "preparingDeck",
+      },
+    },
     preparingDeck: { on: { DECK_READY: "shuffling" } },
     shuffling: { on: { SHUFFLE_COMPLETE: "cuttingDeck" } },
     cuttingDeck: { on: { CUT: "dealing", SKIP_CUT: "dealing" } },

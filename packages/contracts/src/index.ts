@@ -2,6 +2,18 @@ import { z } from "zod";
 
 export * from "./profile";
 export * from "./reading";
+export * from "./reading-session";
+
+/**
+ * HMAC context string binding the Netlify-scheduled trigger
+ * (netlify/functions/process-interpretation-jobs.mts) to the Next.js drain
+ * route (apps/web/src/app/api/internal/interpretation-jobs/route.ts). Shared
+ * here so the two sides — and their tests — can't drift apart silently; the
+ * Netlify function still keeps its own literal copy rather than importing
+ * this package at runtime (netlify.toml requires it dependency-free), but
+ * exports that copy so a test can assert it stays equal to this one.
+ */
+export const INTERPRETATION_WORKER_TOKEN_CONTEXT = "starguidance-interpretation-worker-v1";
 
 export const serviceHealthSchema = z.object({
   service: z.string().min(1),

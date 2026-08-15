@@ -3,14 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMachine } from "@xstate/react";
-import type { ReadingResult } from "@starguidance/contracts";
+import { GUARDED_CATEGORIES, type SafetyCategory } from "@starguidance/ai";
+import type { FollowUpResult, ReadingResult } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
+
+import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
+import {
+  readRitualProgress,
+  writeRitualProgress,
+  type RitualProgress,
+} from "@/lib/ritual-progress";
 
 import { MysticSanctuaryScene } from "./mystic-sanctuary-scene";
 import { OracleTranscript } from "./oracle-transcript";
 import { QuestionComposer } from "./question-composer";
-import { ReadingDetailsDrawer } from "./reading-details-drawer";
 import type { ReadingPayload } from "./reading-types";
+import { SafetyInterruptContent } from "./safety-interrupt-panel";
 import { TarotSpreadStage } from "./tarot-spread-stage";
 
 function playRevealTone() {
@@ -26,38 +34,60 @@ function playRevealTone() {
   oscillator.addEventListener("ended", () => void context.close());
 }
 
-export function ReadingScene({ readingId }: { readingId: string }) {
+export function ReadingScene({
+  initialPreferences,
+  readingId,
+}: {
+  initialPreferences?: ReadingPreferenceSeed;
+  readingId: string;
+}) {
   const [state, send] = useMachine(readingMachine);
   const [reading, setReading] = useState<ReadingPayload>();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  const [reducedMotion, setReducedMotion] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
-  const [skipAnimation, setSkipAnimation] = useState(false);
-  const [sound, setSound] = useState(false);
+  const revealedRef = useRef<ReadonlySet<number>>(revealed);
+  const [cutTaken, setCutTaken] = useState<boolean>();
+  const [activeReveal, setActiveReveal] = useState<number | null>(null);
+  const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
   const [error, setError] = useState<string>();
+  const [safetyInterrupt, setSafetyInterrupt] = useState<{
+    category: SafetyCategory;
+    guidance: string;
+  }>();
   const [followUp, setFollowUp] = useState("");
   const [followUpLoading, setFollowUpLoading] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [streamTarget, setStreamTarget] = useState("primary");
   const [streamRetryToken, setStreamRetryToken] = useState(0);
+  const [primaryJourneyReady, setPrimaryJourneyReady] = useState(false);
   const bootstrapped = useRef(false);
-  const motionOff = reducedMotion || skipAnimation;
+  const revealRun = useRef(0);
+  const revealCompletionTimer = useRef<number | undefined>(undefined);
+  const {
+    displayName,
+    reducedMotion: motionOff,
+    sound,
+    toggleReducedMotion,
+    toggleSound,
+  } = useReadingPreferences(initialPreferences);
+  const soundEnabled = useRef(sound);
 
   useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const handleChange = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
-    query.addEventListener("change", handleChange);
-    return () => query.removeEventListener("change", handleChange);
-  }, []);
+    soundEnabled.current = sound;
+  }, [sound]);
 
   useEffect(() => {
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Unable to recover this reading.");
         const payload = (await response.json()) as { reading: ReadingPayload };
+        const progress =
+          payload.reading.ritualProgress ??
+          readRitualProgress(window.sessionStorage, readingId, payload.reading.cards.length);
+        if (progress) {
+          const recoveredRevealed = new Set(progress.revealedIndexes);
+          revealedRef.current = recoveredRevealed;
+          setRevealed(recoveredRevealed);
+          setCutTaken(progress.cutTaken);
+        }
         setReading(payload.reading);
       })
       .catch((cause: unknown) =>
@@ -70,9 +100,30 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     bootstrapped.current = true;
     send({ type: "START" });
     send({ type: "SELECT" });
+    if (reading.sessionExpired) {
+      send({ type: "EXPIRE" });
+      return;
+    }
+    // Guarded questions are acknowledged on the intake page before this
+    // reading, its locked draw, or its generation job exists. Interrupt
+    // categories never reach this component at all.
     send({ type: "QUESTION_ACCEPTED" });
     send({ type: "DECK_READY" });
   }, [reading, send]);
+
+  useEffect(() => {
+    if (!state.matches("shuffling")) return;
+    const timer = window.setTimeout(
+      () => send({ type: "SHUFFLE_COMPLETE" }),
+      cutTaken !== undefined ? 0 : motionOff ? 120 : 1_900,
+    );
+    return () => window.clearTimeout(timer);
+  }, [cutTaken, motionOff, send, state]);
+
+  useEffect(() => {
+    if (!state.matches("cuttingDeck") || cutTaken === undefined) return;
+    send({ type: cutTaken ? "CUT" : "SKIP_CUT" });
+  }, [cutTaken, send, state]);
 
   useEffect(() => {
     if (!state.matches("dealing")) return;
@@ -81,10 +132,178 @@ export function ReadingScene({ readingId }: { readingId: string }) {
   }, [motionOff, send, state]);
 
   useEffect(() => {
+    if (!state.matches("awaitingReveal")) return;
+    const timer = window.setTimeout(() => send({ type: "REVEAL" }), motionOff ? 0 : 280);
+    return () => window.clearTimeout(timer);
+  }, [motionOff, send, state]);
+
+  // PRD UX-006: cards are revealed by intentional click/tap/keyboard, not a
+  // timer. Every write updates `revealedRef` and React state together so the
+  // async callbacks below always guard against the latest set, not a stale
+  // closure. A passive mirroring effect is deliberately avoided: under a
+  // throttled render it could commit an older set after a reveal callback had
+  // already reserved another card.
+
+  const focusDuration = motionOff ? 90 : 2_200;
+  const settleDuration = motionOff ? 40 : 650;
+
+  const scheduleRevealCompletion = useCallback(
+    (delay = focusDuration + settleDuration) => {
+      if (revealCompletionTimer.current !== undefined) return;
+      revealCompletionTimer.current = window.setTimeout(() => {
+        revealCompletionTimer.current = undefined;
+        send({ type: "ALL_REVEALED" });
+      }, delay);
+    },
+    [focusDuration, send, settleDuration],
+  );
+
+  useEffect(
+    () => () => {
+      if (revealCompletionTimer.current !== undefined)
+        window.clearTimeout(revealCompletionTimer.current);
+    },
+    [],
+  );
+
+  const persistRitualProgress = useCallback(
+    (progress: RitualProgress, phase: "cuttingDeck" | "revealingCards" | "complete") => {
+      writeRitualProgress(window.sessionStorage, readingId, progress);
+      void fetch(`/api/readings/${readingId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "progress", phase, ...progress }),
+      }).catch(() => {
+        // The local receipt remains a recovery fallback; the locked draw is
+        // already durable and is never changed by a progress-write failure.
+      });
+    },
+    [readingId],
+  );
+
+  const revealCard = useCallback(
+    (index: number) => {
+      if (!reading || !state.matches("revealingCards") || revealedRef.current.has(index)) return;
+      const run = ++revealRun.current;
+      setActiveReveal(index);
+      const next = new Set(revealedRef.current).add(index);
+      // Reserve the card synchronously as well as updating React state. A
+      // Rapid multi-card interactions can land before React commits the first
+      // update (notably in throttled WebKit contexts). If every callback sees
+      // the same stale ref, later cards are dropped and the ritual can never
+      // advance past revealingCards.
+      revealedRef.current = next;
+      setRevealed(next);
+      const complete = next.size === reading.draw.assignments.length;
+      if (cutTaken !== undefined)
+        persistRitualProgress(
+          { cutTaken, revealedIndexes: [...next] },
+          complete ? "complete" : "revealingCards",
+        );
+      // Schedule the state-machine transition from the same callback that
+      // reserves the final card. A passive effect alone can have its cleanup
+      // race a throttled WebKit render and cancel the only completion timer.
+      if (complete) scheduleRevealCompletion();
+      if (soundEnabled.current) playRevealTone();
+      window.setTimeout(() => {
+        if (revealRun.current !== run) return;
+        setActiveReveal(null);
+      }, focusDuration);
+    },
+    [cutTaken, focusDuration, persistRitualProgress, reading, scheduleRevealCompletion, state],
+  );
+
+  const revealAll = useCallback(() => {
+    if (!reading || !state.matches("revealingCards")) return;
+    const allIndexes = reading.draw.assignments.map((_, index) => index);
+    const next = new Set(allIndexes);
+    if (next.size === revealedRef.current.size) {
+      scheduleRevealCompletion(motionOff ? 0 : settleDuration);
+      return;
+    }
+
+    // "Reveal all" is an explicit shortcut, so reserve and persist the full
+    // set in one callback instead of chaining one wall-clock timer per card.
+    // The collective flip still gets a brief visual settle, while throttled
+    // browsers cannot strand the ritual between scheduled card callbacks.
+    ++revealRun.current;
+    revealedRef.current = next;
+    setRevealed(next);
+    setActiveReveal(null);
+    if (cutTaken !== undefined)
+      persistRitualProgress({ cutTaken, revealedIndexes: allIndexes }, "complete");
+    if (soundEnabled.current) playRevealTone();
+    scheduleRevealCompletion(motionOff ? 0 : settleDuration);
+  }, [
+    cutTaken,
+    motionOff,
+    persistRitualProgress,
+    reading,
+    scheduleRevealCompletion,
+    settleDuration,
+    state,
+  ]);
+
+  // Recovery may hydrate a session whose final card was already persisted,
+  // so retain an idempotent effect as a backstop. It does not own cleanup;
+  // incidental rerenders must not cancel an already scheduled transition.
+  useEffect(() => {
+    if (!reading || !state.matches("revealingCards")) return;
+    if (revealed.size < reading.draw.assignments.length) return;
+    scheduleRevealCompletion();
+  }, [reading, revealed, scheduleRevealCompletion, state]);
+
+  // Interpretation generation now happens through a durable job (see
+  // docs/KNOWN-GAPS.md): the reading fetched on mount may still say
+  // "pending" here even after the ritual's own animation delays. Poll until
+  // it settles instead of assuming the one-time fetch above is still
+  // current — recovering from a Netlify-scheduled backstop run, not just a
+  // synchronous response, is the whole point of the job queue.
+  useEffect(() => {
     if (!state.matches("generatingSynthesis") || !reading) return;
-    if (reading.generationStatus === "ready") send({ type: "GENERATION_READY" });
-    if (reading.generationStatus === "failed") send({ type: "GENERATION_FAILED" });
-  }, [reading, send, state]);
+    if (reading.generationStatus === "ready") {
+      send({ type: "GENERATION_READY" });
+      return;
+    }
+    if (reading.generationStatus === "failed") {
+      send({ type: "GENERATION_FAILED" });
+      return;
+    }
+    let cancelled = false;
+    let attempts = 0;
+    const POLL_INTERVAL_MS = 2_000;
+    // ~80s: past AI_PROVIDER_TIMEOUT_MS (20s) plus one exponential-backoff
+    // retry. Timing out here doesn't mean the job failed — it may still
+    // complete via the scheduled backstop; a fresh page load will show it.
+    const MAX_ATTEMPTS = 40;
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const response = await fetch(`/api/readings/${readingId}`, { cache: "no-store" });
+        if (response.ok) {
+          const payload = (await response.json()) as { reading: ReadingPayload };
+          if (cancelled) return;
+          if (payload.reading.generationStatus !== "pending") {
+            setReading(payload.reading);
+            return;
+          }
+        }
+      } catch {
+        // Transient — retry on the next tick.
+      }
+      if (cancelled) return;
+      if (attempts >= MAX_ATTEMPTS) {
+        setReading({ ...reading, generationStatus: "failed" });
+        return;
+      }
+      timer = window.setTimeout(poll, POLL_INTERVAL_MS);
+    };
+    let timer = window.setTimeout(poll, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [reading, readingId, send, state]);
 
   useEffect(() => {
     if (!state.matches("revealingResult")) return;
@@ -92,30 +311,12 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     return () => window.clearTimeout(timer);
   }, [motionOff, send, state]);
 
-  const allRevealed = Boolean(reading && revealed.size === reading.draw.assignments.length);
-  const reveal = (index: number) => {
-    if (!reading) return;
-    if (revealed.has(index)) return;
-    if (state.matches("awaitingReveal")) send({ type: "REVEAL" });
-    if (!state.matches("awaitingReveal") && !state.matches("revealingCards")) return;
-    const next = new Set(revealed).add(index);
-    setRevealed(next);
-    if (sound) playRevealTone();
-    if (next.size === reading.draw.assignments.length)
-      window.setTimeout(() => send({ type: "ALL_REVEALED" }), motionOff ? 0 : 420);
-  };
-  const revealAll = () => {
-    if (!reading) return;
-    if (state.matches("awaitingReveal")) send({ type: "REVEAL" });
-    setRevealed(new Set(reading.draw.assignments.map((_, index) => index)));
-    window.setTimeout(() => send({ type: "ALL_REVEALED" }), motionOff ? 0 : 420);
-  };
-
   const handleStreamState = useCallback(
     (streamState: "idle" | "streaming" | "complete" | "failed") => {
-      if (streamState === "complete" && streamTarget === "primary" && reading?.followUps.at(-1)) {
+      if (streamTarget !== "primary") return;
+      setPrimaryJourneyReady(streamState === "complete");
+      if (streamState === "complete" && reading?.followUps.at(-1))
         setStreamTarget(reading.followUps.at(-1)!.id);
-      }
     },
     [reading, streamTarget],
   );
@@ -124,6 +325,7 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     if (!reading || !followUp.trim()) return;
     setFollowUpLoading(true);
     setError(undefined);
+    setSafetyInterrupt(undefined);
     try {
       const response = await fetch(`/api/readings/${readingId}`, {
         method: "POST",
@@ -131,13 +333,24 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         body: JSON.stringify({ action: "followUp", question: followUp }),
       });
       const payload = (await response.json()) as {
-        followUp?: { id: string; result: ReadingResult };
+        followUp?: { id: string; result: FollowUpResult };
         error?: string;
-        safety?: { guidance: string };
+        safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
       };
+      if (payload.safety?.interrupt) {
+        setSafetyInterrupt({
+          category: payload.safety.category,
+          guidance: payload.safety.guidance,
+        });
+        return;
+      }
       if (!response.ok || !payload.followUp)
         throw new Error(payload.safety?.guidance ?? payload.error ?? "Unable to answer follow-up.");
-      setReading({ ...reading, followUps: [...reading.followUps, payload.followUp] });
+      setReading({
+        ...reading,
+        followUps: [...reading.followUps, payload.followUp],
+        followUpsRemaining: Math.max(0, reading.followUpsRemaining - 1),
+      });
       setFollowUp("");
       setStreamTarget(payload.followUp.id);
       setStreamRetryToken(0);
@@ -178,42 +391,71 @@ export function ReadingScene({ readingId }: { readingId: string }) {
     state.matches("generationFailed") ||
     state.matches("revealingResult") ||
     state.matches("complete");
+  const focusedCardIndex = activeReveal ?? activeReadingCard;
+  const focusMode =
+    activeReveal !== null ? "reveal" : activeReadingCard !== null ? "reading" : null;
+  const activeRevealCard = activeReveal === null ? undefined : reading.cards[activeReveal];
 
   return (
     <MysticSanctuaryScene reducedMotion={motionOff} testId="mystic-sanctuary-scene">
+      <span
+        aria-hidden="true"
+        className={`cinematic-card-scrim ${activeReveal === null ? "" : "is-visible"}`}
+      />
+      {activeRevealCard && (
+        <div
+          aria-hidden="true"
+          className="cinematic-reveal-title"
+          data-testid="cinematic-reveal-title"
+          key={`${activeRevealCard.positionId}-${activeRevealCard.cardId}`}
+        >
+          <span>{activeRevealCard.positionName}</span>
+          <strong>
+            {activeRevealCard.name}
+            {activeRevealCard.orientation === "reversed" ? " (R)" : ""}
+          </strong>
+        </div>
+      )}
       <header className="sanctuary-controls" aria-label="Reading controls">
         <Link className="sanctuary-exit" href="/readings">
           ← Exit
         </Link>
+        <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
         <div className="sanctuary-control-group">
-          <button aria-pressed={sound} onClick={() => setSound((value) => !value)} type="button">
+          <button aria-pressed={motionOff} onClick={toggleReducedMotion} type="button">
+            Reduced motion <span>{motionOff ? "on" : "off"}</span>
+          </button>
+          <button aria-pressed={sound} onClick={toggleSound} type="button">
             Sound <span>{sound ? "on" : "off"}</span>
-          </button>
-          <button
-            aria-pressed={reducedMotion}
-            onClick={() => setReducedMotion((value) => !value)}
-            type="button"
-          >
-            Reduced motion
-          </button>
-          <button
-            aria-pressed={skipAnimation}
-            onClick={() => setSkipAnimation((value) => !value)}
-            type="button"
-          >
-            Skip animation
-          </button>
-          <button onClick={() => setDetailsOpen(true)} type="button">
-            Reading details
           </button>
         </div>
       </header>
 
-      <p className="locked-reading-note" data-testid="locked-reading-id">
-        Locked draw · profile and question never select cards
-      </p>
+      <section
+        className={`sanctuary-stage ${activeReveal === null ? "" : "has-cinematic-review"} ${
+          state.matches("complete") ? "has-reading-journey" : ""
+        }`}
+        aria-live="polite"
+      >
+        {state.matches("sessionExpired") && (
+          <div className="ritual-moment">
+            <p className="ritual-status" role="alert">
+              This ritual session has expired. Its locked cards and completed interpretation remain
+              unchanged in your private history.
+            </p>
+            <div className="ritual-action-group">
+              {reading?.result && (
+                <Link className="ritual-action" href={`/reading/${readingId}`}>
+                  Open the preserved reading
+                </Link>
+              )}
+              <Link className="ritual-action" href="/readings">
+                Start a new reading
+              </Link>
+            </div>
+          </div>
+        )}
 
-      <section className="sanctuary-stage" aria-live="polite">
         {state.matches("shuffling") && (
           <div className="ritual-moment">
             <div aria-hidden="true" className="sanctuary-shuffle-shells">
@@ -221,9 +463,14 @@ export function ReadingScene({ readingId }: { readingId: string }) {
                 <span key={index} style={{ "--shell-index": index } as React.CSSProperties} />
               ))}
             </div>
-            <h1>The draw is secured</h1>
-            <p>The ritual cannot alter your already locked cards.</p>
-            <button onClick={() => send({ type: "SHUFFLE_COMPLETE" })} type="button">
+            <p className="ritual-status" role="status">
+              Shuffling your cards…
+            </p>
+            <button
+              className="ritual-action"
+              onClick={() => send({ type: "SHUFFLE_COMPLETE" })}
+              type="button"
+            >
               Finish shuffling
             </button>
           </div>
@@ -231,14 +478,34 @@ export function ReadingScene({ readingId }: { readingId: string }) {
 
         {state.matches("cuttingDeck") && (
           <div className="ritual-moment">
-            <div aria-hidden="true" className="sanctuary-cut-deck" />
-            <h1>Cut the deck?</h1>
-            <p>This physical gesture does not change the locked draw.</p>
-            <div className="ritual-actions">
-              <button onClick={() => send({ type: "CUT" })} type="button">
+            <p className="ritual-status" role="status">
+              Cut the deck, or continue.
+            </p>
+            <div className="ritual-action-group">
+              <button
+                className="ritual-action"
+                onClick={() => {
+                  setCutTaken(true);
+                  persistRitualProgress(
+                    { cutTaken: true, revealedIndexes: [...revealed] },
+                    "cuttingDeck",
+                  );
+                }}
+                type="button"
+              >
                 Cut
               </button>
-              <button onClick={() => send({ type: "SKIP_CUT" })} type="button">
+              <button
+                className="ritual-action"
+                onClick={() => {
+                  setCutTaken(false);
+                  persistRitualProgress(
+                    { cutTaken: false, revealedIndexes: [...revealed] },
+                    "cuttingDeck",
+                  );
+                }}
+                type="button"
+              >
                 Skip cut
               </button>
             </div>
@@ -261,15 +528,17 @@ export function ReadingScene({ readingId }: { readingId: string }) {
 
         {cardsVisible && (
           <TarotSpreadStage
+            activeIndex={focusedCardIndex}
             cards={reading.cards}
-            onReveal={reveal}
+            focusMode={focusMode}
+            onReveal={state.matches("revealingCards") ? revealCard : undefined}
             reducedMotion={motionOff}
             revealed={revealed}
           />
         )}
 
-        {(state.matches("awaitingReveal") || state.matches("revealingCards")) && !allRevealed && (
-          <button className="reveal-all-control" onClick={revealAll} type="button">
+        {state.matches("revealingCards") && revealed.size < reading.cards.length && (
+          <button className="ritual-action reveal-all-action" onClick={revealAll} type="button">
             Reveal all
           </button>
         )}
@@ -291,8 +560,19 @@ export function ReadingScene({ readingId }: { readingId: string }) {
                   body: JSON.stringify({ action: "retry" }),
                 });
                 if (!response.ok) return setError("Unable to retry the interpretation.");
-                const payload = (await response.json()) as { result: ReadingResult };
-                setReading({ ...reading, result: payload.result, generationStatus: "ready" });
+                const payload = (await response.json()) as {
+                  generationStatus: ReadingPayload["generationStatus"];
+                  result?: ReadingResult;
+                };
+                // A retry now re-enqueues a durable job rather than always
+                // generating synchronously (docs/KNOWN-GAPS.md), so this may
+                // report "pending" — the generatingSynthesis effect's poll
+                // loop picks it up from there, same as initial generation.
+                setReading({
+                  ...reading,
+                  ...(payload.result ? { result: payload.result } : {}),
+                  generationStatus: payload.generationStatus,
+                });
                 send({ type: "RETRY_GENERATION" });
               }}
               type="button"
@@ -303,56 +583,65 @@ export function ReadingScene({ readingId }: { readingId: string }) {
         )}
       </section>
 
-      <div className="oracle-console-stack">
-        {state.matches("complete") && reading.result ? (
+      <div className={`oracle-console-stack ${state.matches("complete") ? "" : "is-inactive"}`}>
+        {state.matches("complete") && reading.result && (
           <OracleTranscript
             active
+            cards={reading.cards}
+            onActiveCardChange={setActiveReadingCard}
             onRetry={() => setStreamRetryToken((token) => token + 1)}
             onStateChange={handleStreamState}
             readingId={readingId}
             reducedMotion={motionOff}
+            result={reading.result}
             retryToken={streamRetryToken}
             target={streamTarget}
           />
-        ) : (
-          <p className="oracle-console-placeholder">
-            Reveal the locked spread to begin the oracle transcript.
-          </p>
         )}
-        {state.matches("complete") && (
+        {state.matches("complete") && safetyInterrupt && (
+          <SafetyInterruptContent
+            category={safetyInterrupt.category}
+            guidance={safetyInterrupt.guidance}
+          />
+        )}
+        {state.matches("complete") && !safetyInterrupt && (
           <QuestionComposer
-            disabled={reading.followUps.length >= 1}
+            disabled={reading.followUpsRemaining <= 0 || !primaryJourneyReady}
             hint={
-              reading.followUps.length >= 1
-                ? "This reading’s follow-up is preserved with the same locked cards."
-                : "Shift+Enter adds a line. Enter sends privately."
+              reading.followUpsRemaining <= 0
+                ? `This reading’s ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? " is" : "s are"} preserved with the same locked cards.`
+                : !primaryJourneyReady
+                  ? "Let the complete reading arrive before continuing the same thread."
+                  : `${reading.followUpsRemaining} follow-up${reading.followUpsRemaining === 1 ? "" : "s"} remaining. Shift+Enter adds a line.`
             }
             label="Keep the same cards and ask what they add"
             loading={followUpLoading}
             onChange={setFollowUp}
             onSubmit={submitFollowUp}
             placeholder={
-              reading.followUps.length >= 1
+              reading.followUpsRemaining <= 0
                 ? "Follow-up complete"
-                : "Ask one follow-up about the same cards…"
+                : "Ask a follow-up about the same cards…"
             }
             submitLabel="Reflect on the same cards"
             testId="follow-up-composer"
             value={followUp}
           />
         )}
+        {state.matches("complete") &&
+          reading.safetyClassification &&
+          GUARDED_CATEGORIES.has(reading.safetyClassification) && (
+            <p className="safety-flags-banner" role="note">
+              This reading offers reflection rather than a factual answer, given the kind of
+              question it was.
+            </p>
+          )}
         {error && (
           <p className="sanctuary-error" role="alert">
             {error}
           </p>
         )}
       </div>
-
-      <ReadingDetailsDrawer
-        onClose={() => setDetailsOpen(false)}
-        open={detailsOpen}
-        result={reading.result}
-      />
     </MysticSanctuaryScene>
   );
 }

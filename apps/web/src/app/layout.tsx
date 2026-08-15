@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import "./globals.css";
 import { AppNav } from "./app-nav";
+import { SiteFooter } from "./site-footer";
 
 export const metadata: Metadata = {
   title: "StarGuidance",
@@ -17,7 +18,10 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
           Skip to content
         </a>
         <AppNav />
-        <div id="main-content">{children}</div>
+        <div id="main-content" tabIndex={-1}>
+          {children}
+        </div>
+        <SiteFooter />
       </body>
     </html>
   );

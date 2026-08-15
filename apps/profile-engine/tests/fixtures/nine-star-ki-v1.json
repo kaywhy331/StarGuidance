@@ -1,0 +1,16 @@
+{
+  "datasetId": "nine-star-ki-v1-regression-v1",
+  "algorithmVersion": "nine-star-ki-fixed-boundaries-lo-shu-v1",
+  "source": "StarGuidance fixed-boundary Nine Star Ki convention worksheet",
+  "sourceVersion": "2026-08-10",
+  "reviewStatus": "internal_regression_pending_independent_reference_review",
+  "coverage": [
+    "all_81_principal_character_combinations",
+    "before_and_on_each_fixed_monthly_boundary",
+    "all_five_phases",
+    "gregorian_leap_day"
+  ],
+  "caseFile": "nine-star-ki-v1.csv",
+  "caseCount": 100,
+  "sha256": "e783c49a40923ff7511eac596d57afee7cfe7195b4be4f17be0d2ebc40a38620"
+}

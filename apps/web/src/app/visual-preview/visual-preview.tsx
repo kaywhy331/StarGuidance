@@ -7,7 +7,6 @@ import type { OracleStreamEvent, ReadingResult } from "@starguidance/contracts";
 import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../session/[id]/question-composer";
-import { ReadingDetailsDrawer } from "../session/[id]/reading-details-drawer";
 import type { DealtCardView } from "../session/[id]/reading-types";
 import { TarotSpreadStage } from "../session/[id]/tarot-spread-stage";
 
@@ -22,48 +21,37 @@ export function SanctuaryVisualPreview({
   events: PhaseEvent[];
   result: ReadingResult;
 }) {
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [activeCard, setActiveCard] = useState<number | null>(null);
   const [question, setQuestion] = useState("");
   return (
-    <MysticSanctuaryScene reducedMotion={reducedMotion} testId="mystic-sanctuary-scene">
+    <MysticSanctuaryScene reducedMotion={false} testId="mystic-sanctuary-scene">
       <header className="sanctuary-controls" aria-label="Visual preview controls">
         <Link href="/">← Exit</Link>
         <div className="sanctuary-control-group">
           <button aria-pressed="false" type="button">
             Sound off
           </button>
-          <button
-            aria-pressed={reducedMotion}
-            onClick={() => setReducedMotion((value) => !value)}
-            type="button"
-          >
-            Reduced motion
-          </button>
-          <button aria-pressed={reducedMotion} onClick={() => setReducedMotion(true)} type="button">
-            Skip animation
-          </button>
-          <button onClick={() => setDetailsOpen(true)} type="button">
-            Reading details
-          </button>
         </div>
       </header>
-      <p className="locked-reading-note">Synthetic preview · no personal data</p>
-      <section className="sanctuary-stage">
+      <section className="sanctuary-stage has-reading-journey">
         <TarotSpreadStage
+          activeIndex={activeCard}
           cards={cards}
-          onReveal={() => undefined}
-          reducedMotion={reducedMotion}
+          focusMode={activeCard === null ? null : "reading"}
+          reducedMotion={false}
           revealed={new Set(cards.map((_, index) => index))}
         />
       </section>
       <div className="oracle-console-stack">
         <OracleTranscript
           active={false}
+          cards={cards}
+          onActiveCardChange={setActiveCard}
           onRetry={() => undefined}
           previewEvents={events}
           readingId="synthetic-preview"
-          reducedMotion={reducedMotion}
+          reducedMotion={false}
+          result={result}
           retryToken={0}
           target="preview"
         />
@@ -77,11 +65,6 @@ export function SanctuaryVisualPreview({
           value={question}
         />
       </div>
-      <ReadingDetailsDrawer
-        onClose={() => setDetailsOpen(false)}
-        open={detailsOpen}
-        result={result}
-      />
     </MysticSanctuaryScene>
   );
 }

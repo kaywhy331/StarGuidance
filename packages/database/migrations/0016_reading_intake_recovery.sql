@@ -1,0 +1,4 @@
+ALTER TABLE "reading_sessions" ADD COLUMN "question_classification" jsonb DEFAULT '{"version":"question-classification-v1","topic":"general","horizon":"open","intent":"generalReflection","generalReading":false}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "reading_sessions" ADD COLUMN "entitlement_decision" jsonb DEFAULT '{"version":"reading-entitlement-v1","mode":"unlimited","outcome":"granted","entitlementClass":"standard","used":0,"limit":null,"remaining":null,"windowStartsAt":null,"windowEndsAt":null}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "reading_sessions" ADD COLUMN "ritual_progress" jsonb;--> statement-breakpoint
+ALTER TABLE "reading_sessions" ADD COLUMN "expires_at" timestamp with time zone DEFAULT now() + interval '24 hours' NOT NULL;

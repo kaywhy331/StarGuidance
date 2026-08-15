@@ -2,71 +2,324 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { decryptLocal, localStore, recordAudit, type StoredReport } from "./local-store";
-import type { ProfileCalculation } from "./profile-engine";
+import {
+  profileSnapshotSchema,
+  type ProfileSnapshot,
+  type ProfileTrait,
+} from "@starguidance/contracts";
+import type { StoredReport, StoredReportSection } from "@starguidance/database";
+import { z } from "zod";
+
+import { persistenceFor, recordAudit } from "./persistence";
+import { calculationSchema } from "./profile-engine-contract";
+import { PROFILE_REPORT_SECTION_PREVIEW, type ProfileReportSectionKey } from "./report-sections";
+
+const profileReportSourceSchema = z.object({
+  snapshot: profileSnapshotSchema,
+  calculation: calculationSchema,
+});
+
+export type ProfileReportSource = z.infer<typeof profileReportSourceSchema>;
+
+export function createProfileReportSource(
+  snapshot: ProfileSnapshot,
+  calculationInput: unknown,
+): ProfileReportSource {
+  const parsedCalculation = calculationSchema.parse(calculationInput);
+  return profileReportSourceSchema.parse({
+    snapshot,
+    calculation: {
+      ...parsedCalculation,
+      // name_rendering is derived from the full birth name but no report
+      // section needs it. The durable background source excludes it.
+      numerology: { ...parsedCalculation.numerology, name_rendering: null },
+    },
+  });
+}
+
+const SOURCE_LABELS: Record<ProfileTrait["sourceSystem"], string> = {
+  numerology: "Pythagorean numerology",
+  dreamspell: "Dreamspell",
+  westernAstrology: "Western astrology",
+  bazi: "BaZi",
+  planetaryAngularity: "planetary angularity",
+  nineStarKi: "Nine Star Ki",
+};
+
+function title(key: ProfileReportSectionKey): string {
+  const section = PROFILE_REPORT_SECTION_PREVIEW.find((candidate) => candidate.key === key);
+  if (!section) throw new Error("REPORT_SECTION_TITLE_MISSING");
+  return section.title;
+}
+
+function section(
+  key: ProfileReportSectionKey,
+  body: string,
+  unavailable = false,
+): StoredReportSection {
+  return { key, title: title(key), body, ...(unavailable ? { unavailable: true } : {}) };
+}
+
+function provenance(trait: ProfileTrait): string {
+  return `${SOURCE_LABELS[trait.sourceSystem]}, ${trait.sourceRule}, ${trait.calculationVersion}; ${trait.stability}`;
+}
+
+function traitNarrative(
+  snapshot: ProfileSnapshot,
+  domains: readonly ProfileTrait["domain"][],
+  fallback: string,
+): string {
+  const matches = snapshot.traits.filter((trait) => domains.includes(trait.domain));
+  if (matches.length === 0) return fallback;
+  return matches.map((trait) => `${trait.statement} (Source: ${provenance(trait)}.)`).join(" ");
+}
+
+function tensionNarrative(snapshot: ProfileSnapshot): string {
+  if (snapshot.tensions.length === 0)
+    return "No explicit cross-trait tension was produced by this snapshot. That absence is not evidence that the person has no internal contradictions.";
+  return snapshot.tensions
+    .map((tension) => {
+      const sources = tension.traitIndexes
+        .map((index) => snapshot.traits[index])
+        .filter((trait): trait is ProfileTrait => Boolean(trait))
+        .map((trait) => provenance(trait))
+        .join("; ");
+      return `${tension.sideA} At the same time, ${tension.sideB}${sources ? ` (Sources: ${sources}.)` : "."}`;
+    })
+    .join(" ");
+}
+
+function convergenceNarrative(snapshot: ProfileSnapshot): string {
+  if (snapshot.convergences.length === 0)
+    return "This snapshot contains no explicit, versioned agreement from two independently represented systems. StarGuidance does not manufacture convergence from unrelated traits.";
+  return snapshot.convergences
+    .map((convergence) => {
+      const traits = convergence.traitIndexes
+        .map((index) => snapshot.traits[index])
+        .filter((trait): trait is ProfileTrait => Boolean(trait));
+      const observations = traits.map(({ statement }) => statement).join(" / ");
+      const sources = traits.map(provenance).join("; ");
+      return `${convergence.domain}: ${convergence.summary}${observations ? ` Observations: ${observations}` : ""} (Confidence: ${convergence.confidence}${sources ? `; sources: ${sources}` : ""}.)`;
+    })
+    .join(" ");
+}
+
+function displayToken(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+function westernAstrologySection(source: ProfileReportSource): StoredReportSection {
+  const result = source.calculation.western_astrology;
+  if (result.status === "unavailable") {
+    return section(
+      "astrology",
+      "Unavailable until ephemeris licensing, calculation conventions, and independent golden references are approved.",
+      true,
+    );
+  }
+
+  const placidus =
+    result.house_systems.placidus.status === "available"
+      ? "Placidus houses were calculated."
+      : `Placidus houses are explicitly unavailable (${displayToken(result.house_systems.placidus.reason)}).`;
+  return section(
+    "astrology",
+    `The validated ${result.zodiac} calculation contains ${result.planetary_positions.length} planetary positions and ${result.aspects.length} aspects. Ascendant ${result.angles.ascendant.longitude_degrees.toFixed(2)}°; Midheaven ${result.angles.midheaven.longitude_degrees.toFixed(2)}°. Whole Sign houses were calculated. ${placidus} Calculation ${result.calculation_version}; ${result.uncertainty.status}.`,
+  );
+}
+
+function baziSection(source: ProfileReportSource): StoredReportSection {
+  const result = source.calculation.bazi;
+  if (result.status === "unavailable") {
+    return section(
+      "bazi",
+      "Unavailable until boundary conventions and independent golden references receive domain-expert approval.",
+      true,
+    );
+  }
+
+  const pillars = Object.entries(result.pillars)
+    .map(
+      ([name, pillar]) =>
+        `${name} ${displayToken(pillar.heavenly_stem)}-${displayToken(pillar.earthly_branch)}`,
+    )
+    .join("; ");
+  return section(
+    "bazi",
+    `${pillars}. Year boundary ${displayToken(result.conventions.year_boundary)}; month boundary ${displayToken(result.conventions.month_boundary)}; true solar time ${displayToken(result.conventions.true_solar_time)}; Zi-hour day boundary ${result.conventions.zi_hour_day_boundary}. Calculation ${result.calculation_version}; ${result.uncertainty.status}.`,
+  );
+}
+
+function planetaryAngularitySection(source: ProfileReportSource): StoredReportSection {
+  const result = source.calculation.planetary_angularity;
+  if (result.status === "available") {
+    return section(
+      "planetary-angularity",
+      `The validated WGS84 calculation contains ${result.lines.length} angular lines and ${result.crossings.length} recorded crossings under interpretation policy ${result.interpretation_policy_version}. These are calculated geometric relationships, not guarantees that any place is lucky, difficult, or destined. Calculation ${result.calculation_version}; ${result.uncertainty.status}.`,
+    );
+  }
+
+  let body: string;
+  switch (result.reason) {
+    case "precise_birth_time_required":
+      body =
+        "Planetary angular lines require a supplied birth time. Without one, StarGuidance does not invent rising, setting, culmination, or anti-culmination locations.";
+      break;
+    case "validated_birthplace_context_required":
+      body =
+        "The birth time is present, but validated coordinates and historical timezone context are not. No city coordinate or UTC instant was guessed.";
+      break;
+    default:
+      body =
+        "Planetary angularity mapping remains unavailable until the ephemeris license, location resolver, and independent line-reference suite are approved. No place is labeled lucky, difficult, or destined without a calculated line.";
+  }
+  return section("planetary-angularity", body, true);
+}
+
+export function buildProfileReportSections(source: ProfileReportSource): StoredReportSection[] {
+  const { calculation, snapshot } = profileReportSourceSchema.parse(source);
+  const stableTraits = snapshot.traits.filter(({ stability }) => stability === "stable");
+  const nineStarTraits = snapshot.traits
+    .filter(({ sourceSystem }) => sourceSystem === "nineStarKi")
+    .map(({ statement }) => statement)
+    .join(" ");
+
+  return [
+    section(
+      "overview",
+      `This ${snapshot.completeness} profile is snapshot v${snapshot.version}. Its observations are deterministic, versioned, and reflective rather than diagnostic or fixed fate.`,
+    ),
+    section(
+      "core-motivations",
+      traitNarrative(
+        snapshot,
+        ["coreMotivation", "workStyle"],
+        "No stable core-motivation trait is available in the validated systems for this snapshot.",
+      ),
+    ),
+    section(
+      "emotional-patterns",
+      traitNarrative(
+        snapshot,
+        ["emotionalProcessing", "conflictResponse"],
+        "No validated emotional-processing trait is available in this snapshot.",
+      ),
+    ),
+    section(
+      "relationships",
+      traitNarrative(
+        snapshot,
+        ["relationshipNeeds", "socialOrientation"],
+        "No validated relationship-specific trait is available in this snapshot.",
+      ),
+    ),
+    section(
+      "communication-decisions",
+      traitNarrative(
+        snapshot,
+        ["communicationStyle", "decisionStyle"],
+        "No validated communication or decision-style trait is available in this snapshot.",
+      ),
+    ),
+    section(
+      "strengths",
+      stableTraits.length > 0
+        ? stableTraits
+            .slice(0, 6)
+            .map((trait) => `${trait.statement} (Source: ${provenance(trait)}.)`)
+            .join(" ")
+        : "No trait is marked stable in this snapshot, so the report does not label a speculative pattern as a strength.",
+    ),
+    section("internal-tensions", tensionNarrative(snapshot)),
+    section(
+      "growth-opportunities",
+      traitNarrative(
+        snapshot,
+        ["growthLever", "stabilityVsChange", "riskOrientation"],
+        "Use the grounded integration prompts below; this snapshot does not supply a validated growth-lever trait.",
+      ),
+    ),
+    westernAstrologySection(source),
+    section(
+      "numerology",
+      calculation.numerology.name_calculation_status !== "unavailable" &&
+        calculation.numerology.expression !== null &&
+        calculation.numerology.soul_urge !== null &&
+        calculation.numerology.personality !== null
+        ? `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`
+        : `Life Path ${calculation.numerology.life_path}; Birthday ${calculation.numerology.birthday}. Name-derived values are unavailable for this writing system and were not fabricated. Calculated with ${calculation.numerology.algorithm_version}.`,
+    ),
+    baziSection(source),
+    section(
+      "dreamspell",
+      `Kin ${calculation.dreamspell.kin}: ${calculation.dreamspell.tone_name} ${calculation.dreamspell.solar_seal_name} (${calculation.dreamspell.color}). Calculated with ${calculation.dreamspell.algorithm_version}; production certification and content-rights review remain pending.`,
+    ),
+    section(
+      "nine-star-ki",
+      `Principal ${calculation.nine_star_ki.principal_star.number} ${calculation.nine_star_ki.principal_star.phase}; Character ${calculation.nine_star_ki.character_star.number} ${calculation.nine_star_ki.character_star.phase}; derived Energy ${calculation.nine_star_ki.energy_star.number} ${calculation.nine_star_ki.energy_star.phase}. ${nineStarTraits} This uses ${calculation.nine_star_ki.algorithm_version}; independent reference review remains pending.`,
+    ),
+    planetaryAngularitySection(source),
+    section("cross-system-convergence", convergenceNarrative(snapshot)),
+    section("cross-system-contradictions", tensionNarrative(snapshot)),
+    section(
+      "practical-integration",
+      snapshot.tensions.length > 0
+        ? "Choose one current situation where each side of a preserved tension may be useful. Name one observable sign that supports the pattern and one that would disconfirm it. Then try the smallest reversible action that honors both needs."
+        : "Choose one observation that matches lived experience, name one observation that would disconfirm it, and try one small reversible action. Release any interpretation that does not become useful through observable evidence.",
+    ),
+  ];
+}
+
+export async function prepareProfileReportSource(input: {
+  userId: string;
+  snapshotId: string;
+}): Promise<string> {
+  const persistence = persistenceFor({ id: input.userId });
+  const profile = await persistence.repositories.profileSnapshots.get(
+    input.userId,
+    input.snapshotId,
+  );
+  if (!profile) throw new Error("PROFILE_SNAPSHOT_NOT_FOUND");
+  const source = createProfileReportSource(
+    profile.snapshot,
+    JSON.parse(persistence.decrypt(profile.encryptedCalculations, "profile-calculations")),
+  );
+  return persistence.encrypt(JSON.stringify(source), "report-source");
+}
+
+export function readProfileReportSource(input: {
+  userId: string;
+  encryptedSource: string;
+}): ProfileReportSource {
+  const persistence = persistenceFor({ id: input.userId });
+  return profileReportSourceSchema.parse(
+    JSON.parse(persistence.decrypt(input.encryptedSource, "report-source")),
+  );
+}
 
 export async function generateProfileReport(input: {
   userId: string;
   snapshotId: string;
   orderId: string;
 }): Promise<StoredReport> {
-  const profile = localStore.profileSnapshots.get(input.snapshotId);
-  if (!profile) throw new Error("PROFILE_SNAPSHOT_NOT_FOUND");
-  const calculation = JSON.parse(decryptLocal(profile.encryptedCalculations)) as ProfileCalculation;
+  const persistence = persistenceFor({ id: input.userId });
+  const existing = await persistence.repositories.reports.getByOrder(input.userId, input.orderId);
+  if (existing) return existing;
+  const encryptedSource = await prepareProfileReportSource(input);
+  const source = readProfileReportSource({ userId: input.userId, encryptedSource });
+  const order = await persistence.repositories.orders.get(input.userId, input.orderId);
+  if (!order) throw new Error("ORDER_NOT_FOUND");
   const report: StoredReport = {
     id: randomUUID(),
     userId: input.userId,
     snapshotId: input.snapshotId,
     orderId: input.orderId,
+    provider: order.provider,
     status: "ready",
     createdAt: new Date().toISOString(),
-    sections: [
-      {
-        key: "overview",
-        title: "Personal overview",
-        body: `This ${profile.snapshot.completeness} profile is snapshot v${profile.snapshot.version}. Its observations remain reflective rather than diagnostic or fixed fate.`,
-      },
-      {
-        key: "numerology",
-        title: "Pythagorean numerology",
-        body: `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`,
-      },
-      {
-        key: "dreamspell",
-        title: "Dreamspell Galactic Signature",
-        body: `Kin ${calculation.dreamspell.kin}: ${calculation.dreamspell.tone_name} ${calculation.dreamspell.solar_seal_name} (${calculation.dreamspell.color}). The implementation is deterministic, but production certification remains pending an approved reference dataset and rights review.`,
-      },
-      {
-        key: "traits",
-        title: "Recurring patterns",
-        body: profile.snapshot.traits
-          .filter(({ stability }) => stability === "stable")
-          .map(({ statement }) => statement)
-          .join(" "),
-      },
-      {
-        key: "astrology",
-        title: "Western astrology",
-        body: "Unavailable until ephemeris licensing, conventions, and golden references are approved.",
-        unavailable: true,
-      },
-      {
-        key: "bazi",
-        title: "BaZi Four Pillars",
-        body: "Unavailable until boundary conventions and golden references receive domain-expert approval.",
-        unavailable: true,
-      },
-      {
-        key: "integration",
-        title: "Practical integration",
-        body:
-          profile.snapshot.tensions.length > 0
-            ? "Your sources preserve a tension rather than averaging it away. Experiment with when each side is useful, and judge it against observable experience."
-            : "Look for repeated evidence before treating any observation as useful. Choose one grounded experiment and release what does not match lived experience.",
-      },
-    ],
+    sections: buildProfileReportSections(source),
   };
-  localStore.reports.set(report.id, report);
-  recordAudit("report.generated", input.userId, report.id);
+  await persistence.repositories.reports.create(report);
+  await recordAudit(input.userId, "report.generated", "report", report.id);
   return report;
 }

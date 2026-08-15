@@ -1,0 +1,12 @@
+title = "StarGuidance secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exact synthetic test-only credential markers; never real provider formats or broad paths."
+regexTarget = "match"
+regexes = [
+  '''synthetic-(?:anon-key|service-role-key|ai-provider-key|profile-engine-shared-secret|interpretation-worker-shared-secret|readiness-probe-shared-secret)''',
+  '''sk_test_local_only''',
+]

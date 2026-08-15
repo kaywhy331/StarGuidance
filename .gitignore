@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 .next/
+.netlify/
 out/
 coverage/
 playwright-report/
@@ -20,6 +21,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+/apps/profile-engine/build/
 
 .DS_Store
 Thumbs.db

@@ -1,18 +1,93 @@
 # Profile calculations
 
-## Implemented and tested
+## Implemented, pending reference certification
 
-`pythagorean-v1` calculates Life Path, Expression, Soul Urge, Personality, and Birthday values. Master numbers 11, 22, and 33 are preserved. Spaces, punctuation, and Latin diacritics are normalized while the encrypted original name remains unchanged. A non-Latin name requires a user-confirmed Latin-letter rendering; it is never silently transliterated.
+`pythagorean-v3` always calculates the date-derived Life Path and Birthday values. Life Path reduces month, day, and four-digit year separately, preserving 11, 22, or 33 at each component, then sums and reduces those three values while again preserving master numbers. This component-wise convention intentionally changes cases such as 1987-07-26 from the v2 all-digit result 4 to 22. Existing snapshots remain on v2; only newly calculated snapshots use v3. Expression, Soul Urge, and Personality are calculated when the entered birth name can be normalized under the rules below. The output is deterministic and covered by a digest-pinned regression set, but it is not yet independently certified.
 
-`profile-traits-v1` maps deterministic numerology observations to the shared trait ontology with source rule, source system, calculation version, and stability. It preserves a motivation/expression tension when their mapped families differ. `question-trait-lens-v1` deterministically selects at most three stable traits relevant to career, relationship, change, or general questions. It never selects cards and never sends raw numerology values into a base tarot reading.
+### Name handling
 
-`dreamspell-anchor-1987-07-26-kin34-v1` produces Kin, tone, solar seal, color, and version from the Gregorian date. Its trait is marked uncertain and excluded from the stable reading lens. The implementation status is `implemented_pending_approved_reference_dataset`; production certification requires an approved decoder set and terminology/rights review.
+- **Birth name versus current name:** the required `fullBirthName` is the only name used. A current, married, chosen, or professional name is neither collected nor substituted. The encrypted original birth-name input is preserved unchanged.
+- **Middle names:** every entered middle-name letter participates in Expression, Soul Urge, and Personality.
+- **Suffixes:** entered suffix letters such as `Jr` or `III` participate. The engine does not silently guess whether a final token is a cultural, professional, or generational suffix.
+- **Hyphens and apostrophes:** these are ignored as separators while letters on both sides retain their order. Spaces and other non-letter punctuation are likewise excluded from the numeric sum.
+- **Accents:** Unicode NFKD removes combining marks for letters such as `é`, `ş`, and `Ż`.
+- **Latin-Extended letters:** NFKD is supplemented by the versioned allowlist `Æ→AE`, `Ð/Đ→D`, `Ħ→H`, dotless `ı→I`, `ĸ→K`, `Ł→L`, `Ŋ→N`, `Œ→OE`, `Ø→O`, `ß→SS`, `Þ→TH`, and `Ŧ→T`, including lowercase forms. This list is part of pythagorean-v3 and changes only through a version bump.
+- **Non-Latin and unlisted letters:** if any letter remains outside ASCII after that allowlist and NFKD normalization, all name-derived values return typed `unavailable`; date-derived values and profile creation still succeed.
+- **Transliteration:** the application never transliterates unsupported writing systems, strips their letters into a partial result, asks for a Latin rendering, or invents one.
+- **Master numbers:** 11, 22, and 33 are preserved for Life Path, Birthday, Expression, Soul Urge, and Personality whenever a reduction step reaches one of them.
 
-Exact, approximate, and unknown birth-time states are preserved. Approximate values remain start/end ranges and are never replaced with a midpoint. An entered time requires birthplace or authoritative timezone context. Missing data reduces profile capability rather than blocking tarot.
+`profile-traits-v4` maps deterministic available numerology, Dreamspell, and original Nine Star Ki editorial observations across the retained ontology domains. Every trait carries source rule/system, calculation version, stability, direction, strength, confidence, and relevant life domains. Explicit convergence records require at least two represented source systems; explicit tensions preserve both sides and their source trait indexes instead of averaging them away. Unsupported name-derived traits are omitted, and uncertified Dreamspell/Nine Star Ki observations remain uncertain. `question-trait-lens-v2` selects only question-relevant traits and preserved tensions for career, relationships, change, creativity, or general reflection; it no longer pads to three with irrelevant rank-99 traits. It never selects cards and never sends birth facts or raw calculation values into a reading.
+
+`dreamspell-anchor-1987-07-26-kin34-no-leap-v2` produces Kin, tone, solar seal, color, and version from the Gregorian date. It uses the explicit Dreamspell no-leap day-count convention: February 29 does not advance the 260-day sequence, and a February 29 birth receives the same Kin as February 28. This replaces v1's continuous Gregorian delta; old snapshots keep v1. Its trait is marked uncertain and excluded from the stable reading lens. The implementation status is `implemented_pending_approved_reference_dataset`; production certification still requires an approved decoder set and terminology/rights review.
+
+`nine-star-ki-fixed-boundaries-lo-shu-v1` deterministically produces a Principal, Character, and derived Energy star from the Gregorian birth date. The annual sequence uses 1963 as the 1 Water cycle anchor and changes on February 4. Monthly stars use the explicit fixed civil-date boundary table encoded in the module. The optional third star uses the named Lo Shu positional derivation; it is not presented as a separate time-of-birth measurement, and other schools may use a different derivation. Each number retains its traditional five-phase association, while every personality sentence is original StarGuidance editorial copy.
+
+The fixed-date convention is intentionally not described as an exact astronomical solar-term calculation. Its status is `implemented_pending_independent_reference_review`. Activation as a certified component requires an approved convention manifest, independent golden cases around every annual/monthly boundary, review of the third-star derivation, and a rights record confirming that only calculation facts and original prose/assets are shipped. The engine does not call or scrape a consumer Nine Star Ki guide or calculator.
+
+### Regression fixtures and certification boundary
+
+`apps/profile-engine/tests/fixtures/` contains versioned CSV datasets plus JSON manifests naming the source worksheet, source version, case count, review status, and SHA-256 digest. CI verifies the digest before executing every row: 60 pythagorean-v3 cases, 60 Dreamspell v2 cases across leap/non-leap centuries and the anchor, and 100 Nine Star Ki cases spanning every fixed monthly boundary in multiple years. The fixtures contain synthetic/public historical names and dates only, never customer data.
+
+These are internal regression worksheets, not approved independent references. They prevent an unversioned convention change and fill the automated matrix, but they do not satisfy the expert/source certification gates below. A future approved dataset is added under a new dataset ID and digest; it does not overwrite these fixtures.
+
+### Calculation latency and cache boundary
+
+CAL-016 is enforced by `python scripts/check_latency_budget.py` from `apps/profile-engine`. The check warms the application, then measures 100 unique synthetic complete-profile API requests and 100 repetitions of one synthetic request using nearest-rank p95. It exercises request validation, every enabled deterministic calculation, trait synthesis, response validation, and JSON serialization. It contains no customer data and fails when unique-input p95 reaches four seconds or repeated-input p95 reaches one second.
+
+The 2026-08-10 local baseline on Python 3.12 measured unique-input p95 at 3.7 ms and repeated-input p95 at 3.5 ms. Both paths currently perform the full calculation: there is deliberately no profile-input or response cache. Because the uncached repeated path is already more than two orders of magnitude inside the stricter budget, adding a cache would create sensitive-input retention and invalidation risk without a latency need. Hosted load and network latency remain deployment observations; a future validated calculation adapter must rerun this check and justify any cache scope, encryption, TTL, and version-key policy before introducing retention.
+
+Onboarding accepts one optional birth-time value and one independent optional birth city/country value. It does not ask users to classify time confidence or enter an IANA timezone. A time supplied without birthplace is retained, while calculations requiring historical timezone context remain unavailable. Missing data reduces profile capability rather than blocking tarot.
+
+The onboarding wording intentionally qualifies PRD PRO-007 while Western astrology is unavailable: it does not promise that entering time and place will currently produce houses or an Ascendant. It says those outputs remain unavailable until a validated calculation has the required context. When an approved adapter is activated, the copy and this decision record must change together so optional details are described accurately without implying guaranteed predictive accuracy.
 
 ## Explicitly unavailable
 
-Western astrology, Whole Sign houses, Placidus houses, and BaZi Four Pillars return typed unavailable results. Their feature flags remain off. Activation requires commercially compatible dependencies, explicit boundary/orb/calendar conventions, approved golden reference cases, and domain-expert sign-off. The application does not return placeholder placements, houses, pillars, or fabricated facts.
+Western astrology, Whole Sign houses, Placidus houses, and BaZi Four Pillars return typed unavailable results. The boundary is an explicit discriminated union rather than an unavailable-only placeholder: a future Western `available` payload must carry engine/data/convention evidence, resolved UTC/timezone/coordinate context, uncertainty, planetary positions, aspects, Ascendant/Midheaven, Whole Sign cusps, and a typed Placidus available/unavailable state; a BaZi payload must carry the same evidence boundary, all four pillars, adjacent solar-term context, and explicit calendar/year/month/timezone/true-solar-time/Zi-hour conventions. `ENABLE_WESTERN_ASTROLOGY=true` or `ENABLE_BAZI=true` still makes the profile engine refuse to start; schema readiness is not calculation approval. The guards may be removed only in the same reviewed change that supplies the validated adapter and every artifact below. The application does not return placeholder placements, houses, pillars, or fabricated facts.
+
+Planetary-angularity mapping is also a versioned discriminated component. It currently returns unavailable, with a reason that distinguishes missing birth time, missing validated place context, and an inactive calculation adapter. Its `available` contract requires evidence, resolved context, uncertainty, WGS84 rising/setting/culminating/anti-culminating line segments, crossing references, orb policy, and an interpretation-policy version. `ENABLE_PLANETARY_ANGULARITY=true` fails startup until the reviewed adapter is present. The paid report includes this component status but never invents an angular line or place claim.
+
+### Western astrology activation gate
+
+Activation requires one immutable, reviewable release record containing all of the following:
+
+1. **Licensing approval.** Record the exact ephemeris, geocoder, and historical-timezone datasets and versions; their commercial, hosted-service, caching, attribution, and redistribution terms; the approving reviewer; and the approval date. A dependency being installable or source-available is not sufficient approval.
+2. **Versioned conventions.** Freeze the zodiac/frame, coordinate model, supported bodies and points, ephemeris time scale and Delta-T policy, node policy, sign-boundary rounding, aspect set, per-aspect/per-body orbs, applying/separating policy, Whole Sign rules, Placidus implementation, Ascendant/Midheaven definitions, high-latitude behavior, and uncertainty tolerances. Freeze the place-to-coordinate and historical IANA-timezone resolution rules, ambiguous/nonexistent local-time behavior, and the date-only 24-hour stability algorithm. Do not infer a timezone from a city label with an unreviewed heuristic.
+3. **Independent golden references.** Check at least the PRD's 100 approved charts at 100% within documented numeric tolerances. The set must cover DST and historical offset changes, leap dates, sign/house/aspect boundaries, high latitudes, ambiguous and nonexistent civil times, incomplete location, birth time without place, and date-only cases where the Moon or an aspect changes during the day. Fixtures must name the independent authoritative source, source version, expected output, and dataset digest without including real customer data.
+4. **Contract and failure tests.** Prove that planetary positions, aspects, angles, both house systems, calculation status, uncertainty windows, engine/data versions, and source metadata survive schema validation. Missing or ambiguous context, unsupported latitude, dependency errors, and out-of-tolerance results must return a typed unavailable/uncertain result rather than a guessed placement.
+5. **Expert sign-off.** A named qualified Western-astrology reviewer must approve the convention manifest, reference results, permitted interpretations, and user-facing uncertainty language for the exact calculation release. Any dependency, dataset, convention, or tolerance change creates a new calculation version and repeats approval.
+
+### BaZi Four Pillars activation gate
+
+Activation requires a versioned convention manifest rather than hidden library defaults. It must state the Gregorian/civil input model, sexagenary-cycle reference, Li Chun versus lunar-new-year year boundary, solar-term month boundaries and astronomical source, day-pillar epoch, midnight versus early/late Zi-hour day boundary, hour-pillar rule, historical timezone source, DST treatment, longitude correction, true-solar-time policy, handling of ambiguous/nonexistent local times, and behavior when time or validated location context is absent.
+
+At least the PRD's 100 independently approved cases must match at 100%. The suite must straddle Li Chun, every relevant solar-term boundary, Gregorian leap dates, midnight and 23:00/Zi-hour boundaries, DST/offset changes, longitude edges, time-without-place, place-without-time, and cases where true-solar-time policy changes a pillar. Each fixture records its approved source, convention version, expected pillars/status, and dataset digest and contains no customer data. Unsupported or boundary-ambiguous inputs fail closed.
+
+A named qualified BaZi reviewer must sign the convention manifest, reference results, tolerances, terminology, and user-facing uncertainty behavior for the exact adapter, dependency, and dataset versions. Changing any of those inputs requires a new calculation version and renewed approval.
+
+### Dreamspell certification and content-rights gate
+
+`dreamspell-anchor-1987-07-26-kin34-no-leap-v2` remains deterministic but `implemented_pending_approved_reference_dataset`; it is not a certified production interpretation source. Certification requires:
+
+1. An approved decoder dataset with at least the PRD's 60 known dates across centuries, Gregorian leap years/century rules, cycle wrap points, and the documented anchor. Every case must match Kin, Galactic Tone, Solar Seal, and color at 100%, and the dataset must carry a stable version and digest.
+2. Source provenance and reviewer approval for the decoder rules. Internal and user-facing language must identify the system as **Dreamspell** and must not present it as the historical Maya calendar or imply institutional/Indigenous endorsement.
+3. A rights register for every seal name, description, prompt, glyph, illustration, and other visual/text asset, identifying original authorship, public-domain basis, or a license that permits commercial web/report use and distribution. Attribution and modification requirements must be implemented before release.
+4. A named domain reviewer and rights approver signing the exact algorithm, dataset, terminology catalog, editorial copy, and asset manifest. Any change creates a new content/calculation version and repeats the affected approval and reference suite.
+
+Until those artifacts exist, Dreamspell-derived traits remain uncertain and excluded from the stable reading lens, and detailed report copy continues to disclose the pending-certification status.
+
+### Planetary-angularity activation gate
+
+Geographic planetary angularity is astronomical angularity projected onto the Earth, not a promise that a place guarantees luck, romance, hardship, or success. Activation requires an approved Swiss Ephemeris license choice, pinned engine/data files, validated place-to-coordinate and historical-timezone resolution, and independently checked rising, setting, culmination, and anti-culmination lines. The line algorithm must test high declinations, circumpolar gaps, line crossings, antimeridian wrapping, DST and historical offsets. Placidus failure never converts a Whole Sign result into a Placidus result, and no city is assigned to a line through an unreviewed proximity heuristic.
+
+Every map/report statement must retain the body, angle, orb or distance policy, calculation version, map-data version, and original interpretation rule. Interpretations are conditional and written specifically for StarGuidance; third-party map copy, branding, screenshots, and calculator output are not ingested.
+
+### Commercial-use boundary
+
+Historical or public mathematical concepts may be used in paid readings with original editorial treatment, subject to the licenses of the actual code, ephemeris, geocoder, timezone data, map data, and assets used to implement them. Calling the product a reading service does not waive AGPL, professional, trademark, database, content, or hosted-service license terms. A proprietary modern system that forbids the intended use is omitted from the product rather than represented by a dormant adapter or teaser.
+
+### Activation evidence
+
+The production-change PR must link a non-secret manifest recording adapter and dependency versions, convention/content versions, dataset IDs and SHA-256 digests, test command and 100% result, licensing/rights decision IDs, reviewer names/roles and dates, and rollback behavior. CI must run the approved reference fixtures. A configuration change or dashboard toggle by itself is never activation evidence.
 
 ## Versioning
 

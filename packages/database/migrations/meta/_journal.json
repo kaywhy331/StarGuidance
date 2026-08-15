@@ -8,6 +8,118 @@
       "when": 1784780558798,
       "tag": "0000_busy_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784824560072,
+      "tag": "0001_supabase_staging",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785709399728,
+      "tag": "0002_remove_auth_user_sync_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785865302892,
+      "tag": "0003_webhook_replay_lease",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785866265679,
+      "tag": "0004_server_actor_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785985991643,
+      "tag": "0005_bumpy_moon_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786041275302,
+      "tag": "0006_rate_limit_buckets",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786044815068,
+      "tag": "0007_interpretation_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786139113506,
+      "tag": "0008_interpretation_jobs_subject_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786139113507,
+      "tag": "0009_profile_snapshot_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786139931822,
+      "tag": "0010_deletion_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786382374230,
+      "tag": "0011_reading_flow_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786386068435,
+      "tag": "0012_commerce_report_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786386856382,
+      "tag": "0013_checkout_report_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786390769817,
+      "tag": "0014_account_consent_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786477669061,
+      "tag": "0015_consent_event_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786478312181,
+      "tag": "0016_reading_intake_recovery",
+      "breakpoints": true
     }
   ]
 }

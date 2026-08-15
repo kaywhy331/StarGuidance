@@ -1,0 +1,12 @@
+*
+!access-jwks.mjs
+!access-jwks-ci.mjs
+!create-ci-access-fixture.mjs
+!egress.mjs
+!egress-ci.mjs
+!gateway.mjs
+!mock-groq.mjs
+!runtime.Dockerfile
+!runtime-ci.Dockerfile
+!runtime-ingress-smoke.mjs
+!security.mjs

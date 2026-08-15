@@ -4,16 +4,33 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./staging-evidence": "./scripts/staging-result.ts",
+    "./test-support/synthetic-subjects": "./tests/support/synthetic-subjects.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",
     "db:check": "drizzle-kit check",
+    "test:integration": "vitest run --no-file-parallelism --testTimeout=120000 --hookTimeout=180000 src/repositories.integration.test.ts src/rate-limits.integration.test.ts src/interpretation-jobs.integration.test.ts src/report-jobs.integration.test.ts tests/auth-provisioning.integration.test.ts tests/webhook-replay.integration.test.ts",
+    "db:auth-shim": "tsx scripts/install-auth-shim.ts",
+    "staging:migration-history": "drizzle-kit check && vitest run tests/migration-integrity.test.ts",
+    "staging:preflight": "tsx scripts/preflight-staging-database.ts",
+    "staging:verify-schema": "tsx scripts/verify-staging-schema.ts",
+    "staging:fingerprint": "tsx scripts/seed-fingerprint.ts",
+    "staging:cleanup": "tsx scripts/cleanup-synthetic.ts",
+    "staging:summary": "tsx scripts/render-staging-summary.ts",
+    "staging:gate": "tsx scripts/run-staging-gate.ts",
+    "key-rotation": "tsx scripts/rotate-encryption-key.ts",
+    "restore:fixture": "tsx scripts/restore-fixture.ts",
+    "retention": "tsx scripts/apply-retention.ts",
+    "jobs:inspect": "tsx scripts/inspect-job-queues.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@starguidance/contracts": "workspace:*",
     "@starguidance/tarot-content": "workspace:*",
+    "@starguidance/tarot-domain": "workspace:*",
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.9"
   },

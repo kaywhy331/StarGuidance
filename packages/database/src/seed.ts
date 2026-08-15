@@ -1,10 +1,13 @@
 import {
   DECK_VERSION,
+  legacySpreads,
   spreads,
   TAROT_CONTENT_VERSION,
   tarotCards,
 } from "@starguidance/tarot-content";
 import postgres from "postgres";
+
+import { REGISTERED_CALCULATION_VERSIONS } from "./calculation-version-registry";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required to seed reference content");
@@ -16,8 +19,8 @@ const asJson = (value: unknown): postgres.JSONValue =>
 try {
   await sql.begin(async (transaction) => {
     await transaction`
-      insert into decks (version, name)
-      values (${DECK_VERSION}, ${"StarGuidance Typographic Tarot"})
+      insert into decks (version, name, active)
+      values (${DECK_VERSION}, ${"StarGuidance Typographic Tarot"}, true)
       on conflict (version) do update set name = excluded.name
     `;
     for (const card of tarotCards) {
@@ -42,20 +45,25 @@ try {
         )
       `;
     }
-    for (const spread of spreads) {
+    const spreadSeeds = [
+      ...spreads.map((spread) => ({ spread, active: true })),
+      ...legacySpreads.map((spread) => ({ spread, active: false })),
+    ];
+    for (const { spread, active } of spreadSeeds) {
       await transaction`
-        insert into spreads (id, version, payload)
-        values (${spread.id}, ${spread.version}, ${transaction.json(asJson(spread))})
-        on conflict (id) do update set version = excluded.version, payload = excluded.payload
+        insert into spreads (id, version, payload, active)
+        values (${spread.id}, ${spread.version}, ${transaction.json(asJson(spread))}, ${active})
+        on conflict (id) do update
+        set version = excluded.version,
+            payload = excluded.payload,
+            active = case when excluded.active = false then false else spreads.active end
       `;
       for (const position of spread.positions) {
         await transaction`
           insert into spread_positions (spread_id, position_id, display_order, payload)
-          select ${spread.id}, ${position.id}, ${position.order}, ${transaction.json(asJson(position))}
-          where not exists (
-            select 1 from spread_positions
-            where spread_id = ${spread.id} and position_id = ${position.id}
-          )
+          values (${spread.id}, ${position.id}, ${position.order}, ${transaction.json(asJson(position))})
+          on conflict (spread_id, position_id) do update
+          set display_order = excluded.display_order, payload = excluded.payload
         `;
       }
     }
@@ -64,12 +72,7 @@ try {
       values (${"profile-report-v1"}, ${"Detailed Profile Report"}, true)
       on conflict (id) do update set name = excluded.name, active = excluded.active
     `;
-    for (const [system, version, status] of [
-      ["numerology", "pythagorean-v1", "implemented"],
-      ["dreamspell", "dreamspell-anchor-1987-07-26-kin34-v1", "pending-certification"],
-      ["westernAstrology", "unavailable", "unavailable"],
-      ["bazi", "unavailable", "unavailable"],
-    ] as const) {
+    for (const { system, version, status } of REGISTERED_CALCULATION_VERSIONS) {
       await transaction`
         insert into calculation_versions (system, version, status)
         select ${system}, ${version}, ${status}
@@ -88,7 +91,15 @@ try {
     `;
     await transaction`
       insert into prompt_versions (version, purpose)
-      values (${"deterministic-fallback-v1"}, ${"schema-valid credential-free reading fallback"})
+      values
+        (${"deterministic-fallback-v1"}, ${"schema-valid credential-free reading fallback"}),
+        (${"reader-voice-v1"}, ${"position-aware live reading narrator with minimised trait lens"}),
+        (${"deterministic-fallback-v2"}, ${"topic-authoritative credential-free reading fallback"}),
+        (${"reader-voice-v2"}, ${"topic-authoritative live reading narrator with minimised trait lens"}),
+        (${"follow-up-reader-voice-v2"}, ${"topic-authoritative locked-reading follow-up narrator"}),
+        (${"deterministic-fallback-v3"}, ${"narration-first credential-free reading fallback"}),
+        (${"reader-voice-v3"}, ${"conversational predictive narrator with minimised private trait lens"}),
+        (${"follow-up-reader-voice-v3"}, ${"conversational continuation of a locked narration-first reading"})
       on conflict (version) do update set purpose = excluded.purpose
     `;
   });
