@@ -47,7 +47,7 @@ The user experience remains simple on the surface: create an account, enter mini
 - **Private personalization:** the base reading uses plain-language traits without showing placements, numbers, pillars, or signature labels.
 - **Tarot integrity:** the profile affects interpretation, never card selection.
 - **MVP readings:** 1-card Focus, 3-card Direction, 5-card Crossroads, and 7-card Deeper Outlook.
-- **Immersive experience:** shuffle, optional cut, deal, user-controlled flips, progressive explanations, and final synthesis.
+- **Immersive experience:** full-screen shuffle, automatic deal, user-controlled flips, progressive spoken-paced passages, and final integration.
 - **Primary monetized SKU:** a one-time Full Profile Report; reading entitlements remain configurable.
 - **Recommended stack:** Next.js/TypeScript, Supabase/Postgres, isolated Python profile engine, Motion/XState, structured AI output, Stripe, and durable jobs.
 
@@ -373,16 +373,16 @@ error branches: generation_failed | session_expired | payment_required | safety_
 ## 5.6 Immersive reading experience
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **UX-001** | The reading journey is governed by an explicit state machine. | **Must** | Invalid state combinations are impossible; transitions cover preparation, shuffle, cut, deal, reveal, generation, result, retry, and resume. |
-| **UX-002** | The shuffle sequence feels tactile and ritualized without delaying users unnecessarily. | **Must** | A default shuffle completes within the configured duration and provides immediate Skip control. |
+| **UX-001** | The reading journey is governed by an explicit state machine. | **Must** | Invalid state combinations are impossible; transitions cover preparation, shuffle, compatibility cut-through, deal, reveal, generation, result, retry, and resume. |
+| **UX-002** | The shuffle sequence feels tactile and ritualized without delaying users unnecessarily. | **Must** | Lightweight shells spread across the sanctuary, gather back into one deck within the configured duration, and provide an immediate Deal now control. |
 | **UX-003** | Visual shuffling uses lightweight card shells rather than animating all 78 full card components. | **Must** | Mid-tier mobile devices maintain the minimum animation frame-rate target without memory spikes. |
-| **UX-004** | An optional deck-cut interaction can be enabled per spread. | **Should** | The user can drag or tap to cut; skipping the cut does not affect correctness or accessibility. |
+| **UX-004** | The shuffle flows directly into dealing without a redundant decision stop. | **Must** | The compatibility `cuttingDeck` state advances automatically; the UI never blocks on Cut/Skip cut and recovery still records a monotonic no-cut receipt. |
 | **UX-005** | Cards are dealt into spread-specific positions with stable layout. | **Must** | No card overlaps, clips, or moves unexpectedly across supported viewport sizes and text zoom levels. |
 | **UX-006** | Users intentionally reveal cards by tap, click, or keyboard. | **Must** | Each card has visible focus state, Enter/Space activation, screen-reader label, and locked double-trigger prevention. |
 | **UX-007** | Each reveal immediately shows deterministic card information. | **Must** | Card name, position, orientation, and concise baseline meaning appear without waiting for the final AI synthesis. |
 | **UX-008** | Final synthesis can generate while the user reveals cards. | **Must** | Background generation starts only after the draw is locked and never blocks card interaction. |
 | **UX-009** | Reduced-motion and skip-animation modes provide the full experience. | **Must** | The system respects browser preferences, removes large transforms, and preserves all reading content and controls. |
-| **UX-010** | Sound is optional, user-controlled, and off by default until explicit interaction. | **Must** | A persistent sound control exists; no audio autoplays on initial page load. |
+| **UX-010** | Reading sound is optional, user-controlled, and on by default inside the user-initiated ritual. | **Must** | A persistent sound control exists; spoken-paced word reveal works without audio, browser narration uses only a device-local voice when one is available, and no audio autoplays on the landing or account pages. |
 | **UX-011** | The experience is mobile-first and touch-friendly. | **Must** | Primary controls meet target sizes; safe areas, orientation changes, and common mobile viewport issues are tested. |
 | **UX-012** | The visual system is minimal, immersive, and content-led. | **Must** | Screens use a restrained component set, clear hierarchy, high contrast, and no distracting decorative motion during reading text. |
 | **UX-013** | Loading and failure states preserve the ritual and the user's trust. | **Must** | The UI never shows a blank card, reshuffles on failure, or loses the question; retry language states that the same cards will be used. |
@@ -393,7 +393,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | --- | --- | --- |
 | Prepare | Deck enters with subtle depth and ambient movement. | Static deck with immediate Begin control. |
 | Shuffle | Short overhand/riffle-inspired 2.5D sequence using lightweight shells. | Progress indicator with no large transforms. |
-| Cut | Optional drag/tap interaction where configured. | Skip or keyboard-select cut position. |
+| Cut-through | Compatibility state advances immediately after the gathered shuffle. | Identical immediate transition with no large transform. |
 | Deal | Cards travel to spread positions in order. | Cards appear sequentially with focus management. |
 | Reveal | User flips each card; baseline meaning appears. | Instant reveal with text announcement. |
 | Synthesis | Subtle transition from table to reading result. | Immediate content view; no parallax or scale. |

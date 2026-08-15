@@ -77,6 +77,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0015_consent_event_history": "826a4e1a4f186f96640ad661df47b7c6d7fce9ea8d3dd5a42d126b80f19a9b16",
   "0016_reading_intake_recovery":
     "783c256a90a1a8500a31ef9c12b83fd9e4020891fc612a99e2e374ed0fb8d1b6",
+  "0017_sound-on-by-default": "3d3b98ed3d8215be7826057b853d7f006641871ded256200850247844f8d5565",
 };
 
 describe("migration history", () => {
@@ -111,6 +112,12 @@ describe("migration history", () => {
     ])
       expect(sql).toMatch(new RegExp(`add column "${column}"`, "i"));
     expect(sql).not.toMatch(/drop|delete/i);
+  });
+
+  it("changes only the default for new sound preferences (0017)", () => {
+    const sql = executableSql("0017_sound-on-by-default");
+    expect(sql).toMatch(/alter column "sound_enabled" set default true/i);
+    expect(sql).not.toMatch(/update|delete|drop/i);
   });
 
   it("orders the corrective migration after the migration that created the trigger", () => {

@@ -55,6 +55,7 @@ test("display identity, reading preferences, and reversible marketing consent pe
   const sound = page.getByLabel(/Enable optional reading sounds/i);
   const marketing = page.getByLabel(/Send occasional product news/i);
   await expect(displayName).toHaveValue("Reader");
+  await expect(sound).toBeChecked();
   await displayName.fill("Nova");
   await reducedMotion.check();
   await sound.check();

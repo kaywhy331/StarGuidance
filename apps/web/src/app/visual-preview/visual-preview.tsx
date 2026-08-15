@@ -53,6 +53,7 @@ export function SanctuaryVisualPreview({
           reducedMotion={false}
           result={result}
           retryToken={0}
+          soundEnabled={false}
           target="preview"
         />
         <QuestionComposer

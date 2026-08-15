@@ -52,17 +52,15 @@ async function beginReading(page: Page, question = "What should I focus on next?
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
 }
 
-/** Drives the ritual past its intentional, no-longer-automatic checkpoints
- * (PRD UX-002/004/006): the shuffle still completes on its own, then skip the
- * deck cut and reveal every card, then wait for the completed reading.
- * Deliberately doesn't race "Finish shuffling" against the shuffle's own
- * auto-complete timer — Playwright would keep retrying a click against a
- * button the shuffle has already removed. Individual tests that care about a
- * specific control (Finish shuffling, Cut instead of Skip cut, one card at a
- * time, keyboard activation) drive those steps themselves instead of calling
- * this helper. */
+/** Drives the ritual through its automatic shuffle-to-deal handoff, then uses
+ * the explicit collective reveal shortcut. Deal now keeps the suite fast but
+ * is intentionally caught because the immersive shuffle also completes on
+ * its own and can win the race under parallel browser load. */
 async function finishRitual(page: Page) {
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Deal now", exact: true })
+    .click({ timeout: 3_000 })
+    .catch(() => {});
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.oracle-entry[data-phase="narration"] h2')).toBeVisible({
@@ -156,9 +154,11 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   await beginReading(page);
   await finishRitual(page);
   await waitForReadingSections(page);
+  await expect(page.getByLabel("Keep the same cards and ask what they add")).toHaveCount(0);
 
   for (let index = 0; index < 3; index += 1) {
     await nextReadingSection(page);
+    await expect(page.getByTestId("reading-result-overview")).toHaveCount(0);
     await expect(page.locator('.oracle-entry[data-phase="narration"]')).toBeVisible();
     await expect(page.getByTestId("oracle-transcript")).toHaveAttribute(
       "data-active-card-index",
@@ -175,30 +175,30 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   await page.keyboard.press("Home");
   const overview = page.getByTestId("reading-result-overview");
   await expect(overview).toBeVisible();
-  await expect(overview.getByRole("heading", { name: "Your locked cards" })).toBeVisible();
+  await expect(overview.getByRole("heading", { name: "Cards in this thread" })).toBeVisible();
   const lockedCards = overview.locator(".reading-card-strip button");
   await expect(lockedCards).toHaveCount(3);
   await expect(lockedCards.first().locator("small")).not.toBeEmpty();
   await expect(lockedCards.first().locator("strong")).not.toBeEmpty();
   await expect(lockedCards.first().locator("span")).toHaveText(/upright|reversed/);
 
-  const completeInterpretation = overview.locator(".reading-details");
-  await expect(
-    completeInterpretation.getByText("Explore the complete interpretation", { exact: true }),
-  ).toBeVisible();
-  await completeInterpretation.locator("summary").click();
+  await expect(page.getByText("Explore the complete interpretation", { exact: true })).toHaveCount(
+    0,
+  );
+  await page.keyboard.press("End");
+  const integration = page.getByTestId("reading-integration");
+  await expect(integration).toBeVisible();
   for (const reportHeading of [
-    "Card by card",
-    "Overall synthesis",
-    "Likely trajectory",
-    "Alternative path",
     "Your agency",
-    "A question to carry",
+    "Conditions to notice",
+    "What could change the pattern",
   ])
-    await expect(
-      completeInterpretation.getByRole("heading", { name: reportHeading }),
-    ).toBeVisible();
-  await expect(completeInterpretation.locator(".reading-uncertainty")).toBeVisible();
+    await expect(integration.getByRole("heading", { name: reportHeading })).toBeVisible();
+  await expect(integration.locator(".reading-integration-question")).toContainText(
+    "A question to carry",
+  );
+  await expect(integration.locator(".reading-uncertainty")).toBeVisible();
+  await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeVisible();
 
   const readingId = page.url().split("/").at(-1) as string;
   await page.goto("/history");
@@ -311,7 +311,10 @@ test("all six selectable spreads use their configured spatial arrangements", asy
     await page.getByRole("button", { name: "Begin the shuffle" }).click();
     expect((await created).status()).toBe(201);
     await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
-    await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Deal now", exact: true })
+      .click({ timeout: 3_000 })
+      .catch(() => {});
 
     const stage = page.getByTestId("tarot-spread-stage");
     await expect(stage).toHaveAttribute("data-layout-kind", spreadCase.kind);
@@ -372,29 +375,24 @@ test("password recovery does not reveal whether an email exists", async ({ page 
   await expect(page.getByText(/if an account exists/i)).toBeVisible();
 });
 
-test("the ritual waits for intentional cut and supports deliberate or collective reveal", async ({
+test("the ritual returns the full-screen shuffle to the deck before deliberate reveal", async ({
   page,
 }) => {
   test.slow();
   await createProfile(page);
   await beginReading(page);
 
-  // The shuffle can be sped up explicitly instead of waiting out its timer —
-  // but it also completes on its own, so this races the app's own ~1.9s
-  // auto-complete timer under parallel test load. A bounded, caught attempt
-  // proves the control does nothing harmful when clicked without depending on
-  // winning that race: either this click fires SHUFFLE_COMPLETE, or the
-  // timer already did, and cuttingDeck is reached either way.
+  await expect(page.locator(".sanctuary-stage.is-shuffling")).toBeVisible();
+  await expect(page.locator(".sanctuary-shuffle-shells span")).toHaveCount(15);
+
+  // The shuffle can be sped up explicitly, but it also gathers itself and
+  // proceeds directly to dealing without asking for a redundant cut.
   await page
-    .getByRole("button", { name: "Finish shuffling", exact: true })
+    .getByRole("button", { name: "Deal now", exact: true })
     .click({ timeout: 2_000 })
     .catch(() => {});
-
-  // The deck cut never auto-advances (PRD UX-004) — both choices are offered
-  // and nothing proceeds until one is taken.
-  await expect(page.getByRole("button", { name: "Cut", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Cut", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Cut", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toHaveCount(0);
 
   // Cards arrive face down; reveal never auto-advances either (UX-006).
   const physicalCards = page.locator(".physical-card-figure");
@@ -633,18 +631,14 @@ test("AI-disabled mode returns the deterministic conversational fallback", async
   await expect(page.locator(".oracle-entry-text")).toContainText(/there is another route/i);
   await expect(page.getByRole("heading", { name: "Fated Path" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Divergent Path" })).toHaveCount(0);
-  const completeInterpretation = page.locator(".reading-details");
+  await page.getByTestId("oracle-transcript").focus();
+  await page.keyboard.press("End");
+  const integration = page.getByTestId("reading-integration");
+  await expect(integration.getByRole("heading", { name: "Conditions to notice" })).toBeVisible();
   await expect(
-    completeInterpretation.getByText("Explore the complete interpretation", { exact: true }),
+    integration.getByRole("heading", { name: "What could change the pattern" }),
   ).toBeVisible();
-  await completeInterpretation.locator("summary").click();
-  await expect(
-    completeInterpretation.getByRole("heading", { name: "Likely trajectory" }),
-  ).toBeVisible();
-  await expect(
-    completeInterpretation.getByRole("heading", { name: "Alternative path" }),
-  ).toBeVisible();
-  await expect(completeInterpretation.locator(".reading-uncertainty")).toBeVisible();
+  await expect(integration.locator(".reading-uncertainty")).toBeVisible();
   await expect(page.locator('.oracle-entry[data-phase="uncertainty"]')).toHaveCount(0);
 });
 
@@ -657,7 +651,7 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
       response.request().method() === "POST" &&
       response.request().postData()?.includes('"phase":"cuttingDeck"') === true,
   );
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page.getByRole("button", { name: "Deal now", exact: true }).click();
   expect((await cutProgress).status()).toBe(200);
   const revealProgress = page.waitForResponse(
     (response) =>
@@ -771,6 +765,10 @@ test("a follow-up uses the exact same cards", async ({ page }) => {
   const journey = page.getByTestId("reading-journey");
   const primarySectionCount = Number(await journey.getAttribute("data-loaded-section-count"));
   const before = (await currentReading(page)).reading.draw;
+  await expect(journey).toHaveAttribute("data-state", "complete");
+  await page.getByTestId("oracle-transcript").focus();
+  await page.keyboard.press("End");
+  await expect(page.getByTestId("reading-integration")).toBeVisible();
   await page.getByLabel("Keep the same cards and ask what they add").fill("What can I do next?");
   await page.getByRole("button", { name: "Reflect on the same cards" }).click();
   await expect.poll(async () => (await currentReading(page)).reading.followUps.length).toBe(1);
@@ -807,7 +805,10 @@ test("generation failure retries without a redraw", async ({ page }) => {
   expect(created.generationStatus).toBe("failed");
   await page.goto(`/session/${created.readingId}`);
   const before = (await currentReading(page)).reading.draw;
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Deal now", exact: true })
+    .click({ timeout: 3_000 })
+    .catch(() => {});
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await page.getByRole("button", { name: "Retry the same draw" }).click({ timeout: 20_000 });
   await expect(page.getByTestId("oracle-transcript")).toBeVisible();
@@ -821,11 +822,11 @@ test("stream interruption preserves received paragraphs and retries the same dra
   await createProfile(page);
   await beginReading(page, "What should I understand about this next step?");
   const before = (await currentReading(page)).reading.draw;
-  // Arm the fault before the cards are revealed — cut/reveal now block on the
-  // user, which conveniently guarantees this lands well before the oracle
+  // Arm the fault before the cards are revealed — reveal still blocks on the
+  // user, which guarantees this lands well before the oracle
   // stream (which only starts once the ritual reaches "complete") can start.
   await page.evaluate(() => sessionStorage.setItem("sg:e2e-stream-fail-after", "2"));
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page.getByRole("button", { name: "Deal now", exact: true }).click();
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByText(/Stream paused\. Your reading/i)).toBeVisible({
     timeout: 20_000,
@@ -859,11 +860,9 @@ test("long result text scrolls without clipping while buttons, keyboard, wheel, 
   await journey.focus();
   await page.keyboard.press("ArrowRight");
   await expect(journey).toHaveAttribute("data-active-card-index", "1");
-  // The active passage grows while its typewriter is running. Wait for a
-  // stable scroll height before testing the boundary gesture; otherwise a
-  // newly appended line can correctly consume the wheel event as scrolling
-  // instead of advancing the guided thread.
-  await expect(journey.locator(".oracle-cursor")).toHaveCount(0);
+  // Every word reserves its final layout position while opacity follows the
+  // narration cadence, so scrolling remains stable during the fade itself.
+  expect(await journey.locator(".oracle-word").count()).toBeGreaterThan(0);
 
   const bounds = await journey.boundingBox();
   expect(bounds).not.toBeNull();
@@ -915,7 +914,7 @@ test("long result text scrolls without clipping while buttons, keyboard, wheel, 
   await expect(journey).toHaveAttribute("data-active-card-index", "1");
 });
 
-test("keyboard users cut and reveal by keyboard, then submit a same-draw follow-up", async ({
+test("keyboard users reveal and complete the guided reading before a same-draw follow-up", async ({
   page,
 }) => {
   test.slow();
@@ -926,10 +925,9 @@ test("keyboard users cut and reveal by keyboard, then submit a same-draw follow-
   // PRD UX-006: each card is reachable by keyboard, shows a visible focus
   // state, and reveals on Enter — not just click/tap.
   await page
-    .getByRole("button", { name: "Finish shuffling", exact: true })
+    .getByRole("button", { name: "Deal now", exact: true })
     .click({ timeout: 2_000 })
     .catch(() => {});
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
   const firstCard = page.locator(".physical-card-figure").first().getByRole("button");
   await firstCard.focus();
   await expect(firstCard).toBeFocused();
@@ -945,11 +943,12 @@ test("keyboard users cut and reveal by keyboard, then submit a same-draw follow-
   await expect(journey).toHaveAttribute("data-active-card-index", "0");
   await page.keyboard.press("End");
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
-  await expect(page.locator(".oracle-entry-text")).toBeVisible();
-  await expect(
-    page.getByText("Explore the complete interpretation", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByTestId("reading-integration")).toBeVisible();
+  await expect(page.getByText("Explore the complete interpretation", { exact: true })).toHaveCount(
+    0,
+  );
   const composer = page.getByLabel("Keep the same cards and ask what they add");
+  await expect(composer).toBeVisible();
   await composer.fill("What is one grounded action?");
   await composer.press("Enter");
   await expect.poll(async () => (await currentReading(page)).reading.followUps.length).toBe(1);
@@ -961,7 +960,10 @@ test("physical card faces use specific illustrated assets without persistent cap
 }) => {
   await createProfile(page);
   await beginReading(page);
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Deal now", exact: true })
+    .click({ timeout: 3_000 })
+    .catch(() => {});
   const cards = page.locator(".physical-card-figure");
   await expect(cards).toHaveCount(3, { timeout: 10_000 });
   for (let index = 0; index < 3; index += 1) {

@@ -57,7 +57,7 @@ export function ReadingScene({
   const [followUpLoading, setFollowUpLoading] = useState(false);
   const [streamTarget, setStreamTarget] = useState("primary");
   const [streamRetryToken, setStreamRetryToken] = useState(0);
-  const [primaryJourneyReady, setPrimaryJourneyReady] = useState(false);
+  const [journeyComplete, setJourneyComplete] = useState(false);
   const bootstrapped = useRef(false);
   const revealRun = useRef(0);
   const revealCompletionTimer = useRef<number | undefined>(undefined);
@@ -73,6 +73,32 @@ export function ReadingScene({
   useEffect(() => {
     soundEnabled.current = sound;
   }, [sound]);
+
+  const persistRitualProgress = useCallback(
+    (progress: RitualProgress, phase: "cuttingDeck" | "revealingCards" | "complete") => {
+      writeRitualProgress(window.sessionStorage, readingId, progress);
+      void fetch(`/api/readings/${readingId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "progress", phase, ...progress }),
+      }).catch(() => {
+        // The local receipt remains a recovery fallback; the locked draw is
+        // already durable and is never changed by a progress-write failure.
+      });
+    },
+    [readingId],
+  );
+
+  const completeShuffle = useCallback(() => {
+    if (cutTaken === undefined) {
+      setCutTaken(false);
+      persistRitualProgress(
+        { cutTaken: false, revealedIndexes: [...revealedRef.current] },
+        "cuttingDeck",
+      );
+    }
+    send({ type: "SHUFFLE_COMPLETE" });
+  }, [cutTaken, persistRitualProgress, send]);
 
   useEffect(() => {
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
@@ -114,16 +140,11 @@ export function ReadingScene({
   useEffect(() => {
     if (!state.matches("shuffling")) return;
     const timer = window.setTimeout(
-      () => send({ type: "SHUFFLE_COMPLETE" }),
-      cutTaken !== undefined ? 0 : motionOff ? 120 : 1_900,
+      completeShuffle,
+      cutTaken !== undefined ? 0 : motionOff ? 120 : 3_050,
     );
     return () => window.clearTimeout(timer);
-  }, [cutTaken, motionOff, send, state]);
-
-  useEffect(() => {
-    if (!state.matches("cuttingDeck") || cutTaken === undefined) return;
-    send({ type: cutTaken ? "CUT" : "SKIP_CUT" });
-  }, [cutTaken, send, state]);
+  }, [completeShuffle, cutTaken, motionOff, state]);
 
   useEffect(() => {
     if (!state.matches("dealing")) return;
@@ -164,21 +185,6 @@ export function ReadingScene({
         window.clearTimeout(revealCompletionTimer.current);
     },
     [],
-  );
-
-  const persistRitualProgress = useCallback(
-    (progress: RitualProgress, phase: "cuttingDeck" | "revealingCards" | "complete") => {
-      writeRitualProgress(window.sessionStorage, readingId, progress);
-      void fetch(`/api/readings/${readingId}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "progress", phase, ...progress }),
-      }).catch(() => {
-        // The local receipt remains a recovery fallback; the locked draw is
-        // already durable and is never changed by a progress-write failure.
-      });
-    },
-    [readingId],
   );
 
   const revealCard = useCallback(
@@ -313,8 +319,8 @@ export function ReadingScene({
 
   const handleStreamState = useCallback(
     (streamState: "idle" | "streaming" | "complete" | "failed") => {
+      if (streamState === "streaming") setJourneyComplete(false);
       if (streamTarget !== "primary") return;
-      setPrimaryJourneyReady(streamState === "complete");
       if (streamState === "complete" && reading?.followUps.at(-1))
         setStreamTarget(reading.followUps.at(-1)!.id);
     },
@@ -352,6 +358,7 @@ export function ReadingScene({
         followUpsRemaining: Math.max(0, reading.followUpsRemaining - 1),
       });
       setFollowUp("");
+      setJourneyComplete(false);
       setStreamTarget(payload.followUp.id);
       setStreamRetryToken(0);
     } catch (cause) {
@@ -432,9 +439,9 @@ export function ReadingScene({
       </header>
 
       <section
-        className={`sanctuary-stage ${activeReveal === null ? "" : "has-cinematic-review"} ${
-          state.matches("complete") ? "has-reading-journey" : ""
-        }`}
+        className={`sanctuary-stage ${state.matches("shuffling") ? "is-shuffling" : ""} ${
+          activeReveal === null ? "" : "has-cinematic-review"
+        } ${state.matches("complete") ? "has-reading-journey" : ""}`}
         aria-live="polite"
       >
         {state.matches("sessionExpired") && (
@@ -457,58 +464,36 @@ export function ReadingScene({
         )}
 
         {state.matches("shuffling") && (
-          <div className="ritual-moment">
+          <div className="ritual-moment sanctuary-shuffle-ritual">
             <div aria-hidden="true" className="sanctuary-shuffle-shells">
-              {Array.from({ length: 9 }, (_, index) => (
-                <span key={index} style={{ "--shell-index": index } as React.CSSProperties} />
-              ))}
+              {Array.from({ length: 15 }, (_, index) => {
+                const angle = (index / 15) * Math.PI * 2 - Math.PI / 2;
+                const horizontalReach = 24 + (index % 4) * 5;
+                const verticalReach = 18 + ((index + 2) % 4) * 4;
+                return (
+                  <span
+                    key={index}
+                    style={
+                      {
+                        "--shell-index": index,
+                        "--scatter-x": `${Math.cos(angle) * horizontalReach}vw`,
+                        "--scatter-y": `${Math.sin(angle) * verticalReach}vh`,
+                        "--scatter-rotation": `${(index - 7) * 17}deg`,
+                      } as React.CSSProperties
+                    }
+                  />
+                );
+              })}
             </div>
-            <p className="ritual-status" role="status">
-              Shuffling your cards…
-            </p>
-            <button
-              className="ritual-action"
-              onClick={() => send({ type: "SHUFFLE_COMPLETE" })}
-              type="button"
-            >
-              Finish shuffling
+            <div className="sanctuary-shuffle-copy">
+              <p className="ritual-status" role="status">
+                Shuffling your cards
+              </p>
+              <span>The deck opens, moves, and returns as one.</span>
+            </div>
+            <button className="shuffle-skip-action" onClick={completeShuffle} type="button">
+              Deal now
             </button>
-          </div>
-        )}
-
-        {state.matches("cuttingDeck") && (
-          <div className="ritual-moment">
-            <p className="ritual-status" role="status">
-              Cut the deck, or continue.
-            </p>
-            <div className="ritual-action-group">
-              <button
-                className="ritual-action"
-                onClick={() => {
-                  setCutTaken(true);
-                  persistRitualProgress(
-                    { cutTaken: true, revealedIndexes: [...revealed] },
-                    "cuttingDeck",
-                  );
-                }}
-                type="button"
-              >
-                Cut
-              </button>
-              <button
-                className="ritual-action"
-                onClick={() => {
-                  setCutTaken(false);
-                  persistRitualProgress(
-                    { cutTaken: false, revealedIndexes: [...revealed] },
-                    "cuttingDeck",
-                  );
-                }}
-                type="button"
-              >
-                Skip cut
-              </button>
-            </div>
           </div>
         )}
 
@@ -589,12 +574,14 @@ export function ReadingScene({
             active
             cards={reading.cards}
             onActiveCardChange={setActiveReadingCard}
+            onJourneyCompleteChange={setJourneyComplete}
             onRetry={() => setStreamRetryToken((token) => token + 1)}
             onStateChange={handleStreamState}
             readingId={readingId}
             reducedMotion={motionOff}
             result={reading.result}
             retryToken={streamRetryToken}
+            soundEnabled={sound}
             target={streamTarget}
           />
         )}
@@ -604,15 +591,13 @@ export function ReadingScene({
             guidance={safetyInterrupt.guidance}
           />
         )}
-        {state.matches("complete") && !safetyInterrupt && (
+        {state.matches("complete") && journeyComplete && !safetyInterrupt && (
           <QuestionComposer
-            disabled={reading.followUpsRemaining <= 0 || !primaryJourneyReady}
+            disabled={reading.followUpsRemaining <= 0}
             hint={
               reading.followUpsRemaining <= 0
                 ? `This reading’s ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? " is" : "s are"} preserved with the same locked cards.`
-                : !primaryJourneyReady
-                  ? "Let the complete reading arrive before continuing the same thread."
-                  : `${reading.followUpsRemaining} follow-up${reading.followUpsRemaining === 1 ? "" : "s"} remaining. Shift+Enter adds a line.`
+                : `${reading.followUpsRemaining} follow-up${reading.followUpsRemaining === 1 ? "" : "s"} remaining. Shift+Enter adds a line.`
             }
             label="Keep the same cards and ask what they add"
             loading={followUpLoading}

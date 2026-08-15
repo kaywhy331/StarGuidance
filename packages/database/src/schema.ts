@@ -25,7 +25,7 @@ export const userSettings = pgTable("user_settings", {
   id,
   userId: userId().unique(),
   displayName: text("display_name").notNull(),
-  soundEnabled: boolean("sound_enabled").default(false).notNull(),
+  soundEnabled: boolean("sound_enabled").default(true).notNull(),
   reducedMotion: boolean("reduced_motion").default(false).notNull(),
   createdAt,
   updatedAt,

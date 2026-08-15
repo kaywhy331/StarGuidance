@@ -285,14 +285,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   }
   await scan("sanctuary reading");
 
-  // Cut and reveal are intentional user actions (PRD UX-004/UX-006), not
-  // timers — scan the deck-cut moment itself (new, keyboard/focus-relevant
-  // controls) before driving past it, since nothing auto-advances anymore.
-  await expect(page.getByRole("button", { name: "Cut", exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
-  await scan("deck cut");
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  // The full-screen shuffle gathers directly into dealing. Reveal remains an
+  // intentional action (UX-006), so the accessibility scan can finish before
+  // driving through the stable face-down card controls.
   await expect(page.getByRole("button", { name: "Reveal all", exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -313,9 +308,11 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await page.keyboard.press("End");
   await expect(page.getByRole("button", { name: "Next reading passage" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
-  await expect(page.getByText(`${passageCount} / ${passageCount}`, { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(`${passageCount + 1} / ${passageCount + 1}`, { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
-  await expect(page.locator(".oracle-entry-text")).toBeVisible();
+  await expect(page.getByTestId("reading-integration")).toBeVisible();
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();
   await scan("final reflection and follow-up entry point");
 

@@ -22,4 +22,5 @@ export const EXPECTED_MIGRATIONS = [
   "0014_account_consent_settings",
   "0015_consent_event_history",
   "0016_reading_intake_recovery",
+  "0017_sound-on-by-default",
 ] as const;
