@@ -66,7 +66,12 @@ export const readingMachine = setup({
     },
     preparingDeck: { on: { DECK_READY: "shuffling" } },
     shuffling: { on: { SHUFFLE_COMPLETE: "cuttingDeck" } },
-    cuttingDeck: { on: { CUT: "dealing", SKIP_CUT: "dealing" } },
+    cuttingDeck: {
+      // The state remains explicit for persisted-flow compatibility, but the
+      // ritual no longer stops the reader at a redundant cut decision.
+      always: "dealing",
+      on: { CUT: "dealing", SKIP_CUT: "dealing" },
+    },
     dealing: { on: { DEALT: "awaitingReveal" } },
     awaitingReveal: { on: { REVEAL: "revealingCards" } },
     revealingCards: { on: { REVEAL: "revealingCards", ALL_REVEALED: "generatingSynthesis" } },

@@ -25,10 +25,13 @@ async function createProfile(page: Page) {
   await page.getByRole("button", { name: /^Continue with / }).click();
 }
 
-/** Mirrors mvp.spec.ts's helper of the same name: the shuffle completes on its
- * own, then skip the deck cut and reveal every card. */
+/** Mirrors mvp.spec.ts's helper: gather the shuffle into its automatic deal,
+ * then reveal every card. */
 async function finishRitual(page: Page) {
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Deal now", exact: true })
+    .click({ timeout: 3_000 })
+    .catch(() => {});
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 }

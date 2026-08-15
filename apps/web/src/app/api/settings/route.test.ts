@@ -88,7 +88,7 @@ describe("account settings and consent route", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.settings).toMatchObject({ displayName: "Reader", soundEnabled: false });
+    expect(body.settings).toMatchObject({ displayName: "Reader", soundEnabled: true });
     expect(body.settingsPersisted).toBe(false);
     expect(body.consents.requiredCurrent).toBe(false);
   });

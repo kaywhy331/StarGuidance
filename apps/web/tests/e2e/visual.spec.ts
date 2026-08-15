@@ -69,17 +69,15 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await page.getByLabel("Your private question").fill("What can support my next grounded step?");
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
-  await expect(page.getByText("Shuffling your cards…")).toBeVisible();
+  await expect(page.getByText("Shuffling your cards", { exact: true })).toBeVisible();
   await capturePage(page, testInfo, "shuffle-deal");
 
-  // Asset settling can outlast the automatic shuffle timer on a slower
-  // runner. Finish early when the control still exists; otherwise the ritual
-  // has already reached the intentional cut checkpoint.
+  // Deal early when the full-screen shuffle control still exists; otherwise
+  // the ritual has already gathered the cards and dealt automatically.
   await page
-    .getByRole("button", { name: "Finish shuffling", exact: true })
+    .getByRole("button", { name: "Deal now", exact: true })
     .click({ timeout: 2_000 })
     .catch(() => undefined);
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
   const firstCard = page.getByRole("button", { name: "Reveal card 1, face down" });
   await expect(firstCard).toBeVisible();
   await firstCard.click();

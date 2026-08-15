@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -42,58 +43,108 @@ const passageRoleLabels: Record<ReadingPassage["role"], string> = {
   safety: "Scope and care",
 };
 
-const cardThreadRoles = new Set<ReadingPassage["role"]>([
-  "situation",
-  "underlyingPattern",
-  "development",
-]);
+const SPOKEN_WORD_INTERVAL_MS = 330;
+const SILENT_WORD_INTERVAL_MS = 145;
 
-function TypewriterParagraph({
-  entry,
+function NarratedParagraph({
+  narrationKey,
+  text,
   reducedMotion,
+  soundEnabled,
   onComplete,
 }: {
-  entry: TranscriptEntry;
+  narrationKey: string;
+  text: string;
   reducedMotion: boolean;
-  onComplete: (text: string) => void;
+  soundEnabled: boolean;
+  onComplete: () => void;
 }) {
-  const words = entry.text.split(/\s+/);
-  const [visibleWords, setVisibleWords] = useState(0);
+  const words = useMemo(
+    () =>
+      Array.from(text.matchAll(/\S+/g), (match) => ({
+        start: match.index ?? 0,
+        text: match[0],
+      })),
+    [text],
+  );
+  const [visibleWords, setVisibleWords] = useState(reducedMotion ? words.length : 0);
   const announced = useRef(false);
   const complete = reducedMotion || visibleWords >= words.length;
 
   useEffect(() => {
-    if (complete) return;
-    const timer = window.setTimeout(
-      () => setVisibleWords((count) => Math.min(count + 4, words.length)),
-      28,
+    if (reducedMotion || words.length === 0) return;
+    let cancelled = false;
+    let speechTimer: number | undefined;
+    const speechApiAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    // Never hand a private reading to a network-backed browser voice. If the
+    // device has no local voice, the visual narration keeps the same cadence
+    // and the existing ritual tones remain available.
+    const localEnglishVoice = speechApiAvailable
+      ? window.speechSynthesis
+          .getVoices()
+          .find((voice) => voice.localService && voice.lang.toLowerCase().startsWith("en"))
+      : undefined;
+    const localNarrationAvailable = soundEnabled && localEnglishVoice !== undefined;
+    const revealTimer = window.setInterval(
+      () => setVisibleWords((count) => Math.min(count + 1, words.length)),
+      soundEnabled ? SPOKEN_WORD_INTERVAL_MS : SILENT_WORD_INTERVAL_MS,
     );
-    return () => window.clearTimeout(timer);
-  }, [complete, visibleWords, words.length]);
+
+    if (localNarrationAvailable) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.96;
+      utterance.pitch = 0.92;
+      utterance.volume = 0.82;
+      utterance.voice = localEnglishVoice;
+      utterance.addEventListener("boundary", (event) => {
+        if (cancelled || event.name !== "word") return;
+        let wordIndex = 0;
+        for (let index = 0; index < words.length; index += 1) {
+          if ((words[index]?.start ?? Number.POSITIVE_INFINITY) > event.charIndex) break;
+          wordIndex = index;
+        }
+        if (wordIndex >= 0) setVisibleWords(Math.min(wordIndex + 1, words.length));
+      });
+      utterance.addEventListener("end", () => {
+        if (!cancelled) setVisibleWords(words.length);
+      });
+      window.speechSynthesis.cancel();
+      speechTimer = window.setTimeout(() => {
+        if (!cancelled) window.speechSynthesis.speak(utterance);
+      }, 180);
+    }
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(revealTimer);
+      if (speechTimer !== undefined) window.clearTimeout(speechTimer);
+      if (localNarrationAvailable) window.speechSynthesis.cancel();
+    };
+  }, [narrationKey, reducedMotion, soundEnabled, text, words]);
 
   useEffect(() => {
     if (!complete || announced.current) return;
     announced.current = true;
-    onComplete(entry.text);
-  }, [complete, entry.text, onComplete]);
+    onComplete();
+  }, [complete, onComplete]);
 
   return (
     <p className="oracle-entry-text">
-      <span aria-hidden="true">
-        {reducedMotion ? entry.text : words.slice(0, visibleWords).join(" ")}
+      <span aria-hidden="true" className="oracle-word-stream">
+        {words.map((word, index) => (
+          <span
+            className={`oracle-word ${reducedMotion || index < visibleWords ? "is-visible" : ""}`}
+            key={`${narrationKey}:${word.start}`}
+          >
+            {word.text}
+            {index < words.length - 1 ? " " : ""}
+          </span>
+        ))}
         {!complete && <span className="oracle-cursor"> </span>}
       </span>
-      {complete && <span className="sr-only">{entry.text}</span>}
+      <span className="sr-only">{text}</span>
     </p>
   );
-}
-
-function passagesByIds(result: ReadingResult, ids: readonly string[]) {
-  const byId = new Map(result.passages.map((passage) => [passage.id, passage]));
-  return ids.flatMap((id) => {
-    const passage = byId.get(id);
-    return passage ? [passage] : [];
-  });
 }
 
 function ReadingOverview({
@@ -101,34 +152,23 @@ function ReadingOverview({
   activeIndex,
   cards,
   entries,
+  onNarrationComplete,
   onSelectCard,
+  reducedMotion,
   result,
+  soundEnabled,
 }: {
   activeCardIndex: number | null;
   activeIndex: number;
   cards: readonly DealtCardView[];
   entries: readonly TranscriptEntry[];
+  onNarrationComplete: () => void;
   onSelectCard: (index: number) => void;
+  reducedMotion: boolean;
   result: ReadingResult;
+  soundEnabled: boolean;
 }) {
   const opening = result.passages.find(({ role }) => role === "opening") ?? result.passages[0];
-  const likely = result.passages.find(({ id }) => id === result.trajectory.likelyPassageId);
-  const alternate = result.passages.find(({ id }) => id === result.trajectory.alternatePassageId);
-  const passageUseCounts = new Map<string, number>();
-  for (const passageId of result.cards.flatMap(({ passageIds }) => passageIds))
-    passageUseCounts.set(passageId, (passageUseCounts.get(passageId) ?? 0) + 1);
-  const reservedPassageIds = new Set([
-    opening?.id,
-    likely?.id,
-    alternate?.id,
-    ...result.cards.flatMap(({ passageIds }) => passageIds),
-  ]);
-  const synthesis = result.passages.filter(
-    ({ id, role }) =>
-      role === "turningPoint" ||
-      ((passageUseCounts.get(id) ?? 0) > 1 && cardThreadRoles.has(role)) ||
-      (!reservedPassageIds.has(id) && !["agency", "reflection", "safety"].includes(role)),
-  );
 
   return (
     <article
@@ -137,19 +177,27 @@ function ReadingOverview({
       data-testid="reading-result-overview"
     >
       <header className="reading-result-header">
-        <p className="reading-section-eyebrow">Your reading</p>
+        <p className="reading-section-eyebrow">Personal reading · {cards.length} cards</p>
         <h2>{result.title}</h2>
         {opening && (
-          <p className={`reading-opening-summary ${activeIndex === 0 ? "oracle-entry-text" : ""}`}>
-            {opening.text}
-          </p>
+          <NarratedParagraph
+            narrationKey={`opening:${opening.id}`}
+            onComplete={onNarrationComplete}
+            reducedMotion={reducedMotion}
+            soundEnabled={soundEnabled}
+            text={opening.text}
+          />
         )}
+        <div className="reading-opening-assurance" role="note">
+          <span>Your profile shaped the interpretation.</span>
+          <span>The draw stayed entirely random.</span>
+        </div>
       </header>
 
       <section aria-labelledby="locked-card-overview-heading" className="reading-card-overview">
         <div className="reading-overview-heading-row">
-          <h3 id="locked-card-overview-heading">Your locked cards</h3>
-          <span>Profile shaped the interpretation, never the draw.</span>
+          <h3 id="locked-card-overview-heading">Cards in this thread</h3>
+          <span>Select a card to enter its passage.</span>
         </div>
         <div className="reading-card-strip">
           {cards.map((card, cardIndex) => {
@@ -173,89 +221,65 @@ function ReadingOverview({
           })}
         </div>
       </section>
+      <p className="reading-entry-cue">
+        Continue to move through your reading one passage at a time.
+      </p>
+    </article>
+  );
+}
 
-      <details className="reading-details">
-        <summary>Explore the complete interpretation</summary>
-        <div className="reading-details-body">
-          <section aria-labelledby="card-by-card-heading">
-            <h3 id="card-by-card-heading">Card by card</h3>
-            <div className="reading-card-threads">
-              {result.cards.map((thread) => {
-                const card = cards.find(({ positionId }) => positionId === thread.positionId);
-                const passages = passagesByIds(result, thread.passageIds).filter(
-                  ({ id, role }) =>
-                    id !== opening?.id &&
-                    cardThreadRoles.has(role) &&
-                    (passageUseCounts.get(id) ?? 0) === 1,
-                );
-                if (!card || passages.length === 0) return null;
-                return (
-                  <article key={thread.positionId}>
-                    <p>{card.positionName}</p>
-                    <h4>
-                      {card.name}
-                      {card.orientation === "reversed" ? " · Reversed" : ""}
-                    </h4>
-                    {passages.map((passage) => (
-                      <p key={`${thread.positionId}-${passage.id}`}>{passage.text}</p>
-                    ))}
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-
-          {synthesis.length > 0 && (
-            <section>
-              <h3>Overall synthesis</h3>
-              {synthesis.map((passage) => (
-                <p key={passage.id}>{passage.text}</p>
-              ))}
-            </section>
-          )}
-
-          {likely && (
-            <section>
-              <h3>Likely trajectory</h3>
-              <p>{likely.text}</p>
-              <ul>
-                {result.trajectory.conditions.map((condition) => (
-                  <li key={condition}>{condition}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {alternate && (
-            <section>
-              <h3>Alternative path</h3>
-              <p>{alternate.text}</p>
-              <h4>What could change the pattern</h4>
-              <ul>
-                {result.disconfirmingEvidence.map((evidence) => (
-                  <li key={evidence}>{evidence}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <section>
-            <h3>Your agency</h3>
-            <ul>
-              {result.userAgency.map((action) => (
-                <li key={action}>{action}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="reading-reflection-section">
-            <h3>A question to carry</h3>
-            <p>{result.reflectionQuestion}</p>
-          </section>
-
-          <p className="reading-uncertainty">{result.uncertainty}</p>
-        </div>
-      </details>
+function ReadingIntegration({
+  cards,
+  result,
+}: {
+  cards: readonly DealtCardView[];
+  result: ReadingResult;
+}) {
+  return (
+    <article
+      className="oracle-entry reading-integration is-active"
+      data-phase="integration"
+      data-testid="reading-integration"
+    >
+      <header>
+        <p className="reading-section-eyebrow">Your reading is complete</p>
+        <h2>What to carry forward</h2>
+      </header>
+      <div className="reading-integration-grid">
+        <section>
+          <h3>Your agency</h3>
+          <ul>
+            {result.userAgency.map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ul>
+        </section>
+        <section>
+          <h3>Conditions to notice</h3>
+          <ul>
+            {result.trajectory.conditions.map((condition) => (
+              <li key={condition}>{condition}</li>
+            ))}
+          </ul>
+        </section>
+        <section>
+          <h3>What could change the pattern</h3>
+          <ul>
+            {result.disconfirmingEvidence.map((evidence) => (
+              <li key={evidence}>{evidence}</li>
+            ))}
+          </ul>
+        </section>
+      </div>
+      <blockquote className="reading-integration-question">
+        <span>A question to carry</span>
+        {result.reflectionQuestion}
+      </blockquote>
+      <p className="reading-uncertainty">{result.uncertainty}</p>
+      <footer>
+        <strong>{cards.length} cards remain locked to this reading.</strong>
+        <span>You can now continue with a follow-up without changing the draw.</span>
+      </footer>
     </article>
   );
 }
@@ -280,7 +304,9 @@ export function OracleTranscript({
   target,
   reducedMotion,
   retryToken,
+  soundEnabled,
   onActiveCardChange,
+  onJourneyCompleteChange,
   onRetry,
   onStateChange,
   previewEvents,
@@ -292,7 +318,9 @@ export function OracleTranscript({
   target: string;
   reducedMotion: boolean;
   retryToken: number;
+  soundEnabled: boolean;
   onActiveCardChange?: (index: number | null) => void;
+  onJourneyCompleteChange?: (complete: boolean) => void;
   onRetry: () => void;
   onStateChange?: (state: StreamState) => void;
   previewEvents?: readonly PhaseEvent[] | undefined;
@@ -389,9 +417,14 @@ export function OracleTranscript({
     return () => controller.abort();
   }, [active, previewEvents, readingId, retryToken, target, updateState]);
 
-  const boundedIndex = entries.length === 0 ? 0 : Math.min(activeIndex, entries.length - 1);
-  const activeEntry = entries[boundedIndex];
-  const activeCardIndex = boundedIndex === 0 ? null : cardIndexFor(entries, boundedIndex, cards);
+  const integrationAvailable = streamState === "complete" && entries.length > 0;
+  const totalSteps = entries.length + (integrationAvailable ? 1 : 0);
+  const maximumIndex = Math.max(0, totalSteps - 1);
+  const boundedIndex = Math.min(activeIndex, maximumIndex);
+  const showingIntegration = integrationAvailable && boundedIndex === entries.length;
+  const activeEntry = showingIntegration ? undefined : entries[boundedIndex];
+  const activeCardIndex =
+    boundedIndex === 0 || showingIntegration ? null : cardIndexFor(entries, boundedIndex, cards);
   const activeCard = activeCardIndex === null ? undefined : cards[activeCardIndex];
   const activePassage = activeEntry?.passageId
     ? result.passages.find(({ id }) => id === activeEntry.passageId)
@@ -400,6 +433,10 @@ export function OracleTranscript({
   useEffect(() => {
     onActiveCardChange?.(activeCardIndex);
   }, [activeCardIndex, onActiveCardChange]);
+
+  useEffect(() => {
+    onJourneyCompleteChange?.(showingIntegration);
+  }, [onJourneyCompleteChange, showingIntegration]);
 
   useEffect(
     () => () => {
@@ -412,7 +449,11 @@ export function OracleTranscript({
     (requestedIndex: number) => {
       const currentEntries = entriesRef.current;
       if (currentEntries.length === 0) return;
-      const nextIndex = Math.max(0, Math.min(requestedIndex, currentEntries.length - 1));
+      const currentMaximum = Math.max(
+        0,
+        currentEntries.length - 1 + (streamState === "complete" ? 1 : 0),
+      );
+      const nextIndex = Math.max(0, Math.min(requestedIndex, currentMaximum));
       activeIndexRef.current = nextIndex;
       setActiveIndex(nextIndex);
       window.requestAnimationFrame(() => {
@@ -420,13 +461,17 @@ export function OracleTranscript({
         if (!viewport) return;
         viewport.scrollTo({
           behavior: reducedMotion ? "auto" : "smooth",
-          top: nextIndex === 0 ? 0 : viewport.scrollHeight,
+          top: 0,
         });
       });
       const next = currentEntries[nextIndex];
-      if (next) setAnnouncement(`${next.heading}. ${nextIndex + 1} of ${currentEntries.length}.`);
+      setAnnouncement(
+        next
+          ? `${next.heading}. ${nextIndex + 1} of ${currentMaximum + 1}.`
+          : `Reading complete. ${currentMaximum + 1} of ${currentMaximum + 1}.`,
+      );
     },
-    [reducedMotion],
+    [reducedMotion, streamState],
   );
   const goPrevious = () => goTo(activeIndexRef.current - 1);
   const goNext = () => goTo(activeIndexRef.current + 1);
@@ -443,7 +488,7 @@ export function OracleTranscript({
       goTo(0);
     } else if (event.key === "End") {
       event.preventDefault();
-      goTo(entries.length - 1);
+      goTo(maximumIndex);
     }
   };
 
@@ -509,14 +554,19 @@ export function OracleTranscript({
         role="region"
         tabIndex={0}
       >
-        <ReadingOverview
-          activeCardIndex={activeCardIndex}
-          activeIndex={boundedIndex}
-          cards={cards}
-          entries={entries}
-          onSelectCard={goTo}
-          result={result}
-        />
+        {boundedIndex === 0 && (
+          <ReadingOverview
+            activeCardIndex={activeCardIndex}
+            activeIndex={boundedIndex}
+            cards={cards}
+            entries={entries}
+            onNarrationComplete={() => setAnnouncement("Opening insight complete.")}
+            onSelectCard={goTo}
+            reducedMotion={reducedMotion}
+            result={result}
+            soundEnabled={soundEnabled}
+          />
+        )}
         {activeEntry && boundedIndex > 0 && (
           <article
             className="oracle-entry guided-passage is-active"
@@ -540,13 +590,16 @@ export function OracleTranscript({
                 : (activeCard?.name ??
                   (activePassage ? passageRoleLabels[activePassage.role] : activeEntry.heading))}
             </h2>
-            <TypewriterParagraph
-              entry={activeEntry}
-              onComplete={setAnnouncement}
+            <NarratedParagraph
+              narrationKey={activeEntry.key}
+              onComplete={() => setAnnouncement(`${activeEntry.heading} complete.`)}
               reducedMotion={reducedMotion}
+              soundEnabled={soundEnabled}
+              text={activeEntry.text}
             />
           </article>
         )}
+        {showingIntegration && <ReadingIntegration cards={cards} result={result} />}
         <div aria-atomic="true" aria-live="polite" className="sr-only">
           {announcement}
         </div>
@@ -564,14 +617,14 @@ export function OracleTranscript({
         <div>
           <em>Guided thread</em>
           <span>
-            {entries.length === 0 ? 0 : boundedIndex + 1} / {entries.length}
+            {totalSteps === 0 ? 0 : boundedIndex + 1} / {totalSteps}
           </span>
           <i aria-hidden="true">
             <b
               style={
                 {
-                  "--reading-progress": entries.length
-                    ? `${((boundedIndex + 1) / entries.length) * 100}%`
+                  "--reading-progress": totalSteps
+                    ? `${((boundedIndex + 1) / totalSteps) * 100}%`
                     : "0%",
                 } as CSSProperties
               }
@@ -580,7 +633,7 @@ export function OracleTranscript({
         </div>
         <button
           aria-label="Next reading passage"
-          disabled={entries.length === 0 || boundedIndex >= entries.length - 1}
+          disabled={totalSteps === 0 || boundedIndex >= maximumIndex}
           onClick={goNext}
           type="button"
         >

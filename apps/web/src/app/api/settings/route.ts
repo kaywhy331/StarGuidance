@@ -47,7 +47,7 @@ function settingsPayload(user: Awaited<ReturnType<typeof requireUser>>) {
     settings: user.settings ?? {
       userId: user.id,
       displayName: "Reader",
-      soundEnabled: false,
+      soundEnabled: true,
       reducedMotion: false,
     },
     settingsPersisted: Boolean(user.settings),

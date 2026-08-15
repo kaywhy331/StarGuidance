@@ -70,7 +70,7 @@ export async function requireUser() {
     await repositories.settings.upsert({
       userId: persisted.id,
       displayName: metadataDisplayName,
-      soundEnabled: false,
+      soundEnabled: true,
       reducedMotion: false,
     });
   const consents = await repositories.consents.list(persisted.id);

@@ -121,7 +121,7 @@ export function createLocalSession(
     const current = localStore.settings.get(user.id);
     localStore.settings.set(user.id, {
       displayName,
-      soundEnabled: current?.soundEnabled ?? false,
+      soundEnabled: current?.soundEnabled ?? true,
       reducedMotion: current?.reducedMotion ?? false,
     });
   }

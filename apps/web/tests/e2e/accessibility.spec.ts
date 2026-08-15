@@ -53,14 +53,12 @@ async function createReading(page: Page): Promise<void> {
   await page.getByLabel("Your private question").fill("What should I notice now?");
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
-  // Cut and reveal are intentional user actions (PRD UX-004/UX-006), not
-  // timers — drive past them the same way apps/web/tests/e2e/mvp.spec.ts's
-  // finishRitual() does before waiting for the completed reading.
+  // The shuffle gathers into an automatic deal; reveal remains an intentional
+  // user action (UX-006).
   await page
-    .getByRole("button", { name: "Finish shuffling", exact: true })
+    .getByRole("button", { name: "Deal now", exact: true })
     .click({ timeout: 2_000 })
     .catch(() => {});
-  await page.getByRole("button", { name: "Skip cut", exact: true }).click();
   await page.getByRole("button", { name: "Reveal all", exact: true }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 }

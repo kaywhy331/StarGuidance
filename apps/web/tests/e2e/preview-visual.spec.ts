@@ -77,8 +77,8 @@ test("the visual preview follows the streamlined result and continuation sequenc
 
   const overview = page.getByTestId("reading-result-overview");
   await expect(overview).toBeVisible();
-  await expect(overview).toHaveCSS("text-align", "left");
-  await expect(overview.getByRole("heading", { name: "Your locked cards" })).toBeVisible();
+  await expect(overview).toHaveCSS("text-align", "center");
+  await expect(overview.getByRole("heading", { name: "Cards in this thread" })).toBeVisible();
   const lockedCards = overview.locator(".reading-card-strip button");
   await expect(lockedCards).toHaveCount(3);
   await expect(lockedCards.first().locator("small")).not.toBeEmpty();
@@ -93,11 +93,11 @@ test("the visual preview follows the streamlined result and continuation sequenc
     };
   });
   expect(titleMetrics.fontSize).toBeGreaterThanOrEqual(26);
-  expect(titleMetrics.fontSize).toBeLessThanOrEqual(44);
+  expect(titleMetrics.fontSize).toBeLessThanOrEqual(52);
   expect(titleMetrics.lineHeight / titleMetrics.fontSize).toBeLessThanOrEqual(1.12);
 
   const narrativeSize = await overview
-    .locator(".reading-opening-summary")
+    .locator(".reading-result-header > .oracle-entry-text")
     .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
   expect(narrativeSize).toBeGreaterThanOrEqual(mobileViewport ? 17 : 18);
   const composerTextSize = await page
@@ -111,22 +111,9 @@ test("the visual preview follows the streamlined result and continuation sequenc
   );
   expect(composerHintSize).toBeGreaterThanOrEqual(14);
 
-  const completeInterpretation = overview.locator(".reading-details");
-  await expect(
-    completeInterpretation.getByText("Explore the complete interpretation", { exact: true }),
-  ).toBeVisible();
-  await completeInterpretation.locator("summary").click();
-  for (const heading of [
-    "Card by card",
-    "Overall synthesis",
-    "Likely trajectory",
-    "Alternative path",
-    "Your agency",
-    "A question to carry",
-  ])
-    await expect(completeInterpretation.getByRole("heading", { name: heading })).toBeVisible();
-  await expect(completeInterpretation.locator(".reading-uncertainty")).toBeVisible();
-  await completeInterpretation.locator("summary").click();
+  await expect(page.getByText("Explore the complete interpretation", { exact: true })).toHaveCount(
+    0,
+  );
 
   for (let index = 0; index < 3; index += 1) {
     await page.getByRole("button", { name: "Next reading passage" }).click();
@@ -152,13 +139,15 @@ test("the visual preview follows the streamlined result and continuation sequenc
 
   await journey.focus();
   await page.keyboard.press("End");
-  await expect(page.getByRole("heading", { name: "The Cards Answer" })).toBeVisible();
+  const integration = page.getByTestId("reading-integration");
+  await expect(integration).toBeVisible();
+  for (const heading of ["Your agency", "Conditions to notice", "What could change the pattern"])
+    await expect(integration.getByRole("heading", { name: heading })).toBeVisible();
+  await expect(integration.locator(".reading-uncertainty")).toBeVisible();
   await page.getByRole("button", { name: "Previous reading passage" }).click();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
   await expect(page.locator(".oracle-entry-text")).toBeVisible();
-  await expect(
-    page.getByText("Explore the complete interpretation", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByTestId("reading-result-overview")).toHaveCount(0);
   await expectNoBlockingAccessibilityViolations(page);
 });
 

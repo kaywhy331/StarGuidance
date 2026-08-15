@@ -42,8 +42,8 @@ export function useReadingPreferences(initial?: ReadingPreferenceSeed) {
     initial
       ? initial.soundEnabled
       : typeof window === "undefined"
-        ? false
-        : (storedBoolean(window.localStorage, SOUND_KEY) ?? false),
+        ? true
+        : (storedBoolean(window.localStorage, SOUND_KEY) ?? true),
   );
 
   useEffect(() => {

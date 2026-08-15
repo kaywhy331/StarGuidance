@@ -34,6 +34,7 @@ export function ReadingResultScene({
   const [resonance, setResonance] = useState(0);
   const [comment, setComment] = useState("");
   const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [journeyComplete, setJourneyComplete] = useState(false);
   const { displayName, reducedMotion, sound, toggleReducedMotion, toggleSound } =
     useReadingPreferences(initialPreferences);
 
@@ -176,104 +177,108 @@ export function ReadingResultScene({
           active
           cards={reading.cards}
           onActiveCardChange={setActiveCard}
+          onJourneyCompleteChange={setJourneyComplete}
           onRetry={() => undefined}
           previewEvents={previewEvents}
           readingId={readingId}
-          reducedMotion={true}
+          reducedMotion={reducedMotion}
           result={reading.result}
           retryToken={0}
+          soundEnabled={sound}
           target="primary"
         />
 
-        <div className="result-support-stack">
-          {reading.followUps.length > 0 && (
-            <details className="result-followups">
-              <summary>
-                Saved follow-up{reading.followUps.length === 1 ? "" : "s"} ·{" "}
-                {reading.followUps.length}
-              </summary>
-              {reading.followUps.map((entry) => (
-                <p key={entry.id}>{entry.result.response}</p>
-              ))}
-            </details>
-          )}
+        {journeyComplete && (
+          <div className="result-support-stack">
+            {reading.followUps.length > 0 && (
+              <details className="result-followups">
+                <summary>
+                  Saved follow-up{reading.followUps.length === 1 ? "" : "s"} ·{" "}
+                  {reading.followUps.length}
+                </summary>
+                {reading.followUps.map((entry) => (
+                  <p key={entry.id}>{entry.result.response}</p>
+                ))}
+              </details>
+            )}
 
-          {reading.followUpsRemaining > 0 && (
-            <QuestionComposer
-              hint={`${reading.followUpsRemaining} of ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? "" : "s"} remaining on these locked cards.`}
-              label="Ask a follow-up using the same cards"
-              loading={followUpLoading}
-              onChange={setFollowUp}
-              onSubmit={submitFollowUp}
-              placeholder="Ask what these same cards add…"
-              submitLabel="Reflect on the same cards"
-              testId="follow-up-composer"
-              value={followUp}
-            />
-          )}
+            {reading.followUpsRemaining > 0 && (
+              <QuestionComposer
+                hint={`${reading.followUpsRemaining} of ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? "" : "s"} remaining on these locked cards.`}
+                label="Ask a follow-up using the same cards"
+                loading={followUpLoading}
+                onChange={setFollowUp}
+                onSubmit={submitFollowUp}
+                placeholder="Ask what these same cards add…"
+                submitLabel="Reflect on the same cards"
+                testId="follow-up-composer"
+                value={followUp}
+              />
+            )}
 
-          {reading.feedbackSubmitted ? (
-            <p className="feedback-thanks">Thank you — your feedback is saved separately.</p>
-          ) : (
-            <details
-              className="reading-feedback-panel"
-              onToggle={(event) => setFeedbackOpen(event.currentTarget.open)}
-              open={feedbackOpen}
-            >
-              <summary>Share private feedback</summary>
-              <form onSubmit={submitFeedback}>
-                <label>
-                  Helpful
-                  <select
-                    onChange={(event) => setHelpfulness(Number(event.target.value))}
-                    value={helpfulness}
+            {reading.feedbackSubmitted ? (
+              <p className="feedback-thanks">Thank you — your feedback is saved separately.</p>
+            ) : (
+              <details
+                className="reading-feedback-panel"
+                onToggle={(event) => setFeedbackOpen(event.currentTarget.open)}
+                open={feedbackOpen}
+              >
+                <summary>Share private feedback</summary>
+                <form onSubmit={submitFeedback}>
+                  <label>
+                    Helpful
+                    <select
+                      onChange={(event) => setHelpfulness(Number(event.target.value))}
+                      value={helpfulness}
+                    >
+                      <option value={0}>Not rated</option>
+                      {[1, 2, 3, 4, 5].map((value) => (
+                        <option key={value} value={value}>
+                          {value} / 5
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Resonance
+                    <select
+                      onChange={(event) => setResonance(Number(event.target.value))}
+                      value={resonance}
+                    >
+                      <option value={0}>Not rated</option>
+                      {[1, 2, 3, 4, 5].map((value) => (
+                        <option key={value} value={value}>
+                          {value} / 5
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="feedback-comment-field">
+                    Optional note
+                    <textarea
+                      maxLength={1_000}
+                      onChange={(event) => setComment(event.target.value)}
+                      rows={2}
+                      value={comment}
+                    />
+                  </label>
+                  <button
+                    disabled={feedbackLoading || (!helpfulness && !resonance && !comment.trim())}
+                    type="submit"
                   >
-                    <option value={0}>Not rated</option>
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <option key={value} value={value}>
-                        {value} / 5
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Resonance
-                  <select
-                    onChange={(event) => setResonance(Number(event.target.value))}
-                    value={resonance}
-                  >
-                    <option value={0}>Not rated</option>
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <option key={value} value={value}>
-                        {value} / 5
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="feedback-comment-field">
-                  Optional note
-                  <textarea
-                    maxLength={1_000}
-                    onChange={(event) => setComment(event.target.value)}
-                    rows={2}
-                    value={comment}
-                  />
-                </label>
-                <button
-                  disabled={feedbackLoading || (!helpfulness && !resonance && !comment.trim())}
-                  type="submit"
-                >
-                  {feedbackLoading ? "Saving…" : "Save feedback"}
-                </button>
-              </form>
-            </details>
-          )}
-          {error && (
-            <p className="sanctuary-error" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
+                    {feedbackLoading ? "Saving…" : "Save feedback"}
+                  </button>
+                </form>
+              </details>
+            )}
+            {error && (
+              <p className="sanctuary-error" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </MysticSanctuaryScene>
   );

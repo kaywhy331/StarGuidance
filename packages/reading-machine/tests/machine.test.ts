@@ -18,7 +18,6 @@ describe("reading state machine", () => {
       { type: "QUESTION_ACCEPTED" },
       { type: "DECK_READY" },
       { type: "SHUFFLE_COMPLETE" },
-      { type: "SKIP_CUT" },
       { type: "DEALT" },
       { type: "REVEAL" },
       { type: "ALL_REVEALED" },
@@ -27,6 +26,16 @@ describe("reading state machine", () => {
     ] as const)
       actor.send(event);
     expect(actor.getSnapshot().value).toBe("generatingSynthesis");
+  });
+
+  it("moves directly from the completed shuffle into dealing", () => {
+    const actor = createActor(readingMachine).start();
+    actor.send({ type: "START" });
+    actor.send({ type: "SELECT" });
+    actor.send({ type: "QUESTION_ACCEPTED" });
+    actor.send({ type: "DECK_READY" });
+    actor.send({ type: "SHUFFLE_COMPLETE" });
+    expect(actor.getSnapshot().value).toBe("dealing");
   });
 
   it("interrupts high-stakes questions before deck preparation", () => {
