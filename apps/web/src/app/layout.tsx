@@ -11,8 +11,24 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  const suppressHostPreviewDrawer =
+    process.env.APP_ENV === "staging" ||
+    process.env.APP_ENV === "test" ||
+    process.env.ENABLE_VISUAL_PREVIEW === "true";
+
   return (
     <html lang="en">
+      <head>
+        {suppressHostPreviewDrawer && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html:
+                'try { window.sessionStorage.setItem("ntl-drawer-initial-state", "hidden"); } catch {}',
+            }}
+            id="suppress-netlify-preview-drawer"
+          />
+        )}
+      </head>
       <body>
         <a className="skip-link" href="#main-content">
           Skip to content
