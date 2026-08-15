@@ -3,6 +3,11 @@ import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
+import {
+  monotonicVisibleWordCount,
+  NARRATION_TIMING,
+} from "../../src/app/session/[id]/oracle-transcript";
+
 async function expectNoBlockingAccessibilityViolations(page: Page) {
   const { violations } = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -53,6 +58,16 @@ async function expectLayeredReadingWindow(page: Page) {
     .toBeLessThanOrEqual(0.65);
 }
 
+test("narration always advances visually and starts with a readable lead", () => {
+  expect(monotonicVisibleWordCount(5, 2, 9)).toBe(5);
+  expect(monotonicVisibleWordCount(5, 7, 9)).toBe(7);
+  expect(monotonicVisibleWordCount(8, 12, 9)).toBe(9);
+  expect(NARRATION_TIMING.boundaryLeadWords).toBeGreaterThanOrEqual(2);
+  expect(NARRATION_TIMING.speechStartDelayMs).toBeGreaterThan(
+    NARRATION_TIMING.spokenWordIntervalMs,
+  );
+});
+
 test("the visual preview follows the streamlined result and continuation sequence", async ({
   page,
 }, testInfo) => {
@@ -62,6 +77,10 @@ test("the visual preview follows the streamlined result and continuation sequenc
     mobileViewport ? { width: 393, height: 852 } : { width: 1440, height: 900 },
   );
   await page.goto("/visual-preview");
+  await expect
+    .poll(() => page.evaluate(() => window.sessionStorage.getItem("ntl-drawer-initial-state")))
+    .toBe("hidden");
+  await expect(page.locator('iframe[title="Netlify Drawer"]')).toHaveCount(0);
   const journey = page.getByTestId("oracle-transcript");
   await expect(
     page.getByRole("heading", { name: "The quiet architecture of change" }),
@@ -100,6 +119,8 @@ test("the visual preview follows the streamlined result and continuation sequenc
     .locator(".reading-result-header > .oracle-entry-text")
     .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
   expect(narrativeSize).toBeGreaterThanOrEqual(mobileViewport ? 17 : 18);
+  await expect(overview.locator(".oracle-cursor")).toHaveCount(0);
+  await expect(overview.locator(".oracle-word").first()).toHaveCSS("filter", "none");
   const composerTextSize = await page
     .locator(".question-composer-field textarea")
     .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));

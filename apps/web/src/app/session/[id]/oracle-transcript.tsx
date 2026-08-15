@@ -43,8 +43,16 @@ const passageRoleLabels: Record<ReadingPassage["role"], string> = {
   safety: "Scope and care",
 };
 
-const SPOKEN_WORD_INTERVAL_MS = 330;
-const SILENT_WORD_INTERVAL_MS = 145;
+export const NARRATION_TIMING = {
+  boundaryLeadWords: 2,
+  silentWordIntervalMs: 145,
+  speechStartDelayMs: 520,
+  spokenWordIntervalMs: 240,
+} as const;
+
+export function monotonicVisibleWordCount(current: number, requested: number, total: number) {
+  return Math.max(current, Math.min(requested, total));
+}
 
 function NarratedParagraph({
   narrationKey,
@@ -67,7 +75,11 @@ function NarratedParagraph({
       })),
     [text],
   );
-  const [visibleWords, setVisibleWords] = useState(reducedMotion ? words.length : 0);
+  // Put the first word on screen immediately. Speech starts only after a
+  // short visual lead, so narration can never begin against an empty passage.
+  const [visibleWords, setVisibleWords] = useState(
+    reducedMotion ? words.length : Math.min(1, words.length),
+  );
   const announced = useRef(false);
   const complete = reducedMotion || visibleWords >= words.length;
 
@@ -86,8 +98,15 @@ function NarratedParagraph({
       : undefined;
     const localNarrationAvailable = soundEnabled && localEnglishVoice !== undefined;
     const revealTimer = window.setInterval(
-      () => setVisibleWords((count) => Math.min(count + 1, words.length)),
-      soundEnabled ? SPOKEN_WORD_INTERVAL_MS : SILENT_WORD_INTERVAL_MS,
+      () =>
+        setVisibleWords((count) => {
+          const next = monotonicVisibleWordCount(count, count + 1, words.length);
+          if (next >= words.length) window.clearInterval(revealTimer);
+          return next;
+        }),
+      localNarrationAvailable
+        ? NARRATION_TIMING.spokenWordIntervalMs
+        : NARRATION_TIMING.silentWordIntervalMs,
     );
 
     if (localNarrationAvailable) {
@@ -97,21 +116,31 @@ function NarratedParagraph({
       utterance.volume = 0.82;
       utterance.voice = localEnglishVoice;
       utterance.addEventListener("boundary", (event) => {
-        if (cancelled || event.name !== "word") return;
+        if (cancelled || (event.name && event.name !== "word")) return;
         let wordIndex = 0;
         for (let index = 0; index < words.length; index += 1) {
           if ((words[index]?.start ?? Number.POSITIVE_INFINITY) > event.charIndex) break;
           wordIndex = index;
         }
-        if (wordIndex >= 0) setVisibleWords(Math.min(wordIndex + 1, words.length));
+        if (wordIndex >= 0)
+          setVisibleWords((count) =>
+            monotonicVisibleWordCount(
+              count,
+              wordIndex + NARRATION_TIMING.boundaryLeadWords,
+              words.length,
+            ),
+          );
       });
       utterance.addEventListener("end", () => {
-        if (!cancelled) setVisibleWords(words.length);
+        if (!cancelled) {
+          window.clearInterval(revealTimer);
+          setVisibleWords((count) => monotonicVisibleWordCount(count, words.length, words.length));
+        }
       });
       window.speechSynthesis.cancel();
       speechTimer = window.setTimeout(() => {
         if (!cancelled) window.speechSynthesis.speak(utterance);
-      }, 180);
+      }, NARRATION_TIMING.speechStartDelayMs);
     }
 
     return () => {
@@ -140,7 +169,6 @@ function NarratedParagraph({
             {index < words.length - 1 ? " " : ""}
           </span>
         ))}
-        {!complete && <span className="oracle-cursor"> </span>}
       </span>
       <span className="sr-only">{text}</span>
     </p>
