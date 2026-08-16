@@ -1,0 +1,35 @@
+# Commerce verification
+
+StarGuidance commerce is test-mode only on this branch and is hidden in the safe beta. Checkout and webhook processing both fail closed unless `ENABLE_PROFILE_REPORTS=true`; the UI additionally requires `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`. Both flags default false. When enabled, Checkout and the webhook still reject a live Stripe secret, and the webhook rejects `livemode: true` events. Removing those guards requires an approved price, refund/chargeback policy, Terms and Privacy Notice, launch region, support process, and a separate reviewed production change.
+
+## Implemented lifecycle
+
+| Provider event                                                                             | Durable behavior                                                                                                     |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `checkout.session.completed` / `checkout.session.async_payment_succeeded` with paid status | Atomically marks the order paid, grants one entitlement, creates one pending report/job, and records an audit event  |
+| `checkout.session.async_payment_failed`                                                    | Marks the current session's order failed, revokes any entitlement, and clears its temporary source                   |
+| `checkout.session.expired`                                                                 | Audits the expiration and keeps the order/source pending so Checkout can replace the session without a race          |
+| `charge.refunded` for the full charge amount                                               | Marks the order refunded, revokes the entitlement, clears any temporary source, and immediately withholds the report |
+| `charge.refunded` for part of the charge amount                                            | Records an audit event but does not silently choose an access policy                                                 |
+| `charge.dispute.created`                                                                   | Marks the order disputed, clears any temporary source, and immediately revokes access                                |
+| `charge.dispute.closed`                                                                    | Records the outcome for review; even a win does not silently restore access before policy approval                   |
+
+Ownership comes from the persisted order. Signed event metadata or payment-intent lookup may locate that order, but cannot supply a user or profile snapshot. Checkout copies only the internal order ID to provider metadata; no birth facts, question text, derived profile, or report prose is sent. Before redirect, the order stores a context-bound encrypted source containing only the versioned snapshot traits/tensions and calculation output needed for the report; the birth-name rendering is removed, and no name, birth date, time, or place is copied. This lets a later paid webhook fulfill after profile deletion. The paid transaction moves that source to `report_jobs` and clears the order copy; successful generation clears the job copy.
+
+Webhook event claims use a five-minute database lease. Concurrent delivery is ignored while a claim is active, a caught processing failure releases the claim for Stripe retry, a crashed worker can be reclaimed after the lease expires, and a completed event is permanently deduplicated. Fulfillment is a single transaction across order, entitlement, report, report job, and source cleanup. The webhook does not generate report sections inline. `report_jobs` uses a two-minute lease, capped retry backoff, fixed failure classes, one job per report, and a subject-bound user retry. The every-minute authenticated drain processes both interpretation and report queues.
+
+## Credentialed Stripe test
+
+Use an owner-controlled Stripe test account and a public staging webhook endpoint. Never place key values, webhook payloads, customer email addresses, Checkout URLs, or dashboard screenshots in GitHub logs or the PR.
+
+1. In an isolated commerce rehearsal only, configure `ENABLE_PROFILE_REPORTS=true`, `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`, `PAYMENTS_PROVIDER=stripe`, and test values for `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PROFILE_REPORT_PRICE_ID` in the narrowest deploy-preview scope. Checkout is created server-side and redirects to its returned URL; no Stripe publishable key is read by this application.
+2. Subscribe the endpoint to the lifecycle events listed above. Confirm the endpoint is HTTPS and the signing secret belongs to that exact endpoint.
+3. Buy the report with a Stripe test card. Confirm the return page shows Preparing, one pending order becomes paid, exactly one active entitlement/report/job exists, the background drain reaches Ready, and a repeated browser request/event creates no duplicate.
+4. Replay the completed event, deliver two copies concurrently, and force one processing failure before retry. Confirm only the failed attempt is retried and fulfillment remains singular.
+5. Perform a full test refund. Confirm the order is refunded, the entitlement is revoked, and both direct report fetch and report listing withhold access.
+6. Exercise partial refund and dispute open/close scenarios. Confirm their audit actions match the table and have an approved operator resolution.
+7. Confirm export includes report content even after revocation. Confirm profile deletion removes birth snapshots/readings while retaining order, entitlement, and report rows with null snapshot pointers; confirm account deletion removes the subject's application rows. Provider/finance retention must follow the approved policy.
+
+Automated signature, reconciliation, replay, refund, dispute, and revocation tests exist locally and in CI. Those checks are not a substitute for the credentialed owner-run procedure above; its redacted evidence must be attached to the exact release candidate.
+
+Durable asynchronous report generation, retry/status handling, title-only preview, standalone purchased-report history, structured web report, provider-accurate labeling, and profile/payment separation are implemented. An authenticated download endpoint generates a language-declared, metadata-bearing, tagged PDF from the same presentation model as the web report; automated tests pin its H1/H2/paragraph structure and source parity. The credential-free local adapter deliberately remains synchronous and is not evidence of Stripe. Public launch still requires the credentialed procedure above, independent screen-reader/PDF-UA review, pricing/tax/receipt policy, support ownership, and approved finance retention. Do not market the PDF as fully accessible until that independent review passes.

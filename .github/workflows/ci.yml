@@ -1,0 +1,301 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # These two contexts exist because `guard` and `verify` were historically
+  # configured as required checks even though the credentialed staging
+  # workflow is workflow_dispatch-only. Keep normal PRs mergeable without
+  # weakening the separate owner-approved staging promotion gate: substantive
+  # repository validation still runs in the jobs below, while protected
+  # staging evidence remains an explicit pre-promotion artifact.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "PR check context active; credentialed staging guard runs only by authorized dispatch."
+
+  verify:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "PR check context active; protected staging verification remains a promotion gate."
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod --audit-level high
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm db:check
+      # The credential-gated staging specs never execute here, so an import
+      # error in them is invisible until a protected run collects them and the
+      # whole suite dies before its first assertion. Listing the tests compiles
+      # every spec and its imports without contacting any service — which is
+      # how a `server-only` import reached a Playwright suite unnoticed.
+      - name: Compile the staging verification specs
+        env:
+          STAGING_BASE_URL: https://compile-check.invalid
+          DATABASE_INTEGRATION_URL: postgresql://compile:check@127.0.0.1:5432/none
+        run: pnpm --filter @starguidance/web exec playwright test --config=playwright.staging.config.ts --list
+      - run: pnpm build
+
+  profile-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/profile-engine
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python scripts/check_dependency_locks.py
+      - run: python -m pip install --require-hashes -r requirements-dev.lock
+      - run: python -m pip install --no-deps -e .
+      - run: pytest
+      - run: python scripts/check_latency_budget.py
+      - run: ruff check .
+      - run: mypy .
+
+  cali-tokenpak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @starguidance/cali-tokenpak test
+      - name: Create disposable synthetic Compose secrets
+        working-directory: infra/cali-tokenpak
+        run: |
+          mkdir -p secrets
+          for name in gateway_shared_secret groq_api_key tokenpak_proxy_auth_token tokenpak_egress_token cloudflared_tunnel_token; do
+            node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url')+'\\n')" > "secrets/${name}.txt"
+          done
+      - name: Validate the resolved Compose graph
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: docker compose config --quiet
+      - name: Build pinned gateway and TokenPak images
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: docker compose build --pull ingress access-jwks tokenpak groq-egress
+      - name: Verify installed TokenPak, routing, and fail-closed runtime policy
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: docker compose run --rm --no-deps --entrypoint python tokenpak /srv/tokenpak/runtime-policy-smoke.py
+      - name: Prove the live TokenPak, egress, and content-blind provider chain
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: |
+          node create-ci-access-fixture.mjs \
+            "$CLOUDFLARE_ACCESS_AUD" \
+            "$CLOUDFLARE_ACCESS_TEAM_DOMAIN" \
+            /tmp/starguidance-ci-access-jwks.json \
+            /tmp/starguidance-ci-access.jwt
+          CI_ACCESS_JWKS="$(tr -d '\n' < /tmp/starguidance-ci-access-jwks.json)"
+          export CI_ACCESS_JWKS
+          docker compose -f compose.yaml -f compose.ci.yaml config --quiet
+          docker compose -f compose.yaml -f compose.ci.yaml build --pull access-jwks groq-egress mock-groq ci-client
+          docker compose -f compose.yaml -f compose.ci.yaml up --detach --wait mock-groq groq-egress tokenpak ingress ci-client
+          corepack pnpm exec tsx runtime-chain-payload.ts > chain-payload.json
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T tokenpak sh -c 'umask 077; dd of=/tmp/chain-payload.json status=none' < chain-payload.json
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T ci-client sh -c 'umask 077; dd of=/tmp/chain-payload.json status=none' < chain-payload.json
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T ci-client sh -c 'umask 077; dd of=/tmp/access.jwt status=none' < /tmp/starguidance-ci-access.jwt
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T ci-client node /app/runtime-ingress-smoke.mjs success
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T groq-egress node -e \
+            "fetch('http://mock-groq:8082/__ci/observation/ci-chain-ingress-success-12345678').then(async r=>{if(!r.ok)process.exit(1);const v=await r.json();if(v.count!==1||v.providerBearerAccepted!==true||v.proxyBearerRejected!==true||v.path!=='/openai/v1/chat/completions'||v.host!=='mock-groq:8082')process.exit(1)})"
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T ci-client node /app/runtime-ingress-smoke.mjs forced-failure
+          docker compose -f compose.yaml -f compose.ci.yaml exec -T groq-egress node -e \
+            "fetch('http://mock-groq:8082/__ci/observation/ci-chain-forced-failure-12345678').then(async r=>{if(!r.ok)process.exit(1);const v=await r.json();if(v.count!==1||v.providerBearerAccepted!==true||v.proxyBearerRejected!==true||v.path!=='/openai/v1/chat/completions'||v.host!=='mock-groq:8082')process.exit(1)})"
+          rm chain-payload.json
+          rm /tmp/starguidance-ci-access-jwks.json /tmp/starguidance-ci-access.jwt
+      - name: Verify DLP block behavior at the TokenPak HTTP boundary
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: |
+          docker compose up --detach --wait groq-egress tokenpak
+          for attempt in $(seq 1 30); do
+            if docker compose exec -T tokenpak python /srv/tokenpak/runtime-http-smoke.py; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs --no-color --tail 100
+          exit 1
+      - name: Tear down synthetic runtime
+        if: always()
+        working-directory: infra/cali-tokenpak
+        env:
+          CLOUDFLARE_ACCESS_AUD: synthetic-ci-audience
+          CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
+        run: docker compose down --volumes --remove-orphans
+
+  e2e_core:
+    name: e2e-core
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
+      - run: pnpm exec playwright install --with-deps chromium firefox
+      - run: pnpm --filter @starguidance/web test:e2e:core
+
+  e2e_webkit:
+    name: e2e-webkit-${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
+      - run: pnpm exec playwright install --with-deps webkit
+      - run: >-
+          pnpm --filter @starguidance/web exec playwright test
+          --project=desktop-webkit
+          --workers=1
+          --shard=${{ matrix.shard }}/3
+
+  e2e:
+    name: e2e
+    if: ${{ always() }}
+    needs: [e2e_core, e2e_webkit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every browser lane
+        env:
+          CORE_RESULT: ${{ needs.e2e_core.result }}
+          WEBKIT_RESULT: ${{ needs.e2e_webkit.result }}
+        run: |
+          test "$CORE_RESULT" = success
+          test "$WEBKIT_RESULT" = success
+
+  migration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: starguidance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d starguidance"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/starguidance
+      DATABASE_INTEGRATION_URL: postgresql://postgres:postgres@127.0.0.1:5432/starguidance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:check
+      # Installs a minimal auth.users stand-in so migration 0001 really creates
+      # the Supabase foreign key and synchronisation trigger, and migration 0002
+      # really removes them. Without it neither statement would run outside the
+      # credential-gated staging project.
+      - run: pnpm --filter @starguidance/database db:auth-shim
+      - run: pnpm --filter @starguidance/database exec drizzle-kit migrate
+      - run: pnpm db:seed
+      - run: pnpm --filter @starguidance/database test:integration
+      - run: pnpm --filter @starguidance/web test:integration
+      - name: Rehearse logical backup and isolated restore
+        env:
+          APP_ENV: test
+          PGPASSWORD: postgres
+          RESTORE_FIXTURE_CONFIRM: SYNTHETIC_DISPOSABLE_DATABASE
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          RESTORE_FIXTURE_ACTION=seed pnpm --filter @starguidance/database restore:fixture
+          pg_dump --host 127.0.0.1 --username postgres --format custom --file "$RUNNER_TEMP/starguidance.dump" starguidance
+          createdb --host 127.0.0.1 --username postgres starguidance_restore
+          pg_restore --host 127.0.0.1 --username postgres --dbname starguidance_restore --exit-on-error "$RUNNER_TEMP/starguidance.dump"
+          DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/starguidance_restore RESTORE_FIXTURE_ACTION=verify pnpm --filter @starguidance/database restore:fixture
+          RESTORE_FIXTURE_ACTION=cleanup pnpm --filter @starguidance/database restore:fixture
+          dropdb --host 127.0.0.1 --username postgres starguidance_restore
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional for a personal repository; required by the action after
+          # transfer to an organization. Configure it only as a repository or
+          # organization secret—never in source or an application environment.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

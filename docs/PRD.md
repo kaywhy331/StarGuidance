@@ -12,14 +12,14 @@ Prepared for Kevin
 
 > **Core product decision**
 >
-> Birth name and date of birth are required. Birthplace and birth time are optional. A supplied birth time requires birthplace or equivalent timezone context. Missing data reduces profile detail but never blocks a tarot reading.
+> Birth name and date of birth are required. Birth city/country and birth time are two independent optional fields. Onboarding asks four simple questions and does not require timezone entry or a time-confidence mode. Missing data reduces profile detail but never blocks a tarot reading.
 
 ## Document control
 | **Field** | **Value** |
 | --- | --- |
 | Product | Personalized Tarot & Horoscope Web App |
 | Document | Product Requirements Document and completion criteria |
-| Version / date | v1.0 / July 22, 2026 |
+| Version / date | v1.1 / July 23, 2026 |
 | Status | Implementation-ready draft; business, brand, legal, and domain-expert sign-off pending |
 | Primary platforms | Responsive web application; mobile-first; desktop supported |
 | Primary audience | Founder, product, design, engineering, content, QA, security/privacy, and operations |
@@ -33,7 +33,7 @@ Prepared for Kevin
 | Could | Designed for compatibility but not required for MVP launch. | No launch impact unless explicitly promoted. |
 
 ## Executive summary
-The product delivers immersive tarot readings personalized by a private birth profile assembled from Western astrology (Whole Sign and Placidus), Pythagorean numerology, BaZi Four Pillars, and Dreamspell Galactic Signature. The profile is not displayed in the standard tarot experience; it is converted into a compact plain-language personality lens used to emphasize relevant card meanings. Users may later purchase a detailed profile report that reveals the underlying systems and cross-system synthesis.
+The product delivers immersive tarot readings personalized by a private birth profile assembled from Western astrology (Whole Sign and Placidus), Pythagorean numerology, BaZi Four Pillars, Dreamspell Galactic Signature, Nine Star Ki, and planetary-angularity mapping. The profile is not displayed in the standard tarot experience; it is converted into a compact plain-language personality lens used to emphasize relevant card meanings. Users may later purchase a detailed profile report that reveals supported underlying systems and cross-system synthesis.
 
 The user experience remains simple on the surface: create an account, enter minimum birth details, select a reading, ask a question, experience the shuffle/deal/reveal sequence, and receive a structured interpretation. Behind that surface, calculations, random card selection, AI interpretation, privacy controls, content versioning, and payment fulfillment are separated so each can be tested and audited.
 
@@ -43,11 +43,11 @@ The user experience remains simple on the surface: create an account, enter mini
 
 ## Product at a glance
 - **Required profile inputs:** full birth name and date of birth.
-- **Optional enhancement inputs:** birthplace and birth time; time requires place/timezone context.
+- **Optional enhancement inputs:** a free-text birth city/country and a single birth-time field.
 - **Private personalization:** the base reading uses plain-language traits without showing placements, numbers, pillars, or signature labels.
 - **Tarot integrity:** the profile affects interpretation, never card selection.
 - **MVP readings:** 1-card Focus, 3-card Direction, 5-card Crossroads, and 7-card Deeper Outlook.
-- **Immersive experience:** shuffle, optional cut, deal, user-controlled flips, progressive explanations, and final synthesis.
+- **Immersive experience:** full-screen shuffle, automatic deal, user-controlled flips, progressive spoken-paced passages, and final integration.
 - **Primary monetized SKU:** a one-time Full Profile Report; reading entitlements remain configurable.
 - **Recommended stack:** Next.js/TypeScript, Supabase/Postgres, isolated Python profile engine, Motion/XState, structured AI output, Stripe, and durable jobs.
 
@@ -145,23 +145,25 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **ID** | **Decision** | **Status** |
 | --- | --- | --- |
 | DEC-001 | Birth name and date of birth are required for personalized readings. | Confirmed |
-| DEC-002 | Birthplace and birth time are optional; a supplied time requires place/timezone context. | Confirmed |
+| DEC-002 | Birth city/country and birth time are independent optional fields; onboarding does not ask for timezone or time-confidence modes. | Owner-directed / confirmed |
 | DEC-003 | The private profile is used for readings but is not displayed in the base experience. | Confirmed |
 | DEC-004 | A detailed profile report is sold separately. | Confirmed |
 | DEC-005 | Profile data affects interpretation, never card selection. | Recommended / launch-critical |
 | DEC-006 | MVP begins with one original or properly licensed 78-card deck. | Recommended |
-| DEC-007 | MVP includes four spreads and one follow-up question per completed reading. | Recommended |
+| DEC-007 | MVP includes six selectable spreads and one follow-up question per completed reading. | Recommended |
 | DEC-008 | MVP is a responsive web application; native apps are deferred. | Recommended |
 | DEC-009 | The Full Profile Report is the required one-time paid SKU; reading pricing remains configurable. | Recommended |
 | DEC-010 | MVP launches in English and is architected for localization. | Recommended |
 | DEC-011 | Initial launch assumes adult users; final age policy requires legal/product sign-off. | Open sign-off |
 | DEC-012 | Dreamspell terminology and artwork will be original or properly licensed. | Required |
+| DEC-013 | Paid readings may use public-domain/historical calculation methods with original interpretation, but proprietary modern chart systems, branding, tables, and teaching content require written commercial permission before software activation. | Owner-directed / required |
+| DEC-014 | Systems whose owners forbid the intended hosted/report use are omitted rather than shipped as disabled branded components. Nine Star Ki uses local versioned mathematics, an explicit third-star convention, and original prose/assets only. | Owner-directed / required |
 
 ## 3.2 MVP scope
 | **Included** | **Deferred / future** |
 | --- | --- |
 | Account, consent, private birth profile, profile completeness | Guest personalized readings and anonymous profile storage |
-| Western Whole Sign + Placidus, numerology, BaZi, Dreamspell | Additional astrology forecasting techniques and compatibility |
+| Western Whole Sign + Placidus, planetary angularity, numerology, BaZi, Dreamspell, and Nine Star Ki | Additional forecasting techniques, compatibility, and proprietary modern systems that do not permit the intended use |
 | One deck, four versioned spreads, upright/reversed | Deck marketplace, custom spreads, community decks |
 | Secure random draw, shuffle/deal/reveal, results, one follow-up | Unlimited chat, live readers, multiplayer/social features |
 | History, feedback, optional outcome check-in | Public sharing and social proof systems |
@@ -198,7 +200,10 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **Route / screen** | **Purpose** | **Primary completion state** |
 | --- | --- | --- |
 | / | Brand, product explanation, trust, reading preview, report offer | User starts account creation or explores pricing |
-| /sign-in | Passwordless account access | Authenticated session |
+| /sign-in | Email and password account access | Authenticated session |
+| /sign-up | Private account registration | Account created or one-time confirmation pending |
+| /forgot-password | Non-enumerating account recovery request | Recovery email requested |
+| /reset-password | Recovery-session password update | Password replaced and session retained |
 | /onboarding | Consent and private birth profile | Profile snapshot ready |
 | /readings | Reading catalog | Spread selected |
 | /readings/{slug} | Reading details and question entry | Question classified and session created |
@@ -213,10 +218,9 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 ## 4.3 Profile completeness model
 | **Level** | **Inputs** | **Available profile capabilities** | **Unavailable / uncertain** |
 | --- | --- | --- | --- |
-| Core | Birth name + date | Numerology, Dreamspell, date-stable Western factors, 3-pillar BaZi, compact trait lens | Ascendant, houses, BaZi hour pillar, time-sensitive placements |
-| Location-enhanced | + birthplace | Historical timezone/location normalization and stronger date-boundary handling | Ascendant/houses/hour pillar remain unavailable |
-| Approximate-time | + birthplace + time range | Stable factors across sampled interval; possible Ascendants/hour pillars recorded | Any changing factor is excluded from strong claims |
-| Complete | + exact birthplace + time | Ascendant, angles, Whole Sign, Placidus, precise time-sensitive factors, BaZi hour pillar | Only calculation-system limitations |
+| Core | Birth name + date | Numerology, Dreamspell, Nine Star Ki, date-stable Western factors, 3-pillar BaZi, compact trait lens | Ascendant, houses, BaZi hour pillar, planetary angularity, time-sensitive placements |
+| Location-enhanced | + birthplace | Historical timezone/location normalization and stronger date-boundary handling | Ascendant, houses, hour pillar, and planetary angularity remain unavailable without time |
+| Complete | + birthplace + time | Time and place are retained for validated time-sensitive integrations | Each time-sensitive system remains unavailable until its licensing, reference validation, and safe timezone derivation are approved |
 
 > **User-facing wording**
 >
@@ -230,12 +234,12 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | --- | --- | --- | --- |
 | **ACC-001** | Public visitors can view marketing pages, product explanations, pricing, and privacy information without an account. | **Must** | Public routes load without authentication and contain no personalized or private data. |
 | **ACC-002** | An authenticated account is required before a user can create a private birth profile, save a reading, or purchase a report. | **Must** | Unauthenticated users are redirected to sign in; no birth data is persisted to an anonymous browser session. |
-| **ACC-003** | MVP authentication supports secure email magic link or one-time code. | **Must** | New and returning users can sign in, sign out, recover access, and receive actionable error states. |
+| **ACC-003** | MVP authentication supports conventional email and password credentials. | **Must** | New users can register, returning users can sign in without an email link, passwords are 12–72 characters, account recovery is non-enumerating, and all flows provide actionable error states. |
 | **ACC-004** | Social sign-in is supported behind a feature flag. | **Should** | Google and/or Apple sign-in can be enabled without changing user or profile schemas. |
 | **ACC-005** | The account display name is separate from the encrypted birth name used for numerology. | **Must** | Reading UI uses the display name; the birth name is never used as the public-facing account label. |
 | **ACC-006** | Age eligibility, Terms, Privacy Notice, and spiritual-entertainment disclosure are accepted before profile creation. | **Must** | Consent versions and timestamps are stored; unchecked required consent blocks continuation. |
 | **ACC-007** | Marketing consent is optional and independent from service consent. | **Must** | Users can complete onboarding without marketing consent and can change it later. |
-| **ACC-008** | Account sessions are protected and revocable. | **Must** | Logout invalidates the active session; passwordless tokens expire; suspicious session events are logged without PII. |
+| **ACC-008** | Account sessions are protected and revocable. | **Must** | Logout invalidates the active session; optional signup-confirmation and password-recovery tokens expire; suspicious session events are logged without PII. |
 
 **Epic completion criteria**
 
@@ -249,19 +253,19 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
 | **PRO-001** | Full birth name and date of birth are the minimum required inputs for a personalized profile. | **Must** | The Continue action is disabled until both fields are valid and the privacy explanation has been acknowledged. |
-| **PRO-002** | Birthplace is optional and is captured only at city/region/country granularity. | **Must** | The interface never asks for a street address; selected places resolve to normalized city, coordinates, country, and IANA timezone. |
-| **PRO-003** | Birth time is optional and supports Exact, Approximate, and Unknown states. | **Must** | Users can proceed without a time; the selected confidence state is persisted and used by the calculation engine. |
-| **PRO-004** | When a birth time is entered, birthplace becomes conditionally required. | **Must** | The form explains why location is needed and prevents profile completion until a place is supplied or the time is removed. |
+| **PRO-002** | Birth city/country is one optional free-text field. | **Must** | The interface never asks for a street address, country code, coordinates, IANA timezone, or additional location subfields. |
+| **PRO-003** | Birth time is one optional time field. | **Must** | Users can enter a time or leave it blank without selecting Unknown, Exact, or Approximate. |
+| **PRO-004** | Birthplace and birth time are independent. | **Must** | Either optional field can be supplied without the other and profile creation is never blocked by missing timezone context. |
 | **PRO-005** | The system never invents a default birth time. | **Must** | Unknown times remain null; noon, midnight, sunrise, or inferred times are not stored as the user's birth time. |
-| **PRO-006** | Approximate time is represented as an uncertainty interval rather than an exact midpoint. | **Should** | The engine receives a start/end range and only promotes traits that remain stable across the sampled interval. |
+| **PRO-006** | Time-sensitive calculations fail closed when required context is unavailable. | **Should** | The entered time is retained, but astrology or BaZi facts requiring validated timezone context remain unavailable rather than being guessed. |
 | **PRO-007** | The onboarding copy explains the benefit of optional details without implying guaranteed predictive accuracy. | **Must** | Copy states that time and place unlock a more detailed astrological profile, including houses and Ascendant where available. |
-| **PRO-008** | Users see profile completeness status, not the hidden horoscope interpretation. | **Must** | The base experience may show Core, Location-Enhanced, Approximate-Time, or Complete; it does not expose placements, pillars, numbers, or signature details. |
+| **PRO-008** | Users see profile completeness status, not the hidden horoscope interpretation. | **Must** | The base experience may show Core, Location-Enhanced, or Complete; it does not expose placements, pillars, numbers, or signature details. |
 | **PRO-009** | The hidden profile is used internally to personalize tarot language and emphasis. | **Must** | The reading service receives a compact trait lens, not the full raw calculation payload. |
 | **PRO-010** | Base tarot readings do not reveal paid-report details. | **Must** | Generated readings may use plain-language traits but must not reveal raw natal placements, numerology values, BaZi pillars, or Galactic Signature labels. |
 | **PRO-011** | Users can update optional birth data later. | **Must** | Saving changes creates a new profile snapshot; future readings use the new snapshot while historical readings retain the original snapshot reference. |
 | **PRO-012** | Birth date input supports international users and prevents impossible or future dates. | **Must** | Validated dates are stored canonically; locale-specific display does not alter the underlying date. |
 | **PRO-013** | Unicode birth names are preserved exactly as entered. | **Must** | Original input is encrypted and retained; normalization creates a separate derived value and never overwrites the original. |
-| **PRO-014** | Pythagorean numerology handles non-Latin names transparently. | **Should** | Users can confirm or enter a Latin-letter rendering; the system records the transformation method and avoids silent arbitrary transliteration. |
+| **PRO-014** | Pythagorean numerology handles non-Latin names transparently. | **Should** | The original Unicode name is preserved; unsupported name-derived values are explicitly unavailable without requesting a Latin rendering or silently transliterating. |
 | **PRO-015** | The user can review and correct supplied birth facts without viewing the hidden profile. | **Must** | Settings show birth name masked by default, date, place, and time status with edit and delete controls. |
 | **PRO-016** | Profile calculation failures are recoverable. | **Must** | The user sees a clear retry state; no partial profile is silently marked complete; operations receives a traceable error event. |
 
@@ -269,8 +273,8 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 
 | **[ ]** Core onboarding completes successfully using only birth name and date of birth. |
 | --- |
-| **[ ]** Birthplace and birth time remain optional, while time entry conditionally requires location/timezone context. |
-| **[ ]** Unknown or approximate time never becomes a fabricated exact time. |
+| **[ ]** Birth city/country and birth time remain independent optional fields with no timezone or confidence-mode questions. |
+| **[ ]** An omitted time remains absent and no birth time is fabricated. |
 | **[ ]** The user sees completeness and editable facts but not the hidden profile interpretation. |
 | **[ ]** Updating profile facts creates a new snapshot and leaves historical readings unchanged. |
 | **[ ]** Unicode and non-Latin name cases follow the approved numerology handling policy. |
@@ -282,7 +286,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **CAL-002** | Western astrology calculates planetary longitudes, signs, major aspects, and chart angles where inputs permit. | **Must** | Outputs include source data, orb rules, calculation timestamp, and engine version. |
 | **CAL-003** | Whole Sign and Placidus are calculated as two house-system views of the same natal chart. | **Must** | Both views use the same planetary positions and birth-time normalization; house output is marked unavailable when required inputs are missing. |
 | **CAL-004** | Date-only Western astrology uses a 24-hour uncertainty model. | **Must** | Stable sign/aspect facts are retained; any placement that changes during the local birth date is tagged uncertain and excluded from strong personalization. |
-| **CAL-005** | Approximate-time charts are sampled across the provided interval. | **Should** | Possible Ascendants, houses, and time-sensitive aspects are recorded; only stable observations enter the high-confidence trait lens. |
+| **CAL-005** | A supplied birth time is retained without forcing user-entered timezone context. | **Should** | Time-sensitive facts remain unavailable until a validated integration can derive the required context safely. |
 | **CAL-006** | Placidus calculation errors or polar-region fallbacks are explicit. | **Must** | The service records the failure/fallback state and never labels a fallback house system as Placidus. |
 | **CAL-007** | Pythagorean numerology computes the approved core set. | **Must** | Life Path, Expression/Destiny, Soul Urge, Personality, Birthday, and agreed master-number rules match the approved reference set. |
 | **CAL-008** | BaZi computes year, month, and day pillars without a birth time and adds the hour pillar when supported. | **Must** | Missing hour data is represented as unavailable, not guessed; conventions are stored with the result. |
@@ -294,6 +298,8 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **CAL-014** | Profile snapshots are immutable after use in a completed reading or report. | **Must** | Edits create a new snapshot ID; historical artifacts remain reproducible. |
 | **CAL-015** | Calculation engines have golden-reference tests and boundary cases. | **Must** | Approved reference cases pass at 100%; DST, leap day, sign/house boundary, solar-term boundary, name normalization, and extreme-latitude cases are included. |
 | **CAL-016** | Profile computation meets the latency budget. | **Must** | Cached recomputation completes in under 1 second at p95; uncached full computation completes in under 4 seconds at p95 under expected load. |
+| **CAL-017** | Geographic planetary angularity is implemented as versioned astronomical line calculation rather than deterministic place promises. | **Must before activation** | Rising, setting, culminating, and anti-culminating lines match independent references; map output records ephemeris, coordinate, timezone, line-algorithm, and interpretation versions; place language remains conditional. |
+| **CAL-018** | Nine Star Ki calculates Principal, Character, and derived Energy stars from an explicit versioned convention. | **Must** | The annual anchor/boundary, monthly boundary table, five-phase mapping, and selected Lo Shu third-star derivation are stored with the result; independently approved golden cases match at 100%; alternative-school derivations are not silently substituted; all interpretation prose and visual assets are original or rights-cleared. |
 
 **Epic completion criteria**
 
@@ -303,12 +309,13 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **[ ]** The same input and version produce identical profile outputs and reading lens. |
 | **[ ]** The reading lens excludes direct identifiers and preserves cross-system contradictions. |
 | **[ ]** Every reading and report references an immutable profile snapshot and calculation version. |
+| **[ ]** Every optional system reports available, uncertain, or unavailable from actual input and activation capability; no external consumer calculator is scraped or queried. |
 
 ## 5.4 Reading catalog and question intake
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
 | **RDG-001** | The reading catalog presents a small, understandable set of reading types. | **Must** | Each card shows title, purpose, card count, approximate experience length, and free/paid entitlement state. |
-| **RDG-002** | MVP includes Single Card Focus, Three-Card Direction, Five-Card Crossroads, and Seven-Card Deeper Outlook. | **Must** | All four spreads are fully configured, content-complete, tested, and available through feature flags. |
+| **RDG-002** | MVP includes One-Card, Three-Card, Celtic Cross, Horseshoe, Relationship / Two-Party, and Nine-Card Matrix spreads. | **Must** | All six spreads are fully configured, content-complete, tested, and operator-activatable. Retired spread definitions remain available only for historical locked draws. |
 | **RDG-003** | Spread definitions are data-driven and versioned. | **Must** | Card count, positions, labels, interpretive functions, reversals, animation preset, and result sections can change without rewriting the session engine. |
 | **RDG-004** | Users may type a question or choose a general reading where the spread permits it. | **Must** | Question-required spreads block empty submission; general readings use an approved default intent. |
 | **RDG-005** | Question input supports optional topic and time-horizon chips. | **Should** | Relationship, career, money, creativity, life direction, and general topics are available; predictive questions can select a bounded horizon. |
@@ -366,16 +373,16 @@ error branches: generation_failed | session_expired | payment_required | safety_
 ## 5.6 Immersive reading experience
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **UX-001** | The reading journey is governed by an explicit state machine. | **Must** | Invalid state combinations are impossible; transitions cover preparation, shuffle, cut, deal, reveal, generation, result, retry, and resume. |
-| **UX-002** | The shuffle sequence feels tactile and ritualized without delaying users unnecessarily. | **Must** | A default shuffle completes within the configured duration and provides immediate Skip control. |
+| **UX-001** | The reading journey is governed by an explicit state machine. | **Must** | Invalid state combinations are impossible; transitions cover preparation, shuffle, compatibility cut-through, deal, reveal, generation, result, retry, and resume. |
+| **UX-002** | The shuffle sequence feels tactile and ritualized without delaying users unnecessarily. | **Must** | Lightweight shells spread across the sanctuary, gather back into one deck within the configured duration, and provide an immediate Deal now control. |
 | **UX-003** | Visual shuffling uses lightweight card shells rather than animating all 78 full card components. | **Must** | Mid-tier mobile devices maintain the minimum animation frame-rate target without memory spikes. |
-| **UX-004** | An optional deck-cut interaction can be enabled per spread. | **Should** | The user can drag or tap to cut; skipping the cut does not affect correctness or accessibility. |
+| **UX-004** | The shuffle flows directly into dealing without a redundant decision stop. | **Must** | The compatibility `cuttingDeck` state advances automatically; the UI never blocks on Cut/Skip cut and recovery still records a monotonic no-cut receipt. |
 | **UX-005** | Cards are dealt into spread-specific positions with stable layout. | **Must** | No card overlaps, clips, or moves unexpectedly across supported viewport sizes and text zoom levels. |
 | **UX-006** | Users intentionally reveal cards by tap, click, or keyboard. | **Must** | Each card has visible focus state, Enter/Space activation, screen-reader label, and locked double-trigger prevention. |
 | **UX-007** | Each reveal immediately shows deterministic card information. | **Must** | Card name, position, orientation, and concise baseline meaning appear without waiting for the final AI synthesis. |
 | **UX-008** | Final synthesis can generate while the user reveals cards. | **Must** | Background generation starts only after the draw is locked and never blocks card interaction. |
 | **UX-009** | Reduced-motion and skip-animation modes provide the full experience. | **Must** | The system respects browser preferences, removes large transforms, and preserves all reading content and controls. |
-| **UX-010** | Sound is optional, user-controlled, and off by default until explicit interaction. | **Must** | A persistent sound control exists; no audio autoplays on initial page load. |
+| **UX-010** | Reading sound is optional, user-controlled, and on by default inside the user-initiated ritual. | **Must** | A persistent sound control exists; spoken-paced word reveal works without audio, browser narration uses only a device-local voice when one is available, and no audio autoplays on the landing or account pages. |
 | **UX-011** | The experience is mobile-first and touch-friendly. | **Must** | Primary controls meet target sizes; safe areas, orientation changes, and common mobile viewport issues are tested. |
 | **UX-012** | The visual system is minimal, immersive, and content-led. | **Must** | Screens use a restrained component set, clear hierarchy, high contrast, and no distracting decorative motion during reading text. |
 | **UX-013** | Loading and failure states preserve the ritual and the user's trust. | **Must** | The UI never shows a blank card, reshuffles on failure, or loses the question; retry language states that the same cards will be used. |
@@ -386,14 +393,14 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | --- | --- | --- |
 | Prepare | Deck enters with subtle depth and ambient movement. | Static deck with immediate Begin control. |
 | Shuffle | Short overhand/riffle-inspired 2.5D sequence using lightweight shells. | Progress indicator with no large transforms. |
-| Cut | Optional drag/tap interaction where configured. | Skip or keyboard-select cut position. |
+| Cut-through | Compatibility state advances immediately after the gathered shuffle. | Identical immediate transition with no large transform. |
 | Deal | Cards travel to spread positions in order. | Cards appear sequentially with focus management. |
 | Reveal | User flips each card; baseline meaning appears. | Instant reveal with text announcement. |
 | Synthesis | Subtle transition from table to reading result. | Immediate content view; no parallax or scale. |
 
 **Epic completion criteria**
 
-| **[ ]** All four spreads render correctly on supported mobile and desktop viewport/device matrices. |
+| **[ ]** All six selectable spreads render correctly on supported mobile and desktop viewport/device matrices. |
 | --- |
 | **[ ]** Keyboard, screen reader, reduced-motion, skip, and no-audio modes deliver the complete reading. |
 | **[ ]** Animation never changes the locked draw or blocks deterministic card content. |
@@ -403,7 +410,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
 | **AI-001** | AI access is isolated behind a provider adapter. | **Must** | Business logic depends on an internal interface and can switch providers/models without changing reading domain code. |
-| **AI-002** | The model receives calculated facts; it never computes astrology, numerology, BaZi, Dreamspell, or card selection. | **Must** | Prompt templates contain only approved structured profile observations, locked draw data, curated meanings, and the user question. |
+| **AI-002** | The model receives calculated facts; it never computes astrology, numerology, BaZi, Dreamspell, Nine Star Ki, or card selection. | **Must** | Prompt templates contain only approved structured profile observations, locked draw data, curated meanings, and the user question. |
 | **AI-003** | The model receives only the minimum relevant profile lens. | **Must** | Raw birth name, exact birth details, account identifiers, and unrelated profile observations are excluded from the normal reading payload. |
 | **AI-004** | Question relevance selects profile observations. | **Must** | Career questions prioritize work/decision traits; relationship questions prioritize communication/attachment traits; selection is deterministic and auditable. |
 | **AI-005** | Interpretations are grounded in versioned tarot content. | **Must** | Every card-position interpretation includes retrieved upright/reversed meanings, position function, domain tags, and relevant combination rules. |
@@ -485,7 +492,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **RPT-002** | A report preview explains included systems and missing-data limitations. | **Must** | The preview shows section titles and profile completeness without revealing the detailed paid interpretation. |
 | **RPT-003** | The report is generated from deterministic calculations plus curated interpretation and AI synthesis. | **Must** | Every report statement is traceable to profile facts/rules or clearly labeled synthesis; AI does not invent chart placements. |
 | **RPT-004** | Report sections adapt to missing birth time or birthplace. | **Must** | Unavailable Ascendant, houses, or hour pillar sections are omitted or marked unavailable with a plain explanation; no placeholders are fabricated. |
-| **RPT-005** | The report covers the agreed systems and cross-system synthesis. | **Must** | Overview, motivations, relationships, communication, decisions, strengths, tensions, growth, Western astrology, numerology, BaZi, Dreamspell, convergence, contradictions, and reflection sections are present as supported. |
+| **RPT-005** | The report covers the agreed systems and cross-system synthesis. | **Must** | Overview, motivations, relationships, communication, decisions, strengths, tensions, growth, Western astrology, planetary angularity, numerology, BaZi, Dreamspell, Nine Star Ki, convergence, contradictions, and reflection sections are present as supported; unavailable components explain why without teasing a fabricated result. |
 | **RPT-006** | The report is stored as structured content and rendered to web and PDF. | **Must** | Web and PDF derive from the same report JSON and pass content parity checks; the PDF is accessible and printable. |
 | **RPT-007** | A purchased report remains tied to its immutable profile snapshot. | **Must** | Updating birth data creates a new profile version without overwriting the purchased report. |
 | **RPT-008** | Checkout uses a hosted, secure payment flow. | **Must** | Successful, canceled, failed, and abandoned states return the user to an appropriate screen without exposing payment details to the app. |
@@ -585,9 +592,9 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | Animation | Motion for React + CSS 3D | Shuffle, deal, flip, presence, progressive transitions |
 | Workflow | XState | Reading state machine, retries, resume, invalid-state prevention |
 | Data | Supabase Postgres + Row-Level Security | Users, profiles, readings, content, reports, entitlements |
-| Auth/storage | Supabase Auth + Storage | Passwordless identity and protected report/assets |
+| Auth/storage | Supabase Auth + Storage | Email/password identity, recovery, and protected report/assets |
 | Schema | Drizzle ORM + SQL migrations | Typed data access and versioned migrations |
-| Profile engine | Dockerized FastAPI/Python service | Western astrology, numerology, BaZi, Dreamspell, trait synthesis |
+| Profile engine | Dockerized FastAPI/Python service | Western astrology, planetary angularity, numerology, BaZi, Dreamspell, Nine Star Ki, trait synthesis |
 | Astronomy | Commercially approved ephemeris implementation | Planetary positions, angles, and houses |
 | AI | Provider adapter + structured output | Question classification, reading synthesis, report synthesis |
 | Jobs | Trigger.dev or equivalent durable job runner | Report generation, retries, email, follow-up scheduling, deletion |
@@ -612,6 +619,8 @@ error branches: generation_failed | session_expired | payment_required | safety_
   numerology              content/reports            structured reports
   BaZi                    payments/feedback          moderation/classification
   Dreamspell
+  Nine Star Ki
+  planetary angularity
                               |
                               v
 [Durable Jobs + Payments + Email + Observability]
@@ -761,7 +770,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **Layer** | **Coverage** | **Launch evidence** |
 | --- | --- | --- |
 | Unit | Calculation rules, normalization, trait mapping, shuffle, state transitions, schema validation, entitlement logic | Passing CI suite and agreed critical-module coverage |
-| Golden reference | Western astrology, numerology, BaZi, Dreamspell | 100% match to approved reference dataset |
+| Golden reference | Western astrology, planetary angularity, numerology, BaZi, Dreamspell, and Nine Star Ki | 100% match to approved reference dataset |
 | Property/fuzz | Shuffle uniqueness, idempotency, date/name inputs, state-machine transitions | No invariant violation across configured run count |
 | Integration | Web-to-profile service, DB/RLS, AI adapter, jobs, storage, payment webhooks | Passing environment-level suite |
 | End to end | New user, core/complete profile, each spread, resume, retry, follow-up, purchase, report, deletion | Passing supported-browser matrix |
@@ -774,12 +783,14 @@ error branches: generation_failed | session_expired | payment_required | safety_
 ## 10.2 Minimum reference and evaluation datasets
 | **Dataset** | **Minimum target** | **Coverage** |
 | --- | --- | --- |
-| Western astrology | 100 approved charts | DST, historical timezone, sign/house boundaries, high latitude, unknown/approximate time |
+| Western astrology | 100 approved charts | DST, historical timezone, sign/house boundaries, high latitude, missing time or location |
 | Numerology | 60 approved names/dates | Master numbers, punctuation, diacritics, suffixes, non-Latin handling |
 | BaZi | 100 approved cases | Li Chun, solar terms, midnight/23:00 boundary, timezone and solar-time policy |
 | Dreamspell | 60 approved dates | Known Kin/tone/seal mappings across centuries and leap dates |
+| Planetary angularity | 100 approved charts/maps | All four angular line types, line crossings, high declinations, polar gaps, antimeridian wrapping, DST, and historical timezone cases |
+| Nine Star Ki | 100 approved dates | Annual and monthly boundaries, nine-year cycles, all five phases, all 81 Principal/Character combinations, and the selected Lo Shu-derived Energy convention |
 | AI reading eval | At least 300 cases | Four spreads x six domains x completeness levels x safety/adversarial cases |
-| Report eval | At least 40 profiles | Core, location-only, approximate, complete, contradictions, non-Latin names |
+| Report eval | At least 40 profiles | Core, location-only, time-only, complete, contradictions, non-Latin names |
 | Device/browser | At least 10 representative configurations | iOS/Android mid-tier, desktop browsers, reduced motion, text zoom |
 
 ## 10.3 AI quality rubric
@@ -799,7 +810,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 
 | **[ ]** All Must requirements have a passing test or documented manual acceptance record. |
 | --- |
-| **[ ]** All four spreads pass complete end-to-end journeys for Core and Complete profiles. |
+| **[ ]** All six selectable spreads pass complete end-to-end journeys for Core and Complete profiles. |
 | **[ ]** Calculation reference datasets pass at 100%; no unresolved boundary discrepancy remains hidden. |
 | **[ ]** AI and safety thresholds are approved by product, tarot/profile content, and safety owners. |
 | **[ ]** No Sev-1 or Sev-2 defect remains open; any waived lower-severity defect has an owner and target release. |
@@ -827,7 +838,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | Full-stack engineering | Web app, API, auth, DB, reading domain, history, admin, observability |
 | Profile-engine engineering | Calculation services, uncertainty, versioning, reference tests, performance |
 | AI/content engineering | Content schemas, retrieval, prompts, structured output, evals, fallback |
-| Domain experts | Tarot, Western astrology, numerology, BaZi, Dreamspell conventions and review |
+| Domain experts | Tarot, Western astrology, numerology, BaZi, Dreamspell, and Nine Star Ki conventions and review |
 | Illustration/motion/sound | Original deck, card back, symbols, animation assets, optional audio |
 | QA/security/privacy | Test strategy, threat model, compliance workflow, launch gates |
 | Operations/support | Content publishing, payment/report exceptions, customer support, incident response |
@@ -842,7 +853,9 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | --- |
 | **[ ]** New users can authenticate, consent, create a Core profile with only birth name/date, and complete every MVP reading. |
 | **[ ]** Users can optionally add birthplace/time, and the correct capability level is applied without invented precision. |
-| **[ ]** Western astrology, numerology, BaZi, and Dreamspell reference suites pass at 100% against approved sources. |
+| **[ ]** Western astrology, numerology, BaZi, Dreamspell, and Nine Star Ki reference suites pass at 100% against approved sources. |
+| **[ ]** Planetary-angularity mapping remains disabled until its ephemeris/license, location, line-math, and reference gates pass; systems that forbid the intended use are absent from runtime contracts and report copy. |
+| **[ ]** Nine Star Ki passes its approved boundary and third-star reference suite, and every shipped interpretation or visual has original-authorship or rights-clearance evidence. |
 | **[ ]** The private profile is not displayed in the base reading and restricted raw system labels do not leak through AI output. |
 | **[ ]** The tarot draw is CSPRNG-based, locked before interpretation, profile-independent, idempotent, and recoverable after refresh/retry. |
 | **[ ]** All four reading experiences pass mobile/desktop, keyboard, screen-reader, reduced-motion, skip, and no-audio testing. |
@@ -891,8 +904,8 @@ error branches: generation_failed | session_expired | payment_required | safety_
 - Final product name, brand direction, deck art strategy, and content voice.
 - Adult-only launch or broader age policy and corresponding consent/parental requirements.
 - Free reading allowance, paid reading model, and Full Profile Report price.
-- Exact accepted formats for approximate birth time and report-regeneration policy after profile updates.
-- Western astrology aspect/orb set, BaZi boundary conventions, Pythagorean master-number rules, and Dreamspell content scope.
+- Report-regeneration policy after profile updates.
+- Western astrology aspect/orb set, BaZi boundary conventions, Pythagorean master-number rules, Dreamspell content scope, and final Nine Star Ki boundary/reference approval.
 - Whether the paid report includes a rendered natal chart wheel in MVP or a later release.
 - Supported launch countries/currencies and localized crisis/support content.
 - Account sign-in methods and whether a future unpersonalized guest demo is desired.
@@ -907,7 +920,7 @@ Any change that affects card randomness, profile capability rules, safety policy
 | --- | --- |
 | US-001 | As a new user, I can create a private Core profile with only my birth name and birth date so I am not blocked by an unknown birth time. |
 | US-002 | As a user who knows my birthplace but not my time, I can add the place and receive location-enhanced normalization without being shown invented houses. |
-| US-003 | As a user who knows my exact birth time, I can add it with birthplace and unlock the complete profile capability. |
+| US-003 | As a user who knows a birth time, I can enter it with or without birthplace and continue without supplying a timezone. |
 | US-004 | As a privacy-conscious user, I understand how my profile is used and can edit, export, or delete my data. |
 | US-005 | As a seeker, I can select a reading and ask a focused question without understanding tarot terminology. |
 | US-006 | As a user, I can trust that the cards were randomly drawn and were not selected to fit my profile. |

@@ -1,0 +1,61 @@
+case_id|full_birth_name|birth_date|life_path|birthday|name_status|name_rendering|expression|soul_urge|personality|transformation
+N001|Ada Lovelace|1987-07-26|22|8|available|ADALOVELACE|9|1|8|punctuation_ignored
+N002|Ada Lovelace|2009-11-11|33|11|available|ADALOVELACE|9|1|8|punctuation_ignored
+N003|Ada Lovelace|2000-02-29|6|11|available|ADALOVELACE|9|1|8|punctuation_ignored
+N004|Anne-Marie O'Neill|1987-07-26|22|8|available|ANNEMARIEONEILL|3|5|7|punctuation_ignored
+N005|Anne-Marie O'Neill|2009-11-11|33|11|available|ANNEMARIEONEILL|3|5|7|punctuation_ignored
+N006|Anne-Marie O'Neill|2000-02-29|6|11|available|ANNEMARIEONEILL|3|5|7|punctuation_ignored
+N007|Joséphine de Beauharnais|1987-07-26|22|8|available|JOSEPHINEDEBEAUHARNAIS|2|5|6|latin_diacritic_normalization
+N008|Joséphine de Beauharnais|2009-11-11|33|11|available|JOSEPHINEDEBEAUHARNAIS|2|5|6|latin_diacritic_normalization
+N009|Joséphine de Beauharnais|2000-02-29|6|11|available|JOSEPHINEDEBEAUHARNAIS|2|5|6|latin_diacritic_normalization
+N010|Jørgen Sørensen|1987-07-26|22|8|available|JORGENSORENSEN|7|9|7|latin_extended_normalization
+N011|Jørgen Sørensen|2009-11-11|33|11|available|JORGENSORENSEN|7|9|7|latin_extended_normalization
+N012|Jørgen Sørensen|2000-02-29|6|11|available|JORGENSORENSEN|7|9|7|latin_extended_normalization
+N013|Łukasz Żółć|1987-07-26|22|8|available|LUKASZZOLC|11|1|1|latin_extended_normalization
+N014|Łukasz Żółć|2009-11-11|33|11|available|LUKASZZOLC|11|1|1|latin_extended_normalization
+N015|Łukasz Żółć|2000-02-29|6|11|available|LUKASZZOLC|11|1|1|latin_extended_normalization
+N016|Weiß Schaefer|1987-07-26|22|8|available|WEISSSCHAEFER|5|7|7|latin_extended_normalization
+N017|Weiß Schaefer|2009-11-11|33|11|available|WEISSSCHAEFER|5|7|7|latin_extended_normalization
+N018|Weiß Schaefer|2000-02-29|6|11|available|WEISSSCHAEFER|5|7|7|latin_extended_normalization
+N019|Işık Kaya|1987-07-26|22|8|available|ISIKKAYA|5|2|3|latin_extended_normalization
+N020|Işık Kaya|2009-11-11|33|11|available|ISIKKAYA|5|2|3|latin_extended_normalization
+N021|Işık Kaya|2000-02-29|6|11|available|ISIKKAYA|5|2|3|latin_extended_normalization
+N022|Ægir Œsten|1987-07-26|22|8|available|AEGIROESTEN|1|4|6|latin_extended_normalization
+N023|Ægir Œsten|2009-11-11|33|11|available|AEGIROESTEN|1|4|6|latin_extended_normalization
+N024|Ægir Œsten|2000-02-29|6|11|available|AEGIROESTEN|1|4|6|latin_extended_normalization
+N025|Guðrún Þórsdóttir|1987-07-26|22|8|available|GUDRUNTHORSDOTTIR|8|9|8|latin_extended_normalization
+N026|Guðrún Þórsdóttir|2009-11-11|33|11|available|GUDRUNTHORSDOTTIR|8|9|8|latin_extended_normalization
+N027|Guðrún Þórsdóttir|2000-02-29|6|11|available|GUDRUNTHORSDOTTIR|8|9|8|latin_extended_normalization
+N028|Đorđe Petrović|1987-07-26|22|8|available|DORDEPETROVIC|1|4|6|latin_extended_normalization
+N029|Đorđe Petrović|2009-11-11|33|11|available|DORDEPETROVIC|1|4|6|latin_extended_normalization
+N030|Đorđe Petrović|2000-02-29|6|11|available|DORDEPETROVIC|1|4|6|latin_extended_normalization
+N031|Ħaż-Żebbuġ Name|1987-07-26|22|8|available|HAZZEBBUGNAME|5|6|8|latin_extended_normalization
+N032|Ħaż-Żebbuġ Name|2009-11-11|33|11|available|HAZZEBBUGNAME|5|6|8|latin_extended_normalization
+N033|Ħaż-Żebbuġ Name|2000-02-29|6|11|available|HAZZEBBUGNAME|5|6|8|latin_extended_normalization
+N034|Ŋoma Ŧal|1987-07-26|22|8|available|NOMATAL|22|8|5|latin_extended_normalization
+N035|Ŋoma Ŧal|2009-11-11|33|11|available|NOMATAL|22|8|5|latin_extended_normalization
+N036|Ŋoma Ŧal|2000-02-29|6|11|available|NOMATAL|22|8|5|latin_extended_normalization
+N037|John Quincy Public Jr|1987-07-26|22|8|available|JOHNQUINCYPUBLICJR|11|3|8|punctuation_ignored
+N038|John Quincy Public Jr|2009-11-11|33|11|available|JOHNQUINCYPUBLICJR|11|3|8|punctuation_ignored
+N039|John Quincy Public Jr|2000-02-29|6|11|available|JOHNQUINCYPUBLICJR|11|3|8|punctuation_ignored
+N040|Alex Morgan III|1987-07-26|22|8|available|ALEXMORGANIII|11|4|7|punctuation_ignored
+N041|Alex Morgan III|2009-11-11|33|11|available|ALEXMORGANIII|11|4|7|punctuation_ignored
+N042|Alex Morgan III|2000-02-29|6|11|available|ALEXMORGANIII|11|4|7|punctuation_ignored
+N043|Mary-Jane D'Arcy|1987-07-26|22|8|available|MARYJANEDARCY|3|8|4|punctuation_ignored
+N044|Mary-Jane D'Arcy|2009-11-11|33|11|available|MARYJANEDARCY|3|8|4|punctuation_ignored
+N045|Mary-Jane D'Arcy|2000-02-29|6|11|available|MARYJANEDARCY|3|8|4|punctuation_ignored
+N046|Zoë François|1987-07-26|22|8|available|ZOEFRANCOIS|5|9|5|latin_diacritic_normalization
+N047|Zoë François|2009-11-11|33|11|available|ZOEFRANCOIS|5|9|5|latin_diacritic_normalization
+N048|Zoë François|2000-02-29|6|11|available|ZOEFRANCOIS|5|9|5|latin_diacritic_normalization
+N049|Saoirse O’Connor|1987-07-26|22|8|available|SAOIRSEOCONNOR|9|3|33|punctuation_ignored
+N050|Saoirse O’Connor|2009-11-11|33|11|available|SAOIRSEOCONNOR|9|3|33|punctuation_ignored
+N051|Saoirse O’Connor|2000-02-29|6|11|available|SAOIRSEOCONNOR|9|3|33|punctuation_ignored
+N052|Björn Ångström|1987-07-26|22|8|available|BJORNANGSTROM|4|4|9|latin_diacritic_normalization
+N053|Björn Ångström|2009-11-11|33|11|available|BJORNANGSTROM|4|4|9|latin_diacritic_normalization
+N054|Björn Ångström|2000-02-29|6|11|available|BJORNANGSTROM|4|4|9|latin_diacritic_normalization
+N055|李小龍|1987-07-26|22|8|unavailable|||||unsupported_writing_system
+N056|李小龍|2009-11-11|33|11|unavailable|||||unsupported_writing_system
+N057|李小龍|2000-02-29|6|11|unavailable|||||unsupported_writing_system
+N058|Мария Иванова|1987-07-26|22|8|unavailable|||||unsupported_writing_system
+N059|Мария Иванова|2009-11-11|33|11|unavailable|||||unsupported_writing_system
+N060|Мария Иванова|2000-02-29|6|11|unavailable|||||unsupported_writing_system

@@ -1,0 +1,30 @@
+[build]
+  command = "corepack pnpm --filter @starguidance/web build"
+  publish = "apps/web/.next"
+
+[build.environment]
+  NEXT_TELEMETRY_DISABLED = "1"
+  NODE_VERSION = "24"
+  PNPM_VERSION = "11.16.0"
+
+[functions]
+  directory = "netlify/functions"
+  # Keep tests outside this directory: every top-level TypeScript source is
+  # packaged as a deployable function and `.test` is not a valid function name.
+  # No node_bundler/external_node_modules override: netlify/zip-it-and-ship-it#869
+  # (zip-it-and-ship-it cannot resolve `postgres` at runtime for a standalone
+  # Netlify Function — confirmed here across three bundler configurations)
+  # never gets triggered in the first place, because no function in this
+  # directory imports `postgres`/`drizzle-orm`/any workspace package. The
+  # actual job-processing work runs behind the Next.js/Postgres path instead
+  # (@netlify/plugin-nextjs below, a separate, already-proven bundling path);
+  # see apps/web/src/app/api/internal/interpretation-jobs/route.ts and
+  # netlify/functions/process-interpretation-jobs.mts.
+
+[context.deploy-preview.environment]
+  APP_ENV = "staging"
+  ENABLE_VISUAL_PREVIEW = "true"
+  RUNTIME_ADAPTER = "supabase"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

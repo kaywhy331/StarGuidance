@@ -1,0 +1,1 @@
+ALTER TABLE "user_settings" ALTER COLUMN "sound_enabled" SET DEFAULT true;

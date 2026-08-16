@@ -1,0 +1,424 @@
+name: Staging verification
+
+# Credential-gated verification of the owner-managed Supabase staging project.
+#
+# This workflow never runs automatically. It is restricted to the stacked
+# staging branch, runs only against the protected `starguidance-staging`
+# environment, and publishes a single redacted Markdown summary. Secret values
+# are read into step environments and are never printed, echoed, or uploaded.
+#
+# The gate is positive-evidence driven. Every mandatory stage must leave a
+# completion marker and a success marker must be created at the end of the
+# pipeline, so a skipped, partial, or misconfigured run reports NOT RUN or
+# FAILED and can never report PASSED.
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_url:
+        description: "Deploy preview to verify"
+        required: true
+        default: "https://deploy-preview-4--starguidance.netlify.app"
+      confirm_staging:
+        description: "Type STAGING to confirm the target is non-production and this migration/test run is authorized"
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-verify
+  cancel-in-progress: false
+
+env:
+  ALLOWED_REF: agent/starguidance-supabase-staging
+
+jobs:
+  # Runs without the protected environment so an unapproved ref is rejected
+  # before the owner is ever prompted to approve a deployment.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse any ref other than the stacked staging branch
+        run: |
+          if [ "${{ github.ref_name }}" != "$ALLOWED_REF" ]; then
+            echo "::error::Refusing to run against '${{ github.ref_name }}'. Only $ALLOWED_REF is permitted."
+            exit 1
+          fi
+          echo "Ref accepted: $ALLOWED_REF"
+
+      - name: Require explicit non-production staging confirmation
+        run: |
+          if [ "${{ inputs.confirm_staging }}" != "STAGING" ]; then
+            echo "::error::confirm_staging must be the literal word STAGING."
+            exit 1
+          fi
+          echo "Authorized non-production staging target confirmed by the operator."
+
+  verify:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: starguidance-staging
+    env:
+      APP_ENV: ${{ vars.APP_ENV || 'staging' }}
+      RUNTIME_ADAPTER: ${{ vars.RUNTIME_ADAPTER || 'supabase' }}
+      STAGING_BASE_URL: ${{ vars.NETLIFY_PREVIEW_URL || inputs.preview_url }}
+      STAGING_RESULTS: ${{ github.workspace }}/staging-results.jsonl
+      SUMMARY_FILE: ${{ github.workspace }}/staging-verification-summary.md
+      STAGE_DIR: ${{ github.workspace }}/staging-stages
+      # The runner context is not available to job-level env, so use a literal path.
+      FINGERPRINT_FILE: /tmp/seed-fingerprint.json
+    steps:
+      # Checkout first so the redaction, summary, and cleanup utilities are always
+      # available to the always() steps below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Prepare the evidence and stage directories
+        run: |
+          mkdir -p "$STAGE_DIR"
+          : >"$STAGING_RESULTS"
+          chmod +x .github/scripts/stage.sh
+          echo "repository checked out; evidence recording ready"
+
+      - name: Refuse a non-staging runtime selection
+        run: |
+          fail() {
+            printf '{"section":"Configuration","check":"%s","status":"fail","detail":"%s"}\n' \
+              "Runtime selection is staging/supabase" "$1" >>"$STAGING_RESULTS"
+            echo "::error::$1"
+            exit 1
+          }
+          if [ "$APP_ENV" != "staging" ]; then
+            fail "APP_ENV must be 'staging' for this workflow"
+          fi
+          if [ "$RUNTIME_ADAPTER" != "supabase" ]; then
+            fail "RUNTIME_ADAPTER must be 'supabase' for this workflow"
+          fi
+          echo "Runtime selection accepted: APP_ENV=staging RUNTIME_ADAPTER=supabase"
+
+      - name: Confirm required configuration is present by name only
+        id: configuration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+          PROFILE_ENGINE_SHARED_SECRET: ${{ secrets.PROFILE_ENGINE_SHARED_SECRET }}
+          READINESS_PROBE_SECRET: ${{ secrets.READINESS_PROBE_SECRET }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
+          # Load-bearing since migrations 0007 and 0012: the background-jobs
+          # drain rejects every request without a strong worker secret, and the
+          # Netlify-scheduled trigger that calls it needs its own copy of
+          # NEXT_PUBLIC_APP_URL to know what to call back into.
+          INTERPRETATION_WORKER_SECRET: ${{ secrets.INTERPRETATION_WORKER_SECRET }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+        run: |
+          missing=""
+          for name in DATABASE_URL DATABASE_INTEGRATION_URL SUPABASE_SERVICE_ROLE_KEY \
+                      DATA_ENCRYPTION_KEY PROFILE_ENGINE_SHARED_SECRET READINESS_PROBE_SECRET \
+                      NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY PROFILE_ENGINE_URL \
+                      INTERPRETATION_WORKER_SECRET NEXT_PUBLIC_APP_URL; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -z "$STAGING_BASE_URL" ]; then missing="$missing NETLIFY_PREVIEW_URL"; fi
+          if [ -n "$missing" ]; then
+            # Record the failure before exiting so the gate and the published
+            # summary both reflect it. Only names are recorded, never values.
+            printf '{"section":"Configuration","check":"Required configuration present","status":"fail","detail":"absent by name:%s"}\n' \
+              "$missing" >>"$STAGING_RESULTS"
+            echo "::error::Missing configuration in the starguidance-staging environment:$missing"
+            echo "Add the values in the protected environment. Never paste them into chat or a PR."
+            exit 1
+          fi
+          # Presence is not enough: a variable holding a bare host or the wrong
+          # service fails deep inside a later step with an opaque error. Validate
+          # shape here, reporting names only.
+          malformed=""
+          # Each must be an absolute https URL for its own service.
+          for pair in "NEXT_PUBLIC_SUPABASE_URL:$NEXT_PUBLIC_SUPABASE_URL" \
+                      "PROFILE_ENGINE_URL:$PROFILE_ENGINE_URL" \
+                      "NETLIFY_PREVIEW_URL:$STAGING_BASE_URL"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            case "$value" in
+              https://*) ;;
+              *) malformed="$malformed $name" ;;
+            esac
+          done
+          # The Supabase URL must not point at the application itself; that
+          # misconfiguration otherwise surfaces only as an opaque Admin API error.
+          case "$NEXT_PUBLIC_SUPABASE_URL" in
+            *netlify.app*|"$STAGING_BASE_URL")
+              malformed="$malformed NEXT_PUBLIC_SUPABASE_URL(points-at-the-app)" ;;
+          esac
+          # A service URL must be the base address, not one of the service's own
+          # endpoints. `https://engine/health` passes every other check here and
+          # then makes each probe request `/health/health`, so the service looks
+          # unreachable when only the variable is wrong.
+          case "${PROFILE_ENGINE_URL%/}" in
+            */health|*/healthz|*/ping|*/v1/profile/compute)
+              malformed="$malformed PROFILE_ENGINE_URL(is-an-endpoint-not-a-base-url)" ;;
+          esac
+          case "$PROFILE_ENGINE_URL" in
+            *\?*|*\#*) malformed="$malformed PROFILE_ENGINE_URL(has-a-query-or-fragment)" ;;
+          esac
+          if [ -n "$malformed" ]; then
+            printf '{"section":"Configuration","check":"Configuration values are well formed","status":"fail","detail":"malformed or pointing at the wrong service, by name:%s"}\n' \
+              "$malformed" >>"$STAGING_RESULTS"
+            echo "::error::Malformed configuration in the starguidance-staging environment:$malformed"
+            echo "Each must be an absolute https URL for its own service. Values are never printed."
+            exit 1
+          fi
+          printf '{"section":"Configuration","check":"Required configuration present","status":"pass","detail":"all 11 required names are present and well formed"}\n' \
+            >>"$STAGING_RESULTS"
+          touch "$STAGE_DIR/configuration"
+          # Cleanup may only be attempted once the credentials it needs exist.
+          echo "cleanup_ready=true" >>"$GITHUB_OUTPUT"
+          echo "All required names are present."
+
+      - run: corepack enable
+
+      - run: pnpm install --frozen-lockfile
+
+      # Validates the migration history itself: drizzle-kit's own consistency
+      # check plus the immutability digests and the assertion that no migration
+      # reintroduces the auth.users synchronisation trigger removed by 0002.
+      - name: Validate the migration history
+        run: .github/scripts/stage.sh migration-history "Migration history validation" corepack pnpm --filter @starguidance/database staging:migration-history
+
+      # drizzle-kit reports `applying migrations...undefined` and discards the
+      # underlying driver error, so probe connectivity, privileges, and DDL
+      # capability first and record a precise, redacted reason.
+      - name: Diagnose the staging database before migrating
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: .github/scripts/stage.sh database-preflight "Staging database preflight" corepack pnpm --filter @starguidance/database staging:preflight
+
+      # Applies 0002, which removes the auth.users synchronisation trigger that
+      # forced row level security made unusable.
+      - name: Apply the authoritative Drizzle migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: .github/scripts/stage.sh migrations "Apply the authoritative Drizzle migrations" corepack pnpm db:migrate
+
+      # Marks two mandatory stages of its own: `sync-trigger-absent` and
+      # `forced-rls`. Each is marked only if every check belonging to it passed.
+      - name: Confirm the trigger removal and forced RLS are applied
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # The Auth diagnostics ask the Admin API to create an identity and then
+          # read the database to see whether anything survived the attempt, which
+          # separates a rejected write from a failure after the write.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: .github/scripts/stage.sh schema-assertions "Confirm trigger removal and forced RLS" corepack pnpm --filter @starguidance/database staging:verify-schema
+
+      - name: Seed reference data
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: .github/scripts/stage.sh seed-first "First seed" corepack pnpm db:seed
+
+      - name: Capture the reference-data fingerprint
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: .github/scripts/stage.sh fingerprint-capture "Capture reference fingerprint" corepack pnpm --filter @starguidance/database staging:fingerprint capture "$FINGERPRINT_FILE"
+
+      - name: Seed a second time
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: .github/scripts/stage.sh seed-second "Second seed" corepack pnpm db:seed
+
+      - name: Confirm the second seed changed nothing
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: .github/scripts/stage.sh fingerprint-compare "Second seed is idempotent" corepack pnpm --filter @starguidance/database staging:fingerprint compare "$FINGERPRINT_FILE"
+
+      # On a real Supabase project public.users.id is a foreign key onto
+      # auth.users, so the two synthetic subjects must be genuine Auth
+      # identities created through the Admin API.
+      - name: Run the two-user forced-RLS isolation suite
+        env:
+          DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: .github/scripts/stage.sh rls-suite "Two-user isolation suite against staging" corepack pnpm --filter @starguidance/database test:integration
+
+      - name: Verify atomic paid-report fulfillment after profile deletion
+        env:
+          DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: .github/scripts/stage.sh report-fulfillment "Atomic paid-report fulfillment repository" corepack pnpm --filter @starguidance/web test:integration
+
+      - name: Install the verification browser
+        run: corepack pnpm exec playwright install --with-deps chromium
+
+      # The deployed suites mark their own mandatory stages as each one passes:
+      # profile-engine-probe, netlify-preview-probe, auth-identity-creation,
+      # app-provisioning, profile-onboarding, profile-lineage, reading-creation,
+      # draw-equality, cross-user-denial, export-isolation, account-deletion and
+      # accessibility. A suite that stops half way therefore leaves the stages it
+      # never reached unmarked, and the gate refuses to pass.
+      - name: Verify deployed services, provisioning, sessions, isolation, export and deletion
+        env:
+          DATABASE_INTEGRATION_URL: ${{ secrets.DATABASE_INTEGRATION_URL }}
+          DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+          PROFILE_ENGINE_SHARED_SECRET: ${{ secrets.PROFILE_ENGINE_SHARED_SECRET }}
+          READINESS_PROBE_SECRET: ${{ secrets.READINESS_PROBE_SECRET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
+          # The drain-route probe in service-probes.spec.ts derives its own
+          # bearer token from this, the same way the Netlify-scheduled trigger
+          # does — it targets STAGING_BASE_URL (already in scope from the job's
+          # own env), so NEXT_PUBLIC_APP_URL is not needed in this step.
+          INTERPRETATION_WORKER_SECRET: ${{ secrets.INTERPRETATION_WORKER_SECRET }}
+          # Keep the surviving synthetic subject only until the database-side
+          # key rotation and rollback below finish. The always-run cleanup is
+          # still responsible for proving that nothing remains.
+          PRESERVE_SYNTHETIC_FOR_POSTCHECK: "true"
+        run: .github/scripts/stage.sh browser-verification "Deployed browser verification" corepack pnpm --filter @starguidance/web test:staging
+
+      - name: Generate an ephemeral key for the rotation rehearsal
+        id: rotation-material
+        run: |
+          node <<'NODE'
+          const { randomBytes } = require('node:crypto');
+          const { appendFileSync } = require('node:fs');
+          const key = randomBytes(32).toString('base64');
+          process.stdout.write(`::add-mask::${key}\n`);
+          appendFileSync(process.env.GITHUB_ENV, `ROTATION_REHEARSAL_KEY=${key}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, 'ready=true\n');
+          NODE
+          echo "Ephemeral rotation material prepared without publishing it."
+
+      - name: Rehearse forward encryption-key rotation
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ORIGINAL_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+          KEY_ROTATION_REHEARSAL_CONFIRM: SYNTHETIC_DISPOSABLE_STAGING
+        run: .github/scripts/stage.sh key-rotation-forward "Forward encryption-key rotation" bash .github/scripts/rehearse-key-rotation.sh forward
+
+      - name: Restore every row to the configured staging key
+        if: always() && steps.rotation-material.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ORIGINAL_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+          KEY_ROTATION_REHEARSAL_CONFIRM: SYNTHETIC_DISPOSABLE_STAGING
+        run: .github/scripts/stage.sh key-rotation-rollback "Encryption-key rotation rollback" bash .github/scripts/rehearse-key-rotation.sh rollback
+
+      - name: Mark every mandatory stage complete
+        run: |
+          touch "$STAGE_DIR/all-mandatory-complete"
+          echo "All mandatory verification stages completed."
+
+      # ---------------------------------------------------------------------
+      # Always-run reporting. Cleanup runs BEFORE the summary is rendered so its
+      # result is counted; the previous ordering let a failed cleanup go
+      # unreported in the published summary.
+      # ---------------------------------------------------------------------
+
+      - name: Record the hosted log review and its access limits
+        if: always()
+        run: |
+          if [ ! -f "$STAGING_RESULTS" ]; then
+            echo "No evidence file; the job stopped before recording could start."
+            exit 0
+          fi
+          node -e "
+          const fs = require('fs');
+          const add = (check, status, detail) =>
+            fs.appendFileSync(process.env.STAGING_RESULTS,
+              JSON.stringify({section:'Hosted log review', check, status, detail}) + '\n');
+          add('Application health endpoint exposes no values',
+              'pass',
+              'the staging probe reports variable names and booleans only, never values');
+          add('Netlify, Supabase and Render log inspection',
+              'limited',
+              'not automated: this workflow holds no Netlify, Supabase or Render log-read token, ' +
+              'and unrestricted hosted logs must not be downloaded or published as artifacts. ' +
+              'Owner review of provider log retention remains required.');
+          "
+
+      - name: Remove every synthetic identity and prove the removal
+        # Only attempt cleanup once the configuration step has confirmed the
+        # credentials it needs are present, which also implies the repository is
+        # checked out. The step output is used rather than this step's own env,
+        # which is not reliably readable from an `if` condition.
+        if: always() && steps.configuration.outputs.cleanup_ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          if [ ! -d node_modules ]; then
+            printf '{"section":"Cleanup","check":"Synthetic identity cleanup","status":"fail","detail":"cleanup utilities were unavailable because dependency installation did not complete"}\n' \
+              >>"$STAGING_RESULTS"
+            echo "::error::Cleanup could not run: dependencies were never installed."
+            exit 1
+          fi
+          .github/scripts/stage.sh cleanup "Synthetic identity cleanup" corepack pnpm --filter @starguidance/database staging:cleanup
+
+      - name: Fail if any recorded evidence looks like a secret
+        if: always()
+        run: |
+          if [ ! -f "$STAGING_RESULTS" ]; then
+            echo "No evidence recorded; nothing to scan."
+            exit 0
+          fi
+          if grep -nEi 'postgres(ql)?://[^ "]*:[^ "@]+@|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|sb[ph]?_[A-Za-z0-9_-]{8,}|bearer [A-Za-z0-9._-]{8,}|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$STAGING_RESULTS"; then
+            echo "::error::Recorded evidence matched a secret-shaped pattern and will not be published."
+            exit 1
+          fi
+          echo "Recorded evidence passed the redaction self-check."
+
+      - name: Render the redacted summary
+        if: always()
+        run: |
+          if [ -f package.json ] && [ -d node_modules ]; then
+            # The renderer exits non-zero when the gate did not pass; the summary
+            # is still written, and the dedicated gate step below decides the job.
+            corepack pnpm --filter @starguidance/database staging:summary \
+              "$STAGING_RESULTS" "$SUMMARY_FILE" "$STAGE_DIR" || true
+          fi
+          if [ ! -s "$SUMMARY_FILE" ]; then
+            # Fallback that needs neither the workspace nor its dependencies.
+            {
+              echo "# Supabase staging verification"
+              echo
+              echo "**Gate result: NOT RUN**"
+              echo
+              echo "The verification could not be rendered from repository utilities, so no"
+              echo "staging evidence exists for this run. Treat the staging gate as open."
+            } >"$SUMMARY_FILE"
+          fi
+          cat "$SUMMARY_FILE" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload only the redacted summary
+        if: always() && hashFiles('staging-verification-summary.md') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-verification-summary
+          path: ${{ env.SUMMARY_FILE }}
+          if-no-files-found: error
+
+      - name: Fail the run unless every mandatory stage proved it passed
+        if: always()
+        run: |
+          if [ -f package.json ] && [ -d node_modules ]; then
+            corepack pnpm --filter @starguidance/database staging:gate "$STAGING_RESULTS" "$STAGE_DIR"
+            exit $?
+          fi
+          echo "::error::The repository utilities were unavailable, so no staging verification was proved."
+          exit 1

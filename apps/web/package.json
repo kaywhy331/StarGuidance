@@ -1,0 +1,50 @@
+{
+  "name": "@starguidance/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --no-file-parallelism --testTimeout=120000 --hookTimeout=180000 src/lib/repositories/postgres.integration.test.ts",
+    "test:e2e": "playwright test --project=desktop-chromium --project=mobile-chromium",
+    "test:e2e:core": "playwright test --project=desktop-chromium --project=mobile-chromium --project=desktop-firefox",
+    "test:e2e:webkit": "playwright test --project=desktop-webkit --workers=1 --shard=1/3 && playwright test --project=desktop-webkit --workers=1 --shard=2/3 && playwright test --project=desktop-webkit --workers=1 --shard=3/3",
+    "test:e2e:cross-browser": "pnpm test:e2e:core && pnpm test:e2e:webkit",
+    "test:staging": "playwright test --config=playwright.staging.config.ts"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "5.4.0",
+    "@starguidance/ai": "workspace:*",
+    "@starguidance/contracts": "workspace:*",
+    "@starguidance/database": "workspace:*",
+    "@starguidance/design-system": "workspace:*",
+    "@starguidance/reading-machine": "workspace:*",
+    "@starguidance/tarot-content": "workspace:*",
+    "@starguidance/tarot-domain": "workspace:*",
+    "@stripe/stripe-js": "9.12.0",
+    "@supabase/ssr": "0.12.3",
+    "@supabase/supabase-js": "2.110.8",
+    "@xstate/react": "6.1.0",
+    "motion": "12.42.2",
+    "next": "16.3.0",
+    "pdfkit": "0.19.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-hook-form": "7.82.0",
+    "stripe": "22.3.2",
+    "xstate": "5.32.5",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.11.2",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/pdfkit": "0.17.6",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "axe-core": "4.11.2",
+    "tailwindcss": "4.3.3"
+  }
+}
