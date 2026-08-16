@@ -285,13 +285,22 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   }
   await scan("sanctuary reading");
 
-  // The full-screen shuffle gathers directly into dealing. Reveal remains an
-  // intentional action (UX-006), so the accessibility scan can finish before
-  // driving through the stable face-down card controls.
-  await expect(page.getByRole("button", { name: "Reveal all", exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  // Reveal remains an intentional action (UX-006). Shorten decorative timing
+  // and drive the same centered ready/next sequence through accessible controls.
+  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
+  await page
+    .getByRole("button", { name: "Gather now", exact: true })
+    .click({ timeout: 3_000 })
+    .catch(() => {});
+  await page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ }).click();
+  for (let index = 0; index < 10; index += 1) {
+    const action = page.locator(".guided-next-action");
+    await expect(action).toBeVisible();
+    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    await action.click();
+    if (finalCard) break;
+  }
 
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 60_000 });
   await scan("revealed result");

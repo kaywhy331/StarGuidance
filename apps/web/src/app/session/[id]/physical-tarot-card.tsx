@@ -40,6 +40,8 @@ export function PhysicalTarotCard({
     "--spread-row": card.placement.row + 1,
     "--spread-rotation": `${card.placement.rotation}deg`,
     "--spread-layer": card.placement.layer,
+    "--deal-origin-x": `${((card.spreadLayout.columns - 1) / 2 - card.placement.column) * 6.5}rem`,
+    "--deal-origin-y": `${((card.spreadLayout.rows - 1) / 2 - card.placement.row) * 8.5}rem`,
   } as CSSProperties;
 
   useLayoutEffect(() => {
@@ -60,12 +62,11 @@ export function PhysicalTarotCard({
           ? Math.min(window.innerWidth * 0.36, 9 * 16)
           : Math.min(window.innerWidth * 0.16, 10.5 * 16)
         : compact
-          ? window.innerWidth * 0.78
-          : Math.min(window.innerWidth * 0.38, 24 * 16);
-      // Leave a stable title band above a reveal-focused card. The previous
-      // 74% height centered at 56% could let the scaled card overlap its
-      // position/name on shorter or heavily loaded viewports.
-      const targetHeight = availableHeight * (readingFocus ? 0.74 : 0.7);
+          ? Math.min(window.innerWidth * 0.56, 13 * 16)
+          : Math.min(window.innerWidth * 0.24, 18 * 16);
+      // Reserve a stable band above for the card title and below for its
+      // position description plus the reader-controlled Next card action.
+      const targetHeight = availableHeight * (readingFocus ? 0.74 : 0.52);
       const scale = Math.max(
         readingFocus ? 0.75 : 1,
         Math.min(
@@ -77,11 +78,11 @@ export function PhysicalTarotCard({
       const targetCenter = stageBounds
         ? {
             x: stageBounds.left + stageBounds.width / 2,
-            y: stageBounds.top + stageBounds.height * (readingFocus ? 0.45 : 0.64),
+            y: stageBounds.top + stageBounds.height * (readingFocus ? 0.45 : 0.39),
           }
         : {
             x: window.innerWidth / 2,
-            y: window.innerHeight * (readingFocus ? 0.25 : 0.46),
+            y: window.innerHeight * (readingFocus ? 0.25 : 0.4),
           };
       figureElement.style.setProperty(
         "--cinematic-x",

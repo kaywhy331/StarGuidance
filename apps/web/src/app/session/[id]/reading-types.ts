@@ -16,6 +16,7 @@ export interface DealtCardView {
   themes: readonly string[];
   positionId: string;
   positionName: string;
+  positionDescription: string;
   placement: {
     column: number;
     row: number;
@@ -32,6 +33,9 @@ export interface DealtCardView {
 
 export interface ReadingPayload {
   id: string;
+  /** Decrypted only for the owning reader so the ritual can return their
+   * private question to them. It is never placed in a URL or analytics. */
+  question: string;
   /** The immutable profile snapshot this reading was drawn against. */
   profileSnapshotId: string;
   draw: LockedDraw;

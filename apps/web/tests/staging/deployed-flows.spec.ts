@@ -553,13 +553,22 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   // interrupts the transcript with a real aborted network request instead.
   await pageA.route("**/api/readings/*/stream", (route) => route.abort());
   await navigateApp(pageA, `/session/${readingId}`);
-  // The shuffle now gathers into an automatic deal; reveal remains the
-  // intentional boundary before the transcript stream begins.
+  // Use the same centered reader-controlled reveal path while shortening its
+  // decorative timing for the staging integrity probe.
+  const motionControl = pageA.getByRole("button", { name: /^Reduced motion/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
   await pageA
-    .getByRole("button", { name: "Deal now", exact: true })
+    .getByRole("button", { name: "Gather now", exact: true })
     .click({ timeout: 3_000 })
     .catch(() => {});
-  await pageA.getByRole("button", { name: "Reveal all", exact: true }).click();
+  await pageA.getByRole("button", { name: "I’m ready", exact: true }).click();
+  for (let index = 0; index < 10; index += 1) {
+    const action = pageA.locator(".guided-next-action");
+    await expect(action).toBeVisible();
+    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    await action.click();
+    if (finalCard) break;
+  }
   await pageA.waitForTimeout(2_000);
   await pageA.unroute("**/api/readings/*/stream");
   const afterStreamFailure = drawDigest((await readingState(pageA, readingId)).draw);
