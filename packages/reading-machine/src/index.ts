@@ -67,9 +67,10 @@ export const readingMachine = setup({
     preparingDeck: { on: { DECK_READY: "shuffling" } },
     shuffling: { on: { SHUFFLE_COMPLETE: "cuttingDeck" } },
     cuttingDeck: {
-      // The state remains explicit for persisted-flow compatibility, but the
-      // ritual no longer stops the reader at a redundant cut decision.
-      always: "dealing",
+      // This is a visual gather rather than a second user decision: the scene
+      // holds here while the scattered cards return to one centered deck,
+      // then advances with SKIP_CUT. Keeping the explicit state also preserves
+      // persisted-flow compatibility.
       on: { CUT: "dealing", SKIP_CUT: "dealing" },
     },
     dealing: { on: { DEALT: "awaitingReveal" } },

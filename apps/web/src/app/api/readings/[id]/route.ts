@@ -47,59 +47,68 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       : undefined;
     const configuredFollowUpLimit = followUpLimit();
     const feedback = await owned.persistence.repositories.feedback.list(owned.user.id, reading.id);
-    return NextResponse.json({
-      reading: {
-        id: reading.id,
-        spreadId: reading.spreadId,
-        // The immutable snapshot this reading was drawn against. Later profile
-        // versions never move it, and a caller cannot otherwise tell which
-        // version of themselves a past reading interpreted.
-        profileSnapshotId: reading.profileSnapshotId,
-        draw: reading.draw,
-        cards: reading.draw.assignments.map((assignment) => {
-          const card = tarotCards.find(({ id }) => id === assignment.cardId);
-          const position = positions?.find(({ id }) => id === assignment.positionId);
-          if (!card) throw new Error("Locked draw references unavailable card content.");
-          return {
-            cardId: card.id,
-            name: card.name,
-            orientation: assignment.orientation,
-            themes:
-              assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes,
-            positionId: assignment.positionId,
-            positionName: position?.displayName ?? assignment.positionId.replaceAll("-", " "),
-            placement: position?.placement ?? {
-              column: assignment.order,
-              row: 0,
-              rotation: 0,
-              layer: 0,
-            },
-            spreadLayout: spread?.layout ?? {
-              columns: reading.draw.assignments.length,
-              rows: 1,
-              kind: "legacy",
-            },
-            artwork: card.artwork,
-          };
-        }),
-        result: reading.result,
-        outputProvenance: reading.outputProvenance,
-        generationStatus: reading.generationStatus,
-        questionClassification: reading.questionClassification,
-        entitlementDecision: reading.entitlementDecision,
-        ritualProgress: reading.ritualProgress,
-        expiresAt: reading.expiresAt,
-        sessionExpired:
-          reading.ritualProgress?.phase !== "complete" &&
-          Date.now() >= Date.parse(reading.expiresAt),
-        safetyClassification: reading.safetyClassification,
-        followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
-        followUpLimit: configuredFollowUpLimit,
-        followUpsRemaining: Math.max(0, configuredFollowUpLimit - reading.followUps.length),
-        feedbackSubmitted: feedback.length > 0,
-        createdAt: reading.createdAt,
+    return NextResponse.json(
+      {
+        reading: {
+          id: reading.id,
+          // Return the private question only to its authenticated owner and only
+          // in the no-store reading response. It is used for the pre-reveal
+          // reflection and never written to a URL, log, or analytics payload.
+          question: owned.persistence.decrypt(reading.encryptedQuestion, "reading-question"),
+          spreadId: reading.spreadId,
+          // The immutable snapshot this reading was drawn against. Later profile
+          // versions never move it, and a caller cannot otherwise tell which
+          // version of themselves a past reading interpreted.
+          profileSnapshotId: reading.profileSnapshotId,
+          draw: reading.draw,
+          cards: reading.draw.assignments.map((assignment) => {
+            const card = tarotCards.find(({ id }) => id === assignment.cardId);
+            const position = positions?.find(({ id }) => id === assignment.positionId);
+            if (!card) throw new Error("Locked draw references unavailable card content.");
+            return {
+              cardId: card.id,
+              name: card.name,
+              orientation: assignment.orientation,
+              themes:
+                assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes,
+              positionId: assignment.positionId,
+              positionName: position?.displayName ?? assignment.positionId.replaceAll("-", " "),
+              positionDescription:
+                position?.description ?? "How this card meets the focus of your reading.",
+              placement: position?.placement ?? {
+                column: assignment.order,
+                row: 0,
+                rotation: 0,
+                layer: 0,
+              },
+              spreadLayout: spread?.layout ?? {
+                columns: reading.draw.assignments.length,
+                rows: 1,
+                kind: "legacy",
+              },
+              artwork: card.artwork,
+            };
+          }),
+          result: reading.result,
+          outputProvenance: reading.outputProvenance,
+          generationStatus: reading.generationStatus,
+          questionClassification: reading.questionClassification,
+          entitlementDecision: reading.entitlementDecision,
+          ritualProgress: reading.ritualProgress,
+          expiresAt: reading.expiresAt,
+          sessionExpired:
+            reading.ritualProgress?.phase !== "complete" &&
+            Date.now() >= Date.parse(reading.expiresAt),
+          safetyClassification: reading.safetyClassification,
+          followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
+          followUpLimit: configuredFollowUpLimit,
+          followUpsRemaining: Math.max(0, configuredFollowUpLimit - reading.followUps.length),
+          feedbackSubmitted: feedback.length > 0,
+          createdAt: reading.createdAt,
+        },
       },
-    });
+      { headers: { "cache-control": "private, no-store" } },
+    );
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHENTICATED")
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });

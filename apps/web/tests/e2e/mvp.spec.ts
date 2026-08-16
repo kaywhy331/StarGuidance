@@ -52,16 +52,37 @@ async function beginReading(page: Page, question = "What should I focus on next?
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
 }
 
-/** Drives the ritual through its automatic shuffle-to-deal handoff, then uses
- * the explicit collective reveal shortcut. Deal now keeps the suite fast but
- * is intentionally caught because the immersive shuffle also completes on
- * its own and can win the race under parallel browser load. */
-async function finishRitual(page: Page) {
+async function reachQuestionReflection(page: Page, reduceMotion = true) {
+  if (reduceMotion) {
+    const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+    if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
+  }
   await page
-    .getByRole("button", { name: "Deal now", exact: true })
+    .getByRole("button", { name: "Gather now", exact: true })
     .click({ timeout: 3_000 })
     .catch(() => {});
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ })).toBeVisible({
+    timeout: 7_000,
+  });
+}
+
+async function finishGuidedReveal(page: Page) {
+  await page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ }).click();
+  for (let index = 0; index < 10; index += 1) {
+    const action = page.locator(".guided-next-action");
+    await expect(action).toBeVisible({ timeout: 10_000 });
+    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    await action.click();
+    if (finalCard) return;
+  }
+  throw new Error("Guided reveal exceeded the supported ten-card spread.");
+}
+
+/** Drives the centered ritual through reflection and every deliberate card. */
+async function finishRitual(page: Page) {
+  await reachQuestionReflection(page);
+  await finishGuidedReveal(page);
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.oracle-entry[data-phase="narration"] h2')).toBeVisible({
     timeout: 30_000,
@@ -311,10 +332,7 @@ test("all six selectable spreads use their configured spatial arrangements", asy
     await page.getByRole("button", { name: "Begin the shuffle" }).click();
     expect((await created).status()).toBe(201);
     await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
-    await page
-      .getByRole("button", { name: "Deal now", exact: true })
-      .click({ timeout: 3_000 })
-      .catch(() => {});
+    await reachQuestionReflection(page);
 
     const stage = page.getByTestId("tarot-spread-stage");
     await expect(stage).toHaveAttribute("data-layout-kind", spreadCase.kind);
@@ -375,137 +393,76 @@ test("password recovery does not reveal whether an email exists", async ({ page 
   await expect(page.getByText(/if an account exists/i)).toBeVisible();
 });
 
-test("the ritual returns the full-screen shuffle to the deck before deliberate reveal", async ({
+test("the centered ritual mixes, gathers, deals, reflects, and reveals one card at a time", async ({
   page,
 }) => {
   test.slow();
   await createProfile(page);
-  await beginReading(page);
+  const question = "What should I focus on next?";
+  await beginReading(page, question);
 
   await expect(page.locator(".sanctuary-stage.is-shuffling")).toBeVisible();
   await expect(page.locator(".sanctuary-shuffle-shells span")).toHaveCount(15);
+  const mixStyle = await page
+    .locator(".sanctuary-shuffle-shells span")
+    .first()
+    .evaluate((element) => ({
+      duration: getComputedStyle(element).animationDuration,
+      scatterX: getComputedStyle(element).getPropertyValue("--scatter-x"),
+      mixX: getComputedStyle(element).getPropertyValue("--mix-x"),
+    }));
+  expect(mixStyle.duration).toBe("5s");
+  expect(mixStyle.scatterX).not.toBe(mixStyle.mixX);
 
-  // The shuffle can be sped up explicitly, but it also gathers itself and
-  // proceeds directly to dealing without asking for a redundant cut.
-  await page
-    .getByRole("button", { name: "Deal now", exact: true })
-    .click({ timeout: 2_000 })
-    .catch(() => {});
+  await page.getByRole("button", { name: "Gather now", exact: true }).click();
+  const gathering = page.locator(".sanctuary-stage.is-gathering");
+  await expect(gathering).toBeVisible();
+  await expect(gathering.locator(".sanctuary-shuffle-shells span")).toHaveCount(15);
+  expect(
+    await gathering
+      .locator(".sanctuary-shuffle-shells span")
+      .first()
+      .evaluate((element) => getComputedStyle(element).animationDuration),
+  ).toBe("2s");
   await expect(page.getByRole("button", { name: "Cut", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Skip cut", exact: true })).toHaveCount(0);
 
-  // Cards arrive face down; reveal never auto-advances either (UX-006).
+  const deal = page.getByTestId("guided-deal");
+  await expect(deal).toBeVisible({ timeout: 4_000 });
   const physicalCards = page.locator(".physical-card-figure");
-  await expect(physicalCards).toHaveCount(3, { timeout: 10_000 });
+  await expect(physicalCards).toHaveCount(1, { timeout: 2_000 });
+  await expect(physicalCards).toHaveCount(2, { timeout: 1_500 });
+  await expect(physicalCards).toHaveCount(3, { timeout: 1_500 });
   await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(0);
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
 
-  // Inspect one deliberate reveal from inside the browser's animation
-  // timeline. Sampling several transient locators from the test runner can
-  // miss the 2.2s focus window under parallel CPU load even though the ritual
-  // completed correctly.
-  const [cinematic] = await Promise.all([
-    page.evaluate(
-      () =>
-        new Promise<{
-          title: string;
-          orientation: string | null;
-          heightRatio: number;
-          titleGap: number;
-        }>((resolve, reject) => {
-          // Start observing before Playwright's actionability checks. WebKit
-          // can keep the runner-level click pending until after this brief
-          // focus state has already ended on a loaded CI worker.
-          const appearanceDeadline = performance.now() + 30_000;
-          let geometryDeadline: number | null = null;
-          let targetMeasurement:
-            | {
-                title: string;
-                orientation: string | null;
-                heightRatio: number;
-                titleGap: number;
-              }
-            | undefined;
-          const find = () => {
-            const active = document.querySelector<HTMLElement>(
-              ".physical-card-figure.is-cinematic-subject",
-            );
-            const title = document.querySelector<HTMLElement>(
-              '[data-testid="cinematic-reveal-title"]',
-            );
-            const stage = document.querySelector<HTMLElement>(".sanctuary-stage");
-            const strong = title?.querySelector("strong");
-            if (!active || !title || !stage || !strong) {
-              const deadline = geometryDeadline ?? appearanceDeadline;
-              if (performance.now() < deadline) return requestAnimationFrame(find);
-              if (targetMeasurement) {
-                resolve(targetMeasurement);
-                return;
-              }
-              reject(
-                new Error(
-                  geometryDeadline === null
-                    ? "The cinematic reveal did not become measurable."
-                    : "The cinematic reveal ended before reaching its target geometry.",
-                ),
-              );
-              return;
-            }
-            geometryDeadline ??= performance.now() + 2_000;
-            const activeBounds = active.getBoundingClientRect();
-            const titleBounds = title.getBoundingClientRect();
-            const stageBounds = stage.getBoundingClientRect();
-            const measurement = {
-              title: strong.textContent?.trim() ?? "",
-              orientation:
-                active.querySelector(".physical-tarot-card")?.getAttribute("data-orientation") ??
-                null,
-              heightRatio: activeBounds.height / stageBounds.height,
-              titleGap: activeBounds.y - (titleBounds.y + titleBounds.height),
-            };
-            // WebKit can report interpolated layout bounds one frame behind
-            // the transform it has already painted. The authored destination
-            // values are the stable geometry contract; retain their computed
-            // final measurement as a fallback if the short-lived focus state
-            // ends before getBoundingClientRect catches up.
-            const authoredScale = Number.parseFloat(
-              active.style.getPropertyValue("--cinematic-scale"),
-            );
-            const targetHeight = active.offsetHeight * authoredScale;
-            const targetHeightRatio = targetHeight / stageBounds.height;
-            const targetTitleGap =
-              stageBounds.top +
-              stageBounds.height * 0.64 -
-              targetHeight / 2 -
-              (titleBounds.y + titleBounds.height);
-            if (targetHeightRatio > 0.68 && targetTitleGap >= 2)
-              targetMeasurement = {
-                ...measurement,
-                heightRatio: targetHeightRatio,
-                titleGap: targetTitleGap,
-              };
-            if (measurement.heightRatio > 0.68 && measurement.titleGap >= 2) {
-              resolve(measurement);
-              return;
-            }
-            if (performance.now() < geometryDeadline) return requestAnimationFrame(find);
-            reject(
-              new Error(
-                `The cinematic reveal missed its target geometry: ${JSON.stringify(measurement)}`,
-              ),
-            );
-          };
-          find();
-        }),
-    ),
-    page.getByRole("button", { name: "Reveal card 1, face down" }).click(),
-  ]);
-  expect(cinematic.title.endsWith(" (R)")).toBe(cinematic.orientation === "reversed");
-  expect(cinematic.heightRatio).toBeGreaterThan(0.68);
-  expect(cinematic.titleGap).toBeGreaterThanOrEqual(2);
+  const reflection = page.getByTestId("question-reflection");
+  await expect(reflection).toBeVisible({ timeout: 3_000 });
+  await expect(reflection).toContainText(question);
+  await expectHorizontallyCentered(page, '[data-testid="question-reflection"]');
+  await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toBeVisible({
+    timeout: 6_500,
+  });
 
-  await expect(page.getByRole("button", { name: "Reveal all", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  await page.getByRole("button", { name: "I’m ready", exact: true }).click();
+  const activeCard = page.locator(".physical-card-figure.is-cinematic-subject");
+  const revealPanel = page.getByTestId("guided-reveal-panel");
+  await expect(activeCard).toHaveClass(/is-cinematic-positioned/);
+  await expect(revealPanel).toBeVisible();
+  await expectHorizontallyCentered(page, ".physical-card-figure.is-cinematic-subject");
+  await expect(revealPanel.locator(".guided-reveal-description")).not.toBeEmpty();
+  await expect(revealPanel.locator(".guided-reveal-themes")).toContainText(/themes/i);
+  await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
+  await expectHorizontallyCentered(page, '[data-testid="guided-reveal-panel"]');
+  await expect
+    .poll(async () => {
+      const cardBounds = await activeCard.boundingBox();
+      const panelBounds = await revealPanel.boundingBox();
+      if (!cardBounds || !panelBounds) return Number.NEGATIVE_INFINITY;
+      return panelBounds.y - (cardBounds.y + cardBounds.height);
+    })
+    .toBeGreaterThanOrEqual(0);
 
   const backgroundStyle = await page
     .locator(".physical-card-figure:not(.is-cinematic-subject)")
@@ -518,12 +475,15 @@ test("the ritual returns the full-screen shuffle to the deck before deliberate r
   expect(backgroundStyle.filter).not.toContain("blur(2px)");
   await expect(page.locator(".physical-card-figure figcaption:not(.sr-only)")).toHaveCount(0);
 
+  await page.getByRole("button", { name: /^Next card/ }).click();
+  await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(2);
+  await expect(page.getByTestId("tarot-spread-stage")).toHaveAttribute(
+    "data-active-card-index",
+    "1",
+  );
+  await page.getByRole("button", { name: /^Next card/ }).click();
   await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
-  await expect(page.getByRole("button", { name: "Reveal all" })).toHaveCount(0);
-  const deliberateRevealScale = await physicalCards
-    .first()
-    .evaluate((card) => Number(card.style.getPropertyValue("--cinematic-scale")));
-  expect(deliberateRevealScale).toBeGreaterThan(1);
+  await page.getByRole("button", { name: /^Continue to your reading/ }).click();
 
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 });
@@ -651,14 +611,17 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
       response.request().method() === "POST" &&
       response.request().postData()?.includes('"phase":"cuttingDeck"') === true,
   );
-  await page.getByRole("button", { name: "Deal now", exact: true }).click();
+  await page.getByRole("button", { name: "Gather now", exact: true }).click();
   expect((await cutProgress).status()).toBe(200);
+  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
+  await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   const revealProgress = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       response.request().postData()?.includes('"phase":"revealingCards"') === true,
   );
-  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
+  await page.getByRole("button", { name: "I’m ready", exact: true }).click();
   expect((await revealProgress).status()).toBe(200);
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
   await expect(page.locator(".physical-card-caption")).toHaveCount(0);
@@ -805,11 +768,8 @@ test("generation failure retries without a redraw", async ({ page }) => {
   expect(created.generationStatus).toBe("failed");
   await page.goto(`/session/${created.readingId}`);
   const before = (await currentReading(page)).reading.draw;
-  await page
-    .getByRole("button", { name: "Deal now", exact: true })
-    .click({ timeout: 3_000 })
-    .catch(() => {});
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  await reachQuestionReflection(page);
+  await finishGuidedReveal(page);
   await page.getByRole("button", { name: "Retry the same draw" }).click({ timeout: 20_000 });
   await expect(page.getByTestId("oracle-transcript")).toBeVisible();
   const after = (await currentReading(page)).reading.draw;
@@ -826,8 +786,8 @@ test("stream interruption preserves received paragraphs and retries the same dra
   // user, which guarantees this lands well before the oracle
   // stream (which only starts once the ritual reaches "complete") can start.
   await page.evaluate(() => sessionStorage.setItem("sg:e2e-stream-fail-after", "2"));
-  await page.getByRole("button", { name: "Deal now", exact: true }).click();
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  await reachQuestionReflection(page);
+  await finishGuidedReveal(page);
   await expect(page.getByText(/Stream paused\. Your reading/i)).toBeVisible({
     timeout: 20_000,
   });
@@ -922,18 +882,26 @@ test("keyboard users reveal and complete the guided reading before a same-draw f
   await beginReading(page, "What should I practice in this conversation?");
   const before = (await currentReading(page)).reading.draw;
 
-  // PRD UX-006: each card is reachable by keyboard, shows a visible focus
-  // state, and reveals on Enter — not just click/tap.
-  await page
-    .getByRole("button", { name: "Deal now", exact: true })
-    .click({ timeout: 2_000 })
-    .catch(() => {});
-  const firstCard = page.locator(".physical-card-figure").first().getByRole("button");
-  await firstCard.focus();
-  await expect(firstCard).toBeFocused();
-  await firstCard.press("Enter");
+  // PRD UX-006: the centered ready and next-card controls remain fully
+  // keyboard operable; the visual cards themselves are no longer arbitrary
+  // competing reveal targets.
+  await reachQuestionReflection(page);
+  const ready = page.getByRole("button", { name: "I’m ready", exact: true });
+  await ready.focus();
+  await expect(ready).toBeFocused();
+  await ready.press("Enter");
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  for (let index = 1; index < 3; index += 1) {
+    const next = page.getByRole("button", { name: /^Next card/ });
+    await next.focus();
+    await expect(next).toBeFocused();
+    await next.press("Enter");
+    await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(index + 1);
+  }
+  const complete = page.getByRole("button", { name: /^Continue to your reading/ });
+  await complete.focus();
+  await expect(complete).toBeFocused();
+  await complete.press("Enter");
 
   await waitForReadingSections(page);
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
@@ -960,10 +928,7 @@ test("physical card faces use specific illustrated assets without persistent cap
 }) => {
   await createProfile(page);
   await beginReading(page);
-  await page
-    .getByRole("button", { name: "Deal now", exact: true })
-    .click({ timeout: 3_000 })
-    .catch(() => {});
+  await reachQuestionReflection(page);
   const cards = page.locator(".physical-card-figure");
   await expect(cards).toHaveCount(3, { timeout: 10_000 });
   for (let index = 0; index < 3; index += 1) {
@@ -971,9 +936,8 @@ test("physical card faces use specific illustrated assets without persistent cap
       "src",
       /\/art\/tarot\/v2\/.+\.svg$/,
     );
-    // The card is now sometimes a <button> (unrevealed, clickable) and
-    // sometimes a <div> (revealed), swapped by React rather than patched in
-    // place around the same moment dealing settles into revealingCards, so a
+    // The card changes from a face-down to face-up static view around the same
+    // moment the guided reveal advances, so a
     // measurement taken between two separate round trips can land on a
     // detached node mid-swap and read a permanent 0×0. Re-querying the live
     // DOM and polling inside a single evaluate call — no round trip for a

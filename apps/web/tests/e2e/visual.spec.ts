@@ -72,19 +72,27 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await expect(page.getByText("Shuffling your cards", { exact: true })).toBeVisible();
   await capturePage(page, testInfo, "shuffle-deal");
 
-  // Deal early when the full-screen shuffle control still exists; otherwise
-  // the ritual has already gathered the cards and dealt automatically.
+  // Gather early for a deterministic capture while retaining the authored
+  // two-second gather, one-second deal cadence, and five-second reflection.
   await page
-    .getByRole("button", { name: "Deal now", exact: true })
+    .getByRole("button", { name: "Gather now", exact: true })
     .click({ timeout: 2_000 })
     .catch(() => undefined);
-  const firstCard = page.getByRole("button", { name: "Reveal card 1, face down" });
-  await expect(firstCard).toBeVisible();
-  await firstCard.click();
+  await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toBeVisible({
+    timeout: 7_000,
+  });
+  await page.getByRole("button", { name: "I’m ready", exact: true }).click();
   await expect(page.getByTestId("tarot-spread-stage")).toHaveAttribute("data-focus-mode", "reveal");
   await capturePage(page, testInfo, "card-reveal");
 
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  for (let index = 0; index < 10; index += 1) {
+    const action = page.locator(".guided-next-action");
+    await expect(action).toBeVisible();
+    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    await action.click();
+    if (finalCard) break;
+  }
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
   await page.getByRole("button", { name: "Next reading passage" }).click();

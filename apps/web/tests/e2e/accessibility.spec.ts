@@ -53,13 +53,22 @@ async function createReading(page: Page): Promise<void> {
   await page.getByLabel("Your private question").fill("What should I notice now?");
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
-  // The shuffle gathers into an automatic deal; reveal remains an intentional
-  // user action (UX-006).
+  // Keep the accessibility suite fast while exercising the same centered,
+  // reader-controlled sequence through standard buttons.
+  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
   await page
-    .getByRole("button", { name: "Deal now", exact: true })
+    .getByRole("button", { name: "Gather now", exact: true })
     .click({ timeout: 2_000 })
     .catch(() => {});
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  await page.getByRole("button", { name: "I’m ready", exact: true }).click();
+  for (let index = 0; index < 10; index += 1) {
+    const action = page.locator(".guided-next-action");
+    await expect(action).toBeVisible();
+    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    await action.click();
+    if (finalCard) break;
+  }
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 }
 

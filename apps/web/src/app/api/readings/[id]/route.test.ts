@@ -7,11 +7,13 @@ const mocks = vi.hoisted(() => ({
   assertSameOrigin: vi.fn(),
   getReading: vi.fn(),
   getSnapshot: vi.fn(),
+  listFeedback: vi.fn(),
   createFollowUp: vi.fn(),
   createInterpretationProvider: vi.fn(),
   runInterpretationJobs: vi.fn(),
   recordAudit: vi.fn(),
   encrypt: vi.fn(),
+  decrypt: vi.fn(),
 }));
 
 vi.mock("@starguidance/ai", async (importOriginal) => ({
@@ -33,11 +35,12 @@ vi.mock("@/lib/interpretation-worker", () => ({
 vi.mock("@/lib/persistence", () => ({
   persistenceFor: () => ({
     encrypt: mocks.encrypt,
-    decrypt: vi.fn(),
+    decrypt: mocks.decrypt,
     repositories: {
       readingSessions: { get: mocks.getReading },
       profileSnapshots: { get: mocks.getSnapshot },
       followUps: { create: mocks.createFollowUp },
+      feedback: { list: mocks.listFeedback },
     },
   }),
   recordAudit: mocks.recordAudit,
@@ -52,7 +55,7 @@ vi.mock("@/lib/runtime", () => ({
   getSystemDatabaseClient: vi.fn(),
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const user = { id: "84efdc32-5402-4d7d-97ef-94fb4143ac45", email: "reader@example.test" };
 const readingId = "c3c0b413-e890-4162-bf13-a54d47ab6c7e";
@@ -68,12 +71,80 @@ function request(question: string): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireUser.mockResolvedValue(user);
+  mocks.listFeedback.mockResolvedValue([]);
   mocks.getReading.mockResolvedValue({
     id: readingId,
     userId: user.id,
     profileSnapshotId: "548e8158-2b54-4d28-a6bd-b6a4223f820b",
     followUps: [{ id: "existing-follow-up" }],
     result: undefined,
+  });
+});
+
+describe("reading ritual payload", () => {
+  it("returns the owner's private question and contextual card description without caching", async () => {
+    mocks.decrypt.mockReturnValue("What should I focus on next?");
+    mocks.getReading.mockResolvedValue({
+      id: readingId,
+      userId: user.id,
+      profileSnapshotId: "548e8158-2b54-4d28-a6bd-b6a4223f820b",
+      spreadId: "one-card",
+      encryptedQuestion: "encrypted-question",
+      questionClassification: {
+        version: "question-classification-v1",
+        topic: "change",
+        horizon: "open",
+        intent: "clarity",
+        generalReading: false,
+      },
+      entitlementDecision: {
+        version: "reading-entitlement-v1",
+        mode: "unlimited",
+        outcome: "granted",
+        entitlementClass: "standard",
+        used: 0,
+        limit: null,
+        remaining: null,
+        windowStartsAt: null,
+        windowEndsAt: null,
+      },
+      draw: {
+        id: "locked-draw",
+        deckVersion: "starguidance-illustrated-v2",
+        spreadId: "one-card",
+        spreadVersion: "one-card-v2",
+        shuffleVersion: "fisher-yates-csprng-v1",
+        lockedAt: "2026-08-15T00:00:00.000Z",
+        assignments: [
+          { positionId: "card-1", cardId: "major-00", orientation: "upright", order: 0 },
+        ],
+      },
+      result: undefined,
+      outputProvenance: undefined,
+      generationStatus: "pending",
+      ritualProgress: undefined,
+      expiresAt: "2099-08-15T00:00:00.000Z",
+      safetyClassification: undefined,
+      followUps: [],
+      createdAt: "2026-08-15T00:00:00.000Z",
+    });
+
+    const response = await GET(new Request(`https://staging.invalid/api/readings/${readingId}`), {
+      params: Promise.resolve({ id: readingId }),
+    });
+    const payload = (await response.json()) as {
+      reading: {
+        question: string;
+        cards: { positionDescription: string; themes: string[] }[];
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(payload.reading.question).toBe("What should I focus on next?");
+    expect(payload.reading.cards[0]?.positionDescription).toBeTruthy();
+    expect(payload.reading.cards[0]?.themes.length).toBeGreaterThan(0);
+    expect(mocks.decrypt).toHaveBeenCalledWith("encrypted-question", "reading-question");
   });
 });
 

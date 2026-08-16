@@ -25,14 +25,22 @@ async function createProfile(page: Page) {
   await page.getByRole("button", { name: /^Continue with / }).click();
 }
 
-/** Mirrors mvp.spec.ts's helper: gather the shuffle into its automatic deal,
- * then reveal every card. */
+/** Mirrors mvp.spec.ts's centered, sequential ritual helper. */
 async function finishRitual(page: Page) {
+  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
   await page
-    .getByRole("button", { name: "Deal now", exact: true })
+    .getByRole("button", { name: "Gather now", exact: true })
     .click({ timeout: 3_000 })
     .catch(() => {});
-  await page.getByRole("button", { name: "Reveal all", exact: true }).click();
+  await page.getByRole("button", { name: "I’m ready", exact: true }).click();
+  for (let index = 0; index < 10; index += 1) {
+    const action = page.locator(".guided-next-action");
+    await expect(action).toBeVisible();
+    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    await action.click();
+    if (finalCard) break;
+  }
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 }
 
