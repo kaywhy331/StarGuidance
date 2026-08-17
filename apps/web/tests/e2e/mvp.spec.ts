@@ -112,9 +112,20 @@ async function expectHorizontallyCentered(page: Page, selector: string) {
   await expect
     .poll(async () => {
       const bounds = await page.locator(selector).boundingBox();
-      const viewport = page.viewportSize();
-      if (!bounds || !viewport) return Number.POSITIVE_INFINITY;
-      return Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2);
+      // `page.viewportSize().width` is the logical/outer viewport width and
+      // does not shrink when a vertical scrollbar is present. The app's own
+      // centering math (physical-tarot-card.tsx's `positionCard`) targets the
+      // real rendered stage bounds instead, so a scrollbar appearing during
+      // the ritual (e.g. from a fixed-position panel poking past 100dvh in a
+      // given browser/env) narrows the actual content column without this
+      // check's reference width moving to match — producing a false,
+      // deterministic centering failure even though the UI is genuinely
+      // centered in the space it actually has. Compare against
+      // `document.documentElement.clientWidth`, which excludes the scrollbar
+      // gutter, matching the frame of reference the app itself centers in.
+      const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+      if (!bounds) return Number.POSITIVE_INFINITY;
+      return Math.abs(bounds.x + bounds.width / 2 - clientWidth / 2);
     })
     .toBeLessThanOrEqual(3);
 }
