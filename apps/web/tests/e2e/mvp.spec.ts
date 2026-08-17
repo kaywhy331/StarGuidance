@@ -108,13 +108,35 @@ async function nextReadingSection(page: Page) {
   await next.click();
 }
 
-async function expectHorizontallyCentered(page: Page, selector: string) {
+// `page.viewportSize().width` is the logical/outer viewport width and does
+// not shrink when a vertical scrollbar is present, and even
+// `document.documentElement.clientWidth` isn't reliable across browsers here
+// (observed a consistent ~16px offset on Firefox even after switching to it).
+// The app's own centering math (physical-tarot-card.tsx's `positionCard`)
+// targets the real rendered `.sanctuary-stage` bounds, not any
+// viewport/document width — so the only reference frame that's actually
+// correct in every browser is comparing the element directly against the
+// stage element it was positioned relative to.
+async function expectHorizontallyCentered(
+  page: Page,
+  selector: string,
+  containerSelector?: string,
+) {
   await expect
     .poll(async () => {
       const bounds = await page.locator(selector).boundingBox();
-      const viewport = page.viewportSize();
-      if (!bounds || !viewport) return Number.POSITIVE_INFINITY;
-      return Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2);
+      if (!bounds) return Number.POSITIVE_INFINITY;
+      if (containerSelector) {
+        const containerBounds = await page.locator(containerSelector).boundingBox();
+        if (!containerBounds) return Number.POSITIVE_INFINITY;
+        return Math.abs(
+          bounds.x + bounds.width / 2 - (containerBounds.x + containerBounds.width / 2),
+        );
+      }
+      // Fixed-position elements (e.g. the guided reveal panel) are centered
+      // via `left: 50%` against the viewport itself, not the stage.
+      const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+      return Math.abs(bounds.x + bounds.width / 2 - clientWidth / 2);
     })
     .toBeLessThanOrEqual(3);
 }
@@ -439,7 +461,7 @@ test("the centered ritual mixes, gathers, deals, reflects, and reveals one card 
   const reflection = page.getByTestId("question-reflection");
   await expect(reflection).toBeVisible({ timeout: 3_000 });
   await expect(reflection).toContainText(question);
-  await expectHorizontallyCentered(page, '[data-testid="question-reflection"]');
+  await expectHorizontallyCentered(page, '[data-testid="question-reflection"]', ".sanctuary-stage");
   await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toBeVisible({
     timeout: 6_500,
@@ -450,7 +472,11 @@ test("the centered ritual mixes, gathers, deals, reflects, and reveals one card 
   const revealPanel = page.getByTestId("guided-reveal-panel");
   await expect(activeCard).toHaveClass(/is-cinematic-positioned/);
   await expect(revealPanel).toBeVisible();
-  await expectHorizontallyCentered(page, ".physical-card-figure.is-cinematic-subject");
+  await expectHorizontallyCentered(
+    page,
+    ".physical-card-figure.is-cinematic-subject",
+    ".sanctuary-stage",
+  );
   await expect(revealPanel.locator(".guided-reveal-description")).not.toBeEmpty();
   await expect(revealPanel.locator(".guided-reveal-themes")).toContainText(/themes/i);
   await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
@@ -717,7 +743,11 @@ test("reduced-motion preference skips ritual transitions", async ({ page }) => {
   );
   await waitForReadingSections(page);
   await nextReadingSection(page);
-  await expectHorizontallyCentered(page, ".physical-card-figure.is-reading-subject");
+  await expectHorizontallyCentered(
+    page,
+    ".physical-card-figure.is-reading-subject",
+    ".sanctuary-stage",
+  );
 });
 
 test("a follow-up uses the exact same cards", async ({ page }) => {
