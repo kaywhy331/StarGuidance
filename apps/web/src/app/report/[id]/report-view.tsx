@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, LoadingState, Panel } from "@starguidance/design-system";
 import { buildReportDocumentModel } from "@/lib/report-document";
+import { emitBrowserProductEventOnce } from "@/lib/product-telemetry-client";
 interface Report {
   id: string;
   provider: "local" | "stripe";
@@ -30,6 +31,13 @@ export function ReportView({ reportId }: { reportId: string }) {
     const timer = setInterval(() => void loadReport(), 2_000);
     return () => clearInterval(timer);
   }, [loadReport, report?.status]);
+  useEffect(() => {
+    if (report?.status !== "ready") return;
+    emitBrowserProductEventOnce("report_viewed", `report:${reportId}`, {
+      routeClass: "report",
+      statusClass: "ready",
+    });
+  }, [report?.status, reportId]);
   if (error)
     return (
       <main className="mx-auto max-w-3xl px-6 py-16">

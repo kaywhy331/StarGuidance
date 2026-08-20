@@ -21,6 +21,7 @@ interface HistoryItem {
   }>;
   followUpCount: number;
   feedbackSubmitted: boolean;
+  outcomeFeedbackSubmitted: boolean;
   reportStatus: "not-purchased" | "pending" | "ready" | "failed";
   createdAt: string;
 }
@@ -47,6 +48,14 @@ function ReadingMemory({
 }) {
   const createdAt = new Date(item.createdAt);
   const href = item.generationStatus === "ready" ? `/reading/${item.id}` : `/session/${item.id}`;
+  const threadStatus = [
+    item.followUpCount > 0
+      ? `${item.followUpCount} saved follow-up${item.followUpCount === 1 ? "" : "s"}`
+      : undefined,
+    item.outcomeFeedbackSubmitted ? "Outcome reflection saved" : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <article className="reading-memory">
@@ -93,11 +102,7 @@ function ReadingMemory({
 
           <footer>
             <span>{item.cardCount} locked cards</span>
-            <span>
-              {item.followUpCount > 0
-                ? `${item.followUpCount} saved follow-up${item.followUpCount === 1 ? "" : "s"}`
-                : "Original thread"}
-            </span>
+            <span>{threadStatus || "Original thread"}</span>
             <strong>
               {item.generationStatus === "ready" ? "Enter the reading →" : "Resume →"}
             </strong>

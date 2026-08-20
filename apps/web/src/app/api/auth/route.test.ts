@@ -17,6 +17,7 @@ const recovery = vi.hoisted(() => ({
 }));
 const security = vi.hoisted(() => ({ recordSecurityAudit: vi.fn() }));
 const rateLimit = vi.hoisted(() => ({ assert: vi.fn() }));
+const telemetry = vi.hoisted(() => ({ record: vi.fn() }));
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ delete: recovery.cookieDelete, get: recovery.cookieGet }),
@@ -48,6 +49,10 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("@/lib/request-security", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/request-security")>()),
   assertRateLimit: rateLimit.assert,
+}));
+
+vi.mock("@/lib/product-telemetry", () => ({
+  tryRecordProductEvent: telemetry.record,
 }));
 
 import { DELETE, POST } from "./route";
@@ -119,6 +124,7 @@ beforeEach(() => {
   supabase.resend.mockResolvedValue({ error: null });
   security.recordSecurityAudit.mockResolvedValue(undefined);
   rateLimit.assert.mockResolvedValue(undefined);
+  telemetry.record.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -128,6 +134,7 @@ afterEach(() => {
   for (const mock of Object.values(recovery)) mock.mockReset();
   security.recordSecurityAudit.mockReset();
   rateLimit.assert.mockReset();
+  telemetry.record.mockReset();
 });
 
 describe("email and password authentication", () => {
@@ -184,6 +191,13 @@ describe("email and password authentication", () => {
     expect(response.status).toBe(401);
     expect(body.error).toMatch(/email or password/i);
     expect(JSON.stringify(body)).not.toContain("reader@example.test");
+    expect(telemetry.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "auth_failed",
+        properties: { errorClass: "authentication", statusClass: "failed" },
+      }),
+    );
+    expect(JSON.stringify(telemetry.record.mock.calls)).not.toContain("reader@example.test");
   });
 
   it("creates an immediately authenticated account when confirmation is disabled", async () => {

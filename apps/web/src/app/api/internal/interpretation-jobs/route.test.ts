@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   runInterpretationJobs: vi.fn(),
   runReportJobs: vi.fn(),
   getInterpretationQueueStats: vi.fn(),
+  getProductOperationalSignals: vi.fn(),
   getReportQueueStats: vi.fn(),
   pruneExpiredSystemRows: vi.fn(),
 }));
@@ -26,6 +27,7 @@ vi.mock("@/lib/runtime", () => ({
 
 vi.mock("@starguidance/database", () => ({
   getInterpretationQueueStats: mocks.getInterpretationQueueStats,
+  getProductOperationalSignals: mocks.getProductOperationalSignals,
   getReportQueueStats: mocks.getReportQueueStats,
   pruneExpiredSystemRows: mocks.pruneExpiredSystemRows,
 }));
@@ -57,6 +59,14 @@ beforeEach(() => {
   mocks.runReportJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0 });
   mocks.getInterpretationQueueStats.mockResolvedValue({ depth: 0, oldestPendingAgeSeconds: null });
   mocks.getReportQueueStats.mockResolvedValue({ depth: 0, oldestPendingAgeSeconds: null });
+  mocks.getProductOperationalSignals.mockResolvedValue({
+    authFailures5m: 0,
+    profileFailures5m: 0,
+    generationFailures5m: 0,
+    paymentFailures15m: 0,
+    slowGenerations5m: 0,
+    liveGenerations60m: 0,
+  });
   mocks.pruneExpiredSystemRows.mockResolvedValue({
     expiredRateLimitBuckets: 0,
     completedInterpretationJobs: 0,
@@ -123,6 +133,14 @@ describe("POST /api/internal/interpretation-jobs", () => {
       reports: { claimed: 2, succeeded: 1, failed: 1 },
       reportQueueDepth: 4,
       oldestPendingReportAgeSeconds: 21,
+      signals: {
+        authFailures5m: 0,
+        profileFailures5m: 0,
+        generationFailures5m: 0,
+        paymentFailures15m: 0,
+        slowGenerations5m: 0,
+        liveGenerations60m: 0,
+      },
       pruned: {
         expiredRateLimitBuckets: 7,
         completedInterpretationJobs: 2,

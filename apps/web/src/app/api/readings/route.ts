@@ -19,12 +19,19 @@ import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } f
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
 import {
+  classifyProductProvider,
+  productModelVersion,
+  productDurationBucket,
+  tryRecordProductEvent,
+} from "@/lib/product-telemetry";
+import {
   findRetainedReading,
   readingEntitlementDecision,
   readingSessionTtlMs,
 } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter } from "@/lib/runtime";
+import { getRuntimeConfiguration, interpretationRuntimeOptions } from "@/lib/runtime-configuration";
 
 const inputSchema = z
   .object({
@@ -60,6 +67,7 @@ export async function POST(request: Request) {
     await assertRateLimit(`reading:${user.id}`, 12);
     const idempotencyKey = idempotencyKeySchema.parse(request.headers.get("idempotency-key"));
     const persistence = persistenceFor(user);
+    const runtimeConfiguration = await getRuntimeConfiguration();
     const profile = await persistence.repositories.birthProfiles.getActive(user.id);
     if (!profile)
       return NextResponse.json({ error: "Complete a private profile first." }, { status: 409 });
@@ -75,6 +83,8 @@ export async function POST(request: Request) {
       );
     const spread = spreads.find(({ id }) => id === input.spreadId);
     if (!spread) return NextResponse.json({ error: "Unknown spread." }, { status: 404 });
+    if (!runtimeConfiguration.content.enabledSpreadIds.includes(spread.id))
+      return NextResponse.json({ error: "That spread is currently unavailable." }, { status: 409 });
 
     const previousReadings = await persistence.repositories.readingSessions.list(user.id);
     const idempotent = previousReadings.find(
@@ -90,7 +100,11 @@ export async function POST(request: Request) {
         },
         { status: 200 },
       );
-    const entitlementDecision = readingEntitlementDecision(previousReadings);
+    const entitlementDecision = readingEntitlementDecision(
+      previousReadings,
+      Date.now(),
+      runtimeConfiguration.commerce,
+    );
     if (entitlementDecision.outcome === "limitReached")
       return NextResponse.json(
         {
@@ -99,8 +113,11 @@ export async function POST(request: Request) {
         },
         { status: 429 },
       );
-    const retained = findRetainedReading(previousReadings, question, (encrypted) =>
-      persistence.decrypt(encrypted, "reading-question"),
+    const retained = findRetainedReading(
+      previousReadings,
+      question,
+      (encrypted) => persistence.decrypt(encrypted, "reading-question"),
+      runtimeConfiguration.commerce.rereadCooldownMinutes * 60_000,
     );
     if (retained)
       return NextResponse.json(
@@ -158,6 +175,36 @@ export async function POST(request: Request) {
         { status: 200 },
       );
     await recordAudit(user.id, "reading.draw.locked", "reading", reading.id);
+    await Promise.all([
+      tryRecordProductEvent({
+        idempotencyKey: `reading:${reading.id}:selected`,
+        name: "reading_selected",
+        properties: {
+          spreadId: spread.id,
+          spreadVersion: spread.version,
+          cardCount: draw.assignments.length,
+        },
+      }),
+      tryRecordProductEvent({
+        idempotencyKey: `reading:${reading.id}:question`,
+        name: "question_submitted",
+        properties: {
+          topic: questionClassification.topic,
+          horizon: questionClassification.horizon,
+          questionLength: input.generalReading ? 0 : input.question.length,
+          generalReading: input.generalReading,
+        },
+      }),
+      tryRecordProductEvent({
+        idempotencyKey: `reading:${reading.id}:draw`,
+        name: "draw_locked",
+        properties: {
+          spreadId: spread.id,
+          spreadVersion: spread.version,
+          cardCount: draw.assignments.length,
+        },
+      }),
+    ]);
     if (
       process.env.APP_ENV === "test" &&
       request.headers.get("x-e2e-force-generation-failure") === "1"
@@ -171,29 +218,61 @@ export async function POST(request: Request) {
         "failed",
       );
       reading.generationStatus = "failed";
+      await tryRecordProductEvent({
+        idempotencyKey: `reading:${reading.id}:generation-failed`,
+        name: "generation_failed",
+        properties: { errorClass: "unclassified", statusClass: "failed" },
+      });
     } else if (getRuntimeAdapter() !== "supabase") {
       // The local runtime adapter has no interpretation_jobs table (see
       // apps/web/src/lib/repositories/local.ts) and never runs on Netlify, so
       // it keeps generating synchronously exactly as before.
+      const generationStartedAt = Date.now();
       try {
-        const generated = await createInterpretationProvider().generateWithProvenance({
+        const generated = await createInterpretationProvider(
+          interpretationRuntimeOptions(runtimeConfiguration),
+        ).generateWithProvenance({
           draw,
           question,
           questionClassification,
           relevantTraitStatements: readingLens.statements,
         });
-        await persistence.repositories.outputs.save(
-          user.id,
-          reading.id,
-          generated.result,
-          generated.provenance,
-        );
+        await persistence.repositories.outputs.save(user.id, reading.id, generated.result, {
+          ...generated.provenance,
+          contentVersion: runtimeConfiguration.content.tarotContentVersion,
+          safetyPolicyVersion: runtimeConfiguration.prompts.safetyPolicyVersion,
+        });
         reading.generationStatus = "ready";
         await persistence.repositories.readingSessions.setGenerationStatus(
           user.id,
           reading.id,
           "ready",
         );
+        const provider = classifyProductProvider(generated.provenance.providerId);
+        await tryRecordProductEvent({
+          idempotencyKey: `reading:${reading.id}:generation-completed`,
+          name: "generation_completed",
+          properties: {
+            provider,
+            modelVersion: productModelVersion(generated.provenance.providerId),
+            generationMode: provider === "deterministic" ? "deterministic" : "live",
+            fallbackUsed: provider === "deterministic",
+            durationBucket: productDurationBucket(Date.now() - generationStartedAt),
+            statusClass: "ready",
+          },
+        });
+        if (provider === "deterministic")
+          await tryRecordProductEvent({
+            idempotencyKey: `reading:${reading.id}:fallback-used`,
+            name: "fallback_used",
+            properties: {
+              provider,
+              modelVersion: productModelVersion(generated.provenance.providerId),
+              generationMode: "deterministic",
+              fallbackUsed: true,
+              statusClass: "ready",
+            },
+          });
       } catch {
         reading.generationStatus = "failed";
         await persistence.repositories.readingSessions.setGenerationStatus(
@@ -201,6 +280,15 @@ export async function POST(request: Request) {
           reading.id,
           "failed",
         );
+        await tryRecordProductEvent({
+          idempotencyKey: `reading:${reading.id}:generation-failed`,
+          name: "generation_failed",
+          properties: {
+            errorClass: "unclassified",
+            durationBucket: productDurationBucket(Date.now() - generationStartedAt),
+            statusClass: "failed",
+          },
+        });
       }
     } else {
       // createLocked already enqueued this reading's interpretation job in
@@ -286,7 +374,12 @@ export async function GET() {
           resultTitle: stored.result?.title,
           generationStatus,
           followUpCount: stored.followUps.length,
-          feedbackSubmitted: feedback.some((entry) => entry.readingId === id),
+          feedbackSubmitted: feedback.some(
+            (entry) => entry.readingId === id && entry.kind === "experience",
+          ),
+          outcomeFeedbackSubmitted: feedback.some(
+            (entry) => entry.readingId === id && entry.kind === "outcome",
+          ),
           reportStatus: report?.status ?? "not-purchased",
           createdAt,
         };

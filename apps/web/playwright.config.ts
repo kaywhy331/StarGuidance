@@ -37,7 +37,6 @@ export default defineConfig({
         AI_PROVIDER: "disabled",
         PAYMENTS_PROVIDER: "local",
         ENABLE_PROFILE_REPORTS: "true",
-        NEXT_PUBLIC_ENABLE_PROFILE_REPORTS: "true",
         PROFILE_ENGINE_URL: "http://127.0.0.1:8000",
       },
       reuseExistingServer: false,

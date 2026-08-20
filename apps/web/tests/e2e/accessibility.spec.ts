@@ -60,10 +60,7 @@ async function createReading(page: Page): Promise<void> {
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
   const gather = page.getByRole("button", { name: "Gather now", exact: true });
   if (await gather.isVisible()) await gather.click({ force: true, timeout: 1_000 }).catch(() => {});
-  await expect(page.getByRole("button", { name: /^Leave whole/ })).toBeVisible({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: /^Leave whole/ }).click();
+  await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "I’m ready", exact: true }).click();
   for (let index = 0; index < 10; index += 1) {
     await page

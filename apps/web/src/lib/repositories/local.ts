@@ -509,8 +509,13 @@ export function createLocalRepositories(): ApplicationRepositories {
           id: randomUUID(),
           userId: input.userId,
           readingId: input.readingId,
+          kind: input.kind,
           ...(input.resonance === undefined ? {} : { resonance: input.resonance }),
           ...(input.helpfulness === undefined ? {} : { helpfulness: input.helpfulness }),
+          ...(input.outcomeStatus === undefined ? {} : { outcomeStatus: input.outcomeStatus }),
+          ...(input.behaviorChanged === undefined
+            ? {}
+            : { behaviorChanged: input.behaviorChanged }),
           ...(input.encryptedComment === undefined
             ? {}
             : { encryptedComment: input.encryptedComment }),

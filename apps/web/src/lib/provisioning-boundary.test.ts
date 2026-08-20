@@ -35,6 +35,9 @@ const BOUNDARY_EXEMPT: Readonly<Record<string, string>> = {
     "is a bearer-secret service trigger with no user session of its own; each claimed job's " +
     "user_id was already provisioned by the requireUser() call in POST /api/readings that " +
     "enqueued it",
+  "api/telemetry/route.ts":
+    "accepts only a same-origin, rate-limited, closed-schema product event and reads no " +
+    "user-owned repository; public landing and signup events must not provision an account",
   "auth/callback/route.ts":
     "exchanges signup or recovery codes for a session and redirects; it holds no repository",
   "art/tarot/v2/[asset]/route.ts": "serves versioned public artwork and reads no user-owned table",

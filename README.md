@@ -1,6 +1,6 @@
 # StarGuidance
 
-StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The safe beta supports email/password accounts, private onboarding and profile correction, immutable profile snapshots, six selectable spreads (including the four foundational reading types), structured topic/intent/horizon intake, a question-free general-reading path, high-stakes confirmation before any draw, server-recoverable locked rituals, direct finished-reading views, deterministic interpretation fallback, configurable same-draw follow-ups and reading allowances, private feedback, history, and privacy controls. A 17-section profile report, purchased-report history, test Checkout lifecycle, durable fulfillment, and authenticated tagged PDF are implemented behind a default-off release gate; owner commerce, accessibility-review, and production-provider gates still block public launch.
+StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The safe beta supports email/password accounts, private onboarding and profile correction, immutable profile snapshots, six selectable spreads (including the four foundational reading types), structured topic/intent/horizon intake, a question-free general-reading path, high-stakes confirmation before any draw, server-recoverable locked rituals, direct finished-reading views, deterministic interpretation fallback, configurable same-draw follow-ups and reading allowances, separate experience/outcome feedback, history, and privacy controls. A 17-section profile report, purchased-report history, test Checkout lifecycle, durable fulfillment, and authenticated tagged PDF are implemented behind a default-off release gate; owner commerce, accessibility-review, and production-provider gates still block public launch.
 
 The reading ritual uses an original responsive cosmic Gothic sanctuary, card-specific illustrated faces, a physical 3D card system, and an authenticated streaming oracle transcript. See [artwork provenance](docs/ARTWORK-PROVENANCE.md) for sources, prompts, rights boundaries, hashes, and performance budgets.
 
@@ -11,7 +11,7 @@ The reading ritual uses an original responsive cosmic Gothic sanctuary, card-spe
 - `packages/contracts` — strict shared Zod contracts.
 - `packages/database` — Drizzle schema, SQL migration, RLS, and AES-256-GCM helpers.
 - `packages/tarot-domain` — CSPRNG shuffle and immutable draw rules.
-- `packages/tarot-content` — original, versioned 78-card content and four spreads.
+- `packages/tarot-content` — original, versioned 78-card content and six selectable spreads.
 - `packages/reading-machine` — XState ritual workflow.
 - `packages/design-system` — accessible celestial primitives.
 - `packages/ai` — safety classification, compact trait-lens selection, structured provider boundary, and deterministic fallback.
@@ -26,7 +26,7 @@ Western astrology, BaZi, and planetary-angularity mapping return typed unavailab
 
 ## Configuration
 
-Copy `.env.example` to `.env.local` and keep every secret blank until its local or hosted adapter is intentionally configured. The canonical inventory includes runtime selection, encryption, Supabase, readiness/worker authentication, profile-engine guards, AI, Stripe, reading allowance/session TTL, and server-only support/operator UUID allowlists. `READING_ACCESS_MODE=unlimited` is the MVP default; `free-window` uses `READING_FREE_ALLOWANCE` and `READING_ALLOWANCE_WINDOW_HOURS`. Operational configuration is visible read-only to authorized staff, but changes and rollback remain reviewed deployment operations.
+Copy `.env.example` to `.env.local` and keep every secret blank until its local or hosted adapter is intentionally configured. The canonical inventory includes runtime selection, encryption, Supabase, readiness/worker authentication, profile-engine guards, AI, Stripe, reading allowance/session TTL, aggregate alert delivery, and server-only support/operator UUID allowlists. `READING_ACCESS_MODE=unlimited` is the local fallback; durable environments seed conservative published configuration. Support sees masked diagnostics only. Operators can create validated configuration drafts, while a different operator must approve them before publication; rollback, content activation, and restrictive emergency kill switches are audited.
 
 ## Run and verify
 
@@ -36,6 +36,7 @@ Requirements are Node.js 24, Corepack/pnpm 11.16.0, and Python 3.12. `.node-vers
 corepack pnpm install --frozen-lockfile
 corepack pnpm audit --prod --audit-level high
 corepack pnpm format:check
+corepack pnpm requirements:check
 corepack pnpm lint
 corepack pnpm typecheck
 corepack pnpm test
@@ -61,4 +62,4 @@ The deterministic reading provider is the default. Live AI requires credentials 
 - [Desktop completed reading](docs/screenshots/completed-reading-desktop-chromium.png)
 - [Mobile completed reading](docs/screenshots/completed-reading-mobile-chromium.png)
 
-See [architecture](docs/ARCHITECTURE.md), [immersive UX review](docs/IMMERSIVE-UX.md), [security](docs/SECURITY.md), [AI gateway and tunnel security](docs/AI-GATEWAY-SECURITY.md), [Cali TokenPak pilot](docs/CALI-TOKENPAK-PILOT.md), [operations and recovery](docs/OPERATIONS.md), [commerce verification](docs/COMMERCE.md), [calculation status](docs/PROFILE-CALCULATIONS.md), [draw integrity](docs/TAROT-INTEGRITY.md), and [known production gates](docs/KNOWN-GAPS.md).
+See [architecture](docs/ARCHITECTURE.md), [immersive UX review](docs/IMMERSIVE-UX.md), [Must-requirement traceability](docs/REQUIREMENTS-TRACEABILITY.md), [security](docs/SECURITY.md), [AI gateway and tunnel security](docs/AI-GATEWAY-SECURITY.md), [Cali TokenPak pilot](docs/CALI-TOKENPAK-PILOT.md), [operations and recovery](docs/OPERATIONS.md), [commerce verification](docs/COMMERCE.md), [calculation status](docs/PROFILE-CALCULATIONS.md), [draw integrity](docs/TAROT-INTEGRITY.md), and [known production gates](docs/KNOWN-GAPS.md).

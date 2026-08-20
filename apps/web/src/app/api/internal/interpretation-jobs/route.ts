@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import {
   getInterpretationQueueStats,
+  getProductOperationalSignals,
   getReportQueueStats,
   pruneExpiredSystemRows,
 } from "@starguidance/database";
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
     // backlog is growing across cycles rather than draining.
     const stats = await getInterpretationQueueStats(getSystemDatabaseClient());
     const reportStats = await getReportQueueStats(getSystemDatabaseClient());
+    const signals = await getProductOperationalSignals(getSystemDatabaseClient());
     return NextResponse.json(
       {
         status: "ok",
@@ -79,6 +81,7 @@ export async function POST(request: Request) {
         reports: reportSummary,
         reportQueueDepth: reportStats.depth,
         oldestPendingReportAgeSeconds: reportStats.oldestPendingAgeSeconds,
+        signals,
         pruned,
       },
       { status: 200, headers: { "cache-control": "no-store" } },

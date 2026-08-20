@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { SiteAtmosphere } from "./site-atmosphere";
 import { AppNav } from "./app-nav";
+import { ProductTelemetryBeacon } from "./product-telemetry-beacon";
 import { SiteFooter } from "./site-footer";
 
 export const metadata: Metadata = {
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       </head>
       <body>
         <SiteAtmosphere />
+        <ProductTelemetryBeacon />
         <a className="skip-link" href="#main-content">
           Skip to content
         </a>

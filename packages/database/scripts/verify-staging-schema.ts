@@ -26,6 +26,8 @@ const APP_ONLY_TABLES = [
   "report_jobs",
   "rate_limit_buckets",
   "deletion_receipts",
+  "product_events",
+  "runtime_configuration_versions",
 ] as const;
 
 const USER_OWNED_TABLES = [
@@ -137,6 +139,33 @@ async function main(): Promise<void> {
       detail: tablesOk
         ? `${USER_OWNED_TABLES.length} of ${USER_OWNED_TABLES.length} present`
         : `${missingTables.length} table(s) absent`,
+    });
+
+    const missingOutputProvenance = await sql<{ table_name: string; column_name: string }[]>`
+      select required.table_name, required.column_name
+      from (values
+        ('reading_outputs', 'safety_policy_version'),
+        ('follow_up_questions', 'provider_id'),
+        ('follow_up_questions', 'prompt_version'),
+        ('follow_up_questions', 'content_version'),
+        ('follow_up_questions', 'safety_policy_version'),
+        ('follow_up_questions', 'schema_version')
+      ) as required(table_name, column_name)
+      where not exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public'
+          and columns.table_name = required.table_name
+          and columns.column_name = required.column_name
+      )`;
+    const outputProvenanceOk = missingOutputProvenance.length === 0;
+    if (!outputProvenanceOk) failed = true;
+    record({
+      section: "Migrations",
+      check: "Primary and follow-up output provenance columns present",
+      status: outputProvenanceOk ? "pass" : "fail",
+      detail: outputProvenanceOk
+        ? "all 6 provenance coordinates are present"
+        : `${missingOutputProvenance.length} provenance column(s) absent`,
     });
 
     const unforced = await sql<{ name: string }[]>`

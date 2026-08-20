@@ -43,8 +43,11 @@ export async function GET() {
         feedback: data.feedback.map((feedback) => ({
           id: feedback.id,
           readingId: feedback.readingId,
+          kind: feedback.kind,
           resonance: feedback.resonance,
           helpfulness: feedback.helpfulness,
+          outcomeStatus: feedback.outcomeStatus,
+          behaviorChanged: feedback.behaviorChanged,
           ...(feedback.encryptedComment
             ? {
                 comment: persistence.decrypt(feedback.encryptedComment, "feedback-comment"),

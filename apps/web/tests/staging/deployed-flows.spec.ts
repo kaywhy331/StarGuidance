@@ -561,9 +561,7 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
     .getByRole("button", { name: "Gather now", exact: true })
     .dispatchEvent("click")
     .catch(() => {});
-  const leaveWhole = pageA.getByRole("button", { name: /^Leave whole/ });
-  await expect(leaveWhole).toBeVisible({ timeout: 12_000 });
-  await leaveWhole.click();
+  await expect(pageA.getByTestId("question-reflection")).toBeVisible({ timeout: 12_000 });
   await pageA.getByRole("button", { name: "I’m ready", exact: true }).click();
   for (let index = 0; index < 10; index += 1) {
     await pageA

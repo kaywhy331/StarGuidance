@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createOracleStreamEvents } from "@starguidance/ai";
 import type { FollowUpResult, OracleStreamEvent } from "@starguidance/contracts";
 
+import { emitBrowserProductEventOnce } from "@/lib/product-telemetry-client";
 import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
 
 import { MysticSanctuaryScene } from "../../session/[id]/mystic-sanctuary-scene";
@@ -22,9 +23,11 @@ import { TarotSpreadStage } from "../../session/[id]/tarot-spread-stage";
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 
 export function ReadingResultScene({
+  animationVariant = "immersive-v1",
   initialPreferences,
   readingId,
 }: {
+  animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
   initialPreferences?: ReadingPreferenceSeed;
   readingId: string;
 }) {
@@ -38,11 +41,21 @@ export function ReadingResultScene({
   const [helpfulness, setHelpfulness] = useState(0);
   const [resonance, setResonance] = useState(0);
   const [comment, setComment] = useState("");
+  const [outcomeStatus, setOutcomeStatus] = useState("");
+  const [behaviorChanged, setBehaviorChanged] = useState("");
+  const [outcomeComment, setOutcomeComment] = useState("");
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [journeyComplete, setJourneyComplete] = useState(false);
   const [continuationMode, setContinuationMode] = useState<ReadingContinuationMode>("choice");
-  const { displayName, reducedMotion, sound, toggleReducedMotion, toggleSound } =
-    useReadingPreferences(initialPreferences);
+  const {
+    displayName,
+    reducedMotion: preferenceReducedMotion,
+    sound,
+    toggleReducedMotion,
+    toggleSound,
+  } = useReadingPreferences(initialPreferences);
+  const animationManaged = animationVariant !== "immersive-v1";
+  const reducedMotion = preferenceReducedMotion || animationManaged;
 
   useEffect(() => {
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
@@ -59,6 +72,23 @@ export function ReadingResultScene({
         setError(cause instanceof Error ? cause.message : "This reading could not be loaded."),
       );
   }, [readingId, router]);
+
+  useEffect(() => {
+    if (reading?.generationStatus !== "ready" || !reading.result) return;
+    emitBrowserProductEventOnce("result_viewed", `reading:${readingId}`, {
+      routeClass: "result",
+      cardCount: reading.cards.length,
+      statusClass: "ready",
+    });
+  }, [reading, readingId]);
+
+  useEffect(() => {
+    if (!journeyComplete || !reading?.result || reading.outcomeFeedbackSubmitted) return;
+    emitBrowserProductEventOnce("outcome_invited", `reading:${readingId}`, {
+      routeClass: "result",
+      statusClass: "ready",
+    });
+  }, [journeyComplete, reading, readingId]);
 
   const previewEvents = reading?.result
     ? createOracleStreamEvents(reading.result).filter(
@@ -112,6 +142,7 @@ export function ReadingResultScene({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          kind: "experience",
           ...(helpfulness ? { helpfulness } : {}),
           ...(resonance ? { resonance } : {}),
           ...(comment.trim() ? { comment: comment.trim() } : {}),
@@ -128,9 +159,39 @@ export function ReadingResultScene({
     }
   };
 
+  const submitOutcomeFeedback = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!reading || !outcomeStatus || !behaviorChanged) return;
+    setFeedbackLoading(true);
+    setError(undefined);
+    try {
+      const response = await fetch(`/api/readings/${readingId}/feedback`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "outcome",
+          outcomeStatus,
+          behaviorChanged: behaviorChanged === "yes",
+          ...(outcomeComment.trim() ? { comment: outcomeComment.trim() } : {}),
+        }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Outcome reflection could not be saved.");
+      setReading({ ...reading, outcomeFeedbackSubmitted: true });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Outcome reflection could not be saved.");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  };
+
   if (!reading) {
     return (
-      <MysticSanctuaryScene reducedMotion={true} testId="reading-result-scene">
+      <MysticSanctuaryScene
+        animationVariant={animationVariant}
+        reducedMotion={true}
+        testId="reading-result-scene"
+      >
         <div className="sanctuary-loading" role={error ? "alert" : "status"}>
           <span aria-hidden="true">✦</span>
           {error ?? "Opening your finished reading…"}
@@ -142,7 +203,11 @@ export function ReadingResultScene({
 
   if (reading.generationStatus !== "ready" || !reading.result) {
     return (
-      <MysticSanctuaryScene reducedMotion={true} testId="reading-result-scene">
+      <MysticSanctuaryScene
+        animationVariant={animationVariant}
+        reducedMotion={true}
+        testId="reading-result-scene"
+      >
         <div className="sanctuary-loading" role="status">
           <span aria-hidden="true">✦</span>
           This interpretation is not finished yet.
@@ -153,15 +218,25 @@ export function ReadingResultScene({
   }
 
   return (
-    <MysticSanctuaryScene reducedMotion={reducedMotion} testId="reading-result-scene">
+    <MysticSanctuaryScene
+      animationVariant={animationVariant}
+      reducedMotion={reducedMotion}
+      testId="reading-result-scene"
+    >
       <header className="sanctuary-controls" aria-label="Reading controls">
         <Link className="sanctuary-exit" href="/history">
           ← History
         </Link>
         <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
         <div className="sanctuary-control-group">
-          <button aria-pressed={reducedMotion} onClick={toggleReducedMotion} type="button">
-            Reduced motion <span>{reducedMotion ? "on" : "off"}</span>
+          <button
+            aria-pressed={reducedMotion}
+            disabled={animationManaged}
+            onClick={toggleReducedMotion}
+            type="button"
+          >
+            Reduced motion{" "}
+            <span>{animationManaged ? "managed" : reducedMotion ? "on" : "off"}</span>
           </button>
           <button aria-pressed={sound} onClick={toggleSound} type="button">
             Sound <span>{sound ? "on" : "off"}</span>
@@ -292,6 +367,62 @@ export function ReadingResultScene({
                     type="submit"
                   >
                     {feedbackLoading ? "Saving…" : "Save feedback"}
+                  </button>
+                </form>
+              </details>
+            )}
+            {reading.outcomeFeedbackSubmitted ? (
+              <p className="feedback-thanks">
+                What unfolded is saved as a separate annotation; the original reading is unchanged.
+              </p>
+            ) : (
+              <details className="reading-feedback-panel">
+                <summary>Record what unfolded later</summary>
+                <form onSubmit={submitOutcomeFeedback}>
+                  <p>
+                    This is a reflection record, not proof of prediction. It never edits the cards
+                    or the original interpretation.
+                  </p>
+                  <label>
+                    What happened?
+                    <select
+                      onChange={(event) => setOutcomeStatus(event.target.value)}
+                      required
+                      value={outcomeStatus}
+                    >
+                      <option value="">Choose one</option>
+                      <option value="occurred">Occurred</option>
+                      <option value="partial">Partly occurred</option>
+                      <option value="did_not_occur">Did not occur</option>
+                      <option value="unclear">Still unclear</option>
+                    </select>
+                  </label>
+                  <label>
+                    Did the reading influence what you did?
+                    <select
+                      onChange={(event) => setBehaviorChanged(event.target.value)}
+                      required
+                      value={behaviorChanged}
+                    >
+                      <option value="">Choose one</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
+                  </label>
+                  <label className="feedback-comment-field">
+                    Optional private context
+                    <textarea
+                      maxLength={1_000}
+                      onChange={(event) => setOutcomeComment(event.target.value)}
+                      rows={2}
+                      value={outcomeComment}
+                    />
+                  </label>
+                  <button
+                    disabled={feedbackLoading || !outcomeStatus || !behaviorChanged}
+                    type="submit"
+                  >
+                    {feedbackLoading ? "Saving…" : "Save outcome reflection"}
                   </button>
                 </form>
               </details>

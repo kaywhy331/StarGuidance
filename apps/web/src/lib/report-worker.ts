@@ -12,6 +12,7 @@ import {
 } from "@starguidance/database";
 
 import { recordAudit } from "./persistence";
+import { tryRecordProductEvent } from "./product-telemetry";
 import { buildProfileReportSections, readProfileReportSource } from "./report";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "./runtime";
 
@@ -30,6 +31,12 @@ function failureCode(error: unknown): string {
 }
 
 async function processJob(sql: DatabaseClient, job: ClaimedReportJob): Promise<boolean> {
+  if (job.attemptCount > 1)
+    await tryRecordProductEvent({
+      idempotencyKey: `report-job:${job.id}:attempt:${job.attemptCount}`,
+      name: "job_retried",
+      properties: { statusClass: "started" },
+    });
   try {
     const source = readProfileReportSource({
       userId: job.userId,
@@ -45,6 +52,15 @@ async function processJob(sql: DatabaseClient, job: ClaimedReportJob): Promise<b
     );
     await recordAudit(job.userId, "report.generated", "report", job.reportId);
     await completeReportJob(sql, job.id);
+    await tryRecordProductEvent({
+      idempotencyKey: `report:${job.reportId}:ready`,
+      name: "report_ready",
+      properties: {
+        productId: "profile-report-v1",
+        provider: "stripe",
+        statusClass: "ready",
+      },
+    });
     return true;
   } catch (error) {
     const { terminal } = await failReportJob(sql, job, failureCode(error));

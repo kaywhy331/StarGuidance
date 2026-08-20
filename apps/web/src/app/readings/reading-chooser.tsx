@@ -77,10 +77,12 @@ const spreadPresentationOrder = [
 
 export function ReadingChooser({
   access,
+  animationVariant = "immersive-v1",
   initialPreferences,
   spreads,
 }: {
   access: ReadingEntitlementDecision;
+  animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
   initialPreferences?: ReadingPreferenceSeed;
   spreads: readonly {
     id: string;
@@ -91,9 +93,17 @@ export function ReadingChooser({
     count: number;
   }[];
 }) {
+  const initialSelected = spreads[1]?.id ?? spreads[0]?.id ?? "";
+  const availableNeeds = readingNeeds.filter((option) =>
+    spreads.some(({ id }) => id === option.spreadId),
+  );
   const [intakeState, sendIntake] = useMachine(readingMachine);
-  const [selected, setSelected] = useState(spreads[1]?.id ?? spreads[0]?.id ?? "");
-  const [need, setNeed] = useState<ReadingNeed>("direction");
+  const [selected, setSelected] = useState(initialSelected);
+  const [need, setNeed] = useState<ReadingNeed>(
+    readingNeeds.find(({ spreadId }) => spreadId === initialSelected)?.id ??
+      availableNeeds[0]?.id ??
+      "direction",
+  );
   const [question, setQuestion] = useState("");
   const [topic, setTopic] = useState<ReadingTopic>("general");
   const [horizon, setHorizon] = useState<ReadingHorizon>("open");
@@ -107,8 +117,15 @@ export function ReadingChooser({
   const [guardedPrompt, setGuardedPrompt] = useState<{ category: SafetyCategory }>();
   const [loading, setLoading] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const { displayName, reducedMotion, sound, toggleReducedMotion, toggleSound } =
-    useReadingPreferences(initialPreferences);
+  const {
+    displayName,
+    reducedMotion: preferenceReducedMotion,
+    sound,
+    toggleReducedMotion,
+    toggleSound,
+  } = useReadingPreferences(initialPreferences);
+  const animationManaged = animationVariant !== "immersive-v1";
+  const reducedMotion = preferenceReducedMotion || animationManaged;
   const router = useRouter();
 
   useEffect(() => {
@@ -180,6 +197,22 @@ export function ReadingChooser({
       />
     );
 
+  if (spreads.length === 0)
+    return (
+      <MysticSanctuaryScene
+        animationVariant={animationVariant}
+        phase="selectingReading"
+        reducedMotion={true}
+        testId="mystic-sanctuary-scene"
+      >
+        <div className="sanctuary-loading" role="status">
+          <span aria-hidden="true">✦</span>
+          New readings are paused while the available spreads are reviewed.
+          <Link href="/history">Return to your saved readings</Link>
+        </div>
+      </MysticSanctuaryScene>
+    );
+
   const selectingReading = intakeState.matches("selectingReading");
   const selectedSpread = spreads.find(({ id }) => id === selected) ?? spreads[0];
   const orderedSpreads = [...spreads].sort(
@@ -190,6 +223,7 @@ export function ReadingChooser({
 
   return (
     <MysticSanctuaryScene
+      animationVariant={animationVariant}
       phase={selectingReading ? "selectingReading" : "enteringQuestion"}
       reducedMotion={reducedMotion}
       testId="mystic-sanctuary-scene"
@@ -198,8 +232,14 @@ export function ReadingChooser({
         <Link href="/profile">← Exit</Link>
         <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
         <div className="sanctuary-control-group">
-          <button aria-pressed={reducedMotion} onClick={toggleReducedMotion} type="button">
-            Reduced motion <span>{reducedMotion ? "on" : "off"}</span>
+          <button
+            aria-pressed={reducedMotion}
+            disabled={animationManaged}
+            onClick={toggleReducedMotion}
+            type="button"
+          >
+            Reduced motion{" "}
+            <span>{animationManaged ? "managed" : reducedMotion ? "on" : "off"}</span>
           </button>
           <button aria-pressed={sound} onClick={toggleSound} type="button">
             Sound <span>{sound ? "on" : "off"}</span>
@@ -216,7 +256,7 @@ export function ReadingChooser({
           <div className="ritual-need-picker">
             <p>Start with the feeling, not the spread name.</p>
             <div aria-label="What you need" className="ritual-need-options" role="radiogroup">
-              {readingNeeds.map((option) => (
+              {availableNeeds.map((option) => (
                 <button
                   aria-checked={need === option.id}
                   data-need={option.id}

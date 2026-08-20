@@ -65,7 +65,7 @@ The representative Pixel 7 Playwright check confirms that the browser selects th
 
 ## Deploy-preview evidence
 
-The checked-in screenshots were captured on 2026-07-22 from [Netlify Deploy Preview #3](https://deploy-preview-3--starguidance.netlify.app/visual-preview) at UI head `3d930f8758797fc4f99f1c6f3b321b74d7605cb7`. The route is noindexed and uses synthetic cards and prose only.
+The checked-in screenshots were captured on 2026-08-20 from [Netlify Deploy Preview #19](https://deploy-preview-19--starguidance.netlify.app/visual-preview) at UI head `22ec54d5610a65f3801f3055467cb2e8be07c27c`. The route is noindexed and uses synthetic cards and prose only.
 
 - [Desktop Chromium sanctuary](screenshots/sanctuary-reading-desktop-chromium.png)
 - [Pixel 7 Chromium sanctuary](screenshots/sanctuary-reading-mobile-chromium.png)

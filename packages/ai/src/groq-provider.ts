@@ -11,6 +11,7 @@ import {
   DeterministicFallbackProvider,
   FALLBACK_PROVIDER_ID,
   type FollowUpGenerationInput,
+  type FollowUpGenerationOutcome,
   type ReadingGenerationOutcome,
   type ReadingGenerationInput,
   type ReadingInterpretationProvider,
@@ -141,6 +142,30 @@ export const REVIEWED_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
   guardedFollowUp: `${READER_VOICE} ${FOLLOW_UP_VOICE} ${GUARDED_VOICE}`,
 });
 
+const GROUNDED_VOICE = [
+  "Keep the narration especially concrete and economical.",
+  "Prefer observable signals, explicit choices, and near-term conditions over abstract symbolism.",
+  "Leave room for ambiguity without weakening the direct answer.",
+].join(" ");
+
+export const RUNTIME_PROMPT_BUNDLES = Object.freeze({
+  "reader-voice-v3": {
+    readingVersion: PROMPT_VERSION,
+    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
+    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+  },
+  "reader-voice-v3-grounded": {
+    readingVersion: "reader-voice-v3-grounded",
+    followUpVersion: "follow-up-reader-voice-v3-grounded",
+    reading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
+    guardedReading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
+    followUp: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
+    guardedFollowUp: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp} ${GROUNDED_VOICE}`,
+  },
+});
+
+export type RuntimePromptBundleId = keyof typeof RUNTIME_PROMPT_BUNDLES;
+
 export interface GroqProviderOptions {
   readonly apiKey: string;
   readonly model: string;
@@ -152,6 +177,7 @@ export interface GroqProviderOptions {
   readonly timeoutMs?: number;
   readonly totalTimeoutMs?: number;
   readonly maxOutputTokens?: number;
+  readonly promptBundleId?: RuntimePromptBundleId;
 }
 
 export type AiProviderEndpointKind = "direct-groq" | "access-gateway" | "invalid";
@@ -490,6 +516,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
   private readonly cloudflareAccessClientId: string | undefined;
   private readonly cloudflareAccessClientSecret: string | undefined;
   private readonly authorizationToken: string;
+  private readonly promptBundle: (typeof RUNTIME_PROMPT_BUNDLES)[RuntimePromptBundleId];
 
   constructor(private readonly options: GroqProviderOptions) {
     this.endpointKind = validateTransportOptions(options);
@@ -499,6 +526,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     this.cloudflareAccessClientId = options.cloudflareAccessClientId?.trim();
     this.cloudflareAccessClientSecret = options.cloudflareAccessClientSecret?.trim();
     this.models = uniqueModelChain(options.model, options.fallbackModels);
+    this.promptBundle = RUNTIME_PROMPT_BUNDLES[options.promptBundleId ?? PROMPT_VERSION];
     const transport = this.endpointKind === "access-gateway" ? "groq-gateway" : "groq";
     this.id = `${transport}:${this.models[0] ?? options.model}`;
   }
@@ -559,7 +587,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
             this.transportId === "gateway"
               ? `groq-gateway:${generated.model}`
               : `groq:${generated.model}`,
-          promptVersion: PROMPT_VERSION,
+          promptVersion: this.promptBundle.readingVersion,
           schemaVersion: RESPONSE_SCHEMA_VERSION,
         },
       };
@@ -586,16 +614,42 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     input: FollowUpGenerationInput,
     signal?: AbortSignal,
   ): Promise<FollowUpResult> {
+    return (await this.generateFollowUpWithProvenance(input, signal)).result;
+  }
+
+  async generateFollowUpWithProvenance(
+    input: FollowUpGenerationInput,
+    signal?: AbortSignal,
+  ): Promise<FollowUpGenerationOutcome> {
     try {
-      return (
-        await this.withModelFallback(
-          (model, mode, timeoutMs) =>
-            this.callFollowUpProvider(input, model, mode, timeoutMs, signal),
-          signal,
-        )
-      ).value;
-    } catch {
-      return this.fallback.generateFollowUp(input);
+      const generated = await this.withModelFallback(
+        (model, mode, timeoutMs) =>
+          this.callFollowUpProvider(input, model, mode, timeoutMs, signal),
+        signal,
+      );
+      return {
+        result: generated.value,
+        provenance: {
+          providerId:
+            this.transportId === "gateway"
+              ? `groq-gateway:${generated.model}`
+              : `groq:${generated.model}`,
+          promptVersion: this.promptBundle.followUpVersion,
+          schemaVersion: "follow-up-result-v1",
+        },
+      };
+    } catch (error) {
+      const generated = await this.fallback.generateFollowUpWithProvenance(input);
+      return {
+        ...generated,
+        provenance: {
+          ...generated.provenance,
+          providerId:
+            this.transportId === "gateway"
+              ? `${FALLBACK_PROVIDER_ID}:after-groq-gateway-${fallbackReason(error)}`
+              : `${FALLBACK_PROVIDER_ID}:after-groq-${fallbackReason(error)}`,
+        },
+      };
     }
   }
 
@@ -641,9 +695,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     const resolved = resolveDraw(input.draw, input.questionClassification);
     const parsed = canonicalizeProviderReading(
       await this.requestStructured(
-        guarded
-          ? REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedReading
-          : REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading,
+        guarded ? this.promptBundle.guardedReading : this.promptBundle.reading,
         this.buildPayload(input),
         "reading",
         reviewedReadingResponseSchema(resolved),
@@ -671,9 +723,7 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
   ): Promise<FollowUpResult> {
     const safety = classifyQuestion(input.question);
     const guarded = GUARDED_CATEGORIES.has(safety.category);
-    const system = guarded
-      ? REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp
-      : REVIEWED_GATEWAY_SYSTEM_PROMPTS.followUp;
+    const system = guarded ? this.promptBundle.guardedFollowUp : this.promptBundle.followUp;
     const parsed = followUpResultSchema.parse(
       await this.requestStructured(
         system,

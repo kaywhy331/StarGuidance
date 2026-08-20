@@ -14,7 +14,7 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe("telemetry boundary", () => {
-  it("has no server-side content logger or telemetry SDK until an allowlisted adapter exists", () => {
+  it("has no server-side content logger or third-party telemetry sink", () => {
     const serverSource = [
       ...sourceFiles(join(process.cwd(), "src", "app", "api")),
       ...sourceFiles(join(process.cwd(), "src", "lib")),

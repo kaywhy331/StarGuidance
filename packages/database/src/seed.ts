@@ -1,6 +1,7 @@
 import {
   DECK_VERSION,
   legacySpreads,
+  SPREAD_CATALOG_VERSION,
   spreads,
   TAROT_CONTENT_VERSION,
   tarotCards,
@@ -21,56 +22,84 @@ try {
     await transaction`
       insert into decks (version, name, active)
       values (${DECK_VERSION}, ${"StarGuidance Typographic Tarot"}, true)
-      on conflict (version) do update set name = excluded.name
+      on conflict (version) do nothing
     `;
+    const [storedDeck] = await transaction<{ matches: boolean }[]>`
+      select name = ${"StarGuidance Typographic Tarot"} as matches
+      from decks where version = ${DECK_VERSION}
+    `;
+    if (!storedDeck?.matches) throw new Error(`SEED_VERSION_CONFLICT:deck:${DECK_VERSION}`);
     for (const card of tarotCards) {
+      const cardPayload = asJson(card);
       await transaction`
         insert into cards (id, deck_version, payload)
-        values (${card.id}, ${DECK_VERSION}, ${transaction.json(asJson(card))})
-        on conflict (id) do update
-        set deck_version = excluded.deck_version, payload = excluded.payload
+        values (${card.id}, ${DECK_VERSION}, ${transaction.json(cardPayload)})
+        on conflict (id) do nothing
       `;
+      const [storedCard] = await transaction<{ matches: boolean }[]>`
+        select deck_version = ${DECK_VERSION} and payload = ${transaction.json(cardPayload)} as matches
+        from cards where id = ${card.id}
+      `;
+      if (!storedCard?.matches) throw new Error(`SEED_VERSION_CONFLICT:card:${card.id}`);
+      const meaningPayload = asJson({
+        uprightThemes: card.uprightThemes,
+        reversedThemes: card.reversedThemes,
+        eventTags: card.eventTags,
+        reflectivePrompt: card.reflectivePrompt,
+        attribution: card.attribution,
+      });
       await transaction`
         insert into card_meanings (card_id, content_version, payload)
-        select ${card.id}, ${TAROT_CONTENT_VERSION}, ${transaction.json({
-          uprightThemes: card.uprightThemes,
-          reversedThemes: card.reversedThemes,
-          eventTags: card.eventTags,
-          reflectivePrompt: card.reflectivePrompt,
-          attribution: card.attribution,
-        })}
+        select ${card.id}, ${TAROT_CONTENT_VERSION}, ${transaction.json(meaningPayload)}
         where not exists (
           select 1 from card_meanings
           where card_id = ${card.id} and content_version = ${TAROT_CONTENT_VERSION}
         )
       `;
+      const [storedMeaning] = await transaction<{ matches: boolean }[]>`
+        select payload = ${transaction.json(meaningPayload)} as matches
+        from card_meanings
+        where card_id = ${card.id} and content_version = ${TAROT_CONTENT_VERSION}
+      `;
+      if (!storedMeaning?.matches)
+        throw new Error(`SEED_VERSION_CONFLICT:meaning:${card.id}:${TAROT_CONTENT_VERSION}`);
     }
     const spreadSeeds = [
       ...spreads.map((spread) => ({ spread, active: true })),
       ...legacySpreads.map((spread) => ({ spread, active: false })),
     ];
     for (const { spread, active } of spreadSeeds) {
+      const spreadPayload = asJson(spread);
       await transaction`
         insert into spreads (id, version, payload, active)
-        values (${spread.id}, ${spread.version}, ${transaction.json(asJson(spread))}, ${active})
-        on conflict (id) do update
-        set version = excluded.version,
-            payload = excluded.payload,
-            active = case when excluded.active = false then false else spreads.active end
+        values (${spread.id}, ${spread.version}, ${transaction.json(spreadPayload)}, ${active})
+        on conflict (id) do nothing
       `;
+      const [storedSpread] = await transaction<{ matches: boolean }[]>`
+        select version = ${spread.version} and payload = ${transaction.json(spreadPayload)} as matches
+        from spreads where id = ${spread.id}
+      `;
+      if (!storedSpread?.matches) throw new Error(`SEED_VERSION_CONFLICT:spread:${spread.id}`);
       for (const position of spread.positions) {
+        const positionPayload = asJson(position);
         await transaction`
           insert into spread_positions (spread_id, position_id, display_order, payload)
-          values (${spread.id}, ${position.id}, ${position.order}, ${transaction.json(asJson(position))})
-          on conflict (spread_id, position_id) do update
-          set display_order = excluded.display_order, payload = excluded.payload
+          values (${spread.id}, ${position.id}, ${position.order}, ${transaction.json(positionPayload)})
+          on conflict (spread_id, position_id) do nothing
         `;
+        const [storedPosition] = await transaction<{ matches: boolean }[]>`
+          select display_order = ${position.order} and payload = ${transaction.json(positionPayload)} as matches
+          from spread_positions
+          where spread_id = ${spread.id} and position_id = ${position.id}
+        `;
+        if (!storedPosition?.matches)
+          throw new Error(`SEED_VERSION_CONFLICT:position:${spread.id}:${position.id}`);
       }
     }
     await transaction`
       insert into products (id, name, active)
       values (${"profile-report-v1"}, ${"Detailed Profile Report"}, true)
-      on conflict (id) do update set name = excluded.name, active = excluded.active
+      on conflict (id) do update set name = excluded.name
     `;
     for (const { system, version, status } of REGISTERED_CALCULATION_VERSIONS) {
       await transaction`
@@ -83,25 +112,100 @@ try {
     }
     await transaction`
       insert into content_versions (content_type, version)
-      select ${"tarot"}, ${TAROT_CONTENT_VERSION}
-      where not exists (
-        select 1 from content_versions
-        where content_type = ${"tarot"} and version = ${TAROT_CONTENT_VERSION}
-      )
-    `;
-    await transaction`
-      insert into prompt_versions (version, purpose)
       values
-        (${"deterministic-fallback-v1"}, ${"schema-valid credential-free reading fallback"}),
-        (${"reader-voice-v1"}, ${"position-aware live reading narrator with minimised trait lens"}),
-        (${"deterministic-fallback-v2"}, ${"topic-authoritative credential-free reading fallback"}),
-        (${"reader-voice-v2"}, ${"topic-authoritative live reading narrator with minimised trait lens"}),
-        (${"follow-up-reader-voice-v2"}, ${"topic-authoritative locked-reading follow-up narrator"}),
-        (${"deterministic-fallback-v3"}, ${"narration-first credential-free reading fallback"}),
-        (${"reader-voice-v3"}, ${"conversational predictive narrator with minimised private trait lens"}),
-        (${"follow-up-reader-voice-v3"}, ${"conversational continuation of a locked narration-first reading"})
-      on conflict (version) do update set purpose = excluded.purpose
+        (${"deck"}, ${DECK_VERSION}),
+        (${"cards"}, ${DECK_VERSION}),
+        (${"meanings"}, ${TAROT_CONTENT_VERSION}),
+        (${"spreads"}, ${SPREAD_CATALOG_VERSION}),
+        (${"interpretation-rules"}, ${"interpretation-rules-v1"})
+      on conflict (content_type, version) do nothing
     `;
+    const promptSeeds = [
+      ["deterministic-fallback-v1", "schema-valid credential-free reading fallback"],
+      ["reader-voice-v1", "position-aware live reading narrator with minimised trait lens"],
+      ["deterministic-fallback-v2", "topic-authoritative credential-free reading fallback"],
+      ["reader-voice-v2", "topic-authoritative live reading narrator with minimised trait lens"],
+      ["follow-up-reader-voice-v2", "topic-authoritative locked-reading follow-up narrator"],
+      ["deterministic-fallback-v3", "narration-first credential-free reading fallback"],
+      ["reader-voice-v3", "conversational predictive narrator with minimised private trait lens"],
+      [
+        "follow-up-reader-voice-v3",
+        "conversational continuation of a locked narration-first reading",
+      ],
+      ["reader-voice-v3-grounded", "reviewed concrete and observable live-reading variant"],
+      ["follow-up-reader-voice-v3-grounded", "reviewed concrete continuation variant"],
+    ] as const;
+    for (const [version, purpose] of promptSeeds) {
+      await transaction`
+        insert into prompt_versions (version, purpose)
+        values (${version}, ${purpose})
+        on conflict (version) do nothing
+      `;
+      const [storedPrompt] = await transaction<{ matches: boolean }[]>`
+        select purpose = ${purpose} as matches from prompt_versions where version = ${version}
+      `;
+      if (!storedPrompt?.matches) throw new Error(`SEED_VERSION_CONFLICT:prompt:${version}`);
+    }
+    const runtimeSeeds = [
+      {
+        domain: "content",
+        payload: {
+          deckVersion: DECK_VERSION,
+          cardSetVersion: DECK_VERSION,
+          tarotContentVersion: TAROT_CONTENT_VERSION,
+          spreadCatalogVersion: SPREAD_CATALOG_VERSION,
+          interpretationRulesVersion: "interpretation-rules-v1",
+          enabledSpreadIds: spreads.map(({ id }) => id),
+        },
+      },
+      {
+        domain: "prompts",
+        payload: {
+          bundleId: "reader-voice-v3",
+          safetyPolicyVersion: "question-safety-v2",
+        },
+      },
+      {
+        domain: "commerce",
+        payload: {
+          readingAccessMode: "unlimited",
+          freeAllowance: 3,
+          allowanceWindowHours: 24,
+          followUpLimit: 1,
+          rereadCooldownMinutes: 30,
+          reportProductId: "profile-report-v1",
+          currency: "USD",
+          priceMinor: 2900,
+        },
+      },
+      {
+        domain: "features",
+        payload: {
+          profileReportsEnabled: false,
+          animationsEnabled: true,
+          animationVariant: "immersive-v1",
+          enabledProfileSystems: ["numerology", "dreamspell"],
+        },
+      },
+      {
+        domain: "models",
+        payload: {
+          liveAiEnabled: false,
+          primaryModel: "openai/gpt-oss-120b",
+          fallbackModels: ["llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
+          disabledModels: [],
+        },
+      },
+    ] as const;
+    for (const seed of runtimeSeeds)
+      await transaction`
+        insert into runtime_configuration_versions
+          (domain, version, status, payload, approved_at, published_at)
+        select ${seed.domain}, 1, 'published', ${transaction.json(asJson(seed.payload))}, now(), now()
+        where not exists (
+          select 1 from runtime_configuration_versions where domain = ${seed.domain}
+        )
+      `;
   });
 } finally {
   await sql.end();

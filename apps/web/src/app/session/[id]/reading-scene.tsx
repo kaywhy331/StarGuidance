@@ -16,6 +16,7 @@ import type { FollowUpResult, ReadingResult } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
 import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
+import { emitBrowserProductEvent } from "@/lib/product-telemetry-client";
 import {
   readRitualProgress,
   writeRitualProgress,
@@ -154,9 +155,11 @@ function ShuffleGesture({ onEnergy }: { onEnergy: () => void }) {
 }
 
 export function ReadingScene({
+  animationVariant = "immersive-v1",
   initialPreferences,
   readingId,
 }: {
+  animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
   initialPreferences?: ReadingPreferenceSeed;
   readingId: string;
 }) {
@@ -182,14 +185,18 @@ export function ReadingScene({
   const [continuationMode, setContinuationMode] = useState<ReadingContinuationMode>("choice");
   const bootstrapped = useRef(false);
   const recoveredRitual = useRef(false);
+  const cutResolved = useRef(false);
+  const shuffleMeasured = useRef(false);
   const revealCompletionTimer = useRef<number | undefined>(undefined);
   const {
     displayName,
-    reducedMotion: motionOff,
+    reducedMotion: preferenceMotionOff,
     sound,
     toggleReducedMotion,
     toggleSound,
   } = useReadingPreferences(initialPreferences);
+  const animationManaged = animationVariant !== "immersive-v1";
+  const motionOff = preferenceMotionOff || animationManaged;
   const soundEnabled = useRef(sound);
 
   useEffect(() => {
@@ -218,12 +225,14 @@ export function ReadingScene({
 
   const chooseCut = useCallback(
     (taken: boolean) => {
+      if (cutResolved.current) return;
+      cutResolved.current = true;
       setCutTaken(taken);
       persistRitualProgress(
         { cutTaken: taken, revealedIndexes: [...revealedRef.current] },
         "cuttingDeck",
       );
-      if (soundEnabled.current) playRitualSound("cut");
+      if (taken && soundEnabled.current) playRitualSound("cut");
       send({ type: taken ? "CUT" : "SKIP_CUT" });
     },
     [persistRitualProgress, send],
@@ -265,22 +274,45 @@ export function ReadingScene({
     // categories never reach this component at all.
     send({ type: "QUESTION_ACCEPTED" });
     send({ type: "DECK_READY" });
+    if (recoveredRitual.current)
+      emitBrowserProductEvent("reading_reopened", {
+        routeClass: "ritual",
+        cardCount: reading.cards.length,
+        statusClass: "started",
+      });
   }, [reading, send]);
 
   useEffect(() => {
     if (!state.matches("shuffling")) return;
+    if (!recoveredRitual.current && !shuffleMeasured.current) {
+      shuffleMeasured.current = true;
+      emitBrowserProductEvent("shuffle_started", {
+        routeClass: "ritual",
+        ...(reading ? { cardCount: reading.cards.length } : {}),
+        statusClass: "started",
+      });
+    }
     const timer = window.setTimeout(
       completeShuffle,
       recoveredRitual.current ? 0 : motionOff ? 120 : 12_000,
     );
     return () => window.clearTimeout(timer);
-  }, [completeShuffle, motionOff, state]);
+  }, [completeShuffle, motionOff, reading, state]);
 
   useEffect(() => {
     if (!state.matches("cuttingDeck")) return;
-    if (recoveredRitual.current && cutTaken !== undefined)
+    if (recoveredRitual.current && cutTaken !== undefined) {
+      cutResolved.current = true;
       send({ type: cutTaken ? "CUT" : "SKIP_CUT" });
-  }, [cutTaken, send, state]);
+      return;
+    }
+
+    // UX-004: cuttingDeck is a short compatibility/gather phase, never a
+    // decision stop. A reader may mark the symbolic cut before the timer
+    // settles, otherwise the deck proceeds whole without further input.
+    const timer = window.setTimeout(() => chooseCut(false), motionOff ? 0 : 1_200);
+    return () => window.clearTimeout(timer);
+  }, [chooseCut, cutTaken, motionOff, send, state]);
 
   useEffect(() => {
     if (!state.matches("dealing") || !reading) return;
@@ -358,6 +390,11 @@ export function ReadingScene({
           complete ? "complete" : "revealingCards",
         );
       if (soundEnabled.current) playRitualSound("reveal", index);
+      emitBrowserProductEvent("card_revealed", {
+        routeClass: "ritual",
+        cardCount: reading.cards.length,
+        statusClass: "completed",
+      });
     },
     [cutTaken, persistRitualProgress, reading, state],
   );
@@ -492,6 +529,7 @@ export function ReadingScene({
   if (error && !reading) {
     return (
       <MysticSanctuaryScene
+        animationVariant={animationVariant}
         phase="generationFailed"
         reducedMotion={true}
         testId="mystic-sanctuary-scene"
@@ -508,6 +546,7 @@ export function ReadingScene({
   if (!reading || state.matches("idle") || state.matches("preparingDeck")) {
     return (
       <MysticSanctuaryScene
+        animationVariant={animationVariant}
         phase="preparingDeck"
         reducedMotion={true}
         testId="mystic-sanctuary-scene"
@@ -534,6 +573,7 @@ export function ReadingScene({
 
   return (
     <MysticSanctuaryScene
+      animationVariant={animationVariant}
       phase={String(state.value)}
       reducedMotion={motionOff}
       testId="mystic-sanctuary-scene"
@@ -562,8 +602,13 @@ export function ReadingScene({
         </Link>
         <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
         <div className="sanctuary-control-group">
-          <button aria-pressed={motionOff} onClick={toggleReducedMotion} type="button">
-            Reduced motion <span>{motionOff ? "on" : "off"}</span>
+          <button
+            aria-pressed={motionOff}
+            disabled={animationManaged}
+            onClick={toggleReducedMotion}
+            type="button"
+          >
+            Reduced motion <span>{animationManaged ? "managed" : motionOff ? "on" : "off"}</span>
           </button>
           <button aria-pressed={sound} onClick={toggleSound} type="button">
             Sound <span>{sound ? "on" : "off"}</span>
@@ -634,10 +679,11 @@ export function ReadingScene({
             <ShuffleShells phase="gathering" />
             <div className="sanctuary-shuffle-copy">
               <p className="ritual-status" role="status">
-                Would you like to mark a cut?
+                Gathering the deck
               </p>
               <span>
-                This is a symbolic gesture. Your saved cards and their order will not change.
+                The cards move directly into the spread. You may mark a symbolic cut while they
+                settle; the locked order never changes.
               </span>
             </div>
             <div className="ritual-cut-actions">
@@ -647,13 +693,8 @@ export function ReadingScene({
                 type="button"
               >
                 <span aria-hidden="true">⋮</span>
-                <strong>Cut once</strong>
-                <small>Mark the threshold</small>
-              </button>
-              <button className="ritual-cut-action" onClick={() => chooseCut(false)} type="button">
-                <span aria-hidden="true">◇</span>
-                <strong>Leave whole</strong>
-                <small>Continue as it rests</small>
+                <strong>Mark a symbolic cut</strong>
+                <small>Optional · dealing begins automatically</small>
               </button>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { z } from "zod";
 
@@ -12,6 +13,7 @@ import {
   POLICY_VERSIONS,
   signupConsentReceipts,
 } from "@/lib/policies";
+import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { getRuntimeAdapter, RuntimeConfigurationError } from "@/lib/runtime";
 import {
   assertRateLimit,
@@ -59,6 +61,23 @@ function isSendRateLimited(error: unknown): boolean {
   );
 }
 
+async function recordAuthFailure(
+  errorClass:
+    | "authentication"
+    | "authorization"
+    | "rate_limited"
+    | "provider_rejected"
+    | "persistence"
+    | "configuration"
+    | "unclassified",
+): Promise<void> {
+  await tryRecordProductEvent({
+    idempotencyKey: `auth:failed:${randomUUID()}`,
+    name: "auth_failed",
+    properties: { errorClass, statusClass: "failed" },
+  });
+}
+
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
@@ -72,7 +91,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, pending: true });
       if (input.action === "update-password")
         return NextResponse.json({ ok: true, authenticated: true });
-      const { token } = createLocalSession(
+      const { token, user } = createLocalSession(
         input.email,
         input.action === "sign-up"
           ? signupConsentReceipts(new Date().toISOString(), input.consents.marketingAccepted)
@@ -87,6 +106,12 @@ export async function POST(request: Request) {
         maxAge: 60 * 60 * 8,
         path: "/",
       });
+      if (input.action === "sign-up")
+        await tryRecordProductEvent({
+          idempotencyKey: `consent:${user.id}:${POLICY_VERSIONS.terms}:${POLICY_VERSIONS.privacy}`,
+          name: "consent_completed",
+          properties: { routeClass: "consent", statusClass: "completed" },
+        });
       return response;
     }
     const supabase = await createSupabaseServerClient();
@@ -95,8 +120,10 @@ export async function POST(request: Request) {
         email: input.email,
         password: input.password,
       });
-      if (error)
+      if (error) {
+        await recordAuthFailure("authentication");
         return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
+      }
       await recordSecurityAudit(data?.user?.id, "auth.signed_in");
       return NextResponse.json({ ok: true, authenticated: true });
     }
@@ -108,21 +135,26 @@ export async function POST(request: Request) {
         userError ||
         !userData.user ||
         !verifyRecoveryReceipt(jar.get(RECOVERY_SESSION_COOKIE)?.value, userData.user.id)
-      )
+      ) {
+        await recordAuthFailure("authorization");
         return NextResponse.json(
           { error: "Open a fresh password-recovery email before choosing a new password." },
           { status: 403 },
         );
+      }
       const { error } = await supabase.auth.updateUser({ password: input.password });
-      if (error)
+      if (error) {
+        await recordAuthFailure("provider_rejected");
         return NextResponse.json(
           { error: "The password could not be updated. Request a new recovery email." },
           { status: 400 },
         );
+      }
       jar.delete(RECOVERY_SESSION_COOKIE);
       await recordSecurityAudit(userData.user.id, "auth.password_changed");
       const { error: revocationError } = await supabase.auth.signOut({ scope: "global" });
-      if (revocationError)
+      if (revocationError) {
+        await recordAuthFailure("provider_rejected");
         return NextResponse.json(
           {
             error:
@@ -131,6 +163,7 @@ export async function POST(request: Request) {
           },
           { status: 502 },
         );
+      }
       return NextResponse.json({ ok: true, authenticated: false });
     }
 
@@ -149,7 +182,8 @@ export async function POST(request: Request) {
         email: input.email,
         options: { emailRedirectTo: callbackUrl.toString() },
       });
-      if (error && isSendRateLimited(error))
+      if (error && isSendRateLimited(error)) {
+        await recordAuthFailure("rate_limited");
         return NextResponse.json(
           {
             error: "Too many confirmation emails have been requested. Try again shortly.",
@@ -157,6 +191,7 @@ export async function POST(request: Request) {
           },
           { status: 429 },
         );
+      }
       // Keep account existence and confirmation state private. The same
       // response covers unknown, already-confirmed, and newly-resent cases.
       return NextResponse.json({ ok: true, pending: true });
@@ -168,7 +203,8 @@ export async function POST(request: Request) {
         redirectTo: callbackUrl.toString(),
       });
       if (error) {
-        if (isSendRateLimited(error))
+        if (isSendRateLimited(error)) {
+          await recordAuthFailure("rate_limited");
           return NextResponse.json(
             {
               error: "Too many recovery emails have been requested. Try again shortly.",
@@ -176,6 +212,7 @@ export async function POST(request: Request) {
             },
             { status: 429 },
           );
+        }
         // Recovery must not disclose whether an address exists. Supabase
         // normally obscures that distinction too, but keep the application
         // boundary non-enumerating even if a provider response changes.
@@ -191,7 +228,8 @@ export async function POST(request: Request) {
       options: { emailRedirectTo: callbackUrl.toString() },
     });
     if (error) {
-      if (isSendRateLimited(error))
+      if (isSendRateLimited(error)) {
+        await recordAuthFailure("rate_limited");
         return NextResponse.json(
           {
             error: "Too many confirmation emails have been requested. Try again shortly.",
@@ -199,6 +237,8 @@ export async function POST(request: Request) {
           },
           { status: 429 },
         );
+      }
+      await recordAuthFailure("provider_rejected");
       return NextResponse.json({ error: "Unable to create that account." }, { status: 400 });
     }
     if (data.user?.identities?.length) {
@@ -234,6 +274,7 @@ export async function POST(request: Request) {
           // The response below reports that cleanup could not be confirmed.
         }
         const cleanupConfirmed = identityCleanupConfirmed && sessionCleanupConfirmed;
+        await recordAuthFailure("persistence");
         return NextResponse.json(
           {
             error: cleanupConfirmed
@@ -243,6 +284,11 @@ export async function POST(request: Request) {
           { status: 503 },
         );
       }
+      await tryRecordProductEvent({
+        idempotencyKey: `consent:${data.user.id}:${POLICY_VERSIONS.terms}:${POLICY_VERSIONS.privacy}`,
+        name: "consent_completed",
+        properties: { routeClass: "consent", statusClass: "completed" },
+      });
     }
     return NextResponse.json({
       ok: true,
@@ -251,7 +297,14 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const security = requestSecurityFailure(error);
-    if (security)
+    if (security) {
+      await recordAuthFailure(
+        security.status === 429
+          ? "rate_limited"
+          : security.status === 503
+            ? "configuration"
+            : "authorization",
+      );
       return NextResponse.json(
         {
           error:
@@ -261,11 +314,14 @@ export async function POST(request: Request) {
         },
         { status: security.status, headers: security.headers },
       );
-    if (error instanceof RuntimeConfigurationError)
+    }
+    if (error instanceof RuntimeConfigurationError) {
+      await recordAuthFailure("configuration");
       return NextResponse.json(
         { error: "Authentication is not configured for this deployment." },
         { status: 503 },
       );
+    }
     if (error instanceof z.ZodError)
       return NextResponse.json(
         {
@@ -274,6 +330,7 @@ export async function POST(request: Request) {
         },
         { status: 422 },
       );
+    await recordAuthFailure("unclassified");
     return NextResponse.json({ error: "Unable to complete authentication." }, { status: 400 });
   }
 }

@@ -79,10 +79,6 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   const gather = page.getByRole("button", { name: "Gather now", exact: true });
   if (await gather.isVisible())
     await gather.click({ force: true, timeout: 1_000 }).catch(() => undefined);
-  await expect(page.getByRole("button", { name: /^Leave whole/ })).toBeVisible({
-    timeout: 10_000,
-  });
-  await page.getByRole("button", { name: /^Leave whole/ }).click();
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toBeVisible({
     timeout: 12_000,

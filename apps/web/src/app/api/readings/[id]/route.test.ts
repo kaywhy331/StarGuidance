@@ -146,6 +146,63 @@ describe("reading ritual payload", () => {
     expect(payload.reading.cards[0]?.themes.length).toBeGreaterThan(0);
     expect(mocks.decrypt).toHaveBeenCalledWith("encrypted-question", "reading-question");
   });
+
+  it("reports experience and outcome annotations independently", async () => {
+    mocks.decrypt.mockReturnValue("What should I focus on next?");
+    mocks.listFeedback.mockResolvedValue([{ kind: "experience" }, { kind: "outcome" }]);
+    mocks.getReading.mockResolvedValue({
+      id: readingId,
+      userId: user.id,
+      profileSnapshotId: "548e8158-2b54-4d28-a6bd-b6a4223f820b",
+      spreadId: "one-card",
+      encryptedQuestion: "encrypted-question",
+      questionClassification: {
+        version: "question-classification-v1",
+        topic: "general",
+        horizon: "open",
+        intent: "generalReflection",
+        generalReading: false,
+      },
+      entitlementDecision: {
+        version: "reading-entitlement-v1",
+        mode: "unlimited",
+        outcome: "granted",
+        entitlementClass: "standard",
+        used: 0,
+        limit: null,
+        remaining: null,
+        windowStartsAt: null,
+        windowEndsAt: null,
+      },
+      draw: {
+        id: "locked-draw",
+        deckVersion: "starguidance-illustrated-v2",
+        spreadId: "one-card",
+        spreadVersion: "one-card-v2",
+        shuffleVersion: "fisher-yates-csprng-v1",
+        lockedAt: "2026-08-15T00:00:00.000Z",
+        assignments: [
+          { positionId: "card-1", cardId: "major-00", orientation: "upright", order: 0 },
+        ],
+      },
+      generationStatus: "ready",
+      expiresAt: "2099-08-15T00:00:00.000Z",
+      followUps: [],
+      createdAt: "2026-08-15T00:00:00.000Z",
+    });
+
+    const response = await GET(new Request(`https://staging.invalid/api/readings/${readingId}`), {
+      params: Promise.resolve({ id: readingId }),
+    });
+    const payload = (await response.json()) as {
+      reading: { feedbackSubmitted: boolean; outcomeFeedbackSubmitted: boolean };
+    };
+
+    expect(payload.reading).toMatchObject({
+      feedbackSubmitted: true,
+      outcomeFeedbackSubmitted: true,
+    });
+  });
 });
 
 describe("follow-up safety boundary", () => {

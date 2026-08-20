@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -213,6 +214,7 @@ export const readingOutputs = pgTable("reading_outputs", {
   providerId: text("provider_id").notNull(),
   promptVersion: text("prompt_version").notNull(),
   contentVersion: text("content_version").notNull(),
+  safetyPolicyVersion: text("safety_policy_version").default("legacy-unrecorded").notNull(),
   schemaVersion: text("schema_version").notNull(),
   payload: jsonb("payload").notNull(),
   createdAt,
@@ -227,21 +229,54 @@ export const followUpQuestions = pgTable(
       .references(() => readingSessions.id, { onDelete: "cascade" }),
     encryptedQuestion: text("encrypted_question").notNull(),
     output: jsonb("output"),
+    providerId: text("provider_id").default("legacy-unrecorded").notNull(),
+    promptVersion: text("prompt_version").default("legacy-unrecorded").notNull(),
+    contentVersion: text("content_version").default("legacy-unrecorded").notNull(),
+    safetyPolicyVersion: text("safety_policy_version").default("legacy-unrecorded").notNull(),
+    schemaVersion: text("schema_version").default("legacy-unrecorded").notNull(),
     createdAt,
   },
   (table) => [index("follow_up_questions_reading_idx").on(table.readingId)],
 );
-export const readingFeedback = pgTable("reading_feedback", {
-  id,
-  userId: userId(),
-  readingId: uuid("reading_id")
-    .notNull()
-    .references(() => readingSessions.id, { onDelete: "cascade" }),
-  resonance: integer("resonance"),
-  helpfulness: integer("helpfulness"),
-  encryptedComment: text("encrypted_comment"),
-  createdAt,
-});
+export const readingFeedback = pgTable(
+  "reading_feedback",
+  {
+    id,
+    userId: userId(),
+    readingId: uuid("reading_id")
+      .notNull()
+      .references(() => readingSessions.id, { onDelete: "cascade" }),
+    kind: text("kind").default("experience").notNull(),
+    resonance: integer("resonance"),
+    helpfulness: integer("helpfulness"),
+    outcomeStatus: text("outcome_status"),
+    behaviorChanged: boolean("behavior_changed"),
+    encryptedComment: text("encrypted_comment"),
+    createdAt,
+  },
+  (table) => [
+    check(
+      "reading_feedback_rating_range",
+      sql`(${table.resonance} is null or ${table.resonance} between 1 and 5)
+        and (${table.helpfulness} is null or ${table.helpfulness} between 1 and 5)`,
+    ),
+    check(
+      "reading_feedback_kind_contract",
+      sql`(
+        ${table.kind} = 'experience'
+        and ${table.outcomeStatus} is null
+        and ${table.behaviorChanged} is null
+        and (${table.resonance} is not null or ${table.helpfulness} is not null or ${table.encryptedComment} is not null)
+      ) or (
+        ${table.kind} = 'outcome'
+        and ${table.outcomeStatus} in ('occurred', 'partial', 'did_not_occur', 'unclear')
+        and ${table.behaviorChanged} is not null
+        and ${table.resonance} is null
+        and ${table.helpfulness} is null
+      )`,
+    ),
+  ],
+);
 export const products = pgTable("products", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -378,6 +413,85 @@ export const contentVersions = pgTable(
     createdAt,
   },
   (table) => [uniqueIndex("content_type_version_unique").on(table.contentType, table.version)],
+);
+
+export const runtimeConfigurationVersions = pgTable(
+  "runtime_configuration_versions",
+  {
+    id,
+    domain: text("domain").notNull(),
+    version: integer("version").notNull(),
+    status: text("status").default("draft").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex("runtime_configuration_domain_version_unique").on(table.domain, table.version),
+    uniqueIndex("runtime_configuration_one_published")
+      .on(table.domain)
+      .where(sql`${table.status} = 'published'`),
+    check(
+      "runtime_configuration_domain",
+      sql`${table.domain} in ('content', 'prompts', 'commerce', 'features', 'models')`,
+    ),
+    check(
+      "runtime_configuration_status",
+      sql`${table.status} in ('draft', 'approved', 'published', 'archived')`,
+    ),
+    check("runtime_configuration_payload_object", sql`jsonb_typeof(${table.payload}) = 'object'`),
+    check(
+      "runtime_configuration_independent_approval",
+      sql`${table.approvedBy} is null or ${table.createdBy} is null or ${table.approvedBy} <> ${table.createdBy}`,
+    ),
+  ],
+);
+
+// Privacy-minimized first-party funnel evidence. Rows contain no user id,
+// email, birth/profile data, question text, cards, report prose, URL, cookie,
+// or arbitrary exception string. The application validates a closed event
+// and property vocabulary before this app-only table is reached.
+export const productEvents = pgTable(
+  "product_events",
+  {
+    id,
+    idempotencyKey: text("idempotency_key").notNull(),
+    eventName: text("event_name").notNull(),
+    properties: jsonb("properties").notNull(),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex("product_events_idempotency_unique").on(table.idempotencyKey),
+    check("product_events_digest", sql`${table.idempotencyKey} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "product_events_name",
+      sql`${table.eventName} in (
+        'landing_view', 'pricing_view', 'signup_started', 'consent_completed',
+        'profile_started', 'profile_completed', 'reading_selected', 'question_submitted',
+        'shuffle_started', 'draw_locked', 'card_revealed', 'result_viewed',
+        'followup_submitted', 'feedback_submitted', 'reading_reopened',
+        'outcome_invited', 'outcome_submitted', 'report_previewed', 'checkout_started',
+        'purchase_completed', 'report_ready', 'report_viewed', 'auth_failed',
+        'profile_failed', 'generation_completed', 'generation_failed', 'fallback_used',
+        'payment_failed', 'job_retried'
+      )`,
+    ),
+    check("product_events_properties_object", sql`jsonb_typeof(${table.properties}) = 'object'`),
+    check(
+      "product_events_property_vocabulary",
+      sql`${table.properties} - array[
+        'routeClass', 'referrerClass', 'deviceClass', 'locale', 'completeness',
+        'birthplacePresent', 'birthTimePresent', 'spreadId', 'spreadVersion', 'cardCount',
+        'topic', 'horizon', 'questionLength', 'generalReading', 'generationMode',
+        'fallbackUsed', 'feedbackKind', 'outcomeStatus', 'behaviorChanged', 'ratingBand',
+        'readingAgeBucket', 'productId', 'priceId', 'campaignClass', 'modelVersion',
+        'provider', 'currency', 'priceMinor', 'statusClass', 'errorClass', 'durationBucket'
+      ]::text[] = '{}'::jsonb`,
+    ),
+  ],
 );
 // Not user-row-scoped: keyed by an opaque hash rather than a subject, and
 // must be visible/writable by the trusted server role regardless of which

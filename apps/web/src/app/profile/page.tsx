@@ -25,14 +25,18 @@ export default function ProfilePage() {
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [checkoutState, setCheckoutState] = useState<"idle" | "cancelled" | "pending">("idle");
+  const [profileReportsEnabled, setProfileReportsEnabled] = useState(false);
   const processedCheckoutReturn = useRef(false);
   const router = useRouter();
-  const profileReportsEnabled = process.env.NEXT_PUBLIC_ENABLE_PROFILE_REPORTS === "true";
   useEffect(() => {
     void fetch("/api/profile", { cache: "no-store" }).then(async (response) => {
       if (response.status === 401) return router.push("/sign-in");
-      const payload = (await response.json()) as { profile: ProfileView | null };
+      const payload = (await response.json()) as {
+        profile: ProfileView | null;
+        profileReportsEnabled: boolean;
+      };
       setProfile(payload.profile);
+      setProfileReportsEnabled(payload.profileReportsEnabled);
     });
   }, [router]);
 

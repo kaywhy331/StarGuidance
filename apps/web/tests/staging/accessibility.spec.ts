@@ -294,9 +294,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
     .getByRole("button", { name: "Gather now", exact: true })
     .dispatchEvent("click")
     .catch(() => {});
-  const leaveWhole = page.getByRole("button", { name: /^Leave whole/ });
-  await expect(leaveWhole).toBeVisible({ timeout: 12_000 });
-  await leaveWhole.click();
+  await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 12_000 });
   await page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ }).click();
   for (let index = 0; index < 10; index += 1) {
     await page

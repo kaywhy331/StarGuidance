@@ -1,19 +1,22 @@
+import { randomUUID } from "node:crypto";
 import {
   inspectJobQueues,
   reenqueueInterpretationJob,
   reenqueueReportJob,
 } from "@starguidance/database";
 import { z } from "zod";
-import {
-  configuredAiProviderRoute,
-  configuredGroqModelChain,
-  createInterpretationProvider,
-} from "@starguidance/ai";
+import { configuredAiProviderRoute, createInterpretationProvider } from "@starguidance/ai";
 
 import { requireUser } from "@/lib/auth";
 import { OPERATIONAL_ACCESS_DENIED, requireOperationalRole } from "@/lib/operational-access";
+import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "@/lib/runtime";
+import {
+  getRuntimeConfiguration,
+  interpretationRuntimeOptions,
+  profileReportsEnabled,
+} from "@/lib/runtime-configuration";
 
 const traceIdSchema = z.string().uuid();
 const retrySchema = z.object({
@@ -35,6 +38,11 @@ function operationalError(error: unknown): Response | undefined {
   return undefined;
 }
 
+function liveAiVolumeAlertThreshold(): number {
+  const value = Number(process.env.OPERATIONAL_LIVE_AI_VOLUME_ALERT_THRESHOLD);
+  return Number.isSafeInteger(value) && value > 0 && value <= 100_000 ? value : 500;
+}
+
 export async function GET(request: Request) {
   try {
     const user = await requireOperationalRole("support", await requireUser());
@@ -47,8 +55,20 @@ export async function GET(request: Request) {
     const traceId = new URL(request.url).searchParams.get("traceId");
     const parsedTraceId = traceId ? traceIdSchema.parse(traceId) : undefined;
     const diagnostics = await inspectJobQueues(client);
+    const productEventRows = await client<{ event_name: string; count: number }[]>`
+      select event_name, count(*)::integer as count
+      from product_events
+      where created_at >= now() - interval '24 hours'
+      group by event_name
+      order by event_name
+    `;
+    const runtimeConfiguration = await getRuntimeConfiguration();
     const providerRoute = configuredAiProviderRoute();
-    const interpretationProvider = createInterpretationProvider();
+    const interpretationOptions = interpretationRuntimeOptions(runtimeConfiguration);
+    const interpretationProvider = createInterpretationProvider(interpretationOptions);
+    const liveInterpretation =
+      interpretationProvider.id.startsWith("groq:") ||
+      interpretationProvider.id.startsWith("groq-gateway:");
     const traces = parsedTraceId
       ? await client<{ entity_type: string; status: string; created_at: Date }[]>`
           select entity_type, status, created_at from (
@@ -72,6 +92,10 @@ export async function GET(request: Request) {
     return Response.json({
       role: user.operationalRole,
       diagnostics,
+      productMeasurement: {
+        windowHours: 24,
+        events: Object.fromEntries(productEventRows.map((row) => [row.event_name, row.count])),
+      },
       trace: parsedTraceId
         ? {
             id: parsedTraceId,
@@ -83,24 +107,26 @@ export async function GET(request: Request) {
           }
         : null,
       configuration: {
-        aiGenerationEnabled:
-          interpretationProvider.id.startsWith("groq:") ||
-          interpretationProvider.id.startsWith("groq-gateway:"),
+        aiGenerationEnabled: liveInterpretation,
         aiTransport:
-          (interpretationProvider.id.startsWith("groq:") ||
-            interpretationProvider.id.startsWith("groq-gateway:")) &&
-          providerRoute.invalidEnvironmentVariables.length === 0
+          liveInterpretation && providerRoute.invalidEnvironmentVariables.length === 0
             ? providerRoute.kind
             : "deterministic",
-        aiModels:
-          process.env.AI_PROVIDER === "groq"
-            ? configuredGroqModelChain()
-            : ["deterministic fallback"],
-        profileReportsEnabled: process.env.ENABLE_PROFILE_REPORTS === "true",
-        readingAccessMode:
-          process.env.READING_ACCESS_MODE === "free-window" ? "free-window" : "unlimited",
-        freeAllowance: process.env.READING_FREE_ALLOWANCE ?? "3",
-        allowanceWindowHours: process.env.READING_ALLOWANCE_WINDOW_HOURS ?? "24",
+        aiModels: liveInterpretation
+          ? interpretationOptions.modelChain
+          : ["deterministic fallback"],
+        profileReportsEnabled: profileReportsEnabled(runtimeConfiguration),
+        readingAccessMode: runtimeConfiguration.commerce.readingAccessMode,
+        freeAllowance: runtimeConfiguration.commerce.freeAllowance,
+        allowanceWindowHours: runtimeConfiguration.commerce.allowanceWindowHours,
+        promptBundle: runtimeConfiguration.prompts.bundleId,
+        enabledSpreadCount: runtimeConfiguration.content.enabledSpreadIds.length,
+        animationVariant: runtimeConfiguration.features.animationVariant,
+        operationalAlertReceiverSet: Boolean(process.env.OPERATIONAL_ALERT_WEBHOOK_URL?.trim()),
+        liveAiVolumeAlertThreshold: liveAiVolumeAlertThreshold(),
+        configurationVersions: Object.entries(runtimeConfiguration.versions)
+          .map(([domain, version]) => `${domain}:${version ?? "environment"}`)
+          .join(", "),
       },
     });
   } catch (error) {
@@ -158,6 +184,11 @@ export async function POST(request: Request) {
         { error: "Only a failed retained job can be retried with this action." },
         { status: 409 },
       );
+    await tryRecordProductEvent({
+      idempotencyKey: `operations:${input.queue}:${input.targetId}:retry:${randomUUID()}`,
+      name: "job_retried",
+      properties: { statusClass: "started" },
+    });
     return Response.json({ retried: true, queue: input.queue, targetId: input.targetId });
   } catch (error) {
     const security = requestSecurityFailure(error);

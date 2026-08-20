@@ -7,6 +7,14 @@ const DEFAULT_FREE_ALLOWANCE = 3;
 const DEFAULT_ALLOWANCE_WINDOW_HOURS = 24;
 const DEFAULT_SESSION_TTL_MINUTES = 24 * 60;
 
+export interface ReadingPolicyOverrides {
+  readingAccessMode?: "unlimited" | "free-window";
+  freeAllowance?: number;
+  allowanceWindowHours?: number;
+  followUpLimit?: number;
+  rereadCooldownMinutes?: number;
+}
+
 function integerPolicy(name: string, fallback: number, minimum: number, maximum: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -14,22 +22,33 @@ function integerPolicy(name: string, fallback: number, minimum: number, maximum:
   return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
 }
 
-export function followUpLimit(): number {
-  return integerPolicy("READING_FOLLOW_UP_LIMIT", DEFAULT_FOLLOW_UP_LIMIT, 0, 10);
+export function followUpLimit(overrides?: ReadingPolicyOverrides): number {
+  return (
+    overrides?.followUpLimit ??
+    integerPolicy("READING_FOLLOW_UP_LIMIT", DEFAULT_FOLLOW_UP_LIMIT, 0, 10)
+  );
 }
 
-export function rereadCooldownMs(): number {
+export function rereadCooldownMs(overrides?: ReadingPolicyOverrides): number {
   return (
-    integerPolicy("READING_REREAD_COOLDOWN_MINUTES", DEFAULT_REREAD_COOLDOWN_MINUTES, 0, 24 * 60) *
-    60_000
+    (overrides?.rereadCooldownMinutes ??
+      integerPolicy(
+        "READING_REREAD_COOLDOWN_MINUTES",
+        DEFAULT_REREAD_COOLDOWN_MINUTES,
+        0,
+        24 * 60,
+      )) * 60_000
   );
 }
 
 export function readingEntitlementDecision(
   readings: readonly Pick<StoredReading, "createdAt">[],
   now = Date.now(),
+  overrides?: ReadingPolicyOverrides,
 ): ReadingEntitlementDecision {
-  const mode = process.env.READING_ACCESS_MODE === "free-window" ? "free-window" : "unlimited";
+  const mode =
+    overrides?.readingAccessMode ??
+    (process.env.READING_ACCESS_MODE === "free-window" ? "free-window" : "unlimited");
   if (mode === "unlimited")
     return {
       version: "reading-entitlement-v1",
@@ -43,13 +62,12 @@ export function readingEntitlementDecision(
       windowEndsAt: null,
     };
 
-  const limit = integerPolicy("READING_FREE_ALLOWANCE", DEFAULT_FREE_ALLOWANCE, 1, 100);
-  const windowHours = integerPolicy(
-    "READING_ALLOWANCE_WINDOW_HOURS",
-    DEFAULT_ALLOWANCE_WINDOW_HOURS,
-    1,
-    24 * 30,
-  );
+  const limit =
+    overrides?.freeAllowance ??
+    integerPolicy("READING_FREE_ALLOWANCE", DEFAULT_FREE_ALLOWANCE, 1, 100);
+  const windowHours =
+    overrides?.allowanceWindowHours ??
+    integerPolicy("READING_ALLOWANCE_WINDOW_HOURS", DEFAULT_ALLOWANCE_WINDOW_HOURS, 1, 24 * 30);
   const windowMs = windowHours * 60 * 60_000;
   const windowStart = Math.floor(now / windowMs) * windowMs;
   const windowEnd = windowStart + windowMs;

@@ -67,8 +67,9 @@ export const readingMachine = setup({
     preparingDeck: { on: { DECK_READY: "shuffling" } },
     shuffling: { on: { SHUFFLE_COMPLETE: "cuttingDeck" } },
     cuttingDeck: {
-      // The draw is already locked. CUT records an optional symbolic ritual;
-      // SKIP_CUT leaves the deck whole. Neither transition can mutate cards.
+      // The UI advances this short compatibility phase automatically with
+      // SKIP_CUT. CUT is an optional symbolic gesture available while the
+      // deck gathers; neither transition can mutate the already locked draw.
       on: { CUT: "dealing", SKIP_CUT: "dealing" },
     },
     dealing: { on: { DEALT: "awaitingReveal" } },

@@ -70,5 +70,6 @@ export interface ReadingPayload {
   followUpLimit: number;
   followUpsRemaining: number;
   feedbackSubmitted: boolean;
+  outcomeFeedbackSubmitted: boolean;
   createdAt: string;
 }

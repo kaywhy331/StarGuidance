@@ -88,6 +88,13 @@ describe("local integrity parity", () => {
       id: "00000000-0000-4000-8000-000000000004",
       encryptedQuestion: "encrypted-follow-up",
       result: { response: "First response" },
+      outputProvenance: {
+        providerId: "deterministic-fallback-v1",
+        promptVersion: "deterministic-fallback-v3",
+        contentVersion: "starguidance-original-v1",
+        safetyPolicyVersion: "question-safety-v2",
+        schemaVersion: "follow-up-result-v1",
+      },
       createdAt: "2026-08-05T00:01:00.000Z",
     };
     await repositories.followUps.create(userId, stored.id, first, { limit: 2 });

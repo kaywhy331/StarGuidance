@@ -78,6 +78,14 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0016_reading_intake_recovery":
     "783c256a90a1a8500a31ef9c12b83fd9e4020891fc612a99e2e374ed0fb8d1b6",
   "0017_sound-on-by-default": "3d3b98ed3d8215be7826057b853d7f006641871ded256200850247844f8d5565",
+  "0018_reading_outcome_feedback":
+    "ffa50fe9f19250b00dcb632b2f11ebd9a65b4d38eecc19346b658a4e6d315c60",
+  "0019_privacy_safe_product_events":
+    "4f4cf3fb0b1aa3d8d3e7bcf92d721145615d6099ba7385b082770765813cdb6a",
+  "0020_wonderful_thunderball": "c6478e72b5ac0b11694122ec6b7e5e120519a1f94f75e50741f2ddf4b19815dc",
+  "0021_optimal_frightful_four": "620be686d4a1602b6f449ac0fa3dfb9cbca06d9d27e395dd4db420c0a5951aef",
+  "0022_outstanding_smasher": "e3bbebde9605b48ae7829834b278273775aaddc6f78f0074ca30cfb1c360cdf4",
+  "0023_output_provenance": "238cc827f006c73a66326b726d31b0f4df8f419c8ce8ae1334f53e0994b182a0",
 };
 
 describe("migration history", () => {
@@ -118,6 +126,97 @@ describe("migration history", () => {
     const sql = executableSql("0017_sound-on-by-default");
     expect(sql).toMatch(/alter column "sound_enabled" set default true/i);
     expect(sql).not.toMatch(/update|delete|drop/i);
+  });
+
+  it("adds distinct experience and outcome feedback fields without rewriting history (0018)", () => {
+    const sql = executableSql("0018_reading_outcome_feedback");
+    for (const column of ["kind", "outcome_status", "behavior_changed"])
+      expect(sql).toMatch(new RegExp(`add column "${column}"`, "i"));
+    expect(sql).not.toMatch(/update|delete|drop/i);
+  });
+
+  it("keeps privacy-safe product events aggregate-only and app-only (0019)", () => {
+    const sql = executableSql("0019_privacy_safe_product_events");
+    expect(sql).toMatch(/create\s+table\s+"product_events"/i);
+    expect(sql).not.toMatch(/user_id|email|birth|question|card_id|pathname|url/i);
+    expect(sql).toMatch(/alter\s+table\s+"product_events"\s+force\s+row\s+level\s+security/i);
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"product_events"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+select,\s*insert\s+on\s+table\s+"product_events"\s+to\s+starguidance_app/i,
+    );
+    expect(sql).not.toMatch(/grant\s+(update|delete)|bypassrls|security\s+definer/i);
+  });
+
+  it("enforces the telemetry vocabulary and outcome-feedback invariants (0020)", () => {
+    const sql = executableSql("0020_wonderful_thunderball");
+    for (const constraint of [
+      "product_events_digest",
+      "product_events_name",
+      "product_events_properties_object",
+      "product_events_property_vocabulary",
+      "reading_feedback_rating_range",
+      "reading_feedback_kind_contract",
+    ])
+      expect(sql).toMatch(new RegExp(`add constraint "${constraint}"`, "i"));
+    expect(sql).toMatch(/outcome_submitted/i);
+    expect(sql).not.toMatch(/disable\s+row\s+level\s+security|bypassrls|security\s+definer/i);
+  });
+
+  it("creates an append-preserving, independently approved runtime control plane (0021)", () => {
+    const sql = executableSql("0021_optimal_frightful_four");
+    expect(sql).toMatch(/create\s+table\s+"runtime_configuration_versions"/i);
+    expect(sql).toMatch(/runtime_configuration_domain_version_unique/i);
+    expect(sql).toMatch(/runtime_configuration_one_published/i);
+    expect(sql).toMatch(/runtime_configuration_independent_approval/i);
+    expect(sql).toMatch(/create\s+function\s+protect_runtime_configuration_release/i);
+    expect(sql).toMatch(/create\s+trigger\s+runtime_configuration_release_immutable/i);
+    expect(sql).toMatch(
+      /alter\s+table\s+"runtime_configuration_versions"\s+force\s+row\s+level\s+security/i,
+    );
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"runtime_configuration_versions"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+select,\s*insert\s+on\s+table\s+"runtime_configuration_versions"\s+to\s+starguidance_app/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+update\s*\(status,\s*approved_by,\s*approved_at,\s*published_at\)[\s\S]*to\s+starguidance_app/i,
+    );
+    expect(sql).not.toMatch(/grant\s+update\s+on\s+table/i);
+    expect(sql).not.toMatch(/grant\s+delete|bypassrls|security\s+definer/i);
+  });
+
+  it("extends only the closed operational-event vocabulary (0022)", () => {
+    const sql = executableSql("0022_outstanding_smasher");
+    expect(sql).toMatch(/drop\s+constraint\s+"product_events_name"/i);
+    expect(sql).toMatch(/add\s+constraint\s+"product_events_name"/i);
+    expect(sql).toMatch(/auth_failed/i);
+    expect(sql).toMatch(/generation_completed/i);
+    expect(sql).not.toMatch(/alter\s+table[\s\S]*drop\s+column|delete\s+from/i);
+    expect(sql).not.toMatch(/disable\s+row\s+level\s+security|bypassrls|security\s+definer/i);
+  });
+
+  it("records complete provenance for new primary and follow-up outputs (0023)", () => {
+    const sql = executableSql("0023_output_provenance");
+    for (const column of [
+      "provider_id",
+      "prompt_version",
+      "content_version",
+      "safety_policy_version",
+      "schema_version",
+    ])
+      expect(sql).toMatch(
+        new RegExp(
+          `alter table "follow_up_questions" add column "${column}" text default 'legacy-unrecorded' not null`,
+          "i",
+        ),
+      );
+    expect(sql).toMatch(
+      /alter table "reading_outputs" add column "safety_policy_version" text default 'legacy-unrecorded' not null/i,
+    );
+    expect(sql).not.toMatch(/delete\s+from|drop\s+column|disable\s+row\s+level\s+security/i);
   });
 
   it("orders the corrective migration after the migration that created the trigger", () => {

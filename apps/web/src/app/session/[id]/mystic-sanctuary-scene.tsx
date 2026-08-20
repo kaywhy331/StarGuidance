@@ -6,17 +6,20 @@ export function MysticSanctuaryScene({
   children,
   phase,
   reducedMotion,
+  animationVariant,
   testId,
 }: {
   children: ReactNode;
   phase?: string;
   reducedMotion: boolean;
+  animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
   testId?: string;
 }) {
   return (
     <main
       className="mystic-sanctuary"
       data-reduced-motion={reducedMotion ? "true" : "false"}
+      data-animation-variant={animationVariant ?? "immersive-v1"}
       data-ritual-phase={phase}
       data-testid={testId}
     >

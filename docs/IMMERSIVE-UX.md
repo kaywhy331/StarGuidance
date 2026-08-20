@@ -9,7 +9,7 @@ The August 2026 experience pass treated immersion as coherence, agency, and emot
 | 3. Onboarding presented every birth input with equal weight.               | Split onboarding into required essentials and optional context, with a live Core / Location-enhanced / Context-complete capability preview.                   | Time remains accepted without place; no timezone or false precision is requested.                                 |
 | 4. Users had to understand spread mechanics before knowing what to choose. | Added a need-first choice rail that recommends a spread while keeping all six configured spreads directly selectable.                                         | Recommendation changes UI selection only; it never enters card randomness.                                        |
 | 5. Shuffling was mostly something to watch.                                | Added a tactile drag/swipe/arrow surface backed by 15 visual shells, phase-responsive atmosphere, and short procedural audio cues.                            | The visual shells are disconnected from the persisted 78-card shuffle.                                            |
-| 6. Cut and reveal lacked meaningful user agency.                           | Added the explicit symbolic `Cut once` / `Leave whole` threshold and made every face-down dealt card a touch/keyboard button.                                 | E2E compares the serialized draw before and after cut; reveal progress stores indexes only.                       |
+| 6. Cut and reveal lacked meaningful user agency.                           | Added a brief optional symbolic cut during the automatic gather-to-deal transition and made every face-down dealt card a touch/keyboard button.               | E2E compares the serialized draw before and after cut; reveal progress stores indexes only.                       |
 | 7. Card faces felt system-generated rather than individually authored.     | Introduced original v3 SVG faces with card-specific constellations, landscapes, orbs, frames, palettes, and symbols.                                          | The immutable v2 renderer/route remains available for historical deck versions.                                   |
 | 8. Personalization was a black box.                                        | Added an expandable provenance disclosure showing safe trait domains, source systems, stability, confidence, lens version, and snapshot version.              | The API excludes trait statements and raw birth facts and states that narrator sharing was false.                 |
 | 9. Likely and alternate outcomes were visually flattened into prose.       | Added a conditional two-path trajectory compass ahead of agency, conditions, disconfirming evidence, and uncertainty.                                         | Copy continues to frame trajectories as conditional reflection, never guaranteed fact.                            |
@@ -20,7 +20,7 @@ The August 2026 experience pass treated immersion as coherence, agency, and emot
 - All essential ritual actions are native buttons or links with visible focus treatment.
 - Card reveal order is operable by touch, pointer, Tab, and Enter.
 - Reduced motion disables ornamental movement and cinematic transitions without skipping content.
-- `Gather now` shortens decorative shuffle time; it does not skip the explicit cut choice.
+- `Gather now` shortens decorative shuffle time; the deck then deals automatically while still offering a brief optional symbolic cut.
 - Sound is optional, locally generated after interaction, and has a persistent on/off control.
 - Horizontal mobile rails use scroll snap but retain normal DOM reading order.
 - The result renderer consumes validated structured data and never renders provider HTML or Markdown.
@@ -29,6 +29,8 @@ The August 2026 experience pass treated immersion as coherence, agency, and emot
 ## Performance contract
 
 The scene remains 2.5D DOM/CSS. It uses one responsive sanctuary asset, 15 lightweight shuffle shells, only the dealt physical cards, CSS transforms, and small Web Audio oscillators. It introduces no canvas, WebGL, video, remote font, analytics payload, or remote sound dependency.
+
+The governed animation control selects `immersive-v1`, `quiet-v1`, or the complete non-motion path at request time. A restrictive animation kill switch therefore takes effect without a client rebuild and never removes content or controls. Privacy-safe browser measurement records only closed interaction stages such as shuffle start, card-reveal count, result view, and reading reopen; it never records card identity, question text, profile facts, reading URLs, or generated prose.
 
 ## Review routes
 

@@ -20,11 +20,24 @@ Provide `DATABASE_URL` only through the operator shell or managed secret store. 
 
 The authenticated `/operations` surface applies a narrower server-only role boundary:
 
-- `SUPPORT_USER_IDS` is a comma-separated UUID allowlist. Support sees the same aggregate queue health, read-only effective AI/report/allowance configuration, and exact opaque trace lookup. A trace returns only the entered UUID plus matching entity type, status, and creation timestamp—never user IDs, questions, profile facts, report content, encrypted values, or raw errors.
+- `SUPPORT_USER_IDS` is a comma-separated UUID allowlist. Support sees aggregate queue health, closed 24-hour product-event counts, read-only effective configuration, and exact opaque trace lookup. A trace returns only the entered UUID plus matching entity type, status, and creation timestamp—never user IDs, questions, profile facts, report content, encrypted values, or raw errors.
 - `OPERATOR_USER_IDS` is a separate UUID allowlist whose members inherit support visibility and may retry only a retained job currently locked in `failed`. The row is checked under a database lock, requests are same-origin and limited to 12 per operator per hour, and the retry plus its `operations.job.retried` audit receipt commit atomically.
-- A malformed allowlist fails operational access closed. Neither role can change model, prompt, content, product, deck, spread, or allowance configuration in the browser. Apply and roll back those changes through reviewed deployment configuration.
+- A malformed allowlist fails operational access closed. Support cannot mutate configuration. Operators receive the governed controls below; no browser role receives direct table privileges.
 
 Use opaque IDs only when a person has supplied the relevant reading/report/order reference through an approved support channel. Do not ask for screenshots containing questions or birth data. Named role owners, staff offboarding, periodic access review, and production incident escalation remain launch responsibilities.
+
+## Governed runtime and content releases
+
+Migration `0021_optimal_frightful_four` adds an app-only, forced-RLS configuration ledger with one published version per domain: `content`, `prompts`, `commerce`, `features`, and `models`. `pnpm db:seed` installs conservative system-approved version 1 records only when a domain has no history. The content release explicitly locks the deck, card set, meanings, spread catalog, interpretation rules, and enabled spread IDs.
+
+The operator console enforces this sequence:
+
+1. Create a strict-schema draft. Unknown keys, unreviewed prompt bundles, unknown spreads, and models outside `AI_PROVIDER_ALLOWED_MODELS` are rejected.
+2. A different operator approves the draft. The database rejects creator/approver identity equality.
+3. Publish the approved version. Archiving the prior release, publishing the target, and recording the audit receipt share one transaction and advisory domain lock.
+4. Roll back to an earlier approved or system-bootstrap release with the exact `ROLL BACK` confirmation. The action is audited and preserves all version history.
+
+Deck, spread, and product activation switches are separate restrictive controls for new sessions. They never change historical locked readings. Emergency AI/model/payment actions use `DISABLE NOW`, create an immediate published restrictive version, and record an audit receipt. Emergency controls cannot re-enable a capability; restoration uses the reviewed approval/rollback path. Production still requires two named operators, access-review cadence, and an approved change window.
 
 ## Data-encryption key rotation
 
@@ -110,9 +123,17 @@ pnpm --filter @starguidance/database retention
 
 ## Telemetry and hosted logs
 
-No Sentry, PostHog, Segment, Mixpanel, server content logger, or equivalent SDK is installed. An automated boundary test rejects those server call sites until a reviewed allowlisted adapter exists. Health and staging evidence publish names, booleans, status codes, fixed reason classes, counts, and synthetic aliases only.
+No Sentry, PostHog, Segment, Mixpanel, server content logger, or equivalent SDK is installed. First-party measurement is stored in `product_events` (migrations `0019`, `0020`, and `0022`) behind forced RLS and app-only insert/select grants. The application and database both enforce a closed event/property vocabulary. It has no user ID, email, birth field, profile statement/calculation, raw question/follow-up, card identity, reading URL, report prose, cookie, authorization value, provider payload, or arbitrary exception. The caller's idempotency value is SHA-256 digested before storage. Measurement failure never blocks a user or payment flow.
 
-Before enabling telemetry, define a strict event schema containing operational fields only—for example release, route template, status class, duration bucket, fixed error class, and opaque trace ID. Reject arbitrary objects and strings. Never include email, birth data, profile traits/calculations, question/follow-up text, cards plus question context, report prose, authorization/cookies, provider payloads, URLs with query strings, or exception messages that may quote them. Complete the hosted control-plane review in [Deployment](DEPLOYMENT.md).
+The every-minute durable-job trigger also evaluates content-free operational signals:
+
+- queue depth above 20 or oldest claimable work above 180 seconds;
+- any interpretation/report job failure in the current drain;
+- more than 20 auth failures, 5 profile failures, 5 generation failures, or 3 generations over 15 seconds in five minutes;
+- more than 2 payment failures in fifteen minutes;
+- hourly live-AI volume above `OPERATIONAL_LIVE_AI_VOLUME_ALERT_THRESHOLD` (default 500) as a bounded cost proxy.
+
+Every alert contains only class, severity, observed count, threshold, and `staging | production | unknown`. Configure one managed HTTPS `OPERATIONAL_ALERT_WEBHOOK_URL` to deliver it; invalid or non-HTTPS targets are ignored, and webhook failures are logged without the target or body. This repository path does not prove receiver ownership, paging escalation, database/host uptime alerts, or provider-native billing caps. Those must be configured and rehearsed by accountable operators before launch.
 
 ## Incident response
 

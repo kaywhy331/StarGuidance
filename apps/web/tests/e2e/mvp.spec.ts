@@ -79,9 +79,6 @@ async function reachQuestionReflection(page: Page, reduceMotion = true) {
   }
   const gather = page.getByRole("button", { name: "Gather now", exact: true });
   if (await gather.isVisible()) await gather.click({ force: true, timeout: 1_000 }).catch(() => {});
-  const leaveWhole = page.getByRole("button", { name: /^Leave whole/ });
-  await expect(leaveWhole).toBeVisible({ timeout: 10_000 });
-  await leaveWhole.click();
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ })).toBeVisible({
     timeout: 7_000,
@@ -183,6 +180,8 @@ async function currentReading(page: Page) {
         };
         entitlementDecision: { outcome: string; mode: string };
         ritualProgress?: { cutTaken: boolean; revealedIndexes: number[]; phase: string };
+        feedbackSubmitted: boolean;
+        outcomeFeedbackSubmitted: boolean;
       };
     };
   }, id);
@@ -483,11 +482,10 @@ test("the centered ritual mixes, gathers, deals, reflects, and reveals one card 
       .first()
       .evaluate((element) => getComputedStyle(element).animationDuration),
   ).toBe("2s");
-  await expect(page.getByRole("button", { name: /^Cut once/ })).toBeVisible({
-    timeout: 4_000,
-  });
-  await expect(page.getByRole("button", { name: /^Leave whole/ })).toBeVisible();
-  await page.getByRole("button", { name: /^Cut once/ }).click();
+  const symbolicCut = page.getByRole("button", { name: /^Mark a symbolic cut/ });
+  await expect(symbolicCut).toBeVisible({ timeout: 1_000 });
+  await expect(page.getByRole("button", { name: /^Leave whole/ })).toHaveCount(0);
+  await symbolicCut.click();
 
   const deal = page.getByTestId("guided-deal");
   await expect(deal).toBeVisible({ timeout: 4_000 });
@@ -683,7 +681,6 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
       response.request().postData()?.includes('"phase":"cuttingDeck"') === true,
   );
   await page.getByRole("button", { name: "Gather now", exact: true }).dispatchEvent("click");
-  await page.getByRole("button", { name: /^Leave whole/ }).click();
   expect((await cutProgress).status()).toBe(200);
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
@@ -827,6 +824,61 @@ test("a follow-up uses the exact same cards", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "The Cards Answer" })).toBeVisible();
   const after = (await currentReading(page)).reading.draw;
   expect(after).toEqual(before);
+});
+
+test("outcome feedback annotates history without changing the original reading", async ({
+  page,
+}) => {
+  test.slow();
+  await createProfile(page);
+  await beginReading(page, "What is the likely direction of this next chapter?");
+  await finishRitual(page);
+  const readingId = page.url().split("/").at(-1)!;
+  const before = (await currentReading(page)).reading.draw;
+  // Outcome reflection is intentionally a later/history action, so reopen
+  // the preserved result instead of attaching it to the live reveal ritual.
+  await page.goto(`/reading/${readingId}`);
+  await waitForReadingSections(page);
+  await page.getByTestId("oracle-transcript").focus();
+  await page.keyboard.press("End");
+  await expect(page.getByTestId("reading-integration")).toBeVisible();
+
+  await page.getByText("Record what unfolded later", { exact: true }).click();
+  await page.getByLabel("What happened?").selectOption("partial");
+  await page.getByLabel("Did the reading influence what you did?").selectOption("yes");
+  await page.getByLabel("Optional private context").fill("I chose a slower path.");
+  await page.getByRole("button", { name: "Save outcome reflection" }).click();
+  await expect(page.getByText(/original reading is unchanged/i)).toBeVisible();
+
+  const after = await page.evaluate(async (id) => {
+    const response = await fetch(`/api/readings/${id}`, { cache: "no-store" });
+    return (
+      (await response.json()) as { reading: Awaited<ReturnType<typeof currentReading>>["reading"] }
+    ).reading;
+  }, readingId);
+  expect(after.draw).toEqual(before);
+  expect(after.outcomeFeedbackSubmitted).toBe(true);
+  expect(after.feedbackSubmitted).toBe(false);
+
+  const exported = await page.evaluate(async () => {
+    const response = await fetch("/api/privacy/export", { cache: "no-store" });
+    return (await response.json()) as {
+      feedback: Array<{
+        kind: string;
+        outcomeStatus?: string;
+        behaviorChanged?: boolean;
+        comment?: string;
+      }>;
+    };
+  });
+  expect(exported.feedback).toContainEqual(
+    expect.objectContaining({
+      kind: "outcome",
+      outcomeStatus: "partial",
+      behaviorChanged: true,
+      comment: "I chose a slower path.",
+    }),
+  );
 });
 
 test("generation failure retries without a redraw", async ({ page }) => {

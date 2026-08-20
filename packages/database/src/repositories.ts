@@ -59,6 +59,7 @@ export interface StoredFollowUp {
   id: string;
   encryptedQuestion: string;
   result: FollowUpResult;
+  outputProvenance: ReadingOutputProvenance;
   createdAt: string;
 }
 
@@ -66,8 +67,11 @@ export interface StoredFeedback {
   id: string;
   userId: string;
   readingId: string;
+  kind: "experience" | "outcome";
   resonance?: number;
   helpfulness?: number;
+  outcomeStatus?: "occurred" | "partial" | "did_not_occur" | "unclear";
+  behaviorChanged?: boolean;
   encryptedComment?: string;
   createdAt: string;
 }
@@ -226,8 +230,11 @@ export interface FeedbackRepository {
   create(input: {
     userId: string;
     readingId: string;
+    kind: StoredFeedback["kind"];
     resonance?: number;
     helpfulness?: number;
+    outcomeStatus?: StoredFeedback["outcomeStatus"];
+    behaviorChanged?: boolean;
     encryptedComment?: string;
   }): Promise<StoredFeedback>;
   list(userId: string, readingId?: string): Promise<StoredFeedback[]>;
