@@ -19,6 +19,62 @@ import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { QuestionComposer } from "../session/[id]/question-composer";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
 
+const readingNeeds = [
+  {
+    id: "direction",
+    label: "A clear next step",
+    hint: "See the situation, tension, and direction",
+    glyph: "↗",
+    spreadId: "three-card",
+  },
+  {
+    id: "focus",
+    label: "One thing to notice",
+    hint: "A concise signal for right now",
+    glyph: "✦",
+    spreadId: "one-card",
+  },
+  {
+    id: "decision",
+    label: "A complex decision",
+    hint: "Trace influences, obstacles, and agency",
+    glyph: "⋔",
+    spreadId: "horseshoe",
+  },
+  {
+    id: "relationship",
+    label: "A relationship dynamic",
+    hint: "Reflect on signals, needs, and boundaries",
+    glyph: "∞",
+    spreadId: "relationship",
+  },
+  {
+    id: "depth",
+    label: "A deeper pattern",
+    hint: "Hold a layered situation from many angles",
+    glyph: "◇",
+    spreadId: "celtic-cross",
+  },
+  {
+    id: "chapter",
+    label: "A bigger life chapter",
+    hint: "Map past, present, future, and integration",
+    glyph: "⌗",
+    spreadId: "nine-card-matrix",
+  },
+] as const;
+
+type ReadingNeed = (typeof readingNeeds)[number]["id"];
+
+const spreadPresentationOrder = [
+  "three-card",
+  "one-card",
+  "horseshoe",
+  "relationship",
+  "celtic-cross",
+  "nine-card-matrix",
+] as const;
+
 export function ReadingChooser({
   access,
   initialPreferences,
@@ -37,6 +93,7 @@ export function ReadingChooser({
 }) {
   const [intakeState, sendIntake] = useMachine(readingMachine);
   const [selected, setSelected] = useState(spreads[1]?.id ?? spreads[0]?.id ?? "");
+  const [need, setNeed] = useState<ReadingNeed>("direction");
   const [question, setQuestion] = useState("");
   const [topic, setTopic] = useState<ReadingTopic>("general");
   const [horizon, setHorizon] = useState<ReadingHorizon>("open");
@@ -125,9 +182,18 @@ export function ReadingChooser({
 
   const selectingReading = intakeState.matches("selectingReading");
   const selectedSpread = spreads.find(({ id }) => id === selected) ?? spreads[0];
+  const orderedSpreads = [...spreads].sort(
+    (left, right) =>
+      spreadPresentationOrder.indexOf(left.id as (typeof spreadPresentationOrder)[number]) -
+      spreadPresentationOrder.indexOf(right.id as (typeof spreadPresentationOrder)[number]),
+  );
 
   return (
-    <MysticSanctuaryScene reducedMotion={reducedMotion} testId="mystic-sanctuary-scene">
+    <MysticSanctuaryScene
+      phase={selectingReading ? "selectingReading" : "enteringQuestion"}
+      reducedMotion={reducedMotion}
+      testId="mystic-sanctuary-scene"
+    >
       <header className="sanctuary-controls" aria-label="Reading setup controls">
         <Link href="/profile">← Exit</Link>
         <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
@@ -147,34 +213,69 @@ export function ReadingChooser({
         >
           <p>Choose a ritual</p>
           <h1>What kind of space do you need?</h1>
+          <div className="ritual-need-picker">
+            <p>Start with the feeling, not the spread name.</p>
+            <div aria-label="What you need" className="ritual-need-options" role="radiogroup">
+              {readingNeeds.map((option) => (
+                <button
+                  aria-checked={need === option.id}
+                  data-need={option.id}
+                  key={option.id}
+                  onClick={() => {
+                    setNeed(option.id);
+                    setSelected(option.spreadId);
+                  }}
+                  role="radio"
+                  type="button"
+                >
+                  <span aria-hidden="true">{option.glyph}</span>
+                  <span>
+                    <strong>{option.label}</strong>
+                    <small>{option.hint}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="ritual-spread-heading">
+            <p>Recommended ritual</p>
+            <span aria-hidden="true" />
+            <small>Choose another if it feels more fitting</small>
+          </div>
           <div aria-label="Reading type" className="ritual-spread-options" role="radiogroup">
-            {spreads.map((spread) => (
-              <label key={spread.id}>
-                <input
-                  checked={selected === spread.id}
-                  className="sr-only"
-                  name="spread"
-                  onChange={() => setSelected(spread.id)}
-                  type="radio"
-                  value={spread.id}
-                />
-                <span>
-                  <small>
-                    {spread.count} {spread.count === 1 ? "card" : "cards"} · about{" "}
-                    {spread.estimatedMinutes} min
-                  </small>
-                  <strong>{spread.name}</strong>
-                  <span className="ritual-spread-purpose">{spread.purpose}</span>
-                  <small>
-                    {access.outcome === "granted"
-                      ? access.mode === "unlimited"
-                        ? "Included"
-                        : `${access.remaining ?? 0} included this window`
-                      : "Allowance used"}
-                  </small>
-                </span>
-              </label>
-            ))}
+            {orderedSpreads.map((spread) => {
+              const matchingNeed = readingNeeds.find((option) => option.spreadId === spread.id);
+              return (
+                <label data-recommended={matchingNeed?.id === need} key={spread.id}>
+                  <input
+                    checked={selected === spread.id}
+                    className="sr-only"
+                    name="spread"
+                    onChange={() => setSelected(spread.id)}
+                    type="radio"
+                    value={spread.id}
+                  />
+                  <span>
+                    {matchingNeed?.id === need ? (
+                      <em className="ritual-spread-recommendation">Best fit</em>
+                    ) : null}
+                    <small>
+                      {spread.count} {spread.count === 1 ? "card" : "cards"} · about{" "}
+                      {spread.estimatedMinutes} min
+                    </small>
+                    <strong>{spread.name}</strong>
+                    <span className="ritual-spread-purpose">{spread.purpose}</span>
+                    <small>
+                      {access.outcome === "granted"
+                        ? access.mode === "unlimited"
+                          ? "Included"
+                          : `${access.remaining ?? 0} included this window`
+                        : "Allowance used"}
+                    </small>
+                  </span>
+                </label>
+              );
+            })}
           </div>
           <button
             className="reading-entry-continue"

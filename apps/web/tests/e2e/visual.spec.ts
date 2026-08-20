@@ -42,6 +42,7 @@ async function captureElement(locator: Locator, testInfo: TestInfo, name: string
 
 test("capture the required reviewer journey", async ({ page }, testInfo) => {
   test.skip(!process.env.CAPTURE_SCREENSHOTS, "Run explicitly when updating review screenshots.");
+  test.slow();
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(`screenshot-${randomUUID()}@example.test`);
   await page.getByLabel("Password").fill("synthetic-private-password");
@@ -57,6 +58,7 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
 
   await page.getByLabel("Full birth name").fill("Ada Lovelace");
   await page.getByLabel("Date of birth").fill("1990-01-15");
+  await page.getByRole("button", { name: "Continue to optional context" }).click();
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
   await page.getByRole("button", { name: "Check profile capability" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
@@ -74,15 +76,19 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
 
   // Gather early for a deterministic capture while retaining the authored
   // two-second gather, one-second deal cadence, and five-second reflection.
-  await page
-    .getByRole("button", { name: "Gather now", exact: true })
-    .click({ timeout: 2_000 })
-    .catch(() => undefined);
+  const gather = page.getByRole("button", { name: "Gather now", exact: true });
+  if (await gather.isVisible())
+    await gather.click({ force: true, timeout: 1_000 }).catch(() => undefined);
+  await expect(page.getByRole("button", { name: /^Leave whole/ })).toBeVisible({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: /^Leave whole/ }).click();
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toBeVisible({
-    timeout: 7_000,
+    timeout: 12_000,
   });
   await page.getByRole("button", { name: "I’m ready", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
   await expect(page.getByTestId("tarot-spread-stage")).toHaveAttribute("data-focus-mode", "reveal");
   await capturePage(page, testInfo, "card-reveal");
 
@@ -92,18 +98,25 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
     const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
     await action.click();
     if (finalCard) break;
+    await page
+      .getByRole("button", { name: /^Reveal card \d+, face down$/ })
+      .first()
+      .click();
   }
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
   await page.getByRole("button", { name: "Next reading passage" }).click();
   await expect(page.locator('.oracle-entry[data-phase="narration"]')).toBeVisible();
+  await expect(
+    page.locator('.oracle-entry[data-phase="narration"] .oracle-word:not(.is-visible)'),
+  ).toHaveCount(0, { timeout: 12_000 });
   await expect(page.locator(".physical-card-figure.is-reading-subject")).toBeVisible();
   await capturePage(page, testInfo, "reading-result");
 
   await page.goto("/profile");
-  const reportPreview = page.getByText("Report preview", { exact: true }).locator("..");
+  const reportPreview = page.locator(".profile-report-preview");
   await expect(
-    reportPreview.getByRole("heading", { name: "What the private report covers" }),
+    reportPreview.getByRole("heading", { name: "Your full pattern atlas" }),
   ).toBeVisible();
   await settleVisualAssets(page);
   await captureElement(reportPreview, testInfo, "report-preview");

@@ -9,24 +9,18 @@ import type {
 export function Button({
   className = "",
   type = "button",
+  variant = "primary",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement>) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary" | "quiet" | "danger";
+}) {
   return (
-    <button
-      className={`min-h-11 min-w-0 max-w-full rounded-full bg-[#f5efe1] px-5 py-2 font-semibold whitespace-normal text-[#171121] [overflow-wrap:anywhere] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-      type={type}
-      {...props}
-    />
+    <button className={`sg-button sg-button--${variant} ${className}`} type={type} {...props} />
   );
 }
 
 export function Panel({ className = "", ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={`min-w-0 max-w-full rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl [overflow-wrap:anywhere] ${className}`}
-      {...props}
-    />
-  );
+  return <div className={`sg-panel ${className}`} {...props} />;
 }
 
 export function Field({
@@ -42,18 +36,18 @@ export function Field({
   const id = props.id ?? props.name;
   const descriptionId = `${id}-description`;
   return (
-    <label className="grid min-w-0 gap-2" htmlFor={id}>
-      <span className="text-sm font-medium text-[#e9e1ef]">{label}</span>
+    <label className="sg-field" htmlFor={id}>
+      <span className="sg-field__label">{label}</span>
       <input
         {...props}
         aria-describedby={hint || error ? descriptionId : undefined}
         aria-invalid={Boolean(error)}
-        className="min-h-12 w-full min-w-0 max-w-full rounded-2xl border border-white/15 bg-[#120e20] px-4 text-white placeholder:text-[#786e85]"
+        className={`sg-field__control ${props.className ?? ""}`}
         id={id}
       />
       {(hint || error) && (
         <span
-          className={error ? "text-sm text-[#ffb7bd]" : "text-sm text-[#a99db5]"}
+          className={error ? "sg-field__message sg-field__message--error" : "sg-field__message"}
           id={descriptionId}
         >
           {error ?? hint}
@@ -65,17 +59,21 @@ export function Field({
 
 export function LoadingState({ label = "Preparing…" }: { label?: string }) {
   return (
-    <div aria-live="polite" className="animate-pulse text-[#c9bfd4]" role="status">
-      {label}
+    <div aria-live="polite" className="sg-loading" role="status">
+      <span aria-hidden="true" className="sg-loading__star" />
+      <span>{label}</span>
     </div>
   );
 }
 
 export function EmptyState({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Panel className="text-center">
+    <Panel className="sg-empty-state">
+      <span aria-hidden="true" className="sg-empty-state__mark">
+        ✦
+      </span>
       <h2 className="text-xl font-semibold">{title}</h2>
-      <div className="mt-2 text-[#b8adc8]">{children}</div>
+      <div className="mt-2 text-[var(--text-muted)]">{children}</div>
     </Panel>
   );
 }
@@ -86,11 +84,7 @@ export function Modal({
   ...props
 }: DialogHTMLAttributes<HTMLDialogElement> & { title: string; children: ReactNode }) {
   return (
-    <dialog
-      aria-labelledby="modal-title"
-      className="m-auto max-w-lg rounded-3xl bg-[#120e20] p-0 text-white backdrop:bg-black/70"
-      {...props}
-    >
+    <dialog aria-labelledby="modal-title" className="sg-modal" {...props}>
       <Panel>
         <h2 className="text-2xl" id="modal-title">
           {title}

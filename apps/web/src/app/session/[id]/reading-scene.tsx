@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import Link from "next/link";
 import { useMachine } from "@xstate/react";
 import { GUARDED_CATEGORIES, type SafetyCategory } from "@starguidance/ai";
@@ -17,7 +25,9 @@ import {
 import { MysticSanctuaryScene } from "./mystic-sanctuary-scene";
 import { OracleTranscript } from "./oracle-transcript";
 import { QuestionComposer } from "./question-composer";
+import { ReadingClosure, ReadingSealed, type ReadingContinuationMode } from "./reading-closure";
 import type { ReadingPayload } from "./reading-types";
+import { playRitualSound } from "./ritual-audio";
 import { SafetyInterruptContent } from "./safety-interrupt-panel";
 import { TarotSpreadStage } from "./tarot-spread-stage";
 
@@ -55,17 +65,92 @@ function ShuffleShells({ phase }: { phase: "mixing" | "gathering" }) {
   );
 }
 
-function playRevealTone() {
-  const context = new window.AudioContext();
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  oscillator.frequency.value = 392;
-  gain.gain.setValueAtTime(0.035, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.18);
-  oscillator.connect(gain).connect(context.destination);
-  oscillator.start();
-  oscillator.stop(context.currentTime + 0.18);
-  oscillator.addEventListener("ended", () => void context.close());
+function ShuffleGesture({ onEnergy }: { onEnergy: () => void }) {
+  const surfaceRef = useRef<HTMLButtonElement>(null);
+  const pointer = useRef<{ id: number; x: number; y: number; distance: number } | undefined>(
+    undefined,
+  );
+  const keyboardNudge = useRef(0);
+  const lastSoundAt = useRef(0);
+
+  const setVector = (x: number, y: number, energy: number) => {
+    const ritual = surfaceRef.current?.closest<HTMLElement>(".sanctuary-shuffle-ritual");
+    if (!ritual) return;
+    ritual.style.setProperty("--ritual-drift-x", `${Math.max(-68, Math.min(68, x))}px`);
+    ritual.style.setProperty("--ritual-drift-y", `${Math.max(-45, Math.min(45, y))}px`);
+    ritual.style.setProperty("--ritual-energy", String(Math.max(0, Math.min(1, energy))));
+  };
+
+  const soundAtMostEvery = (milliseconds: number) => {
+    const now = performance.now();
+    if (now - lastSoundAt.current < milliseconds) return;
+    lastSoundAt.current = now;
+    onEnergy();
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY, distance: 0 };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.dataset.active = "true";
+    setVector(0, 0, 0.35);
+    soundAtMostEvery(0);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const origin = pointer.current;
+    if (!origin || origin.id !== event.pointerId) return;
+    const x = event.clientX - origin.x;
+    const y = event.clientY - origin.y;
+    origin.distance = Math.max(origin.distance, Math.hypot(x, y));
+    setVector(x, y, Math.min(1, 0.35 + origin.distance / 150));
+    if (origin.distance > 24) soundAtMostEvery(240);
+  };
+
+  const handlePointerEnd = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pointer.current?.id !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    event.currentTarget.dataset.active = "false";
+    pointer.current = undefined;
+    setVector(0, 0, 0.15);
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(event.key)) return;
+    event.preventDefault();
+    keyboardNudge.current += 1;
+    const magnitude = 24 + (keyboardNudge.current % 3) * 7;
+    const x = event.key === "ArrowLeft" ? -magnitude : event.key === "ArrowRight" ? magnitude : 0;
+    const y = event.key === "ArrowUp" ? -magnitude : event.key === "ArrowDown" ? magnitude : 0;
+    setVector(x, y, 0.72);
+    soundAtMostEvery(120);
+  };
+
+  return (
+    <button
+      aria-label="Stir the deck. Drag or swipe, or use the arrow keys. The card order is already locked."
+      className="tactile-shuffle-control"
+      data-active="false"
+      onClick={() => soundAtMostEvery(100)}
+      onKeyDown={handleKeyDown}
+      onPointerCancel={handlePointerEnd}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      ref={surfaceRef}
+      type="button"
+    >
+      <span aria-hidden="true" className="tactile-shuffle-control__deck">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span>
+        <strong>Stir the deck</strong>
+        <small>Drag, swipe, or use arrow keys</small>
+      </span>
+    </button>
+  );
 }
 
 export function ReadingScene({
@@ -94,6 +179,7 @@ export function ReadingScene({
   const [streamTarget, setStreamTarget] = useState("primary");
   const [streamRetryToken, setStreamRetryToken] = useState(0);
   const [journeyComplete, setJourneyComplete] = useState(false);
+  const [continuationMode, setContinuationMode] = useState<ReadingContinuationMode>("choice");
   const bootstrapped = useRef(false);
   const recoveredRitual = useRef(false);
   const revealCompletionTimer = useRef<number | undefined>(undefined);
@@ -126,15 +212,22 @@ export function ReadingScene({
   );
 
   const completeShuffle = useCallback(() => {
-    if (cutTaken === undefined) {
-      setCutTaken(false);
+    if (soundEnabled.current) playRitualSound("gather");
+    send({ type: "SHUFFLE_COMPLETE" });
+  }, [send]);
+
+  const chooseCut = useCallback(
+    (taken: boolean) => {
+      setCutTaken(taken);
       persistRitualProgress(
-        { cutTaken: false, revealedIndexes: [...revealedRef.current] },
+        { cutTaken: taken, revealedIndexes: [...revealedRef.current] },
         "cuttingDeck",
       );
-    }
-    send({ type: "SHUFFLE_COMPLETE" });
-  }, [cutTaken, persistRitualProgress, send]);
+      if (soundEnabled.current) playRitualSound("cut");
+      send({ type: taken ? "CUT" : "SKIP_CUT" });
+    },
+    [persistRitualProgress, send],
+  );
 
   useEffect(() => {
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
@@ -178,32 +271,36 @@ export function ReadingScene({
     if (!state.matches("shuffling")) return;
     const timer = window.setTimeout(
       completeShuffle,
-      recoveredRitual.current ? 0 : motionOff ? 120 : 5_000,
+      recoveredRitual.current ? 0 : motionOff ? 120 : 12_000,
     );
     return () => window.clearTimeout(timer);
   }, [completeShuffle, motionOff, state]);
 
   useEffect(() => {
     if (!state.matches("cuttingDeck")) return;
-    const timer = window.setTimeout(
-      () => send({ type: "SKIP_CUT" }),
-      recoveredRitual.current ? 0 : motionOff ? 120 : 2_000,
-    );
-    return () => window.clearTimeout(timer);
-  }, [motionOff, send, state]);
+    if (recoveredRitual.current && cutTaken !== undefined)
+      send({ type: cutTaken ? "CUT" : "SKIP_CUT" });
+  }, [cutTaken, send, state]);
 
   useEffect(() => {
     if (!state.matches("dealing") || !reading) return;
     const timers: number[] = [];
     if (recoveredRitual.current || motionOff) {
       setDealtCount(reading.cards.length);
+      if (!recoveredRitual.current && soundEnabled.current)
+        playRitualSound("deal", reading.cards.length - 1);
       timers.push(window.setTimeout(() => send({ type: "DEALT" }), motionOff ? 80 : 0));
       return () => timers.forEach((timer) => window.clearTimeout(timer));
     }
 
     setDealtCount(0);
     reading.cards.forEach((_, index) => {
-      timers.push(window.setTimeout(() => setDealtCount(index + 1), index * 1_000));
+      timers.push(
+        window.setTimeout(() => {
+          setDealtCount(index + 1);
+          if (soundEnabled.current) playRitualSound("deal", index);
+        }, index * 1_000),
+      );
     });
     timers.push(
       window.setTimeout(
@@ -260,32 +357,26 @@ export function ReadingScene({
           { cutTaken, revealedIndexes: [...next] },
           complete ? "complete" : "revealingCards",
         );
-      if (soundEnabled.current) playRevealTone();
+      if (soundEnabled.current) playRitualSound("reveal", index);
     },
     [cutTaken, persistRitualProgress, reading, state],
   );
 
   useEffect(() => {
-    if (!reading || !state.matches("revealingCards") || activeReveal !== null) return;
-    const nextIndex = reading.cards.findIndex((_, index) => !revealedRef.current.has(index));
-    if (nextIndex >= 0) {
-      revealCard(nextIndex);
-      return;
-    }
-    scheduleRevealCompletion();
-  }, [activeReveal, reading, revealCard, scheduleRevealCompletion, state]);
+    if (
+      reading &&
+      state.matches("revealingCards") &&
+      activeReveal === null &&
+      revealedRef.current.size === reading.cards.length
+    )
+      scheduleRevealCompletion();
+  }, [activeReveal, reading, scheduleRevealCompletion, state]);
 
   const advanceReveal = useCallback(() => {
     if (!reading || activeReveal === null || !state.matches("revealingCards")) return;
-    const nextIndex = reading.cards.findIndex(
-      (_, index) => index > activeReveal && !revealedRef.current.has(index),
-    );
-    if (nextIndex >= 0) {
-      revealCard(nextIndex);
-      return;
-    }
     setActiveReveal(null);
-  }, [activeReveal, reading, revealCard, state]);
+    if (revealedRef.current.size === reading.cards.length) scheduleRevealCompletion();
+  }, [activeReveal, reading, scheduleRevealCompletion, state]);
 
   // Interpretation generation now happens through a durable job (see
   // docs/KNOWN-GAPS.md): the reading fetched on mount may still say
@@ -341,6 +432,7 @@ export function ReadingScene({
 
   useEffect(() => {
     if (!state.matches("revealingResult")) return;
+    if (soundEnabled.current) playRitualSound("complete");
     const timer = window.setTimeout(() => send({ type: "RESULT_REVEALED" }), motionOff ? 0 : 420);
     return () => window.clearTimeout(timer);
   }, [motionOff, send, state]);
@@ -387,6 +479,7 @@ export function ReadingScene({
       });
       setFollowUp("");
       setJourneyComplete(false);
+      setContinuationMode("choice");
       setStreamTarget(payload.followUp.id);
       setStreamRetryToken(0);
     } catch (cause) {
@@ -398,7 +491,11 @@ export function ReadingScene({
 
   if (error && !reading) {
     return (
-      <MysticSanctuaryScene reducedMotion={true} testId="mystic-sanctuary-scene">
+      <MysticSanctuaryScene
+        phase="generationFailed"
+        reducedMotion={true}
+        testId="mystic-sanctuary-scene"
+      >
         <div className="sanctuary-loading" role="alert">
           <span aria-hidden="true">✦</span>
           {error}
@@ -410,7 +507,11 @@ export function ReadingScene({
 
   if (!reading || state.matches("idle") || state.matches("preparingDeck")) {
     return (
-      <MysticSanctuaryScene reducedMotion={true} testId="mystic-sanctuary-scene">
+      <MysticSanctuaryScene
+        phase="preparingDeck"
+        reducedMotion={true}
+        testId="mystic-sanctuary-scene"
+      >
         <div className="sanctuary-loading" role="status">
           <span aria-hidden="true">✦</span>
           Recovering your locked draw…
@@ -432,7 +533,11 @@ export function ReadingScene({
   const activeRevealCard = activeReveal === null ? undefined : reading.cards[activeReveal];
 
   return (
-    <MysticSanctuaryScene reducedMotion={motionOff} testId="mystic-sanctuary-scene">
+    <MysticSanctuaryScene
+      phase={String(state.value)}
+      reducedMotion={motionOff}
+      testId="mystic-sanctuary-scene"
+    >
       <span
         aria-hidden="true"
         className={`cinematic-card-scrim ${activeReveal === null ? "" : "is-visible"}`}
@@ -463,6 +568,15 @@ export function ReadingScene({
           <button aria-pressed={sound} onClick={toggleSound} type="button">
             Sound <span>{sound ? "on" : "off"}</span>
           </button>
+          {(state.matches("shuffling") || state.matches("dealing")) && !motionOff && (
+            <button
+              className="sanctuary-skip-animation"
+              onClick={toggleReducedMotion}
+              type="button"
+            >
+              Skip animation
+            </button>
+          )}
         </div>
       </header>
 
@@ -502,8 +616,13 @@ export function ReadingScene({
               <p className="ritual-status" role="status">
                 Shuffling your cards
               </p>
-              <span>The cards move freely before returning to one center.</span>
+              <span>The draw is locked. Move the visual deck until the moment feels settled.</span>
             </div>
+            <ShuffleGesture
+              onEnergy={() => {
+                if (soundEnabled.current) playRitualSound("shuffle");
+              }}
+            />
             <button className="shuffle-skip-action" onClick={completeShuffle} type="button">
               Gather now
             </button>
@@ -515,9 +634,27 @@ export function ReadingScene({
             <ShuffleShells phase="gathering" />
             <div className="sanctuary-shuffle-copy">
               <p className="ritual-status" role="status">
-                Gathering the deck
+                Would you like to mark a cut?
               </p>
-              <span>Every card returns to the center, held in its locked order.</span>
+              <span>
+                This is a symbolic gesture. Your saved cards and their order will not change.
+              </span>
+            </div>
+            <div className="ritual-cut-actions">
+              <button
+                className="ritual-cut-action is-primary"
+                onClick={() => chooseCut(true)}
+                type="button"
+              >
+                <span aria-hidden="true">⋮</span>
+                <strong>Cut once</strong>
+                <small>Mark the threshold</small>
+              </button>
+              <button className="ritual-cut-action" onClick={() => chooseCut(false)} type="button">
+                <span aria-hidden="true">◇</span>
+                <strong>Leave whole</strong>
+                <small>Continue as it rests</small>
+              </button>
             </div>
           </div>
         )}
@@ -554,6 +691,9 @@ export function ReadingScene({
               focusMode={focusMode}
               reducedMotion={motionOff}
               revealed={revealed}
+              onReveal={
+                state.matches("revealingCards") && activeReveal === null ? revealCard : undefined
+              }
             />
             {state.matches("awaitingReveal") && (
               <div className="ritual-question-reflection" data-testid="question-reflection">
@@ -571,6 +711,20 @@ export function ReadingScene({
                 )}
               </div>
             )}
+            {state.matches("revealingCards") &&
+              activeReveal === null &&
+              revealed.size < reading.cards.length && (
+                <div className="reveal-choice-prompt" role="status">
+                  <span aria-hidden="true">✦</span>
+                  <p>
+                    <strong>Choose a face-down card to turn</strong>
+                    <small>Tap a card, or reach it with Tab and press Enter.</small>
+                  </p>
+                  <span>
+                    {revealed.size} of {reading.cards.length}
+                  </span>
+                </div>
+              )}
           </div>
         )}
 
@@ -590,9 +744,11 @@ export function ReadingScene({
               onClick={advanceReveal}
               type="button"
             >
-              {activeReveal + 1 < reading.cards.length ? "Next card" : "Continue to your reading"}
+              {revealed.size < reading.cards.length
+                ? "Return to the spread"
+                : "Continue to your reading"}
               <span>
-                {activeReveal + 1} of {reading.cards.length}
+                {revealed.size} of {reading.cards.length}
               </span>
             </button>
           </div>
@@ -647,6 +803,7 @@ export function ReadingScene({
             onJourneyCompleteChange={setJourneyComplete}
             onRetry={() => setStreamRetryToken((token) => token + 1)}
             onStateChange={handleStreamState}
+            {...(reading.personalization ? { personalization: reading.personalization } : {})}
             readingId={readingId}
             reducedMotion={motionOff}
             result={reading.result}
@@ -661,28 +818,53 @@ export function ReadingScene({
             guidance={safetyInterrupt.guidance}
           />
         )}
-        {state.matches("complete") && journeyComplete && !safetyInterrupt && (
-          <QuestionComposer
-            disabled={reading.followUpsRemaining <= 0}
-            hint={
-              reading.followUpsRemaining <= 0
-                ? `This reading’s ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? " is" : "s are"} preserved with the same locked cards.`
-                : `${reading.followUpsRemaining} follow-up${reading.followUpsRemaining === 1 ? "" : "s"} remaining. Shift+Enter adds a line.`
-            }
-            label="Keep the same cards and ask what they add"
-            loading={followUpLoading}
-            onChange={setFollowUp}
-            onSubmit={submitFollowUp}
-            placeholder={
-              reading.followUpsRemaining <= 0
-                ? "Follow-up complete"
-                : "Ask a follow-up about the same cards…"
-            }
-            submitLabel="Reflect on the same cards"
-            testId="follow-up-composer"
-            value={followUp}
-          />
-        )}
+        {state.matches("complete") &&
+          journeyComplete &&
+          !safetyInterrupt &&
+          continuationMode === "choice" && (
+            <ReadingClosure
+              followUpsRemaining={reading.followUpsRemaining}
+              onAskFollowUp={() => setContinuationMode("follow-up")}
+              onClose={() => setContinuationMode("closed")}
+              reflectionQuestion={
+                reading.result?.reflectionQuestion ?? "What will you choose to carry forward?"
+              }
+            />
+          )}
+        {state.matches("complete") &&
+          journeyComplete &&
+          !safetyInterrupt &&
+          continuationMode === "follow-up" && (
+            <div className="reading-follow-up-threshold">
+              <button onClick={() => setContinuationMode("choice")} type="button">
+                ← Return to closing reflection
+              </button>
+              <QuestionComposer
+                disabled={reading.followUpsRemaining <= 0}
+                hint={
+                  reading.followUpsRemaining <= 0
+                    ? `This reading’s ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? " is" : "s are"} preserved with the same locked cards.`
+                    : `${reading.followUpsRemaining} follow-up${reading.followUpsRemaining === 1 ? "" : "s"} remaining. Shift+Enter adds a line.`
+                }
+                label="Keep the same cards and ask what they add"
+                loading={followUpLoading}
+                onChange={setFollowUp}
+                onSubmit={submitFollowUp}
+                placeholder={
+                  reading.followUpsRemaining <= 0
+                    ? "Follow-up complete"
+                    : "Ask a follow-up about the same cards…"
+                }
+                submitLabel="Reflect on the same cards"
+                testId="follow-up-composer"
+                value={followUp}
+              />
+            </div>
+          )}
+        {state.matches("complete") &&
+          journeyComplete &&
+          !safetyInterrupt &&
+          continuationMode === "closed" && <ReadingSealed readingId={readingId} />}
         {state.matches("complete") &&
           reading.safetyClassification &&
           GUARDED_CATEGORIES.has(reading.safetyClassification) && (

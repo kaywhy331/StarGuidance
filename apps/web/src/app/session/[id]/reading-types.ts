@@ -31,6 +31,21 @@ export interface DealtCardView {
   artwork: TarotArtwork;
 }
 
+export interface ReadingPersonalization {
+  lensVersion: string;
+  snapshotVersion: number;
+  completeness: "core" | "locationEnhanced" | "complete";
+  traits: readonly {
+    domain: string;
+    sourceSystem: string;
+    stability: "stable" | "uncertain" | "unavailable";
+    confidence: "low" | "medium" | "high";
+    calculationVersion: string;
+  }[];
+  tensionCount: number;
+  rawBirthDataSharedWithNarrator: false;
+}
+
 export interface ReadingPayload {
   id: string;
   /** Decrypted only for the owning reader so the ritual can return their
@@ -38,6 +53,7 @@ export interface ReadingPayload {
   question: string;
   /** The immutable profile snapshot this reading was drawn against. */
   profileSnapshotId: string;
+  personalization?: ReadingPersonalization;
   draw: LockedDraw;
   cards: DealtCardView[];
   result?: ReadingResult;

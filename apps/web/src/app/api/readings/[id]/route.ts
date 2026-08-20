@@ -46,7 +46,14 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       ? resolveSpreadPositions(spread, reading.questionClassification)
       : undefined;
     const configuredFollowUpLimit = followUpLimit();
-    const feedback = await owned.persistence.repositories.feedback.list(owned.user.id, reading.id);
+    const [feedback, storedProfile] = await Promise.all([
+      owned.persistence.repositories.feedback.list(owned.user.id, reading.id),
+      owned.persistence.repositories.profileSnapshots.get(owned.user.id, reading.profileSnapshotId),
+    ]);
+    const snapshot = storedProfile?.snapshot;
+    const lensTraits = (snapshot?.traits ?? []).filter((_, index) =>
+      reading.readingLens.traitIndexes.includes(index),
+    );
     return NextResponse.json(
       {
         reading: {
@@ -60,6 +67,22 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           // versions never move it, and a caller cannot otherwise tell which
           // version of themselves a past reading interpreted.
           profileSnapshotId: reading.profileSnapshotId,
+          personalization: snapshot
+            ? {
+                lensVersion: reading.readingLens.version,
+                snapshotVersion: snapshot.version,
+                completeness: snapshot.completeness,
+                traits: lensTraits.map((trait) => ({
+                  domain: trait.domain,
+                  sourceSystem: trait.sourceSystem,
+                  stability: trait.stability,
+                  confidence: trait.confidence,
+                  calculationVersion: trait.calculationVersion,
+                })),
+                tensionCount: reading.readingLens.tensionIndexes?.length ?? 0,
+                rawBirthDataSharedWithNarrator: false as const,
+              }
+            : undefined,
           draw: reading.draw,
           cards: reading.draw.assignments.map((assignment) => {
             const card = tarotCards.find(({ id }) => id === assignment.cardId);

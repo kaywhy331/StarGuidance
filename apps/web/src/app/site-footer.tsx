@@ -3,12 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/**
- * Present on every page, so the standing terms are always one click away.
- *
- * A reading no longer explains what tarot is and is not; that statement lives
- * here instead of interrupting the reading itself.
- */
 export function SiteFooter() {
   const pathname = usePathname();
   const fullscreenExperience =
@@ -20,15 +14,19 @@ export function SiteFooter() {
   if (fullscreenExperience) return null;
 
   return (
-    <footer className="border-t border-white/10 px-6 py-6 text-sm text-[#8f86a0]">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-2">
-        <span>StarGuidance — tarot readings for reflection and entertainment.</span>
-        <Link className="ml-auto underline" href="/terms">
-          Terms &amp; how to read a reading
-        </Link>
-        <Link className="underline" href="/privacy">
-          Privacy notice
-        </Link>
+    <footer className="site-footer">
+      <div className="site-footer__inner">
+        <div>
+          <span aria-hidden="true" className="site-footer__star">
+            ✦
+          </span>
+          <p>StarGuidance</p>
+          <small>Private reflection. Unaltered cards. Your agency intact.</small>
+        </div>
+        <nav aria-label="Legal navigation">
+          <Link href="/terms">Terms &amp; reading guide</Link>
+          <Link href="/privacy">Privacy notice</Link>
+        </nav>
       </div>
     </footer>
   );

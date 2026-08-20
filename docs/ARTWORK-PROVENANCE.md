@@ -23,7 +23,7 @@ AVIF is preferred and WebP is the compatibility fallback. Reduced-motion mode us
 
 ## Card-face provenance
 
-`starguidance-celestial-gothic-v2` maps all 78 IDs to a unique cacheable SVG face rendered by `packages/tarot-content/src/artwork.ts`. Major Arcana use card-specific symbolic scenes. Minor Arcana combine rank/court compositions with suit-specific symbols and palettes. Each card carries:
+`starguidance-celestial-gothic-v3` maps all 78 IDs to a unique cacheable SVG face rendered by `packages/tarot-content/src/artwork.ts`. It extends the preserved v2 renderer with a card-specific constellation, horizon/landscape, luminous orb, and spatial frame while retaining original geometric authorship. Major Arcana use card-specific symbolic scenes. Minor Arcana combine rank/court compositions with suit-specific symbols and palettes. The `/art/tarot/v2/…` route and renderer remain unchanged so a historical deck reference stays readable; new draws resolve `/art/tarot/v3/…`. Each card carries:
 
 - `artworkId`
 - `frontAsset`
@@ -57,7 +57,7 @@ The built-in image-generation path was used; no API key or fallback CLI model wa
 
 - A browser downloads one sanctuary format/composition, not all four variants.
 - Mobile sanctuary transfer is capped at 350 KB by Playwright; the authored AVIF is 27,398 bytes and WebP fallback is 92,332 bytes.
-- The ritual renders nine lightweight shuffle shells rather than 78 card components.
+- The ritual renders 15 lightweight shuffle shells rather than 78 card components.
 - The scene uses CSS transforms and 14 restrained particles; there is no canvas, WebGL, or 3D engine.
 - The card-face renderer is covered by size and uniqueness tests.
 

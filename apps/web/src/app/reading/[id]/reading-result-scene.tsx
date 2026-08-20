@@ -11,6 +11,11 @@ import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading
 import { MysticSanctuaryScene } from "../../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../../session/[id]/question-composer";
+import {
+  ReadingClosure,
+  ReadingSealed,
+  type ReadingContinuationMode,
+} from "../../session/[id]/reading-closure";
 import type { ReadingPayload } from "../../session/[id]/reading-types";
 import { TarotSpreadStage } from "../../session/[id]/tarot-spread-stage";
 
@@ -35,6 +40,7 @@ export function ReadingResultScene({
   const [comment, setComment] = useState("");
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [journeyComplete, setJourneyComplete] = useState(false);
+  const [continuationMode, setContinuationMode] = useState<ReadingContinuationMode>("choice");
   const { displayName, reducedMotion, sound, toggleReducedMotion, toggleSound } =
     useReadingPreferences(initialPreferences);
 
@@ -88,6 +94,7 @@ export function ReadingResultScene({
         followUpsRemaining: Math.max(0, reading.followUpsRemaining - 1),
       });
       setFollowUp("");
+      setContinuationMode("choice");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to answer follow-up.");
     } finally {
@@ -179,6 +186,7 @@ export function ReadingResultScene({
           onActiveCardChange={setActiveCard}
           onJourneyCompleteChange={setJourneyComplete}
           onRetry={() => undefined}
+          {...(reading.personalization ? { personalization: reading.personalization } : {})}
           previewEvents={previewEvents}
           readingId={readingId}
           reducedMotion={reducedMotion}
@@ -202,19 +210,35 @@ export function ReadingResultScene({
               </details>
             )}
 
-            {reading.followUpsRemaining > 0 && (
-              <QuestionComposer
-                hint={`${reading.followUpsRemaining} of ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? "" : "s"} remaining on these locked cards.`}
-                label="Ask a follow-up using the same cards"
-                loading={followUpLoading}
-                onChange={setFollowUp}
-                onSubmit={submitFollowUp}
-                placeholder="Ask what these same cards add…"
-                submitLabel="Reflect on the same cards"
-                testId="follow-up-composer"
-                value={followUp}
+            {continuationMode === "choice" && (
+              <ReadingClosure
+                followUpsRemaining={reading.followUpsRemaining}
+                onAskFollowUp={() => setContinuationMode("follow-up")}
+                onClose={() => setContinuationMode("closed")}
+                reflectionQuestion={reading.result.reflectionQuestion}
               />
             )}
+
+            {continuationMode === "follow-up" && reading.followUpsRemaining > 0 && (
+              <div className="reading-follow-up-threshold">
+                <button onClick={() => setContinuationMode("choice")} type="button">
+                  ← Return to closing reflection
+                </button>
+                <QuestionComposer
+                  hint={`${reading.followUpsRemaining} of ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? "" : "s"} remaining on these locked cards.`}
+                  label="Ask a follow-up using the same cards"
+                  loading={followUpLoading}
+                  onChange={setFollowUp}
+                  onSubmit={submitFollowUp}
+                  placeholder="Ask what these same cards add…"
+                  submitLabel="Reflect on the same cards"
+                  testId="follow-up-composer"
+                  value={followUp}
+                />
+              </div>
+            )}
+
+            {continuationMode === "closed" && <ReadingSealed readingId={readingId} />}
 
             {reading.feedbackSubmitted ? (
               <p className="feedback-thanks">Thank you — your feedback is saved separately.</p>

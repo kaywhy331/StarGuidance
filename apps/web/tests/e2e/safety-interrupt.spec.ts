@@ -19,6 +19,7 @@ async function createProfile(page: Page) {
   await signIn(page);
   await page.getByLabel("Full birth name").fill("Ada Lovelace");
   await page.getByLabel("Date of birth").fill("1990-01-15");
+  await page.getByRole("button", { name: "Continue to optional context" }).click();
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
   await page.getByRole("button", { name: "Check profile capability" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
@@ -29,12 +30,18 @@ async function createProfile(page: Page) {
 async function finishRitual(page: Page) {
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
-  await page
-    .getByRole("button", { name: "Gather now", exact: true })
-    .click({ timeout: 3_000 })
-    .catch(() => {});
+  const gather = page.getByRole("button", { name: "Gather now", exact: true });
+  if (await gather.isVisible()) await gather.click({ force: true, timeout: 1_000 }).catch(() => {});
+  await expect(page.getByRole("button", { name: /^Leave whole/ })).toBeVisible({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: /^Leave whole/ }).click();
   await page.getByRole("button", { name: "I’m ready", exact: true }).click();
   for (let index = 0; index < 10; index += 1) {
+    await page
+      .getByRole("button", { name: /^Reveal card \d+, face down$/ })
+      .first()
+      .click();
     const action = page.locator(".guided-next-action");
     await expect(action).toBeVisible();
     const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;

@@ -271,12 +271,19 @@ export async function GET() {
         const report = reports.find(
           (candidate) => candidate.snapshotId === stored.profileSnapshotId,
         );
+        const artworkRouteVersion = draw.deckVersion.includes("v2") ? "v2" : "v3";
         return {
           id,
           spreadId,
           spreadName: spread?.name ?? spreadId.replaceAll("-", " "),
           questionPreview: `${question.slice(0, 48)}${question.length > 48 ? "…" : ""}`,
-          draw,
+          cardCount: draw.assignments.length,
+          cards: draw.assignments.map(({ cardId, orientation }) => ({
+            cardId,
+            orientation,
+            artPath: `/art/tarot/${artworkRouteVersion}/${cardId}.svg`,
+          })),
+          resultTitle: stored.result?.title,
           generationStatus,
           followUpCount: stored.followUps.length,
           feedbackSubmitted: feedback.some((entry) => entry.readingId === id),

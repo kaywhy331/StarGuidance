@@ -559,10 +559,17 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
   await pageA
     .getByRole("button", { name: "Gather now", exact: true })
-    .click({ timeout: 3_000 })
+    .dispatchEvent("click")
     .catch(() => {});
+  const leaveWhole = pageA.getByRole("button", { name: /^Leave whole/ });
+  await expect(leaveWhole).toBeVisible({ timeout: 12_000 });
+  await leaveWhole.click();
   await pageA.getByRole("button", { name: "I’m ready", exact: true }).click();
   for (let index = 0; index < 10; index += 1) {
+    await pageA
+      .getByRole("button", { name: /^Reveal card \d+, face down$/ })
+      .first()
+      .click();
     const action = pageA.locator(".guided-next-action");
     await expect(action).toBeVisible();
     const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;

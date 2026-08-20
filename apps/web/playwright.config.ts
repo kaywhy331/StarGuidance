@@ -6,12 +6,13 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 15_000 },
   // Long ritual flows run against the production Next.js server in the same
-  // process budget as the browsers. Two workers keep both local and CI runs
-  // parallel without starving navigation, animation, or typewriter timers.
+  // process budget as the browsers. Local workspaces may share that budget
+  // with other preview/build processes, so they serialize by default. CI has
+  // an isolated 25-minute lane and keeps two workers for the broader matrix.
   // CI gives WebKit three separate one-worker shards. Concurrent WebKit
   // contexts can exhaust a shared runner, while one process running the full
   // suite accumulates enough contexts to become unstable late in the run.
-  workers: 2,
+  workers: process.env.CI ? 2 : 1,
   // WebKit can terminate a long-lived worker after many isolated browser
   // contexts on a shared runner. A single CI retry gets a fresh worker while
   // still requiring every assertion to pass; local runs remain fail-fast.

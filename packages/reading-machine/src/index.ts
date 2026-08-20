@@ -67,10 +67,8 @@ export const readingMachine = setup({
     preparingDeck: { on: { DECK_READY: "shuffling" } },
     shuffling: { on: { SHUFFLE_COMPLETE: "cuttingDeck" } },
     cuttingDeck: {
-      // This is a visual gather rather than a second user decision: the scene
-      // holds here while the scattered cards return to one centered deck,
-      // then advances with SKIP_CUT. Keeping the explicit state also preserves
-      // persisted-flow compatibility.
+      // The draw is already locked. CUT records an optional symbolic ritual;
+      // SKIP_CUT leaves the deck whole. Neither transition can mutate cards.
       on: { CUT: "dealing", SKIP_CUT: "dealing" },
     },
     dealing: { on: { DEALT: "awaitingReveal" } },

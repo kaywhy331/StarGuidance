@@ -1,76 +1,117 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 const links = [
-  ["Read", "/readings"],
-  ["History", "/history"],
-  ["Reports", "/reports"],
-  ["Profile", "/profile"],
-  ["Account", "/settings/account"],
-  ["Privacy", "/settings/privacy"],
+  ["Read", "/readings", "✦"],
+  ["History", "/history", "◴"],
+  ["Reports", "/reports", "⌑"],
+  ["Profile", "/profile", "◇"],
+  ["Account", "/settings/account", "○"],
+  ["Privacy", "/settings/privacy", "◈"],
+] as const;
+
+const hiddenRoutes = [
+  "/",
+  "/readings",
+  "/visual-preview",
+  "/sign-in",
+  "/sign-up",
+  "/forgot-password",
+  "/reset-password",
 ] as const;
 
 export function AppNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const menuId = useId();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [signOutError, setSignOutError] = useState<string>();
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [menuOpen]);
+
   if (
-    pathname === "/" ||
-    pathname === "/readings" ||
-    pathname === "/visual-preview" ||
-    pathname === "/sign-in" ||
-    pathname === "/sign-up" ||
-    pathname === "/forgot-password" ||
-    pathname === "/reset-password" ||
+    hiddenRoutes.includes(pathname as (typeof hiddenRoutes)[number]) ||
     pathname.startsWith("/session/") ||
     pathname.startsWith("/reading/")
   )
     return null;
+
   return (
-    <header className="border-b border-white/10 bg-[#090713]/80 backdrop-blur">
-      <nav
-        aria-label="Primary navigation"
-        className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-2 px-6 py-4"
-      >
+    <header className="site-header">
+      <nav aria-label="Primary navigation" className="site-nav">
         <Link
-          className="mr-auto min-w-0 tracking-[0.18em] [overflow-wrap:anywhere] uppercase"
+          aria-label="StarGuidance home"
+          className="site-brand"
           href="/"
+          onClick={() => setMenuOpen(false)}
         >
-          StarGuidance
-        </Link>
-        {links.map(([label, href]) => (
-          <Link
-            aria-current={pathname.startsWith(href) ? "page" : undefined}
-            href={href}
-            key={href}
-          >
-            {label}
-          </Link>
-        ))}
-        <button
-          className="rounded-full border border-white/15 px-3 py-1.5 text-sm"
-          onClick={async () => {
-            setSignOutError(undefined);
-            const response = await fetch("/api/auth", { method: "DELETE" });
-            if (!response.ok) {
-              const payload = (await response.json()) as { error?: string };
-              setSignOutError(payload.error ?? "Sign-out failed.");
-              return;
-            }
-            router.push("/");
-            router.refresh();
-          }}
-        >
-          Sign out
-        </button>
-        {signOutError ? (
-          <span className="basis-full text-right text-sm text-[#ffb7bd]" role="alert">
-            {signOutError}
+          <span aria-hidden="true" className="site-brand__mark">
+            <i />
           </span>
-        ) : null}
+          <span>StarGuidance</span>
+        </Link>
+
+        <button
+          aria-controls={menuId}
+          aria-expanded={menuOpen}
+          className="site-menu-toggle"
+          onClick={() => setMenuOpen((open) => !open)}
+          type="button"
+        >
+          <span>{menuOpen ? "Close" : "Menu"}</span>
+          <span aria-hidden="true" className="site-menu-toggle__glyph">
+            <i />
+            <i />
+          </span>
+        </button>
+
+        <div className="site-nav-panel" data-open={menuOpen} id={menuId}>
+          <div className="site-nav-links">
+            {links.map(([label, href, glyph]) => (
+              <Link
+                aria-current={pathname.startsWith(href) ? "page" : undefined}
+                href={href}
+                key={href}
+                onClick={() => setMenuOpen(false)}
+              >
+                <span aria-hidden="true">{glyph}</span>
+                {label}
+              </Link>
+            ))}
+          </div>
+          <button
+            className="site-sign-out"
+            onClick={async () => {
+              setSignOutError(undefined);
+              const response = await fetch("/api/auth", { method: "DELETE" });
+              if (!response.ok) {
+                const payload = (await response.json()) as { error?: string };
+                setSignOutError(payload.error ?? "Sign-out failed.");
+                return;
+              }
+              router.push("/");
+              router.refresh();
+            }}
+            type="button"
+          >
+            Sign out
+          </button>
+          {signOutError ? (
+            <span className="site-nav-error" role="alert">
+              {signOutError}
+            </span>
+          ) : null}
+        </div>
       </nav>
     </header>
   );

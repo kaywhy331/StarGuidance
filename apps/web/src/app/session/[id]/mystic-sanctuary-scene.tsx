@@ -4,10 +4,12 @@ import { AtmosphericLayers } from "./atmospheric-layers";
 
 export function MysticSanctuaryScene({
   children,
+  phase,
   reducedMotion,
   testId,
 }: {
   children: ReactNode;
+  phase?: string;
   reducedMotion: boolean;
   testId?: string;
 }) {
@@ -15,6 +17,7 @@ export function MysticSanctuaryScene({
     <main
       className="mystic-sanctuary"
       data-reduced-motion={reducedMotion ? "true" : "false"}
+      data-ritual-phase={phase}
       data-testid={testId}
     >
       <picture className="sanctuary-background">

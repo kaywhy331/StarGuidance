@@ -17,7 +17,7 @@ import {
   type ReadingResult,
 } from "@starguidance/contracts";
 
-import type { DealtCardView } from "./reading-types";
+import type { DealtCardView, ReadingPersonalization } from "./reading-types";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 type StreamState = "idle" | "streaming" | "complete" | "failed";
@@ -42,6 +42,19 @@ const passageRoleLabels: Record<ReadingPassage["role"], string> = {
   closing: "Closing note",
   safety: "Scope and care",
 };
+
+const profileSourceLabels: Readonly<Record<string, string>> = {
+  numerology: "Numerology",
+  dreamspell: "Dreamspell",
+  westernAstrology: "Western astrology",
+  bazi: "BaZi",
+  planetaryAngularity: "Planetary angularity",
+  nineStarKi: "Nine Star Ki",
+};
+
+function humanizeDomain(value: string) {
+  return value.replaceAll(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+}
 
 export const NARRATION_TIMING = {
   boundaryLeadWords: 2,
@@ -182,6 +195,7 @@ function ReadingOverview({
   entries,
   onNarrationComplete,
   onSelectCard,
+  personalization,
   reducedMotion,
   result,
   soundEnabled,
@@ -192,11 +206,15 @@ function ReadingOverview({
   entries: readonly TranscriptEntry[];
   onNarrationComplete: () => void;
   onSelectCard: (index: number) => void;
+  personalization?: ReadingPersonalization;
   reducedMotion: boolean;
   result: ReadingResult;
   soundEnabled: boolean;
 }) {
   const opening = result.passages.find(({ role }) => role === "opening") ?? result.passages[0];
+  const lensSignalLabel = personalization
+    ? `${personalization.traits.length} derived lens ${personalization.traits.length === 1 ? "signal" : "signals"}`
+    : "";
 
   return (
     <article
@@ -220,6 +238,54 @@ function ReadingOverview({
           <span>Your profile shaped the interpretation.</span>
           <span>The draw stayed entirely random.</span>
         </div>
+        {personalization && (
+          <details className="reading-lens-disclosure">
+            <summary>
+              <span aria-hidden="true">◈</span>
+              <span>
+                <strong>How this was personalized</strong>
+                <small>
+                  {lensSignalLabel} · snapshot v{personalization.snapshotVersion}
+                </small>
+              </span>
+              <span aria-hidden="true">⌄</span>
+            </summary>
+            <div>
+              <p>
+                Only question-relevant, derived profile traits entered the interpretation. Your
+                birth name, date, time, and birthplace did not enter the narrator request.
+              </p>
+              {personalization.traits.length > 0 ? (
+                <ul>
+                  {personalization.traits.map((trait) => (
+                    <li
+                      key={[trait.sourceSystem, trait.domain, trait.calculationVersion].join(":")}
+                    >
+                      <span>{profileSourceLabels[trait.sourceSystem] ?? trait.sourceSystem}</span>
+                      <strong>{humanizeDomain(trait.domain)}</strong>
+                      <small>
+                        {trait.stability} · {trait.confidence} confidence
+                      </small>
+                    </li>
+                  ))}
+                  {personalization.tensionCount > 0 && (
+                    <li>
+                      <span>Preserved tension</span>
+                      <strong>Two valid sides held together</strong>
+                      <small>Not averaged away</small>
+                    </li>
+                  )}
+                </ul>
+              ) : (
+                <p>No stable trait met this question’s relevance threshold.</p>
+              )}
+              <small>
+                Lens {personalization.lensVersion} · {personalization.completeness} profile · raw
+                birth data shared: no
+              </small>
+            </div>
+          </details>
+        )}
       </header>
 
       <section aria-labelledby="locked-card-overview-heading" className="reading-card-overview">
@@ -263,6 +329,8 @@ function ReadingIntegration({
   cards: readonly DealtCardView[];
   result: ReadingResult;
 }) {
+  const likely = result.passages.find(({ id }) => id === result.trajectory.likelyPassageId);
+  const alternate = result.passages.find(({ id }) => id === result.trajectory.alternatePassageId);
   return (
     <article
       className="oracle-entry reading-integration is-active"
@@ -273,6 +341,19 @@ function ReadingIntegration({
         <p className="reading-section-eyebrow">Your reading is complete</p>
         <h2>What to carry forward</h2>
       </header>
+      <section aria-label="Conditional trajectories" className="reading-trajectory-compass">
+        <article>
+          <span>Likely while conditions hold</span>
+          <p>{likely?.text}</p>
+        </article>
+        <i aria-hidden="true">
+          <span>or</span>
+        </i>
+        <article>
+          <span>An alternate path</span>
+          <p>{alternate?.text}</p>
+        </article>
+      </section>
       <div className="reading-integration-grid">
         <section>
           <h3>Your agency</h3>
@@ -327,6 +408,7 @@ function cardIndexFor(
 export function OracleTranscript({
   active,
   cards,
+  personalization,
   readingId,
   result,
   target,
@@ -341,6 +423,7 @@ export function OracleTranscript({
 }: {
   active: boolean;
   cards: readonly DealtCardView[];
+  personalization?: ReadingPersonalization;
   readingId: string;
   result: ReadingResult;
   target: string;
@@ -590,6 +673,7 @@ export function OracleTranscript({
             entries={entries}
             onNarrationComplete={() => setAnnouncement("Opening insight complete.")}
             onSelectCard={goTo}
+            {...(personalization ? { personalization } : {})}
             reducedMotion={reducedMotion}
             result={result}
             soundEnabled={soundEnabled}

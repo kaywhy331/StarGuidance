@@ -38,6 +38,7 @@ const BOUNDARY_EXEMPT: Readonly<Record<string, string>> = {
   "auth/callback/route.ts":
     "exchanges signup or recovery codes for a session and redirects; it holds no repository",
   "art/tarot/v2/[asset]/route.ts": "serves versioned public artwork and reads no user-owned table",
+  "art/tarot/v3/[asset]/route.ts": "serves versioned public artwork and reads no user-owned table",
 };
 
 function routeFiles(dir: string): string[] {
