@@ -109,6 +109,26 @@ async function createReadingViaApi(page: Page, spreadId: string, question: strin
   return payload.readingId;
 }
 
+async function seedRitualRecovery(page: Page, readingId: string) {
+  const result = await page.evaluate(async (id) => {
+    const response = await fetch(`/api/readings/${id}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "progress",
+        phase: "cuttingDeck",
+        cutTaken: false,
+        revealedIndexes: [],
+      }),
+    });
+    return { body: await response.text(), status: response.status };
+  }, readingId);
+
+  expect(result, `Synthetic ritual recovery failed: ${result.body}`).toMatchObject({
+    status: 200,
+  });
+}
+
 async function persistReadingPreferences(
   page: Page,
   preferences: { reducedMotion: boolean; soundEnabled: boolean },
@@ -463,6 +483,11 @@ for (const spreadCase of configuredSpreadCases) {
     await createProfileViaApi(page);
     await persistReadingPreferences(page, { reducedMotion: true, soundEnabled: false });
     const readingId = await createReadingViaApi(page, spreadCase.id, spreadCase.question);
+    // This contract verifies the configured spread, not the shuffle animation.
+    // Recovering a persisted, untouched ritual avoids asking hosted renderers
+    // to replay decorative setup while still exercising the real state machine,
+    // locked draw, recovery API, card count, names, and DOM placement.
+    await seedRitualRecovery(page, readingId);
     await page.goto(`/session/${readingId}`);
     await reachQuestionReflection(page);
 
