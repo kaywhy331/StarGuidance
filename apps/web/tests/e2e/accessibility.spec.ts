@@ -64,12 +64,13 @@ async function createReading(page: Page): Promise<void> {
   // Keep the accessibility suite fast while exercising the same centered,
   // reader-controlled sequence through standard buttons.
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
   const sanctuary = page.getByTestId("mystic-sanctuary-scene");
   await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
-  const gather = page.getByRole("button", { name: "Gather now", exact: true });
-  if (await gather.isVisible()) await gather.dispatchEvent("click").catch(() => {});
+  // Reduced motion advances the shuffle automatically. Avoid racing the
+  // short-lived Gather now button in slower WebKit runs.
   await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
     timeout: 20_000,
   });

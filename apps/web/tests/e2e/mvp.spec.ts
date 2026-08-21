@@ -174,15 +174,20 @@ async function reachQuestionReflection(page: Page, reduceMotion = true) {
   if (reduceMotion) {
     const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
     const motionState = await motionControl.getAttribute("aria-pressed");
-    if (motionState !== "true") await motionControl.click();
+    if (motionState !== "true") await motionControl.dispatchEvent("click");
     await expect(motionControl).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
       "data-reduced-motion",
       "true",
     );
+  } else {
+    const gather = page.getByRole("button", { name: "Gather now", exact: true });
+    if (await gather.isVisible())
+      await gather.dispatchEvent("click", { timeout: 2_000 }).catch(() => {});
   }
-  const gather = page.getByRole("button", { name: "Gather now", exact: true });
-  if (await gather.isVisible()) await gather.dispatchEvent("click").catch(() => {});
+  // Reduced motion already advances the shuffle after 120 ms. Looking up and
+  // dispatching to Gather now here races that automatic removal in WebKit,
+  // which can leave Playwright waiting for a button that correctly disappeared.
   await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
     "data-ritual-phase",
     "awaitingReveal",
@@ -817,7 +822,8 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
   await page.getByRole("button", { name: "Gather now", exact: true }).dispatchEvent("click");
   expect((await cutProgress).status()).toBe(200);
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
     "data-reduced-motion",
