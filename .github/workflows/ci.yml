@@ -178,11 +178,36 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - lane: desktop-chromium
+          - lane: desktop-chromium-1
             project: desktop-chromium
             browser: chromium
-            shard: "1/1"
-            exclude_spreads: false
+            shard: "1/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-2
+            project: desktop-chromium
+            browser: chromium
+            shard: "2/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-3
+            project: desktop-chromium
+            browser: chromium
+            shard: "3/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-4
+            project: desktop-chromium
+            browser: chromium
+            shard: "4/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-5
+            project: desktop-chromium
+            browser: chromium
+            shard: "5/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-6
+            project: desktop-chromium
+            browser: chromium
+            shard: "6/6"
+            exclude_spreads: true
           # Mobile Chromium also accumulates enough full-page contexts to
           # stall late in a 44-test run, so it shares Firefox's short budget.
           - lane: mobile-chromium-1
@@ -302,10 +327,38 @@ jobs:
           --workers=1
           --grep="configured ${{ matrix.spread }} spread uses its spatial arrangement"
 
+  e2e_desktop_spread:
+    name: e2e-desktop-spread-${{ matrix.spread }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        spread: [one-card, three-card, celtic-cross, horseshoe, relationship, nine-card-matrix]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: >-
+          pnpm --filter @starguidance/web exec playwright test
+          --project=desktop-chromium
+          --workers=1
+          --grep="configured ${{ matrix.spread }} spread uses its spatial arrangement"
+
   e2e_core:
     name: e2e-core
     if: ${{ always() }}
-    needs: [e2e_core_project, e2e_mobile_spread]
+    needs: [e2e_core_project, e2e_mobile_spread, e2e_desktop_spread]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -313,9 +366,11 @@ jobs:
         env:
           PROJECT_RESULT: ${{ needs.e2e_core_project.result }}
           MOBILE_SPREAD_RESULT: ${{ needs.e2e_mobile_spread.result }}
+          DESKTOP_SPREAD_RESULT: ${{ needs.e2e_desktop_spread.result }}
         run: |
           test "$PROJECT_RESULT" = success
           test "$MOBILE_SPREAD_RESULT" = success
+          test "$DESKTOP_SPREAD_RESULT" = success
 
   e2e_webkit:
     name: e2e-webkit-${{ matrix.shard }}
