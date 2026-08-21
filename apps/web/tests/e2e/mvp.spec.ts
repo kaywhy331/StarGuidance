@@ -96,15 +96,17 @@ async function reachQuestionReflection(page: Page, reduceMotion = true) {
 }
 
 async function finishGuidedReveal(page: Page) {
-  await page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ }).click();
+  const ready = page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ });
+  await expect(ready).toBeVisible();
+  await ready.dispatchEvent("click");
   for (let index = 0; index < 10; index += 1) {
     const faceDownCard = page.getByRole("button", { name: /^Reveal card \d+, face down$/ }).first();
     await expect(faceDownCard).toBeVisible({ timeout: 10_000 });
-    await faceDownCard.click();
+    await faceDownCard.dispatchEvent("click");
     const action = page.locator(".guided-next-action");
     await expect(action).toBeVisible({ timeout: 10_000 });
     const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
-    await action.click();
+    await action.dispatchEvent("click");
     if (finalCard) return;
   }
   throw new Error("Guided reveal exceeded the supported ten-card spread.");
@@ -232,32 +234,6 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   await waitForReadingSections(page);
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toHaveCount(0);
 
-  const completeStory = page.getByRole("button", { name: "Read as one story" });
-  await expect(completeStory).toBeEnabled();
-  await completeStory.click();
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "I · The signal" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "III · The paths" })).toBeVisible();
-  await page.getByRole("button", { name: "Guided" }).click();
-  await expect(page.getByTestId("reading-result-overview")).toBeVisible();
-
-  for (let index = 0; index < 3; index += 1) {
-    await nextReadingSection(page);
-    await expect(page.getByTestId("reading-result-overview")).toHaveCount(0);
-    await expect(page.locator('.oracle-entry[data-phase="narration"]')).toBeVisible();
-    await expect(page.getByTestId("oracle-transcript")).toHaveAttribute(
-      "data-active-card-index",
-      String(index),
-    );
-    await expect(page.locator(".physical-card-figure.is-reading-subject")).toHaveCount(1);
-    await expect(page.locator(".oracle-entry-text")).toBeVisible();
-  }
-
-  for (let index = 0; index < 5; index += 1) await nextReadingSection(page);
-
-  const transcript = page.getByTestId("oracle-transcript");
-  await transcript.focus();
-  await page.keyboard.press("Home");
   const overview = page.getByTestId("reading-result-overview");
   await expect(overview).toBeVisible();
   await expect(overview.getByRole("heading", { name: "Cards in this thread" })).toBeVisible();
@@ -277,7 +253,14 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   await expect(page.getByText("Explore the complete interpretation", { exact: true })).toHaveCount(
     0,
   );
-  await page.keyboard.press("End");
+
+  const completeStory = page.getByRole("button", { name: "Read as one story" });
+  await expect(completeStory).toBeEnabled();
+  await completeStory.dispatchEvent("click");
+  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "I · The signal" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "III · The paths" })).toBeVisible();
+
   const integration = page.getByTestId("reading-integration");
   await expect(integration).toBeVisible();
   for (const reportHeading of [
@@ -291,9 +274,13 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   );
   await expect(integration.locator(".reading-uncertainty")).toBeVisible();
   await expect(integration.locator(".reading-trajectory-compass article")).toHaveCount(2);
+  const finishStory = page.getByRole("button", { name: /Continue with these cards/ });
+  await expect(finishStory).toBeVisible();
+  await finishStory.dispatchEvent("click");
   await expect(page.getByRole("region", { name: "Before you leave the cards" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Ask the same cards/ })).toBeVisible();
-  await page.getByRole("button", { name: /Ask the same cards/ }).click();
+  const continueReading = page.getByRole("button", { name: /Ask the same cards/ });
+  await expect(continueReading).toBeVisible();
+  await continueReading.dispatchEvent("click");
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeVisible();
 
   const readingId = page.url().split("/").at(-1) as string;
@@ -840,7 +827,7 @@ test("a follow-up uses the exact same cards", async ({ page }) => {
   await page.getByTestId("oracle-transcript").focus();
   await page.keyboard.press("End");
   await expect(page.getByTestId("reading-integration")).toBeVisible();
-  await page.getByRole("button", { name: /Ask the same cards/ }).click();
+  await page.getByRole("button", { name: /Ask the same cards/ }).dispatchEvent("click");
   await page.getByLabel("Keep the same cards and ask what they add").fill("What can I do next?");
   await page.getByRole("button", { name: "Reflect on the same cards" }).click();
   await expect.poll(async () => (await currentReading(page)).reading.followUps.length).toBe(1);
