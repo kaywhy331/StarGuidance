@@ -12,9 +12,11 @@ import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
+import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { followUpLimit, followUpLimitMessage } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "@/lib/runtime";
+import { getRuntimeConfiguration, interpretationRuntimeOptions } from "@/lib/runtime-configuration";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("retry") }),
@@ -45,8 +47,16 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     const positions = spread
       ? resolveSpreadPositions(spread, reading.questionClassification)
       : undefined;
-    const configuredFollowUpLimit = followUpLimit();
-    const feedback = await owned.persistence.repositories.feedback.list(owned.user.id, reading.id);
+    const runtimeConfiguration = await getRuntimeConfiguration();
+    const configuredFollowUpLimit = followUpLimit(runtimeConfiguration.commerce);
+    const [feedback, storedProfile] = await Promise.all([
+      owned.persistence.repositories.feedback.list(owned.user.id, reading.id),
+      owned.persistence.repositories.profileSnapshots.get(owned.user.id, reading.profileSnapshotId),
+    ]);
+    const snapshot = storedProfile?.snapshot;
+    const lensTraits = (snapshot?.traits ?? []).filter((_, index) =>
+      reading.readingLens.traitIndexes.includes(index),
+    );
     return NextResponse.json(
       {
         reading: {
@@ -60,6 +70,22 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           // versions never move it, and a caller cannot otherwise tell which
           // version of themselves a past reading interpreted.
           profileSnapshotId: reading.profileSnapshotId,
+          personalization: snapshot
+            ? {
+                lensVersion: reading.readingLens.version,
+                snapshotVersion: snapshot.version,
+                completeness: snapshot.completeness,
+                traits: lensTraits.map((trait) => ({
+                  domain: trait.domain,
+                  sourceSystem: trait.sourceSystem,
+                  stability: trait.stability,
+                  confidence: trait.confidence,
+                  calculationVersion: trait.calculationVersion,
+                })),
+                tensionCount: reading.readingLens.tensionIndexes?.length ?? 0,
+                rawBirthDataSharedWithNarrator: false as const,
+              }
+            : undefined,
           draw: reading.draw,
           cards: reading.draw.assignments.map((assignment) => {
             const card = tarotCards.find(({ id }) => id === assignment.cardId);
@@ -103,7 +129,8 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
           followUpLimit: configuredFollowUpLimit,
           followUpsRemaining: Math.max(0, configuredFollowUpLimit - reading.followUps.length),
-          feedbackSubmitted: feedback.length > 0,
+          feedbackSubmitted: feedback.some(({ kind }) => kind === "experience"),
+          outcomeFeedbackSubmitted: feedback.some(({ kind }) => kind === "outcome"),
           createdAt: reading.createdAt,
         },
       },
@@ -141,6 +168,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  let activeFollowUpLimit: number | undefined;
   try {
     assertSameOrigin(request);
     const body: unknown = await request.json();
@@ -205,7 +233,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ progress });
     }
     if (input.action === "retry") {
-      const provider = createInterpretationProvider();
+      const runtimeConfiguration = await getRuntimeConfiguration();
+      const provider = createInterpretationProvider(
+        interpretationRuntimeOptions(runtimeConfiguration),
+      );
       const snapshot = (
         await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
       )?.snapshot;
@@ -221,12 +252,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
             : [],
         });
-        await persistence.repositories.outputs.save(
-          user.id,
-          reading.id,
-          generated.result,
-          generated.provenance,
-        );
+        await persistence.repositories.outputs.save(user.id, reading.id, generated.result, {
+          ...generated.provenance,
+          contentVersion: runtimeConfiguration.content.tarotContentVersion,
+          safetyPolicyVersion: runtimeConfiguration.prompts.safetyPolicyVersion,
+        });
         await persistence.repositories.readingSessions.setGenerationStatus(
           user.id,
           reading.id,
@@ -264,7 +294,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     const safety = classifyQuestion(input.question);
     if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
-    const configuredFollowUpLimit = followUpLimit();
+    const runtimeConfiguration = await getRuntimeConfiguration();
+    const configuredFollowUpLimit = followUpLimit(runtimeConfiguration.commerce);
+    activeFollowUpLimit = configuredFollowUpLimit;
     if (reading.followUps.length >= configuredFollowUpLimit)
       return NextResponse.json(
         { error: followUpLimitMessage(configuredFollowUpLimit) },
@@ -284,24 +316,37 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       snapshot?.tensions ?? [],
       reading.questionClassification.topic,
     );
-    const provider = createInterpretationProvider();
-    const result = await provider.generateFollowUp({
+    const provider = createInterpretationProvider(
+      interpretationRuntimeOptions(runtimeConfiguration),
+    );
+    const generated = await provider.generateFollowUpWithProvenance({
       draw: reading.draw,
       question: input.question,
       questionClassification: reading.questionClassification,
       relevantTraitStatements: lens.statements,
       originalResult: reading.result,
     });
+    const result = generated.result;
     const followUp = {
       id: crypto.randomUUID(),
       encryptedQuestion: persistence.encrypt(input.question, "follow-up-question"),
       result,
+      outputProvenance: {
+        ...generated.provenance,
+        contentVersion: runtimeConfiguration.content.tarotContentVersion,
+        safetyPolicyVersion: runtimeConfiguration.prompts.safetyPolicyVersion,
+      },
       createdAt: new Date().toISOString(),
     };
     await persistence.repositories.followUps.create(user.id, reading.id, followUp, {
       limit: configuredFollowUpLimit,
     });
     await recordAudit(user.id, "reading.follow_up.created", "reading", reading.id);
+    await tryRecordProductEvent({
+      idempotencyKey: `reading:${reading.id}:followup:${followUp.id}`,
+      name: "followup_submitted",
+      properties: { statusClass: "completed" },
+    });
     return NextResponse.json(
       { followUp: { id: followUp.id, result }, draw: reading.draw },
       { status: 201 },
@@ -314,7 +359,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         { status: security.status, headers: security.headers },
       );
     if (error instanceof Error && error.message === "FOLLOW_UP_LIMIT_REACHED")
-      return NextResponse.json({ error: followUpLimitMessage(followUpLimit()) }, { status: 409 });
+      return NextResponse.json(
+        { error: followUpLimitMessage(activeFollowUpLimit ?? followUpLimit()) },
+        { status: 409 },
+      );
     if (error instanceof Error && error.message === POLICY_RECONSENT_REQUIRED)
       return NextResponse.json(
         { error: "Review the current service policies before continuing this reading." },

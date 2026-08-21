@@ -7,11 +7,12 @@ import type {
   TarotCard,
 } from "@starguidance/tarot-domain";
 
-export { renderTarotFaceSvg } from "./artwork";
+export { renderTarotFaceSvg, renderTarotFaceSvgV3 } from "./artwork";
 
 export const TAROT_CONTENT_VERSION = "starguidance-original-v1" as const;
-export const TAROT_ARTWORK_VERSION = "starguidance-celestial-gothic-v2" as const;
-export const DECK_VERSION = "starguidance-illustrated-v2" as const;
+export const TAROT_ARTWORK_VERSION = "starguidance-celestial-gothic-v3" as const;
+export const DECK_VERSION = "starguidance-illustrated-v3" as const;
+export const SPREAD_CATALOG_VERSION = "starguidance-spreads-v2" as const;
 
 const BACK_ASSET = "/art/tarot/v2/celestial-gothic-back-v1.webp";
 const BACK_ASSET_AVIF = "/art/tarot/v2/celestial-gothic-back-v1.avif";
@@ -19,15 +20,15 @@ const BACK_ASSET_AVIF = "/art/tarot/v2/celestial-gothic-back-v1.avif";
 function artwork(id: string, name: string) {
   return {
     artworkId: `${TAROT_ARTWORK_VERSION}:${id}`,
-    frontAsset: `/art/tarot/v2/${id}.svg`,
+    frontAsset: `/art/tarot/v3/${id}.svg`,
     backAsset: BACK_ASSET,
     backAssetAvif: BACK_ASSET_AVIF,
     altText: `Original celestial Gothic illustration for ${name}`,
     artistCredit: "StarGuidance Studio",
     license: "Original project artwork; project use authorized, redistribution not granted",
-    source: "In-house deterministic vector illustration system",
+    source: "In-house deterministic narrative vector illustration system",
     provenance:
-      "Card face composed from original procedural SVG geometry; shared card back generated for StarGuidance with OpenAI image generation and locally optimized",
+      "Card face composed from original procedural SVG geometry with a unique constellation and landscape; shared card back generated for StarGuidance with OpenAI image generation and locally optimized",
     focalPoint: { x: 0.5, y: 0.44 },
     crop: "center" as const,
     artworkVersion: TAROT_ARTWORK_VERSION,

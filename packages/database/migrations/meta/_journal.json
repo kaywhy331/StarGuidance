@@ -127,6 +127,55 @@
       "when": 1786820266940,
       "tag": "0017_sound-on-by-default",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787259982751,
+      "tag": "0018_reading_outcome_feedback",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787261089154,
+      "tag": "0019_privacy_safe_product_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787261949375,
+      "tag": "0020_wonderful_thunderball",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787262346897,
+      "tag": "0021_optimal_frightful_four",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787264609961,
+      "tag": "0022_outstanding_smasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787267273381,
+      "tag": "0023_output_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787328147729,
+      "tag": "0024_immutable_content_versions",
+      "breakpoints": true
     }
   ]
 }

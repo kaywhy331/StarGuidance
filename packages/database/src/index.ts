@@ -4,6 +4,7 @@ export * from "./encryption";
 export * from "./database-role";
 export * from "./interpretation-jobs";
 export * from "./job-diagnostics";
+export * from "./operational-signals";
 export * from "./postgres-client";
 export * from "./rate-limits";
 export * from "./report-jobs";

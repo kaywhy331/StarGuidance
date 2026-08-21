@@ -323,6 +323,19 @@ describe("AI boundary", () => {
     );
     expect(followUp.response).toContain(trait.replace(/[.?!]+$/, ""));
 
+    const withProvenance = await provider.generateFollowUpWithProvenance({
+      draw,
+      question: "What do I do next?",
+      questionClassification: questionClassification("What should I notice?"),
+      relevantTraitStatements: [trait],
+      originalResult,
+    });
+    expect(withProvenance.provenance).toEqual({
+      providerId: "deterministic-fallback-v1",
+      promptVersion: "deterministic-fallback-v3",
+      schemaVersion: "follow-up-result-v1",
+    });
+
     const events = createFollowUpStreamEvents(followUp);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({

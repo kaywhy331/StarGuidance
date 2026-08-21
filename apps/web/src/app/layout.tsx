@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import "@fontsource-variable/cormorant";
+import "@fontsource-variable/cormorant/wght-italic.css";
+import "@fontsource-variable/manrope";
 
 import "./globals.css";
+import { SiteAtmosphere } from "./site-atmosphere";
 import { AppNav } from "./app-nav";
+import { ProductTelemetryBeacon } from "./product-telemetry-beacon";
 import { SiteFooter } from "./site-footer";
 
 export const metadata: Metadata = {
-  title: "StarGuidance",
+  title: {
+    default: "StarGuidance",
+    template: "%s · StarGuidance",
+  },
   description: "Private profile insight. A genuinely random tarot draw.",
 };
 
@@ -30,6 +38,8 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         )}
       </head>
       <body>
+        <SiteAtmosphere />
+        <ProductTelemetryBeacon />
         <a className="skip-link" href="#main-content">
           Skip to content
         </a>

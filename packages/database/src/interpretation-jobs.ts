@@ -239,10 +239,12 @@ export async function writeInterpretationResult(
   if (!existing)
     await tx`
       insert into reading_outputs (
-        user_id, reading_id, provider_id, prompt_version, content_version, schema_version, payload
+        user_id, reading_id, provider_id, prompt_version, content_version,
+        safety_policy_version, schema_version, payload
       ) values (
         ${input.userId}, ${input.readingId}, ${provenance.providerId},
-        ${provenance.promptVersion}, ${TAROT_CONTENT_VERSION},
+        ${provenance.promptVersion}, ${provenance.contentVersion ?? TAROT_CONTENT_VERSION},
+        ${provenance.safetyPolicyVersion ?? "question-safety-v2"},
         ${provenance.schemaVersion}, ${tx.json(JSON.parse(JSON.stringify(result)))}
       )
     `;

@@ -171,4 +171,21 @@ describe("profile report template", () => {
     expect(prepared.calculation.numerology.name_rendering).toBeNull();
     expect(JSON.stringify(prepared)).not.toContain("Synthetic Person");
   });
+
+  it("renders systems disabled for the locked snapshot as unavailable", () => {
+    const restricted: ProfileReportSource = {
+      ...source,
+      snapshot: {
+        ...source.snapshot,
+        enabledSystems: ["numerology"],
+        traits: source.snapshot.traits.filter(({ sourceSystem }) => sourceSystem === "numerology"),
+        tensions: [],
+        convergences: [],
+      },
+    };
+    const sections = buildProfileReportSections(restricted);
+    for (const key of ["astrology", "bazi", "dreamspell", "nine-star-ki", "planetary-angularity"])
+      expect(sections.find((section) => section.key === key)).toMatchObject({ unavailable: true });
+    expect(sections.find((section) => section.key === "numerology")?.unavailable).not.toBe(true);
+  });
 });

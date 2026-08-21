@@ -195,6 +195,29 @@ describe("the provider transport boundary", () => {
     expect(headers.get("CF-Access-Client-Secret")).toBeNull();
   });
 
+  it("uses a reviewed runtime prompt bundle and records its exact version", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(successfulResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const grounded = new GroqInterpretationProvider({
+      apiKey: "synthetic-key",
+      model: "test-model",
+      promptBundleId: "reader-voice-v3-grounded",
+    });
+
+    const { provenance } = await grounded.generateWithProvenance(input);
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      messages: { role: string; content: string }[];
+    };
+
+    expect(request.messages[0]?.content).toContain(
+      "Prefer observable signals, explicit choices, and near-term conditions",
+    );
+    expect(provenance).toMatchObject({
+      providerId: "groq:test-model",
+      promptVersion: "reader-voice-v3-grounded",
+    });
+  });
+
   it("uses separate gateway and Cloudflare Access credentials on a custom HTTPS /v1 route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(successfulResponse());
     vi.stubGlobal("fetch", fetchMock);
@@ -302,12 +325,49 @@ describe("one-section follow-ups", () => {
     expect(request.messages[0]!.content).toContain("one cohesive response");
   });
 
+  it("records the exact model, follow-up prompt, and schema versions", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ response: "One answer." }) } }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const generated = await provider().generateFollowUpWithProvenance(followUpInput);
+
+    expect(generated).toMatchObject({
+      result: { response: "One answer." },
+      provenance: {
+        providerId: "groq:test-model",
+        promptVersion: "follow-up-reader-voice-v3",
+        schemaVersion: "follow-up-result-v1",
+      },
+    });
+  });
+
   it("falls back to a single profile- and card-aware response on provider failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 500 })));
     const result = await provider().generateFollowUp(followUpInput);
     expect(Object.keys(result)).toEqual(["response"]);
     expect(result.response).toContain(input.relevantTraitStatements[0]!.replace(/[.?!]+$/, ""));
     expect(result.response).toContain(tarotCards[12]!.name);
+  });
+
+  it("records deterministic provenance when a live follow-up falls back", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 500 })));
+
+    const generated = await provider().generateFollowUpWithProvenance(followUpInput);
+
+    expect(generated.provenance).toMatchObject({
+      providerId: "deterministic-fallback-v1:after-groq-provider-unavailable",
+      promptVersion: "deterministic-fallback-v3",
+      schemaVersion: "follow-up-result-v1",
+    });
   });
 
   it("rejects a prohibited factual claim even when the follow-up schema is valid", async () => {

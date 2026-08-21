@@ -414,6 +414,7 @@ export const profileSnapshotSchema = z.object({
   traits: z.array(profileTraitSchema).readonly(),
   tensions: z.array(profileTensionSchema).readonly(),
   convergences: z.array(profileConvergenceSchema).readonly().default([]),
+  enabledSystems: z.array(profileTraitSchema.shape.sourceSystem).readonly().optional(),
   calculationVersions: z.record(z.string(), z.string()),
   createdAt: z.string().datetime(),
 });

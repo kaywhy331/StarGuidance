@@ -28,6 +28,7 @@ import {
   type QuestionSubject,
   type ResolvedCard,
 } from "./interpretation";
+import type { RuntimePromptBundleId } from "./groq-provider";
 
 export interface InterpretationProvider<TInput, TOutput> {
   readonly id: string;
@@ -43,6 +44,11 @@ export interface ReadingGenerationOutcome {
   provenance: ReadingOutputProvenance;
 }
 
+export interface FollowUpGenerationOutcome {
+  result: FollowUpResult;
+  provenance: ReadingOutputProvenance;
+}
+
 export interface ReadingInterpretationProvider extends InterpretationProvider<
   ReadingGenerationInput,
   ReadingResult
@@ -51,6 +57,10 @@ export interface ReadingInterpretationProvider extends InterpretationProvider<
     input: ReadingGenerationInput,
     signal?: AbortSignal,
   ): Promise<ReadingGenerationOutcome>;
+  generateFollowUpWithProvenance(
+    input: FollowUpGenerationInput,
+    signal?: AbortSignal,
+  ): Promise<FollowUpGenerationOutcome>;
   generateFollowUp(input: FollowUpGenerationInput, signal?: AbortSignal): Promise<FollowUpResult>;
 }
 
@@ -427,6 +437,12 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
   }
 
   async generateFollowUp(input: FollowUpGenerationInput): Promise<FollowUpResult> {
+    return (await this.generateFollowUpWithProvenance(input)).result;
+  }
+
+  async generateFollowUpWithProvenance(
+    input: FollowUpGenerationInput,
+  ): Promise<FollowUpGenerationOutcome> {
     const resolved = resolveDraw(input.draw, input.questionClassification);
     const answer = answerCard(input.draw, resolved);
     const originalThread = input.originalResult.cards.find(
@@ -436,17 +452,24 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       originalThread?.passageIds.includes(id),
     );
     const trait = naturalTrait(input.relevantTraitStatements[0]);
-    return followUpResultSchema.parse({
-      response: [
-        `Coming back to ${answer.card.name}${answer.orientation === "reversed" ? " reversed" : ""}, the part that matters now is ${answer.themes.join(" and ")}.`,
-        originalPassage?.text ??
-          "That was already the thread carrying the original reading forward.",
-        trait
-          ? `Because ${trait}, I think the useful move is to notice the moment that familiar response begins and choose deliberately there.`
-          : "I think the useful move is to wait for one observable change, then respond to that rather than to the fear of what might happen.",
-        `For now, ${(input.originalResult.userAgency[0] ?? "Keep the next step small enough to revise").replace(/[.?!]+$/, "").replace(/^[A-Z]/, (letter) => letter.toLowerCase())}.`,
-      ].join(" "),
-    });
+    return {
+      result: followUpResultSchema.parse({
+        response: [
+          `Coming back to ${answer.card.name}${answer.orientation === "reversed" ? " reversed" : ""}, the part that matters now is ${answer.themes.join(" and ")}.`,
+          originalPassage?.text ??
+            "That was already the thread carrying the original reading forward.",
+          trait
+            ? `Because ${trait}, I think the useful move is to notice the moment that familiar response begins and choose deliberately there.`
+            : "I think the useful move is to wait for one observable change, then respond to that rather than to the fear of what might happen.",
+          `For now, ${(input.originalResult.userAgency[0] ?? "Keep the next step small enough to revise").replace(/[.?!]+$/, "").replace(/^[A-Z]/, (letter) => letter.toLowerCase())}.`,
+        ].join(" "),
+      }),
+      provenance: {
+        providerId: this.id,
+        promptVersion: FALLBACK_PROMPT_VERSION,
+        schemaVersion: "follow-up-result-v1",
+      },
+    };
   }
 }
 
@@ -801,11 +824,20 @@ export function configuredGroqModelChain(): readonly string[] {
  * yields the deterministic reader. Live narration is a separately approved
  * production gate rather than an accidental consequence of adding a key.
  */
-export function createInterpretationProvider(): ReadingInterpretationProvider {
+export interface InterpretationRuntimeOptions {
+  enabled?: boolean;
+  modelChain?: readonly string[];
+  promptBundleId?: RuntimePromptBundleId;
+}
+
+export function createInterpretationProvider(
+  runtime: InterpretationRuntimeOptions = {},
+): ReadingInterpretationProvider {
   const selected = process.env.AI_PROVIDER?.trim();
   const route = resolveAiProviderRoute();
   const safetyEvaluationApproved = process.env.AI_SAFETY_EVALUATION_APPROVED === "true";
   if (
+    runtime.enabled === false ||
     selected !== "groq" ||
     !route.authorizationToken ||
     !safetyEvaluationApproved ||
@@ -815,7 +847,7 @@ export function createInterpretationProvider(): ReadingInterpretationProvider {
   const timeout = Number.parseInt(process.env.AI_PROVIDER_TIMEOUT_MS ?? "", 10);
   const totalTimeout = Number.parseInt(process.env.AI_PROVIDER_TOTAL_TIMEOUT_MS ?? "", 10);
   const maxOutput = Number.parseInt(process.env.AI_PROVIDER_MAX_OUTPUT_TOKENS ?? "", 10);
-  const [model, ...fallbackModels] = configuredGroqModelChain();
+  const [model, ...fallbackModels] = runtime.modelChain ?? configuredGroqModelChain();
   return new GroqInterpretationProvider({
     apiKey: route.authorizationToken,
     model: model ?? DEFAULT_GROQ_PRIMARY_MODEL,
@@ -833,5 +865,8 @@ export function createInterpretationProvider(): ReadingInterpretationProvider {
     ...(Number.isFinite(timeout) ? { timeoutMs: timeout } : {}),
     ...(Number.isFinite(totalTimeout) ? { totalTimeoutMs: totalTimeout } : {}),
     ...(Number.isFinite(maxOutput) && maxOutput > 0 ? { maxOutputTokens: maxOutput } : {}),
+    ...(runtime.promptBundleId ? { promptBundleId: runtime.promptBundleId } : {}),
   });
 }
+
+export { RUNTIME_PROMPT_BUNDLES, type RuntimePromptBundleId } from "./groq-provider";

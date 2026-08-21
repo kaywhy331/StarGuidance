@@ -17,6 +17,26 @@ vi.mock("@starguidance/database", () => ({
   createDatabaseClient: () => database.client,
   isValidEncryptionKey: (value: string) => Buffer.from(value, "base64").length === 32,
 }));
+vi.mock("@/lib/runtime-configuration", () => ({
+  getRuntimeConfiguration: async () => ({
+    content: { enabledSpreadIds: ["one-card"] },
+    prompts: { bundleId: "reader-voice-v3" },
+    commerce: {},
+    features: {},
+    models: {
+      liveAiEnabled: true,
+      primaryModel: "openai/gpt-oss-120b",
+      fallbackModels: ["llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
+      disabledModels: [],
+    },
+    versions: { content: 1, prompts: 1, commerce: 1, features: 1, models: 1 },
+  }),
+  interpretationRuntimeOptions: (configuration: { prompts: { bundleId: string } }) => ({
+    enabled: true,
+    modelChain: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
+    promptBundleId: configuration.prompts.bundleId,
+  }),
+}));
 
 import { GET } from "./route";
 

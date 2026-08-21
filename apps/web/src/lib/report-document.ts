@@ -19,7 +19,7 @@ export function buildReportDocumentModel(
   report: Pick<StoredReport, "provider" | "sections">,
 ): ReportDocumentModel {
   return {
-    title: "Your private profile",
+    title: "Your private pattern atlas",
     eyebrow: `Full profile report · ${
       report.provider === "local" ? "local test adapter" : "Stripe test purchase"
     }`,

@@ -45,6 +45,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --prod --audit-level high
       - run: pnpm format:check
+      - run: pnpm requirements:check
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -169,10 +170,108 @@ jobs:
           CLOUDFLARE_ACCESS_TEAM_DOMAIN: https://synthetic-ci.cloudflareaccess.com
         run: docker compose down --volumes --remove-orphans
 
-  e2e_core:
-    name: e2e-core
+  e2e_core_project:
+    name: e2e-core-${{ matrix.lane }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: desktop-chromium-1
+            project: desktop-chromium
+            browser: chromium
+            shard: "1/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-2
+            project: desktop-chromium
+            browser: chromium
+            shard: "2/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-3
+            project: desktop-chromium
+            browser: chromium
+            shard: "3/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-4
+            project: desktop-chromium
+            browser: chromium
+            shard: "4/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-5
+            project: desktop-chromium
+            browser: chromium
+            shard: "5/6"
+            exclude_spreads: true
+          - lane: desktop-chromium-6
+            project: desktop-chromium
+            browser: chromium
+            shard: "6/6"
+            exclude_spreads: true
+          # Mobile Chromium also accumulates enough full-page contexts to
+          # stall late in a 44-test run, so it shares Firefox's short budget.
+          - lane: mobile-chromium-1
+            project: mobile-chromium
+            browser: chromium
+            shard: "1/6"
+            exclude_spreads: true
+          - lane: mobile-chromium-2
+            project: mobile-chromium
+            browser: chromium
+            shard: "2/6"
+            exclude_spreads: true
+          - lane: mobile-chromium-3
+            project: mobile-chromium
+            browser: chromium
+            shard: "3/6"
+            exclude_spreads: true
+          - lane: mobile-chromium-4
+            project: mobile-chromium
+            browser: chromium
+            shard: "4/6"
+            exclude_spreads: true
+          - lane: mobile-chromium-5
+            project: mobile-chromium
+            browser: chromium
+            shard: "5/6"
+            exclude_spreads: true
+          - lane: mobile-chromium-6
+            project: mobile-chromium
+            browser: chromium
+            shard: "6/6"
+            exclude_spreads: true
+          # Firefox showed the same late-process renderer stall as WebKit once
+          # a server had carried more than ten complete ritual contexts.
+          - lane: desktop-firefox-1
+            project: desktop-firefox
+            browser: firefox
+            shard: "1/6"
+            exclude_spreads: false
+          - lane: desktop-firefox-2
+            project: desktop-firefox
+            browser: firefox
+            shard: "2/6"
+            exclude_spreads: false
+          - lane: desktop-firefox-3
+            project: desktop-firefox
+            browser: firefox
+            shard: "3/6"
+            exclude_spreads: false
+          - lane: desktop-firefox-4
+            project: desktop-firefox
+            browser: firefox
+            shard: "4/6"
+            exclude_spreads: false
+          - lane: desktop-firefox-5
+            project: desktop-firefox
+            browser: firefox
+            shard: "5/6"
+            exclude_spreads: false
+          - lane: desktop-firefox-6
+            project: desktop-firefox
+            browser: firefox
+            shard: "6/6"
+            exclude_spreads: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -186,8 +285,92 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
-      - run: pnpm exec playwright install --with-deps chromium firefox
-      - run: pnpm --filter @starguidance/web test:e2e:core
+      - run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+      - env:
+          EXCLUDE_SPREADS: ${{ matrix.exclude_spreads }}
+        run: |
+          test_filters=()
+          if [ "$EXCLUDE_SPREADS" = true ]; then
+            test_filters+=(--grep-invert="configured .* spread uses its spatial arrangement")
+          fi
+          pnpm --filter @starguidance/web exec playwright test \
+            --project=${{ matrix.project }} \
+            --workers=1 \
+            "${test_filters[@]}" \
+            --shard=${{ matrix.shard }}
+
+  e2e_mobile_spread:
+    name: e2e-mobile-spread-${{ matrix.spread }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        spread: [one-card, three-card, celtic-cross, horseshoe, relationship, nine-card-matrix]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: >-
+          pnpm --filter @starguidance/web exec playwright test
+          --project=mobile-chromium
+          --workers=1
+          --grep="configured ${{ matrix.spread }} spread uses its spatial arrangement"
+
+  e2e_desktop_spread:
+    name: e2e-desktop-spread-${{ matrix.spread }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        spread: [one-card, three-card, celtic-cross, horseshoe, relationship, nine-card-matrix]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: >-
+          pnpm --filter @starguidance/web exec playwright test
+          --project=desktop-chromium
+          --workers=1
+          --grep="configured ${{ matrix.spread }} spread uses its spatial arrangement"
+
+  e2e_core:
+    name: e2e-core
+    if: ${{ always() }}
+    needs: [e2e_core_project, e2e_mobile_spread, e2e_desktop_spread]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every core browser lane
+        env:
+          PROJECT_RESULT: ${{ needs.e2e_core_project.result }}
+          MOBILE_SPREAD_RESULT: ${{ needs.e2e_mobile_spread.result }}
+          DESKTOP_SPREAD_RESULT: ${{ needs.e2e_desktop_spread.result }}
+        run: |
+          test "$PROJECT_RESULT" = success
+          test "$MOBILE_SPREAD_RESULT" = success
+          test "$DESKTOP_SPREAD_RESULT" = success
 
   e2e_webkit:
     name: e2e-webkit-${{ matrix.shard }}
@@ -195,8 +378,11 @@ jobs:
     timeout-minutes: 25
     strategy:
       fail-fast: false
+      # A production server remains intentionally local to each shard. These
+      # lanes cover the general inventory; the six long spread journeys each
+      # receive their own clean server below.
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -215,12 +401,41 @@ jobs:
           pnpm --filter @starguidance/web exec playwright test
           --project=desktop-webkit
           --workers=1
-          --shard=${{ matrix.shard }}/3
+          --grep-invert="configured .* spread uses its spatial arrangement"
+          --shard=${{ matrix.shard }}/7
+
+  e2e_webkit_spread:
+    name: e2e-webkit-spread-${{ matrix.spread }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        spread: [one-card, three-card, celtic-cross, horseshoe, relationship, nine-card-matrix]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
+      - run: pnpm exec playwright install --with-deps webkit
+      - run: >-
+          pnpm --filter @starguidance/web exec playwright test
+          --project=desktop-webkit
+          --workers=1
+          --grep="configured ${{ matrix.spread }} spread uses its spatial arrangement"
 
   e2e:
     name: e2e
     if: ${{ always() }}
-    needs: [e2e_core, e2e_webkit]
+    needs: [e2e_core, e2e_webkit, e2e_webkit_spread]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -228,9 +443,11 @@ jobs:
         env:
           CORE_RESULT: ${{ needs.e2e_core.result }}
           WEBKIT_RESULT: ${{ needs.e2e_webkit.result }}
+          WEBKIT_SPREAD_RESULT: ${{ needs.e2e_webkit_spread.result }}
         run: |
           test "$CORE_RESULT" = success
           test "$WEBKIT_RESULT" = success
+          test "$WEBKIT_SPREAD_RESULT" = success
 
   migration:
     runs-on: ubuntu-latest

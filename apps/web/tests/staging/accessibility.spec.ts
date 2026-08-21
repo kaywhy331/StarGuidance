@@ -199,6 +199,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
 
   await page.getByLabel("Full birth name").fill("Axe Synthetic");
   await page.getByLabel("Date of birth").fill("1988-03-21");
+  await page.getByRole("button", { name: "Continue to optional context" }).click();
   await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
   const profileResponsePromise = page
     .waitForResponse(
@@ -291,10 +292,15 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
   await page
     .getByRole("button", { name: "Gather now", exact: true })
-    .click({ timeout: 3_000 })
+    .dispatchEvent("click")
     .catch(() => {});
+  await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 12_000 });
   await page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ }).click();
   for (let index = 0; index < 10; index += 1) {
+    await page
+      .getByRole("button", { name: /^Reveal card \d+, face down$/ })
+      .first()
+      .click();
     const action = page.locator(".guided-next-action");
     await expect(action).toBeVisible();
     const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
@@ -322,6 +328,8 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
   await expect(page.getByTestId("reading-integration")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Ask the same cards/ })).toBeEnabled();
+  await page.getByRole("button", { name: /Ask the same cards/ }).click();
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();
   await scan("final reflection and follow-up entry point");
 

@@ -5,12 +5,18 @@ import { Button, LoadingState, Panel } from "@starguidance/design-system";
 
 import type { OperationalRole } from "@/lib/operational-access";
 
+import { OperatorConfigurationPanel } from "./operator-configuration-panel";
+
 interface OperationsPayload {
   role: OperationalRole;
   diagnostics: Record<
     "interpretation" | "report",
     { statuses: Record<string, number>; failedByClass: Record<string, number> }
   >;
+  productMeasurement: {
+    windowHours: number;
+    events: Record<string, number>;
+  };
   trace: {
     id: string;
     entities: { type: string; status: string; createdAt: string }[];
@@ -80,6 +86,29 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
             </div>
           </Panel>
           <Panel>
+            <h2 className="text-2xl">Privacy-safe product signals</h2>
+            <p className="mt-2 text-sm text-[#b8adc8]">
+              Aggregate counts from the last {payload.productMeasurement.windowHours} hours. The
+              event store contains no user ID, birth data, question text, card identity, URL, or
+              report prose.
+            </p>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {Object.entries(payload.productMeasurement.events).length === 0 ? (
+                <div>
+                  <dt className="text-xs text-[#a99db5]">Current window</dt>
+                  <dd>No events recorded</dd>
+                </div>
+              ) : (
+                Object.entries(payload.productMeasurement.events).map(([event, count]) => (
+                  <div key={event}>
+                    <dt className="text-xs text-[#a99db5]">{event}</dt>
+                    <dd>{count}</dd>
+                  </div>
+                ))
+              )}
+            </dl>
+          </Panel>
+          <Panel>
             <h2 className="text-2xl">Effective configuration</h2>
             <dl className="mt-4 grid gap-3 sm:grid-cols-2">
               {Object.entries(payload.configuration).map(([key, value]) => (
@@ -90,9 +119,8 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
               ))}
             </dl>
             <p className="mt-4 text-sm text-[#b8adc8]">
-              This surface is intentionally read-only for model, prompt, content, product, and
-              allowance configuration. Change those through reviewed deployment configuration and
-              its rollback path.
+              Runtime publishing and rollback controls appear here only for operators; support
+              access remains masked and read-only.
             </p>
           </Panel>
         </>
@@ -160,6 +188,7 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
           </p>
         )}
       </Panel>
+      {role === "operator" && <OperatorConfigurationPanel />}
     </div>
   );
 }

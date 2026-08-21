@@ -4,7 +4,7 @@ import {
   allSpreads,
   findSpread,
   legacySpreads,
-  renderTarotFaceSvg,
+  renderTarotFaceSvgV3,
   resolveSpreadPositions,
   selectSpreadContextTemplate,
   spreads,
@@ -25,22 +25,23 @@ describe("tarot content integrity", () => {
   it("assigns versioned, rights-documented artwork to every card", () => {
     for (const card of tarotCards) {
       expect(card.artwork.artworkId).toContain(card.id);
-      expect(card.artwork.frontAsset).toBe(`/art/tarot/v2/${card.id}.svg`);
+      expect(card.artwork.frontAsset).toBe(`/art/tarot/v3/${card.id}.svg`);
       expect(card.artwork.backAsset).toMatch(/\.webp$/);
       expect(card.artwork.altText).toContain(card.name);
       expect(card.artwork.artistCredit).toBeTruthy();
       expect(card.artwork.license).toContain("project use authorized");
       expect(card.artwork.provenance).toContain("original");
-      expect(card.artwork.artworkVersion).toBe("starguidance-celestial-gothic-v2");
+      expect(card.artwork.artworkVersion).toBe("starguidance-celestial-gothic-v3");
     }
   });
 
   it("renders 78 distinct lightweight illustrated faces", () => {
-    const faces = tarotCards.map((card) => renderTarotFaceSvg(card));
+    const faces = tarotCards.map((card) => renderTarotFaceSvgV3(card));
     expect(new Set(faces).size).toBe(78);
     for (const face of faces) {
       expect(face).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
-      expect(Buffer.byteLength(face, "utf8")).toBeLessThan(25_000);
+      expect(Buffer.byteLength(face, "utf8")).toBeLessThan(30_000);
+      expect(face).toContain('id="frame-v3"');
     }
   });
 

@@ -29,7 +29,7 @@ describe("reading state machine", () => {
     expect(actor.getSnapshot().value).toBe("generatingSynthesis");
   });
 
-  it("holds in the gather phase before dealing", () => {
+  it("supports the automatic no-cut compatibility transition into dealing", () => {
     const actor = createActor(readingMachine).start();
     actor.send({ type: "START" });
     actor.send({ type: "SELECT" });

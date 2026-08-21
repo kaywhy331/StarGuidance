@@ -12,7 +12,18 @@ import {
 import { createInterpretationProvider, readingLensStatements } from "@starguidance/ai";
 
 import { persistenceFor } from "./persistence";
+import {
+  classifyProductProvider,
+  productDurationBucket,
+  productModelVersion,
+  tryRecordProductEvent,
+} from "./product-telemetry";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "./runtime";
+import {
+  getRuntimeConfiguration,
+  interpretationRuntimeOptions,
+  type RuntimeConfiguration,
+} from "./runtime-configuration";
 
 export interface InterpretationJobsRunSummary {
   claimed: number;
@@ -49,7 +60,18 @@ export function interpretationFailureCode(error: unknown): string {
  * via failInterpretationJob/markReadingGenerationFailed, not propagated,
  * so one bad job can't stop the rest of the batch.
  */
-async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): Promise<boolean> {
+async function processJob(
+  sql: DatabaseClient,
+  job: ClaimedInterpretationJob,
+  runtimeConfiguration: RuntimeConfiguration,
+): Promise<boolean> {
+  let generationStartedAt: number | undefined;
+  if (job.attemptCount > 1)
+    await tryRecordProductEvent({
+      idempotencyKey: `interpretation-job:${job.id}:attempt:${job.attemptCount}`,
+      name: "job_retried",
+      properties: { statusClass: "started" },
+    });
   try {
     const persistence = persistenceFor({ id: job.userId });
     const reading = await persistence.repositories.readingSessions.get(job.userId, job.readingId);
@@ -60,33 +82,82 @@ async function processJob(sql: DatabaseClient, job: ClaimedInterpretationJob): P
     const relevantTraitStatements = snapshot
       ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
       : [];
-    const generated = await createInterpretationProvider().generateWithProvenance({
+    generationStartedAt = Date.now();
+    const generated = await createInterpretationProvider(
+      interpretationRuntimeOptions(runtimeConfiguration),
+    ).generateWithProvenance({
       draw: reading.draw,
       question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
       questionClassification: reading.questionClassification,
       relevantTraitStatements,
     });
-    return await actorTransaction(sql, job.userId, (tx) =>
+    const written = await actorTransaction(sql, job.userId, (tx) =>
       writeInterpretationResult(tx, {
         userId: job.userId,
         readingId: job.readingId,
         job,
         result: generated.result,
-        provenance: generated.provenance,
+        provenance: {
+          ...generated.provenance,
+          contentVersion: runtimeConfiguration.content.tarotContentVersion,
+          safetyPolicyVersion: runtimeConfiguration.prompts.safetyPolicyVersion,
+        },
       }),
     );
+    const provider = classifyProductProvider(generated.provenance.providerId);
+    await tryRecordProductEvent({
+      idempotencyKey: `reading:${job.readingId}:generation-completed`,
+      name: "generation_completed",
+      properties: {
+        provider,
+        modelVersion: productModelVersion(generated.provenance.providerId),
+        generationMode: provider === "deterministic" ? "deterministic" : "live",
+        fallbackUsed: provider === "deterministic",
+        durationBucket: productDurationBucket(Date.now() - generationStartedAt),
+        statusClass: "ready",
+      },
+    });
+    if (provider === "deterministic")
+      await tryRecordProductEvent({
+        idempotencyKey: `reading:${job.readingId}:fallback-used`,
+        name: "fallback_used",
+        properties: {
+          provider,
+          modelVersion: productModelVersion(generated.provenance.providerId),
+          generationMode: "deterministic",
+          fallbackUsed: true,
+          statusClass: "ready",
+        },
+      });
+    return written;
   } catch (error) {
+    const code = interpretationFailureCode(error);
     await actorTransaction(sql, job.userId, async (tx) => {
-      const { terminal, applied } = await failInterpretationJob(
-        tx,
-        job,
-        interpretationFailureCode(error),
-      );
+      const { terminal, applied } = await failInterpretationJob(tx, job, code);
       if (terminal && applied)
         await markReadingGenerationFailed(tx, {
           userId: job.userId,
           readingId: job.readingId,
         });
+    });
+    await tryRecordProductEvent({
+      idempotencyKey: `reading:${job.readingId}:generation-failed:attempt:${job.attemptCount}`,
+      name: "generation_failed",
+      properties: {
+        errorClass: code.includes("timeout")
+          ? "provider_timeout"
+          : code.includes("rate_limited")
+            ? "rate_limited"
+            : code.includes("invalid")
+              ? "schema_invalid"
+              : code.includes("authentication")
+                ? "authentication"
+                : "unclassified",
+        ...(generationStartedAt === undefined
+          ? {}
+          : { durationBucket: productDurationBucket(Date.now() - generationStartedAt) }),
+        statusClass: "failed",
+      },
     });
     return false;
   }
@@ -112,6 +183,7 @@ export async function runInterpretationJobs(limit: number): Promise<Interpretati
   // result/failure transition is attempt-fenced inside actorTransaction so
   // subject-bound RLS and the owning reading update share one transaction.
   const sql = getSystemDatabaseClient();
+  const runtimeConfiguration = await getRuntimeConfiguration();
   const maximum = Math.max(0, Math.floor(limit));
   let claimed = 0;
   let succeeded = 0;
@@ -125,7 +197,7 @@ export async function runInterpretationJobs(limit: number): Promise<Interpretati
     const [job] = await claimInterpretationJobs(sql, 1);
     if (!job) break;
     claimed += 1;
-    if (await processJob(sql, job)) succeeded += 1;
+    if (await processJob(sql, job, runtimeConfiguration)) succeeded += 1;
     else failed += 1;
   }
   return { claimed, succeeded, failed };

@@ -245,6 +245,8 @@ export const readingOutputProvenanceSchema = z.object({
   providerId: z.string().min(1),
   promptVersion: z.string().min(1),
   schemaVersion: z.string().min(1),
+  contentVersion: z.string().min(1).optional(),
+  safetyPolicyVersion: z.string().min(1).optional(),
 });
 
 export type ReadingOutputProvenance = z.infer<typeof readingOutputProvenanceSchema>;

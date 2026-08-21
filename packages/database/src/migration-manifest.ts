@@ -23,4 +23,11 @@ export const EXPECTED_MIGRATIONS = [
   "0015_consent_event_history",
   "0016_reading_intake_recovery",
   "0017_sound-on-by-default",
+  "0018_reading_outcome_feedback",
+  "0019_privacy_safe_product_events",
+  "0020_wonderful_thunderball",
+  "0021_optimal_frightful_four",
+  "0022_outstanding_smasher",
+  "0023_output_provenance",
+  "0024_immutable_content_versions",
 ] as const;

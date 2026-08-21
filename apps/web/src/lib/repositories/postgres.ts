@@ -463,12 +463,15 @@ export function createPostgresRepositories(
       lockedAt: iso(drawRow.locked_at as Date),
     };
     const [outputRow] = await tx`
-      select provider_id, prompt_version, schema_version, payload
+      select provider_id, prompt_version, content_version, safety_policy_version,
+             schema_version, payload
       from reading_outputs where reading_id = ${String(row.id)}
       order by created_at desc, id desc limit 1
     `;
     const followRows = await tx`
-      select id, encrypted_question, output, created_at from follow_up_questions
+      select id, encrypted_question, output, provider_id, prompt_version,
+             content_version, safety_policy_version, schema_version, created_at
+      from follow_up_questions
       where reading_id = ${String(row.id)} order by created_at, id
     `;
     return {
@@ -493,6 +496,8 @@ export function createPostgresRepositories(
             outputProvenance: readingOutputProvenanceSchema.parse({
               providerId: outputRow.provider_id,
               promptVersion: outputRow.prompt_version,
+              contentVersion: outputRow.content_version,
+              safetyPolicyVersion: outputRow.safety_policy_version,
               schemaVersion: outputRow.schema_version,
             }),
           }
@@ -502,6 +507,13 @@ export function createPostgresRepositories(
         id: String(follow.id),
         encryptedQuestion: String(follow.encrypted_question),
         result: normalizeFollowUpResult(follow.output),
+        outputProvenance: readingOutputProvenanceSchema.parse({
+          providerId: follow.provider_id,
+          promptVersion: follow.prompt_version,
+          contentVersion: follow.content_version,
+          safetyPolicyVersion: follow.safety_policy_version,
+          schemaVersion: follow.schema_version,
+        }),
         createdAt: iso(follow.created_at as Date),
       })),
       createdAt: iso(row.created_at as Date),
@@ -637,10 +649,13 @@ export function createPostgresRepositories(
       await userTransaction(userId, async (tx) => {
         await tx`
           insert into reading_outputs (
-            user_id, reading_id, provider_id, prompt_version, content_version, schema_version, payload
+            user_id, reading_id, provider_id, prompt_version, content_version,
+            safety_policy_version, schema_version, payload
           ) values (
             ${userId}, ${readingId}, ${verifiedProvenance.providerId},
-            ${verifiedProvenance.promptVersion}, ${TAROT_CONTENT_VERSION},
+            ${verifiedProvenance.promptVersion},
+            ${verifiedProvenance.contentVersion ?? TAROT_CONTENT_VERSION},
+            ${verifiedProvenance.safetyPolicyVersion ?? "question-safety-v2"},
             ${verifiedProvenance.schemaVersion}, ${tx.json(json(readingResultSchema.parse(result)))}
           )
         `;
@@ -686,10 +701,15 @@ export function createPostgresRepositories(
         if (Number(usage?.count ?? 0) >= policy.limit) throw new Error("FOLLOW_UP_LIMIT_REACHED");
         await tx`
           insert into follow_up_questions (
-            id, user_id, reading_id, encrypted_question, output, created_at
+            id, user_id, reading_id, encrypted_question, output, provider_id,
+            prompt_version, content_version, safety_policy_version, schema_version, created_at
           ) values (
             ${followUp.id}, ${userId}, ${readingId}, ${followUp.encryptedQuestion},
-            ${tx.json(json(followUpResultSchema.parse(followUp.result)))}, ${followUp.createdAt}
+            ${tx.json(json(followUpResultSchema.parse(followUp.result)))},
+            ${followUp.outputProvenance.providerId}, ${followUp.outputProvenance.promptVersion},
+            ${followUp.outputProvenance.contentVersion ?? TAROT_CONTENT_VERSION},
+            ${followUp.outputProvenance.safetyPolicyVersion ?? "question-safety-v2"},
+            ${followUp.outputProvenance.schemaVersion}, ${followUp.createdAt}
           )
         `;
       });
@@ -1035,8 +1055,11 @@ export function createPostgresRepositories(
     async create(input: {
       userId: string;
       readingId: string;
+      kind: StoredFeedback["kind"];
       resonance?: number;
       helpfulness?: number;
+      outcomeStatus?: StoredFeedback["outcomeStatus"];
+      behaviorChanged?: boolean;
       encryptedComment?: string;
     }): Promise<StoredFeedback> {
       return userTransaction(input.userId, async (tx) => {
@@ -1044,8 +1067,13 @@ export function createPostgresRepositories(
           id: randomUUID(),
           userId: input.userId,
           readingId: input.readingId,
+          kind: input.kind,
           ...(input.resonance === undefined ? {} : { resonance: input.resonance }),
           ...(input.helpfulness === undefined ? {} : { helpfulness: input.helpfulness }),
+          ...(input.outcomeStatus === undefined ? {} : { outcomeStatus: input.outcomeStatus }),
+          ...(input.behaviorChanged === undefined
+            ? {}
+            : { behaviorChanged: input.behaviorChanged }),
           ...(input.encryptedComment === undefined
             ? {}
             : { encryptedComment: input.encryptedComment }),
@@ -1053,10 +1081,12 @@ export function createPostgresRepositories(
         };
         await tx`
           insert into reading_feedback (
-            id, user_id, reading_id, resonance, helpfulness, encrypted_comment, created_at
+            id, user_id, reading_id, kind, resonance, helpfulness, outcome_status,
+            behavior_changed, encrypted_comment, created_at
           ) values (
-            ${feedback.id}, ${feedback.userId}, ${feedback.readingId},
+            ${feedback.id}, ${feedback.userId}, ${feedback.readingId}, ${feedback.kind},
             ${feedback.resonance ?? null}, ${feedback.helpfulness ?? null},
+            ${feedback.outcomeStatus ?? null}, ${feedback.behaviorChanged ?? null},
             ${feedback.encryptedComment ?? null}, ${feedback.createdAt}
           )
         `;
@@ -1079,12 +1109,21 @@ export function createPostgresRepositories(
           id: String(row.id),
           userId: String(row.user_id),
           readingId: String(row.reading_id),
+          kind: row.kind === "outcome" ? "outcome" : "experience",
           ...(row.resonance === null || row.resonance === undefined
             ? {}
             : { resonance: Number(row.resonance) }),
           ...(row.helpfulness === null || row.helpfulness === undefined
             ? {}
             : { helpfulness: Number(row.helpfulness) }),
+          ...(row.outcome_status
+            ? {
+                outcomeStatus: row.outcome_status as NonNullable<StoredFeedback["outcomeStatus"]>,
+              }
+            : {}),
+          ...(row.behavior_changed === null || row.behavior_changed === undefined
+            ? {}
+            : { behaviorChanged: Boolean(row.behavior_changed) }),
           ...(row.encrypted_comment ? { encryptedComment: String(row.encrypted_comment) } : {}),
           createdAt: iso(row.created_at as Date),
         }));

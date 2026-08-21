@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, LoadingState, Panel } from "@starguidance/design-system";
 import { PROFILE_REPORT_SECTION_PREVIEW } from "@/lib/report-sections";
+import { PrivateSigil } from "../session/[id]/private-sigil";
 
 interface ProfileView {
   snapshot: { id: string; version: number; completeness: string };
@@ -19,20 +20,47 @@ const COMPLETENESS_LABELS: Record<string, string> = {
   complete: "Complete",
 };
 
+const REPORT_PREVIEW_CHAPTERS = [
+  {
+    number: "I",
+    title: "Foundation",
+    keys: ["overview", "core-motivations", "strengths", "growth-opportunities"],
+  },
+  {
+    number: "II",
+    title: "Inner life",
+    keys: ["emotional-patterns", "relationships", "communication-decisions", "internal-tensions"],
+  },
+  {
+    number: "III",
+    title: "Source systems",
+    keys: ["astrology", "numerology", "bazi", "dreamspell", "nine-star-ki", "planetary-angularity"],
+  },
+  {
+    number: "IV",
+    title: "Integration",
+    keys: ["cross-system-convergence", "cross-system-contradictions", "practical-integration"],
+  },
+] as const;
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileView | null>();
   const [message, setMessage] = useState<string>();
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [checkoutState, setCheckoutState] = useState<"idle" | "cancelled" | "pending">("idle");
+  const [profileReportsEnabled, setProfileReportsEnabled] = useState(false);
   const processedCheckoutReturn = useRef(false);
   const router = useRouter();
-  const profileReportsEnabled = process.env.NEXT_PUBLIC_ENABLE_PROFILE_REPORTS === "true";
   useEffect(() => {
     void fetch("/api/profile", { cache: "no-store" }).then(async (response) => {
       if (response.status === 401) return router.push("/sign-in");
-      const payload = (await response.json()) as { profile: ProfileView | null };
+      const payload = (await response.json()) as {
+        profile: ProfileView | null;
+        profileReportsEnabled: boolean;
+      };
       setProfile(payload.profile);
+      setProfileReportsEnabled(payload.profileReportsEnabled);
     });
   }, [router]);
 
@@ -142,124 +170,204 @@ export default function ProfilePage() {
   }, [profile, submitCheckout]);
   if (profile === undefined)
     return (
-      <main className="grid min-h-screen place-items-center">
-        <LoadingState />
+      <main className="profile-vault-loading">
+        <LoadingState label="Opening your private profile vault…" />
       </main>
     );
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-6 py-12">
-      <h1 className="text-5xl font-semibold">Private profile</h1>
+    <main className="profile-vault-shell">
+      <header className="profile-vault-header">
+        <div>
+          <p className="page-eyebrow">Encrypted profile vault</p>
+          <h1>Your private pattern map</h1>
+          <p>
+            Your birth facts stay protected here. StarGuidance derives a compact lens for each
+            reading while keeping the original details away from the narrator.
+          </p>
+        </div>
+        {profile ? (
+          <span className="profile-vault-mark">
+            <PrivateSigil seed={profile.snapshot.id} />
+          </span>
+        ) : (
+          <span aria-hidden="true" className="profile-vault-mark">
+            <i>✦</i>
+          </span>
+        )}
+      </header>
       {!profile ? (
-        <Panel className="mt-8">
-          <p>No profile exists yet.</p>
+        <Panel className="profile-vault-empty">
+          <h2>No private profile exists yet</h2>
+          <p>Create the protected foundation that personalizes your readings.</p>
+          <Button onClick={() => router.push("/onboarding")}>Create private profile</Button>
         </Panel>
       ) : (
-        <Panel className="mt-8">
-          <dl className="grid gap-4 sm:grid-cols-2">
+        <Panel className="profile-vault-card">
+          <header>
             <div>
-              <dt className="text-sm text-[#a99db5]">Birth name</dt>
+              <p>Current capability</p>
+              <h2>
+                {COMPLETENESS_LABELS[profile.snapshot.completeness] ??
+                  profile.snapshot.completeness}
+              </h2>
+            </div>
+            <span>Snapshot v{profile.snapshot.version}</span>
+          </header>
+          <div aria-hidden="true" className="profile-capability-orbit">
+            <span data-active="true">Core</span>
+            <i />
+            <span data-active={profile.snapshot.completeness !== "core"}>Place</span>
+            <i />
+            <span data-active={profile.snapshot.completeness === "complete"}>Time</span>
+          </div>
+          <dl className="profile-vault-facts">
+            <div>
+              <dt>Birth name</dt>
               <dd>{profile.maskedName}</dd>
             </div>
             <div>
-              <dt className="text-sm text-[#a99db5]">Birth date</dt>
+              <dt>Birth date</dt>
               <dd>{profile.birthDate}</dd>
             </div>
             <div>
-              <dt className="text-sm text-[#a99db5]">Birth time</dt>
+              <dt>Birth time</dt>
               <dd>{profile.birthTimeProvided ? "Provided" : "Not provided"}</dd>
             </div>
             <div>
-              <dt className="text-sm text-[#a99db5]">Birthplace</dt>
+              <dt>Birthplace</dt>
               <dd>{profile.birthplaceLabel ?? "Not provided"}</dd>
             </div>
-            <div>
-              <dt className="text-sm text-[#a99db5]">Capability</dt>
-              <dd>
-                {COMPLETENESS_LABELS[profile.snapshot.completeness] ??
-                  profile.snapshot.completeness}
-              </dd>
-            </div>
           </dl>
-          <p className="mt-6 text-sm text-[#a99db5]">
-            Snapshot v{profile.snapshot.version}. Changes create a new snapshot and never
-            reinterpret past readings.
-          </p>
+          <footer>
+            <span aria-hidden="true">◈</span>
+            <p>
+              Edits create a new snapshot. Past readings always keep the version they began with.
+            </p>
+          </footer>
+          <div className="profile-vault-actions">
+            <Button onClick={() => router.push("/onboarding")} variant="secondary">
+              Update birth facts
+            </Button>
+            {profileReportsEnabled && (profile || checkoutState === "cancelled") && (
+              <Button onClick={() => void submitCheckout(checkoutState === "cancelled")}>
+                {checkoutState === "cancelled"
+                  ? "Resume secure checkout"
+                  : "Get full profile report"}
+              </Button>
+            )}
+          </div>
         </Panel>
       )}
-      <div className="mt-6 flex flex-wrap gap-3">
-        <Button onClick={() => router.push("/onboarding")}>Update birth facts</Button>
-        {profileReportsEnabled && (profile || checkoutState === "cancelled") && (
-          <Button onClick={() => void submitCheckout(checkoutState === "cancelled")}>
-            {checkoutState === "cancelled" ? "Resume secure checkout" : "Get full profile report"}
-          </Button>
-        )}
-      </div>
       {message && (
-        <p className="mt-4" role="alert">
+        <p className="profile-vault-message" role="alert">
           {message}
         </p>
       )}
       {profile && profileReportsEnabled ? (
-        <Panel className="mt-8">
-          <p className="text-sm tracking-[.18em] text-[#d8b56d] uppercase">Report preview</p>
-          <h2 className="mt-2 text-2xl">What the private report covers</h2>
-          <p className="mt-2 text-[#b8adc8]">
-            This title-only preview shows the structure before purchase. Unavailable systems stay
-            clearly unavailable in the report; StarGuidance never fills them with invented data.
-          </p>
-          <ul className="mt-5 grid gap-x-6 gap-y-2 sm:grid-cols-2">
-            {PROFILE_REPORT_SECTION_PREVIEW.map((section) => (
-              <li key={section.key}>{section.title}</li>
-            ))}
-          </ul>
+        <Panel className="profile-report-preview">
+          <header className="atlas-preview-cover">
+            <PrivateSigil label="Pattern atlas sigil" seed={profile.snapshot.id} />
+            <div>
+              <p>Private edition · snapshot v{profile.snapshot.version}</p>
+              <h2>Your full pattern atlas</h2>
+              <span>
+                A designed long-form volume that keeps sources, contradictions, and unavailable
+                systems visible.
+              </span>
+            </div>
+            <aside>
+              <strong>{PROFILE_REPORT_SECTION_PREVIEW.length}</strong>
+              <span>structured sections</span>
+            </aside>
+          </header>
+          <div aria-label="Pattern atlas chapters" className="atlas-preview-chapters">
+            {REPORT_PREVIEW_CHAPTERS.map((chapter) => {
+              const sections = PROFILE_REPORT_SECTION_PREVIEW.filter((section) =>
+                (chapter.keys as readonly string[]).includes(section.key),
+              );
+              return (
+                <section key={chapter.number}>
+                  <span>{chapter.number}</span>
+                  <h3>{chapter.title}</h3>
+                  <p>{sections.map(({ title }) => title).join(" · ")}</p>
+                </section>
+              );
+            })}
+          </div>
+          <div className="atlas-preview-integrity" role="note">
+            <div aria-hidden="true">
+              <span data-status="available">Deterministic</span>
+              <i />
+              <span data-status="conditional">Contextual</span>
+              <i />
+              <span data-status="gated">Unavailable</span>
+            </div>
+            <p>
+              Every claim carries its source and version. A system that lacks validated inputs or
+              approved calculations appears as an explicit gap—not invented insight.
+            </p>
+          </div>
+          <footer className="atlas-preview-footer">
+            <blockquote>
+              <span>Inside the atlas</span>
+              “Where independent signals agree, convergence is named. Where they pull in different
+              directions, the tension stays intact.”
+            </blockquote>
+            <Button onClick={() => void submitCheckout(checkoutState === "cancelled")}>
+              {checkoutState === "cancelled" ? "Resume secure checkout" : "Open your full atlas"}
+            </Button>
+          </footer>
         </Panel>
       ) : null}
       {profile ? (
-        <Panel className="mt-8 border-[#6f3341]">
-          <h2 className="text-2xl">Delete private profile</h2>
-          <p className="mt-2 text-[#b8adc8]">
-            This removes every profile snapshot and its dependent readings. Paid order, entitlement,
-            and generated-report records remain under the finance retention policy; your login and
-            policy receipts remain so you can start over.
-          </p>
-          <div className="mt-4 max-w-sm">
-            <Field
-              autoComplete="off"
-              label='Type "DELETE PROFILE"'
-              onChange={(event) => setDeleteConfirmation(event.target.value)}
-              value={deleteConfirmation}
-            />
-          </div>
-          <Button
-            className="mt-4"
-            disabled={deleting || deleteConfirmation !== "DELETE PROFILE"}
-            onClick={async () => {
-              setDeleting(true);
-              setMessage(undefined);
-              try {
-                const response = await fetch("/api/profile", {
-                  method: "DELETE",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ confirmation: deleteConfirmation }),
-                });
-                const payload = (await response.json()) as { error?: string };
-                if (!response.ok) {
-                  setMessage(payload.error ?? "The private profile could not be deleted.");
-                  return;
+        <details className="profile-danger-disclosure">
+          <summary>Profile privacy & deletion controls</summary>
+          <Panel>
+            <h2>Delete private profile</h2>
+            <p>
+              This removes every profile snapshot and its dependent readings. Paid order,
+              entitlement, and generated-report records remain under the finance retention policy;
+              your login and policy receipts remain so you can start over.
+            </p>
+            <div>
+              <Field
+                autoComplete="off"
+                label='Type "DELETE PROFILE"'
+                onChange={(event) => setDeleteConfirmation(event.target.value)}
+                value={deleteConfirmation}
+              />
+            </div>
+            <Button
+              disabled={deleting || deleteConfirmation !== "DELETE PROFILE"}
+              onClick={async () => {
+                setDeleting(true);
+                setMessage(undefined);
+                try {
+                  const response = await fetch("/api/profile", {
+                    method: "DELETE",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ confirmation: deleteConfirmation }),
+                  });
+                  const payload = (await response.json()) as { error?: string };
+                  if (!response.ok) {
+                    setMessage(payload.error ?? "The private profile could not be deleted.");
+                    return;
+                  }
+                  setProfile(null);
+                  setDeleteConfirmation("");
+                  setMessage(
+                    "Your private profile and dependent readings were deleted. Commerce records were retained under the finance policy.",
+                  );
+                } finally {
+                  setDeleting(false);
                 }
-                setProfile(null);
-                setDeleteConfirmation("");
-                setMessage(
-                  "Your private profile and dependent readings were deleted. Commerce records were retained under the finance policy.",
-                );
-              } finally {
-                setDeleting(false);
-              }
-            }}
-          >
-            {deleting ? "Deleting profile…" : "Delete private profile"}
-          </Button>
-        </Panel>
+              }}
+              variant="danger"
+            >
+              {deleting ? "Deleting profile…" : "Delete private profile"}
+            </Button>
+          </Panel>
+        </details>
       ) : null}
     </main>
   );

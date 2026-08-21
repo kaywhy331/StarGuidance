@@ -16,6 +16,8 @@
     "test:staging": "playwright test --config=playwright.staging.config.ts"
   },
   "dependencies": {
+    "@fontsource-variable/cormorant": "5.3.0",
+    "@fontsource-variable/manrope": "5.3.0",
     "@hookform/resolvers": "5.4.0",
     "@starguidance/ai": "workspace:*",
     "@starguidance/contracts": "workspace:*",

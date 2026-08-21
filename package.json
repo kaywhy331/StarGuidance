@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
+    "requirements:check": "tsx scripts/requirements-traceability.mts --check",
     "typecheck": "corepack pnpm --recursive --if-present typecheck",
     "test": "corepack pnpm --recursive --if-present test",
     "test:e2e": "corepack pnpm --filter @starguidance/web test:e2e",

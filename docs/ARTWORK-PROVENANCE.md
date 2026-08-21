@@ -23,7 +23,7 @@ AVIF is preferred and WebP is the compatibility fallback. Reduced-motion mode us
 
 ## Card-face provenance
 
-`starguidance-celestial-gothic-v2` maps all 78 IDs to a unique cacheable SVG face rendered by `packages/tarot-content/src/artwork.ts`. Major Arcana use card-specific symbolic scenes. Minor Arcana combine rank/court compositions with suit-specific symbols and palettes. Each card carries:
+`starguidance-celestial-gothic-v3` maps all 78 IDs to a unique cacheable SVG face rendered by `packages/tarot-content/src/artwork.ts`. It extends the preserved v2 renderer with a card-specific constellation, horizon/landscape, luminous orb, and spatial frame while retaining original geometric authorship. Major Arcana use card-specific symbolic scenes. Minor Arcana combine rank/court compositions with suit-specific symbols and palettes. The `/art/tarot/v2/…` route and renderer remain unchanged so a historical deck reference stays readable; new draws resolve `/art/tarot/v3/…`. Each card carries:
 
 - `artworkId`
 - `frontAsset`
@@ -57,15 +57,19 @@ The built-in image-generation path was used; no API key or fallback CLI model wa
 
 - A browser downloads one sanctuary format/composition, not all four variants.
 - Mobile sanctuary transfer is capped at 350 KB by Playwright; the authored AVIF is 27,398 bytes and WebP fallback is 92,332 bytes.
-- The ritual renders nine lightweight shuffle shells rather than 78 card components.
+- The ritual renders 15 lightweight shuffle shells rather than 78 card components.
 - The scene uses CSS transforms and 14 restrained particles; there is no canvas, WebGL, or 3D engine.
 - The card-face renderer is covered by size and uniqueness tests.
 
 The representative Pixel 7 Playwright check confirms that the browser selects the mobile sanctuary composition, renders no canvas, and stays below the 350,000-byte atmospheric-image transfer budget. The preferred mobile AVIF is 27,398 bytes; its WebP compatibility fallback is 92,332 bytes.
 
+## Typography provenance
+
+The product bundles `@fontsource-variable/cormorant@5.3.0` and `@fontsource-variable/manrope@5.3.0`. Both packages declare the SIL Open Font License 1.1 and include their license text in the installed package. The WOFF2 files are built with the application; StarGuidance does not call a hosted font service at runtime. Cormorant is used for editorial display and long-form reflective reading, while Manrope carries controls, labels, provenance, and accessibility-oriented utility copy.
+
 ## Deploy-preview evidence
 
-The checked-in screenshots were captured on 2026-07-22 from [Netlify Deploy Preview #3](https://deploy-preview-3--starguidance.netlify.app/visual-preview) at UI head `3d930f8758797fc4f99f1c6f3b321b74d7605cb7`. The route is noindexed and uses synthetic cards and prose only.
+The checked-in screenshots were captured on 2026-08-20 from [Netlify Deploy Preview #19](https://deploy-preview-19--starguidance.netlify.app/visual-preview) at UI head `22ec54d5610a65f3801f3055467cb2e8be07c27c`. The route is noindexed and uses synthetic cards and prose only.
 
 - [Desktop Chromium sanctuary](screenshots/sanctuary-reading-desktop-chromium.png)
 - [Pixel 7 Chromium sanctuary](screenshots/sanctuary-reading-mobile-chromium.png)

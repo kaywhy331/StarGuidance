@@ -10,12 +10,14 @@ const mocks = vi.hoisted(() => {
     assertSameOrigin: vi.fn(),
     client,
     inspectJobQueues: vi.fn(),
+    getRuntimeConfiguration: vi.fn(),
     reenqueueInterpretationJob: vi.fn(),
     reenqueueReportJob: vi.fn(),
     requestSecurityFailure: vi.fn(),
     requireOperationalRole: vi.fn(),
     requireUser: vi.fn(),
     transaction,
+    tryRecordProductEvent: vi.fn(),
   };
 });
 
@@ -35,9 +37,32 @@ vi.mock("@/lib/request-security", () => ({
   assertSameOrigin: mocks.assertSameOrigin,
   requestSecurityFailure: mocks.requestSecurityFailure,
 }));
+vi.mock("@/lib/product-telemetry", () => ({
+  tryRecordProductEvent: mocks.tryRecordProductEvent,
+}));
 vi.mock("@/lib/runtime", () => ({
   getRuntimeAdapter: () => "supabase",
   getSystemDatabaseClient: () => mocks.client,
+}));
+vi.mock("@/lib/runtime-configuration", () => ({
+  getRuntimeConfiguration: mocks.getRuntimeConfiguration,
+  interpretationRuntimeOptions: (configuration: {
+    models: {
+      liveAiEnabled: boolean;
+      primaryModel: string;
+      fallbackModels: string[];
+      disabledModels: string[];
+    };
+    prompts: { bundleId: string };
+  }) => ({
+    enabled: configuration.models.liveAiEnabled,
+    modelChain: [configuration.models.primaryModel, ...configuration.models.fallbackModels].filter(
+      (model) => !configuration.models.disabledModels.includes(model),
+    ),
+    promptBundleId: configuration.prompts.bundleId,
+  }),
+  profileReportsEnabled: (configuration: { features: { profileReportsEnabled: boolean } }) =>
+    configuration.features.profileReportsEnabled,
 }));
 
 import { GET, POST } from "./route";
@@ -72,6 +97,23 @@ beforeEach(() => {
     interpretation: { statuses: { failed: 1 }, failedByClass: { provider_timeout: 1 } },
     report: { statuses: { pending: 2 }, failedByClass: {} },
   });
+  mocks.getRuntimeConfiguration.mockResolvedValue({
+    content: { enabledSpreadIds: ["one-card", "three-card"] },
+    prompts: { bundleId: "reader-voice-v3" },
+    commerce: {
+      readingAccessMode: "free-window",
+      freeAllowance: 2,
+      allowanceWindowHours: 48,
+    },
+    features: { profileReportsEnabled: false, animationVariant: "immersive-v1" },
+    models: {
+      liveAiEnabled: true,
+      primaryModel: "openai/gpt-oss-120b",
+      fallbackModels: ["llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
+      disabledModels: [],
+    },
+    versions: { content: null, prompts: null, commerce: null, features: null, models: null },
+  });
   mocks.client.begin.mockImplementation(
     async (work: (transaction: typeof mocks.transaction) => Promise<unknown>) =>
       work(mocks.transaction),
@@ -104,14 +146,17 @@ describe("operational API boundary", () => {
         interpretation: { statuses: { failed: 1 } },
         report: { statuses: { pending: 2 } },
       },
+      productMeasurement: { windowHours: 24, events: {} },
       trace: null,
       configuration: {
         aiGenerationEnabled: true,
         aiTransport: "direct-groq",
         aiModels: ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
         readingAccessMode: "free-window",
-        freeAllowance: "2",
-        allowanceWindowHours: "48",
+        freeAllowance: 2,
+        allowanceWindowHours: 48,
+        operationalAlertReceiverSet: false,
+        liveAiVolumeAlertThreshold: 500,
       },
     });
   });
@@ -163,7 +208,7 @@ describe("operational API boundary", () => {
   });
 
   it("reduces an exact trace lookup to type, status, and timestamp", async () => {
-    mocks.client.mockResolvedValue([
+    mocks.client.mockResolvedValueOnce([]).mockResolvedValueOnce([
       {
         entity_type: "report-job",
         status: "failed",
@@ -200,6 +245,9 @@ describe("operational API boundary", () => {
       "interpretation-job",
       targetId,
     ]);
+    expect(mocks.tryRecordProductEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "job_retried" }),
+    );
   });
 
   it("does not retry or audit a job that is no longer failed", async () => {

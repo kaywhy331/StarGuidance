@@ -64,6 +64,10 @@ export interface LocalStore {
     }
   >;
   auditEvents: AuditRecord[];
+  productEvents: Map<
+    string,
+    { eventName: string; properties: Record<string, string | number | boolean> }
+  >;
 }
 
 const globalStore = globalThis as typeof globalThis & { __starGuidanceLocalStore?: LocalStore };
@@ -88,6 +92,7 @@ export const localStore: LocalStore =
     idempotency: new Map(),
     webhookEvents: new Map(),
     auditEvents: [],
+    productEvents: new Map(),
   });
 
 export function assertLocalAdapter(): void {

@@ -26,6 +26,8 @@ const APP_ONLY_TABLES = [
   "report_jobs",
   "rate_limit_buckets",
   "deletion_receipts",
+  "product_events",
+  "runtime_configuration_versions",
 ] as const;
 
 const USER_OWNED_TABLES = [
@@ -137,6 +139,84 @@ async function main(): Promise<void> {
       detail: tablesOk
         ? `${USER_OWNED_TABLES.length} of ${USER_OWNED_TABLES.length} present`
         : `${missingTables.length} table(s) absent`,
+    });
+
+    const missingOutputProvenance = await sql<{ table_name: string; column_name: string }[]>`
+      select required.table_name, required.column_name
+      from (values
+        ('reading_outputs', 'safety_policy_version'),
+        ('follow_up_questions', 'provider_id'),
+        ('follow_up_questions', 'prompt_version'),
+        ('follow_up_questions', 'content_version'),
+        ('follow_up_questions', 'safety_policy_version'),
+        ('follow_up_questions', 'schema_version')
+      ) as required(table_name, column_name)
+      where not exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public'
+          and columns.table_name = required.table_name
+          and columns.column_name = required.column_name
+      )`;
+    const outputProvenanceOk = missingOutputProvenance.length === 0;
+    if (!outputProvenanceOk) failed = true;
+    record({
+      section: "Migrations",
+      check: "Primary and follow-up output provenance columns present",
+      status: outputProvenanceOk ? "pass" : "fail",
+      detail: outputProvenanceOk
+        ? "all 6 provenance coordinates are present"
+        : `${missingOutputProvenance.length} provenance column(s) absent`,
+    });
+
+    const versionedReferenceConstraints = await sql<{ name: string; definition: string }[]>`
+      select conname as name, pg_get_constraintdef(oid) as definition
+      from pg_constraint
+      where conname in (
+        'cards_id_deck_version_pk',
+        'spreads_id_version_pk',
+        'card_meanings_card_deck_fk',
+        'spread_positions_spread_version_fk',
+        'reading_sessions_spread_version_fk'
+      ) and connamespace = 'public'::regnamespace`;
+    const normalizedReferenceConstraints = new Map(
+      versionedReferenceConstraints.map(({ name, definition }) => [
+        name,
+        definition.replaceAll('"', "").replace(/\s+/g, " ").toLowerCase(),
+      ]),
+    );
+    const expectedReferenceConstraints = new Map([
+      ["cards_id_deck_version_pk", "primary key (id, deck_version)"],
+      ["spreads_id_version_pk", "primary key (id, version)"],
+      ["card_meanings_card_deck_fk", "foreign key (card_id, deck_version)"],
+      ["spread_positions_spread_version_fk", "foreign key (spread_id, spread_version)"],
+      ["reading_sessions_spread_version_fk", "foreign key (spread_id, spread_version)"],
+    ]);
+    const referenceConstraintsOk = [...expectedReferenceConstraints].every(
+      ([name, prefix]) => normalizedReferenceConstraints.get(name)?.startsWith(prefix) === true,
+    );
+    const missingReferenceColumns = await sql<{ table_name: string; column_name: string }[]>`
+      select required.table_name, required.column_name
+      from (values
+        ('card_meanings', 'deck_version'),
+        ('spread_positions', 'spread_version')
+      ) as required(table_name, column_name)
+      where not exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public'
+          and columns.table_name = required.table_name
+          and columns.column_name = required.column_name
+          and columns.is_nullable = 'NO'
+      )`;
+    const versionedReferenceSchemaOk =
+      referenceConstraintsOk && missingReferenceColumns.length === 0;
+    if (!versionedReferenceSchemaOk) failed = true;
+    record({
+      section: "Migrations",
+      check: "Tarot reference content retains version-qualified lineage",
+      status: versionedReferenceSchemaOk ? "pass" : "fail",
+      detail: versionedReferenceSchemaOk
+        ? "card/deck and spread/version composite keys, lineage foreign keys, and non-null child versions are present"
+        : "a composite reference key, lineage foreign key, or non-null child version is absent",
     });
 
     const unforced = await sql<{ name: string }[]>`

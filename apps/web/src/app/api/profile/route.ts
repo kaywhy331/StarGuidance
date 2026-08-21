@@ -4,8 +4,10 @@ import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { persistenceFor, recordAudit, saveProfileVersion } from "@/lib/persistence";
 import { POLICY_VERSIONS } from "@/lib/policies";
+import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { calculateProfile } from "@/lib/profile-engine";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
+import { getRuntimeConfiguration, profileReportsEnabled } from "@/lib/runtime-configuration";
 
 const profileRequestSchema = birthProfileInputSchema.and(
   z.object({ consentVersion: z.literal(POLICY_VERSIONS.profilePersonalization) }),
@@ -19,6 +21,7 @@ export async function POST(request: Request) {
     assertCurrentPolicyConsents(user);
     await assertRateLimit(`profile:${user.id}`, 8);
     const input = profileRequestSchema.parse(await request.json());
+    const runtimeConfiguration = await getRuntimeConfiguration();
     const calculation = await calculateProfile(input);
     const persistence = persistenceFor(user);
     if (!user.consentRecords.some(({ version }) => version === input.consentVersion))
@@ -27,8 +30,31 @@ export async function POST(request: Request) {
         version: input.consentVersion,
         grantedAt: new Date().toISOString(),
       });
-    const snapshot = await saveProfileVersion(user, input, calculation);
+    const sourceSystemByFlag = {
+      numerology: "numerology",
+      dreamspell: "dreamspell",
+      western: "westernAstrology",
+      bazi: "bazi",
+      "nine-star-ki": "nineStarKi",
+    } as const;
+    const enabledSourceSystems = runtimeConfiguration.features.enabledProfileSystems.flatMap(
+      (system) => {
+        const source = sourceSystemByFlag[system];
+        if (!source) return [];
+        return system === "western" ? [source, "planetaryAngularity" as const] : [source];
+      },
+    );
+    const snapshot = await saveProfileVersion(user, input, calculation, enabledSourceSystems);
     await recordAudit(user.id, "profile.snapshot.created", "profile_snapshot", snapshot.id);
+    await tryRecordProductEvent({
+      idempotencyKey: `profile:${snapshot.id}:completed`,
+      name: "profile_completed",
+      properties: {
+        completeness: snapshot.completeness,
+        birthplacePresent: Boolean(input.birthplace),
+        birthTimePresent: Boolean(input.birthTime),
+      },
+    });
     return NextResponse.json({ snapshot }, { status: 201 });
   } catch (error) {
     const security = requestSecurityFailure(error);
@@ -37,13 +63,19 @@ export async function POST(request: Request) {
         { error: security.error },
         { status: security.status, headers: security.headers },
       );
-    if (error instanceof Error && error.message === "PROFILE_CALCULATION_REJECTED")
+    if (error instanceof Error && error.message === "PROFILE_CALCULATION_REJECTED") {
+      await tryRecordProductEvent({
+        idempotencyKey: `profile:failed:${crypto.randomUUID()}`,
+        name: "profile_failed",
+        properties: { errorClass: "validation", statusClass: "failed" },
+      });
       return NextResponse.json(
         {
           error: "The calculation could not use these birth details.",
         },
         { status: 422 },
       );
+    }
     // Same message either way — the person cannot act on the distinction — but
     // the reason code lets an operator tell a slow service from a changed
     // contract from an unreachable one. It names a condition, never a value.
@@ -55,7 +87,18 @@ export async function POST(request: Request) {
         "PROFILE_ENGINE_CONTRACT_MISMATCH",
         "PROFILE_ENGINE_MISCONFIGURED",
       ].includes(error.message);
-    if (engineFailure)
+    if (engineFailure) {
+      await tryRecordProductEvent({
+        idempotencyKey: `profile:failed:${crypto.randomUUID()}`,
+        name: "profile_failed",
+        properties: {
+          errorClass:
+            error instanceof Error && error.message === "PROFILE_ENGINE_TIMEOUT"
+              ? "provider_timeout"
+              : "configuration",
+          statusClass: "failed",
+        },
+      });
       return NextResponse.json(
         {
           error:
@@ -64,6 +107,7 @@ export async function POST(request: Request) {
         },
         { status: 503 },
       );
+    }
     if (error instanceof z.ZodError)
       return NextResponse.json(
         { error: "Check the four birth-profile fields and try again." },
@@ -91,13 +135,17 @@ export async function GET() {
   try {
     const user = await requireUser();
     const persistence = persistenceFor(user);
-    const profile = await persistence.repositories.birthProfiles.getActive(user.id);
+    const [profile, runtimeConfiguration] = await Promise.all([
+      persistence.repositories.birthProfiles.getActive(user.id),
+      getRuntimeConfiguration(),
+    ]);
     const input = profile
       ? birthProfileInputSchema.parse(
           JSON.parse(persistence.decrypt(profile.encryptedInput, "profile-input")),
         )
       : undefined;
     return NextResponse.json({
+      profileReportsEnabled: profileReportsEnabled(runtimeConfiguration),
       profile:
         profile && input
           ? {

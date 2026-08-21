@@ -46,6 +46,10 @@ const SOURCE_LABELS: Record<ProfileTrait["sourceSystem"], string> = {
   nineStarKi: "Nine Star Ki",
 };
 
+function systemEnabled(snapshot: ProfileSnapshot, system: ProfileTrait["sourceSystem"]): boolean {
+  return snapshot.enabledSystems?.includes(system) ?? true;
+}
+
 function title(key: ProfileReportSectionKey): string {
   const section = PROFILE_REPORT_SECTION_PREVIEW.find((candidate) => candidate.key === key);
   if (!section) throw new Error("REPORT_SECTION_TITLE_MISSING");
@@ -109,6 +113,12 @@ function displayToken(value: string): string {
 }
 
 function westernAstrologySection(source: ProfileReportSource): StoredReportSection {
+  if (!systemEnabled(source.snapshot, "westernAstrology"))
+    return section(
+      "astrology",
+      "Western astrology was disabled for this profile snapshot and is not included.",
+      true,
+    );
   const result = source.calculation.western_astrology;
   if (result.status === "unavailable") {
     return section(
@@ -129,6 +139,12 @@ function westernAstrologySection(source: ProfileReportSource): StoredReportSecti
 }
 
 function baziSection(source: ProfileReportSource): StoredReportSection {
+  if (!systemEnabled(source.snapshot, "bazi"))
+    return section(
+      "bazi",
+      "BaZi was disabled for this profile snapshot and is not included.",
+      true,
+    );
   const result = source.calculation.bazi;
   if (result.status === "unavailable") {
     return section(
@@ -151,6 +167,12 @@ function baziSection(source: ProfileReportSource): StoredReportSection {
 }
 
 function planetaryAngularitySection(source: ProfileReportSource): StoredReportSection {
+  if (!systemEnabled(source.snapshot, "planetaryAngularity"))
+    return section(
+      "planetary-angularity",
+      "Planetary angularity was disabled for this profile snapshot and is not included.",
+      true,
+    );
   const result = source.calculation.planetary_angularity;
   if (result.status === "available") {
     return section(
@@ -242,21 +264,30 @@ export function buildProfileReportSections(source: ProfileReportSource): StoredR
     westernAstrologySection(source),
     section(
       "numerology",
-      calculation.numerology.name_calculation_status !== "unavailable" &&
-        calculation.numerology.expression !== null &&
-        calculation.numerology.soul_urge !== null &&
-        calculation.numerology.personality !== null
-        ? `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`
-        : `Life Path ${calculation.numerology.life_path}; Birthday ${calculation.numerology.birthday}. Name-derived values are unavailable for this writing system and were not fabricated. Calculated with ${calculation.numerology.algorithm_version}.`,
+      !systemEnabled(snapshot, "numerology")
+        ? "Numerology was disabled for this profile snapshot and is not included."
+        : calculation.numerology.name_calculation_status !== "unavailable" &&
+            calculation.numerology.expression !== null &&
+            calculation.numerology.soul_urge !== null &&
+            calculation.numerology.personality !== null
+          ? `Life Path ${calculation.numerology.life_path}; Expression ${calculation.numerology.expression}; Soul Urge ${calculation.numerology.soul_urge}; Personality ${calculation.numerology.personality}; Birthday ${calculation.numerology.birthday}. Calculated with ${calculation.numerology.algorithm_version}.`
+          : `Life Path ${calculation.numerology.life_path}; Birthday ${calculation.numerology.birthday}. Name-derived values are unavailable for this writing system and were not fabricated. Calculated with ${calculation.numerology.algorithm_version}.`,
+      !systemEnabled(snapshot, "numerology"),
     ),
     baziSection(source),
     section(
       "dreamspell",
-      `Kin ${calculation.dreamspell.kin}: ${calculation.dreamspell.tone_name} ${calculation.dreamspell.solar_seal_name} (${calculation.dreamspell.color}). Calculated with ${calculation.dreamspell.algorithm_version}; production certification and content-rights review remain pending.`,
+      systemEnabled(snapshot, "dreamspell")
+        ? `Kin ${calculation.dreamspell.kin}: ${calculation.dreamspell.tone_name} ${calculation.dreamspell.solar_seal_name} (${calculation.dreamspell.color}). Calculated with ${calculation.dreamspell.algorithm_version}; production certification and content-rights review remain pending.`
+        : "Dreamspell was disabled for this profile snapshot and is not included.",
+      !systemEnabled(snapshot, "dreamspell"),
     ),
     section(
       "nine-star-ki",
-      `Principal ${calculation.nine_star_ki.principal_star.number} ${calculation.nine_star_ki.principal_star.phase}; Character ${calculation.nine_star_ki.character_star.number} ${calculation.nine_star_ki.character_star.phase}; derived Energy ${calculation.nine_star_ki.energy_star.number} ${calculation.nine_star_ki.energy_star.phase}. ${nineStarTraits} This uses ${calculation.nine_star_ki.algorithm_version}; independent reference review remains pending.`,
+      systemEnabled(snapshot, "nineStarKi")
+        ? `Principal ${calculation.nine_star_ki.principal_star.number} ${calculation.nine_star_ki.principal_star.phase}; Character ${calculation.nine_star_ki.character_star.number} ${calculation.nine_star_ki.character_star.phase}; derived Energy ${calculation.nine_star_ki.energy_star.number} ${calculation.nine_star_ki.energy_star.phase}. ${nineStarTraits} This uses ${calculation.nine_star_ki.algorithm_version}; independent reference review remains pending.`
+        : "Nine Star Ki was disabled for this profile snapshot and is not included.",
+      !systemEnabled(snapshot, "nineStarKi"),
     ),
     planetaryAngularitySection(source),
     section("cross-system-convergence", convergenceNarrative(snapshot)),

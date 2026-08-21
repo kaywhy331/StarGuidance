@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import type { OracleStreamEvent, ReadingResult } from "@starguidance/contracts";
 
 import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../session/[id]/question-composer";
 import type { DealtCardView } from "../session/[id]/reading-types";
+import { useRitualAmbience } from "../session/[id]/ritual-audio";
+import { RitualControls } from "../session/[id]/ritual-controls";
 import { TarotSpreadStage } from "../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
@@ -23,16 +24,24 @@ export function SanctuaryVisualPreview({
 }) {
   const [activeCard, setActiveCard] = useState<number | null>(null);
   const [question, setQuestion] = useState("");
+  const [sound, setSound] = useState(false);
+  const [ambience, setAmbience] = useState(false);
+  const [narration, setNarration] = useState(false);
+  useRitualAmbience(ambience, "complete");
   return (
-    <MysticSanctuaryScene reducedMotion={false} testId="mystic-sanctuary-scene">
-      <header className="sanctuary-controls" aria-label="Visual preview controls">
-        <Link href="/">← Exit</Link>
-        <div className="sanctuary-control-group">
-          <button aria-pressed="false" type="button">
-            Sound off
-          </button>
-        </div>
-      </header>
+    <MysticSanctuaryScene phase="complete" reducedMotion={false} testId="mystic-sanctuary-scene">
+      <RitualControls
+        ambience={ambience}
+        controlsLabel="Visual preview controls"
+        exitHref="/"
+        narration={narration}
+        reducedMotion={false}
+        showMotion={false}
+        sound={sound}
+        toggleAmbience={() => setAmbience((enabled) => !enabled)}
+        toggleNarration={() => setNarration((enabled) => !enabled)}
+        toggleSound={() => setSound((enabled) => !enabled)}
+      />
       <section className="sanctuary-stage has-reading-journey">
         <TarotSpreadStage
           activeIndex={activeCard}
@@ -53,7 +62,8 @@ export function SanctuaryVisualPreview({
           reducedMotion={false}
           result={result}
           retryToken={0}
-          soundEnabled={false}
+          sigilSeed="synthetic-preview-profile"
+          soundEnabled={narration}
           target="preview"
         />
         <QuestionComposer

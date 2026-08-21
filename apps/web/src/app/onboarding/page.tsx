@@ -23,19 +23,23 @@ export default async function OnboardingPage() {
     );
   }
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-6 py-12 sm:px-10">
-      <p className="text-sm tracking-[0.22em] text-[#d8b56d] uppercase">Private profile</p>
-      <h1 className="mt-3 text-4xl font-semibold sm:text-6xl">Begin with what you know.</h1>
-      <p className="mt-5 max-w-2xl text-lg leading-8 text-[#c9bfd4]">
-        Birth name and date are required. Place and time are optional; they only unlock more detail
-        and are never guessed.
-      </p>
-      <p className="mt-4 max-w-2xl leading-7 text-[#b8adc8]">
-        Your private profile personalizes how the cards are interpreted—never which cards are drawn.
-        The detailed profile report is a separate paid product; personalized readings do not require
-        buying it. Houses and Ascendant stay unavailable unless a validated calculation has the
-        context it needs.
-      </p>
+    <main className="onboarding-shell">
+      <header className="onboarding-intro">
+        <p className="eyebrow">
+          <span aria-hidden="true">✦</span> Private profile · your first threshold
+        </p>
+        <h1>Begin with what you know.</h1>
+        <p>
+          Two essentials create a meaningful starting point. Optional place and time simply widen
+          what can be calculated safely; absence is never filled with an assumption.
+        </p>
+        <div className="onboarding-integrity-note">
+          <span aria-hidden="true">◇</span>
+          <span>
+            Your profile shapes <em>how</em> the cards are read—never which cards are drawn.
+          </span>
+        </div>
+      </header>
       <BirthProfileForm {...(initialProfile ? { initialProfile } : {})} />
     </main>
   );
