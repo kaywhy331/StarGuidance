@@ -18,6 +18,8 @@ import {
   type ReadingContinuationMode,
 } from "../../session/[id]/reading-closure";
 import type { ReadingPayload } from "../../session/[id]/reading-types";
+import { useRitualAmbience } from "../../session/[id]/ritual-audio";
+import { RitualControls } from "../../session/[id]/ritual-controls";
 import { TarotSpreadStage } from "../../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
@@ -48,14 +50,19 @@ export function ReadingResultScene({
   const [journeyComplete, setJourneyComplete] = useState(false);
   const [continuationMode, setContinuationMode] = useState<ReadingContinuationMode>("choice");
   const {
+    ambience,
     displayName,
+    narration,
     reducedMotion: preferenceReducedMotion,
     sound,
+    toggleAmbience,
+    toggleNarration,
     toggleReducedMotion,
     toggleSound,
   } = useReadingPreferences(initialPreferences);
   const animationManaged = animationVariant !== "immersive-v1";
   const reducedMotion = preferenceReducedMotion || animationManaged;
+  useRitualAmbience(ambience, "complete");
 
   useEffect(() => {
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
@@ -220,29 +227,25 @@ export function ReadingResultScene({
   return (
     <MysticSanctuaryScene
       animationVariant={animationVariant}
+      phase="complete"
       reducedMotion={reducedMotion}
       testId="reading-result-scene"
     >
-      <header className="sanctuary-controls" aria-label="Reading controls">
-        <Link className="sanctuary-exit" href="/history">
-          ← History
-        </Link>
-        <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
-        <div className="sanctuary-control-group">
-          <button
-            aria-pressed={reducedMotion}
-            disabled={animationManaged}
-            onClick={toggleReducedMotion}
-            type="button"
-          >
-            Reduced motion{" "}
-            <span>{animationManaged ? "managed" : reducedMotion ? "on" : "off"}</span>
-          </button>
-          <button aria-pressed={sound} onClick={toggleSound} type="button">
-            Sound <span>{sound ? "on" : "off"}</span>
-          </button>
-        </div>
-      </header>
+      <RitualControls
+        ambience={ambience}
+        animationManaged={animationManaged}
+        displayName={displayName}
+        exitHref="/history"
+        exitLabel="History"
+        narration={narration}
+        reducedMotion={reducedMotion}
+        sigilSeed={reading.profileSnapshotId}
+        sound={sound}
+        toggleAmbience={toggleAmbience}
+        toggleNarration={toggleNarration}
+        toggleReducedMotion={toggleReducedMotion}
+        toggleSound={toggleSound}
+      />
 
       <section className="sanctuary-stage has-reading-journey" aria-label="Finished reading">
         <TarotSpreadStage
@@ -267,7 +270,8 @@ export function ReadingResultScene({
           reducedMotion={reducedMotion}
           result={reading.result}
           retryToken={0}
-          soundEnabled={sound}
+          sigilSeed={reading.profileSnapshotId}
+          soundEnabled={narration}
           target="primary"
         />
 

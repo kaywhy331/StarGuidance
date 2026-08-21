@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 const REDUCED_MOTION_KEY = "sg:reading:reduced-motion";
 const SOUND_KEY = "sg:reading:sound";
+const AMBIENCE_KEY = "sg:reading:ambience";
+const NARRATION_KEY = "sg:reading:narration";
 
 export interface ReadingPreferenceSeed {
   displayName: string;
@@ -44,6 +46,16 @@ export function useReadingPreferences(initial?: ReadingPreferenceSeed) {
       : typeof window === "undefined"
         ? true
         : (storedBoolean(window.localStorage, SOUND_KEY) ?? true),
+  );
+  const [ambience, setAmbience] = useState(() =>
+    typeof window === "undefined"
+      ? false
+      : (storedBoolean(window.localStorage, AMBIENCE_KEY) ?? false),
+  );
+  const [narration, setNarration] = useState(() =>
+    typeof window === "undefined"
+      ? false
+      : (storedBoolean(window.localStorage, NARRATION_KEY) ?? false),
   );
 
   useEffect(() => {
@@ -109,6 +121,30 @@ export function useReadingPreferences(initial?: ReadingPreferenceSeed) {
       return next;
     });
   }, [persistRemote, reducedMotion]);
+  const toggleAmbience = useCallback(() => {
+    setAmbience((current) => {
+      const next = !current;
+      persistBoolean(AMBIENCE_KEY, next);
+      return next;
+    });
+  }, []);
+  const toggleNarration = useCallback(() => {
+    setNarration((current) => {
+      const next = !current;
+      persistBoolean(NARRATION_KEY, next);
+      return next;
+    });
+  }, []);
 
-  return { displayName, reducedMotion, sound, toggleReducedMotion, toggleSound };
+  return {
+    ambience,
+    displayName,
+    narration,
+    reducedMotion,
+    sound,
+    toggleAmbience,
+    toggleNarration,
+    toggleReducedMotion,
+    toggleSound,
+  };
 }

@@ -194,8 +194,8 @@ test("reading selection and question entry stay focused, reversible steps", asyn
   ).toBeVisible();
   await expect(page.getByLabel("Your private question")).toHaveCount(0);
 
+  await page.getByRole("radio", { name: /A relationship dynamic/ }).click();
   const relationshipSpread = page.locator('input[name="spread"][value="relationship"]');
-  await relationshipSpread.locator("xpath=ancestor::label").click();
   await expect(relationshipSpread).toBeChecked();
   await page.getByRole("button", { name: "Continue with Relationship / Two-Party Spread" }).click();
 
@@ -221,6 +221,15 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   await finishRitual(page);
   await waitForReadingSections(page);
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toHaveCount(0);
+
+  const completeStory = page.getByRole("button", { name: "Read as one story" });
+  await expect(completeStory).toBeEnabled();
+  await completeStory.click();
+  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "I · The signal" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "III · The paths" })).toBeVisible();
+  await page.getByRole("button", { name: "Guided" }).click();
+  await expect(page.getByTestId("reading-result-overview")).toBeVisible();
 
   for (let index = 0; index < 3; index += 1) {
     await nextReadingSection(page);
@@ -376,6 +385,9 @@ test("all six selectable spreads use their configured spatial arrangements", asy
 
   for (const spreadCase of cases) {
     const radio = page.locator(`input[name="spread"][value="${spreadCase.id}"]`);
+    if (!(await radio.locator("xpath=ancestor::label").isVisible())) {
+      await page.getByRole("button", { name: /^Explore all \d+ rituals$/ }).click();
+    }
     await radio.locator("xpath=ancestor::label").click();
     await expect(radio).toBeChecked();
     await enterQuestionStep(page);
@@ -434,6 +446,7 @@ test("a new user can create an account with email and password", async ({ page }
   await page.getByLabel("Display name").fill("Nova");
   await page.getByLabel(/^Password/).fill("synthetic-private-password");
   await page.getByLabel("Confirm password").fill("synthetic-private-password");
+  await page.getByRole("button", { name: "Continue to privacy commitments" }).click();
   await page.getByLabel(/I agree to the versioned Terms/i).check();
   await page.getByLabel(/I have read the versioned Privacy Notice/i).check();
   await page.getByLabel(/I confirm that I am at least 18/i).check();

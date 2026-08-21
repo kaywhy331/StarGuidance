@@ -42,7 +42,7 @@ async function captureElement(locator: Locator, testInfo: TestInfo, name: string
 
 test("capture the required reviewer journey", async ({ page }, testInfo) => {
   test.skip(!process.env.CAPTURE_SCREENSHOTS, "Run explicitly when updating review screenshots.");
-  test.slow();
+  test.setTimeout(420_000);
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(`screenshot-${randomUUID()}@example.test`);
   await page.getByLabel("Password").fill("synthetic-private-password");
@@ -116,4 +116,9 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   ).toBeVisible();
   await settleVisualAssets(page);
   await captureElement(reportPreview, testInfo, "report-preview");
+
+  await reportPreview.getByRole("button", { name: "Open your full atlas" }).click();
+  await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Your private pattern atlas" })).toBeVisible();
+  await capturePage(page, testInfo, "pattern-atlas");
 });

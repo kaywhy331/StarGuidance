@@ -18,6 +18,7 @@ import {
 } from "@starguidance/contracts";
 
 import type { DealtCardView, ReadingPersonalization } from "./reading-types";
+import { PrivateSigil } from "./private-sigil";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 type StreamState = "idle" | "streaming" | "complete" | "failed";
@@ -198,6 +199,7 @@ function ReadingOverview({
   personalization,
   reducedMotion,
   result,
+  sigilSeed,
   soundEnabled,
 }: {
   activeCardIndex: number | null;
@@ -209,6 +211,7 @@ function ReadingOverview({
   personalization?: ReadingPersonalization;
   reducedMotion: boolean;
   result: ReadingResult;
+  sigilSeed?: string;
   soundEnabled: boolean;
 }) {
   const opening = result.passages.find(({ role }) => role === "opening") ?? result.passages[0];
@@ -223,8 +226,13 @@ function ReadingOverview({
       data-testid="reading-result-overview"
     >
       <header className="reading-result-header">
-        <p className="reading-section-eyebrow">Personal reading · {cards.length} cards</p>
-        <h2>{result.title}</h2>
+        <div className="reading-result-title-row">
+          <div>
+            <p className="reading-section-eyebrow">Personal reading · {cards.length} cards</p>
+            <h2>{result.title}</h2>
+          </div>
+          {sigilSeed && <PrivateSigil seed={sigilSeed} subtle />}
+        </div>
         {opening && (
           <NarratedParagraph
             narrationKey={`opening:${opening.id}`}
@@ -393,6 +401,103 @@ function ReadingIntegration({
   );
 }
 
+const completeReadingChapters = [
+  {
+    id: "signal",
+    title: "I · The signal",
+    description: "What is present and asking to be noticed.",
+    roles: ["opening", "situation", "underlyingPattern"] as const,
+  },
+  {
+    id: "pattern",
+    title: "II · The pattern",
+    description: "How the cards connect, develop, and turn.",
+    roles: ["development", "turningPoint"] as const,
+  },
+  {
+    id: "paths",
+    title: "III · The paths",
+    description: "Conditional trajectories and the choices still yours.",
+    roles: ["trajectory", "alternative", "agency", "reflection", "closing", "safety"] as const,
+  },
+] as const;
+
+function CompleteReading({
+  cards,
+  onComplete,
+  result,
+  sigilSeed,
+}: {
+  cards: readonly DealtCardView[];
+  onComplete: () => void;
+  result: ReadingResult;
+  sigilSeed?: string;
+}) {
+  const cardByPosition = new Map(cards.map((card) => [card.positionId, card]));
+  return (
+    <div className="reading-complete-story" data-testid="reading-complete-story">
+      <article>
+        <header className="reading-complete-story__cover">
+          {sigilSeed && <PrivateSigil seed={sigilSeed} />}
+          <p className="reading-section-eyebrow">Your reading · one continuous story</p>
+          <h2>{result.title}</h2>
+          <p>The same locked cards, arranged as three chapters for unhurried reading.</p>
+        </header>
+        <nav aria-label="Complete reading chapters" className="reading-complete-story__nav">
+          {completeReadingChapters.map((chapter) => (
+            <a href={`#reading-chapter-${chapter.id}`} key={chapter.id}>
+              {chapter.title}
+            </a>
+          ))}
+        </nav>
+        {completeReadingChapters.map((chapter) => {
+          const passages = result.passages.filter((passage) =>
+            chapter.roles.some((role) => role === passage.role),
+          );
+          if (passages.length === 0) return null;
+          return (
+            <section
+              aria-labelledby={`reading-chapter-${chapter.id}`}
+              className="reading-complete-story__chapter"
+              key={chapter.id}
+            >
+              <header>
+                <p>{chapter.description}</p>
+                <h3 id={`reading-chapter-${chapter.id}`}>{chapter.title}</h3>
+              </header>
+              {passages.map((passage) => {
+                const referencedCards = passage.cardReferences
+                  .map((positionId) => cardByPosition.get(positionId))
+                  .filter((card): card is DealtCardView => Boolean(card));
+                return (
+                  <section className="reading-complete-story__passage" key={passage.id}>
+                    <div>
+                      <span>{passageRoleLabels[passage.role]}</span>
+                      {referencedCards.length > 0 && (
+                        <small>
+                          {referencedCards
+                            .map((card) => `${card.positionName} · ${card.name}`)
+                            .join(" / ")}
+                        </small>
+                      )}
+                    </div>
+                    <p>{passage.text}</p>
+                  </section>
+                );
+              })}
+            </section>
+          );
+        })}
+      </article>
+      <ReadingIntegration cards={cards} result={result} />
+      <button className="reading-complete-story__continue" onClick={onComplete} type="button">
+        <span>Reading held</span>
+        Continue with these cards <b aria-hidden="true">→</b>
+      </button>
+    </div>
+  );
+}
+
 function cardIndexFor(
   entries: readonly TranscriptEntry[],
   activeIndex: number,
@@ -411,6 +516,7 @@ export function OracleTranscript({
   personalization,
   readingId,
   result,
+  sigilSeed,
   target,
   reducedMotion,
   retryToken,
@@ -426,6 +532,7 @@ export function OracleTranscript({
   personalization?: ReadingPersonalization;
   readingId: string;
   result: ReadingResult;
+  sigilSeed?: string;
   target: string;
   reducedMotion: boolean;
   retryToken: number;
@@ -445,6 +552,13 @@ export function OracleTranscript({
   const entriesRef = useRef(initialEntries);
   const [streamState, setStreamState] = useState<StreamState>(previewEvents ? "complete" : "idle");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [readingModeSelection, setReadingModeSelection] = useState<{
+    target: string;
+    mode: "guided" | "complete";
+  }>({ target, mode: "guided" });
+  const [completeStoryAcknowledgedTarget, setCompleteStoryAcknowledgedTarget] = useState<string>();
+  const readingMode = readingModeSelection.target === target ? readingModeSelection.mode : "guided";
+  const completeStoryAcknowledged = completeStoryAcknowledgedTarget === target;
   const activeIndexRef = useRef(0);
   const [announcement, setAnnouncement] = useState("");
   const completedTargets = useRef(new Set<string>());
@@ -540,14 +654,19 @@ export function OracleTranscript({
   const activePassage = activeEntry?.passageId
     ? result.passages.find(({ id }) => id === activeEntry.passageId)
     : undefined;
+  const activeChapter = activePassage
+    ? completeReadingChapters.find((chapter) =>
+        (chapter.roles as readonly string[]).includes(activePassage.role),
+      )
+    : completeReadingChapters[0];
 
   useEffect(() => {
-    onActiveCardChange?.(activeCardIndex);
-  }, [activeCardIndex, onActiveCardChange]);
+    onActiveCardChange?.(readingMode === "guided" ? activeCardIndex : null);
+  }, [activeCardIndex, onActiveCardChange, readingMode]);
 
   useEffect(() => {
-    onJourneyCompleteChange?.(showingIntegration);
-  }, [onJourneyCompleteChange, showingIntegration]);
+    onJourneyCompleteChange?.(showingIntegration || completeStoryAcknowledged);
+  }, [completeStoryAcknowledged, onJourneyCompleteChange, showingIntegration]);
 
   useEffect(
     () => () => {
@@ -586,6 +705,17 @@ export function OracleTranscript({
   );
   const goPrevious = () => goTo(activeIndexRef.current - 1);
   const goNext = () => goTo(activeIndexRef.current + 1);
+  const changeReadingMode = (mode: "guided" | "complete") => {
+    setReadingModeSelection({ target, mode });
+    setAnnouncement(
+      mode === "complete"
+        ? "Complete reading view opened."
+        : `Guided reading resumed at passage ${boundedIndex + 1}.`,
+    );
+    window.requestAnimationFrame(() => {
+      viewportRef.current?.scrollTo({ behavior: reducedMotion ? "auto" : "smooth", top: 0 });
+    });
+  };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (["ArrowRight", "ArrowDown", "PageDown"].includes(event.key)) {
@@ -646,26 +776,63 @@ export function OracleTranscript({
     <section
       className="oracle-transcript-shell reading-journey-shell"
       data-loaded-section-count={entries.length}
+      data-reading-mode={readingMode}
       data-state={streamState}
       data-testid="reading-journey"
     >
+      <div className="reading-mode-bar">
+        <div aria-label="Reading format" role="group">
+          <button
+            aria-pressed={readingMode === "guided"}
+            onClick={() => changeReadingMode("guided")}
+            type="button"
+          >
+            <span aria-hidden="true">↝</span>
+            Guided
+          </button>
+          <button
+            aria-pressed={readingMode === "complete"}
+            disabled={!integrationAvailable}
+            onClick={() => changeReadingMode("complete")}
+            type="button"
+          >
+            <span aria-hidden="true">☰</span>
+            Read as one story
+          </button>
+        </div>
+        <span>
+          {integrationAvailable
+            ? readingMode === "guided"
+              ? activeChapter?.title
+              : "All three chapters"
+            : "The reading is still arriving"}
+        </span>
+      </div>
       <div
         aria-label="Your reading. Scroll, swipe, or use the arrow keys to move through it."
         className="oracle-transcript reading-journey-viewport"
         data-active-card-index={activeCardIndex ?? undefined}
         data-testid="oracle-transcript"
-        onKeyDown={handleKeyDown}
+        onKeyDown={(event) => {
+          if (readingMode === "guided") handleKeyDown(event);
+        }}
         onTouchCancel={() => {
           touchOrigin.current = undefined;
         }}
-        onTouchEnd={handleTouchEnd}
-        onTouchStart={handleTouchStart}
-        onWheel={handleWheel}
+        onTouchEnd={(event) => {
+          if (readingMode === "guided") handleTouchEnd(event);
+        }}
+        onTouchStart={(event) => {
+          if (readingMode === "guided") handleTouchStart(event);
+        }}
+        onWheel={(event) => {
+          if (readingMode === "guided") handleWheel(event);
+        }}
         ref={viewportRef}
         role="region"
         tabIndex={0}
       >
-        {boundedIndex === 0 && (
+        {readingMode === "guided" && boundedIndex === 0 && (
           <ReadingOverview
             activeCardIndex={activeCardIndex}
             activeIndex={boundedIndex}
@@ -676,10 +843,11 @@ export function OracleTranscript({
             {...(personalization ? { personalization } : {})}
             reducedMotion={reducedMotion}
             result={result}
+            {...(sigilSeed ? { sigilSeed } : {})}
             soundEnabled={soundEnabled}
           />
         )}
-        {activeEntry && boundedIndex > 0 && (
+        {readingMode === "guided" && activeEntry && boundedIndex > 0 && (
           <article
             className="oracle-entry guided-passage is-active"
             data-phase={activeEntry.phase}
@@ -711,47 +879,59 @@ export function OracleTranscript({
             />
           </article>
         )}
-        {showingIntegration && <ReadingIntegration cards={cards} result={result} />}
+        {readingMode === "guided" && showingIntegration && (
+          <ReadingIntegration cards={cards} result={result} />
+        )}
+        {readingMode === "complete" && integrationAvailable && (
+          <CompleteReading
+            cards={cards}
+            onComplete={() => setCompleteStoryAcknowledgedTarget(target)}
+            result={result}
+            {...(sigilSeed ? { sigilSeed } : {})}
+          />
+        )}
         <div aria-atomic="true" aria-live="polite" className="sr-only">
           {announcement}
         </div>
       </div>
 
-      <nav aria-label="Reading navigation" className="reading-journey-controls">
-        <button
-          aria-label="Previous reading passage"
-          disabled={boundedIndex === 0}
-          onClick={goPrevious}
-          type="button"
-        >
-          <span aria-hidden="true">‹</span>
-        </button>
-        <div>
-          <em>Guided thread</em>
-          <span>
-            {totalSteps === 0 ? 0 : boundedIndex + 1} / {totalSteps}
-          </span>
-          <i aria-hidden="true">
-            <b
-              style={
-                {
-                  "--reading-progress": totalSteps
-                    ? `${((boundedIndex + 1) / totalSteps) * 100}%`
-                    : "0%",
-                } as CSSProperties
-              }
-            />
-          </i>
-        </div>
-        <button
-          aria-label="Next reading passage"
-          disabled={totalSteps === 0 || boundedIndex >= maximumIndex}
-          onClick={goNext}
-          type="button"
-        >
-          <span aria-hidden="true">›</span>
-        </button>
-      </nav>
+      {readingMode === "guided" && (
+        <nav aria-label="Reading navigation" className="reading-journey-controls">
+          <button
+            aria-label="Previous reading passage"
+            disabled={boundedIndex === 0}
+            onClick={goPrevious}
+            type="button"
+          >
+            <span aria-hidden="true">‹</span>
+          </button>
+          <div>
+            <em>Guided thread</em>
+            <span>
+              {totalSteps === 0 ? 0 : boundedIndex + 1} / {totalSteps}
+            </span>
+            <i aria-hidden="true">
+              <b
+                style={
+                  {
+                    "--reading-progress": totalSteps
+                      ? `${((boundedIndex + 1) / totalSteps) * 100}%`
+                      : "0%",
+                  } as CSSProperties
+                }
+              />
+            </i>
+          </div>
+          <button
+            aria-label="Next reading passage"
+            disabled={totalSteps === 0 || boundedIndex >= maximumIndex}
+            onClick={goNext}
+            type="button"
+          >
+            <span aria-hidden="true">›</span>
+          </button>
+        </nav>
+      )}
 
       {streamState === "failed" && (
         <div className="oracle-stream-error" role="status">

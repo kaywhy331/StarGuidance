@@ -32,6 +32,7 @@ export default async function ReadingsPage() {
           : "disabled"
       }
       {...(user.settings ? { initialPreferences: user.settings } : {})}
+      sigilSeed={user.profile.snapshot.id}
       spreads={spreads
         .filter(({ id }) => enabledSpreads.has(id))
         .map(({ id, name, purpose, estimatedMinutes, entitlementClass, positions }) => ({

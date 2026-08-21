@@ -17,6 +17,8 @@ import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading
 
 import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { QuestionComposer } from "../session/[id]/question-composer";
+import { useRitualAmbience } from "../session/[id]/ritual-audio";
+import { RitualControls } from "../session/[id]/ritual-controls";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
 
 const readingNeeds = [
@@ -79,11 +81,13 @@ export function ReadingChooser({
   access,
   animationVariant = "immersive-v1",
   initialPreferences,
+  sigilSeed,
   spreads,
 }: {
   access: ReadingEntitlementDecision;
   animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
   initialPreferences?: ReadingPreferenceSeed;
+  sigilSeed: string;
   spreads: readonly {
     id: string;
     name: string;
@@ -105,6 +109,7 @@ export function ReadingChooser({
       "direction",
   );
   const [question, setQuestion] = useState("");
+  const [exploringAllSpreads, setExploringAllSpreads] = useState(false);
   const [topic, setTopic] = useState<ReadingTopic>("general");
   const [horizon, setHorizon] = useState<ReadingHorizon>("open");
   const [generalReading, setGeneralReading] = useState(false);
@@ -118,14 +123,19 @@ export function ReadingChooser({
   const [loading, setLoading] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const {
+    ambience,
     displayName,
+    narration,
     reducedMotion: preferenceReducedMotion,
     sound,
+    toggleAmbience,
+    toggleNarration,
     toggleReducedMotion,
     toggleSound,
   } = useReadingPreferences(initialPreferences);
   const animationManaged = animationVariant !== "immersive-v1";
   const reducedMotion = preferenceReducedMotion || animationManaged;
+  useRitualAmbience(ambience, String(intakeState.value));
   const router = useRouter();
 
   useEffect(() => {
@@ -220,6 +230,13 @@ export function ReadingChooser({
       spreadPresentationOrder.indexOf(left.id as (typeof spreadPresentationOrder)[number]) -
       spreadPresentationOrder.indexOf(right.id as (typeof spreadPresentationOrder)[number]),
   );
+  const featuredSpreadIds = new Set([
+    selected,
+    ...orderedSpreads
+      .filter(({ id }) => id !== selected)
+      .slice(0, 2)
+      .map(({ id }) => id),
+  ]);
 
   return (
     <MysticSanctuaryScene
@@ -228,24 +245,21 @@ export function ReadingChooser({
       reducedMotion={reducedMotion}
       testId="mystic-sanctuary-scene"
     >
-      <header className="sanctuary-controls" aria-label="Reading setup controls">
-        <Link href="/profile">← Exit</Link>
-        <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
-        <div className="sanctuary-control-group">
-          <button
-            aria-pressed={reducedMotion}
-            disabled={animationManaged}
-            onClick={toggleReducedMotion}
-            type="button"
-          >
-            Reduced motion{" "}
-            <span>{animationManaged ? "managed" : reducedMotion ? "on" : "off"}</span>
-          </button>
-          <button aria-pressed={sound} onClick={toggleSound} type="button">
-            Sound <span>{sound ? "on" : "off"}</span>
-          </button>
-        </div>
-      </header>
+      <RitualControls
+        ambience={ambience}
+        animationManaged={animationManaged}
+        controlsLabel="Reading setup controls"
+        displayName={displayName}
+        exitHref="/profile"
+        narration={narration}
+        reducedMotion={reducedMotion}
+        sigilSeed={sigilSeed}
+        sound={sound}
+        toggleAmbience={toggleAmbience}
+        toggleNarration={toggleNarration}
+        toggleReducedMotion={toggleReducedMotion}
+        toggleSound={toggleSound}
+      />
       {selectingReading ? (
         <section
           className="reading-entry-stage reading-selection-stage"
@@ -264,6 +278,7 @@ export function ReadingChooser({
                   onClick={() => {
                     setNeed(option.id);
                     setSelected(option.spreadId);
+                    setExploringAllSpreads(false);
                   }}
                   role="radio"
                   type="button"
@@ -278,15 +293,30 @@ export function ReadingChooser({
             </div>
           </div>
           <div className="ritual-spread-heading">
-            <p>Recommended ritual</p>
+            <p>{exploringAllSpreads ? "All available rituals" : "A focused choice"}</p>
             <span aria-hidden="true" />
-            <small>Choose another if it feels more fitting</small>
+            <small>
+              {exploringAllSpreads
+                ? "Compare every available spread"
+                : "Your best fit and two nearby paths"}
+            </small>
           </div>
-          <div aria-label="Reading type" className="ritual-spread-options" role="radiogroup">
+          <div
+            aria-label="Reading type"
+            className="ritual-spread-options"
+            data-exploring-all={exploringAllSpreads}
+            role="radiogroup"
+          >
             {orderedSpreads.map((spread) => {
               const matchingNeed = readingNeeds.find((option) => option.spreadId === spread.id);
+              const featured = featuredSpreadIds.has(spread.id);
               return (
-                <label data-recommended={matchingNeed?.id === need} key={spread.id}>
+                <label
+                  data-featured={featured}
+                  data-recommended={matchingNeed?.id === need}
+                  hidden={!exploringAllSpreads && !featured}
+                  key={spread.id}
+                >
                   <input
                     checked={selected === spread.id}
                     className="sr-only"
@@ -297,7 +327,7 @@ export function ReadingChooser({
                   />
                   <span>
                     {matchingNeed?.id === need ? (
-                      <em className="ritual-spread-recommendation">Best fit</em>
+                      <em className="ritual-spread-recommendation">Chosen for this intention</em>
                     ) : null}
                     <small>
                       {spread.count} {spread.count === 1 ? "card" : "cards"} · about{" "}
@@ -317,6 +347,19 @@ export function ReadingChooser({
               );
             })}
           </div>
+          {orderedSpreads.length > featuredSpreadIds.size && (
+            <button
+              aria-expanded={exploringAllSpreads}
+              className="ritual-spread-explore"
+              onClick={() => setExploringAllSpreads((expanded) => !expanded)}
+              type="button"
+            >
+              <span aria-hidden="true">{exploringAllSpreads ? "−" : "+"}</span>
+              {exploringAllSpreads
+                ? "Return to the focused choice"
+                : `Explore all ${orderedSpreads.length} rituals`}
+            </button>
+          )}
           <button
             className="reading-entry-continue"
             disabled={!selectedSpread}

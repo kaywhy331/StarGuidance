@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, LoadingState, Panel } from "@starguidance/design-system";
 import { PROFILE_REPORT_SECTION_PREVIEW } from "@/lib/report-sections";
+import { PrivateSigil } from "../session/[id]/private-sigil";
 
 interface ProfileView {
   snapshot: { id: string; version: number; completeness: string };
@@ -18,6 +19,29 @@ const COMPLETENESS_LABELS: Record<string, string> = {
   locationEnhanced: "Location-Enhanced",
   complete: "Complete",
 };
+
+const REPORT_PREVIEW_CHAPTERS = [
+  {
+    number: "I",
+    title: "Foundation",
+    keys: ["overview", "core-motivations", "strengths", "growth-opportunities"],
+  },
+  {
+    number: "II",
+    title: "Inner life",
+    keys: ["emotional-patterns", "relationships", "communication-decisions", "internal-tensions"],
+  },
+  {
+    number: "III",
+    title: "Source systems",
+    keys: ["astrology", "numerology", "bazi", "dreamspell", "nine-star-ki", "planetary-angularity"],
+  },
+  {
+    number: "IV",
+    title: "Integration",
+    keys: ["cross-system-convergence", "cross-system-contradictions", "practical-integration"],
+  },
+] as const;
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileView | null>();
@@ -161,9 +185,15 @@ export default function ProfilePage() {
             reading while keeping the original details away from the narrator.
           </p>
         </div>
-        <span aria-hidden="true" className="profile-vault-mark">
-          <i>✦</i>
-        </span>
+        {profile ? (
+          <span className="profile-vault-mark">
+            <PrivateSigil seed={profile.snapshot.id} />
+          </span>
+        ) : (
+          <span aria-hidden="true" className="profile-vault-mark">
+            <i>✦</i>
+          </span>
+        )}
       </header>
       {!profile ? (
         <Panel className="profile-vault-empty">
@@ -235,25 +265,58 @@ export default function ProfilePage() {
       )}
       {profile && profileReportsEnabled ? (
         <Panel className="profile-report-preview">
-          <header>
+          <header className="atlas-preview-cover">
+            <PrivateSigil label="Pattern atlas sigil" seed={profile.snapshot.id} />
             <div>
-              <p>Separate private product</p>
+              <p>Private edition · snapshot v{profile.snapshot.version}</p>
               <h2>Your full pattern atlas</h2>
+              <span>
+                A designed long-form volume that keeps sources, contradictions, and unavailable
+                systems visible.
+              </span>
             </div>
-            <span>{PROFILE_REPORT_SECTION_PREVIEW.length} chapters</span>
+            <aside>
+              <strong>{PROFILE_REPORT_SECTION_PREVIEW.length}</strong>
+              <span>structured sections</span>
+            </aside>
           </header>
-          <p>
-            Preview the architecture before purchase. Any system without validated inputs stays
-            visibly unavailable—no section is filled with invented detail.
-          </p>
-          <ul>
-            {PROFILE_REPORT_SECTION_PREVIEW.map((section) => (
-              <li key={section.key}>
-                <span aria-hidden="true">✦</span>
-                {section.title}
-              </li>
-            ))}
-          </ul>
+          <div aria-label="Pattern atlas chapters" className="atlas-preview-chapters">
+            {REPORT_PREVIEW_CHAPTERS.map((chapter) => {
+              const sections = PROFILE_REPORT_SECTION_PREVIEW.filter((section) =>
+                (chapter.keys as readonly string[]).includes(section.key),
+              );
+              return (
+                <section key={chapter.number}>
+                  <span>{chapter.number}</span>
+                  <h3>{chapter.title}</h3>
+                  <p>{sections.map(({ title }) => title).join(" · ")}</p>
+                </section>
+              );
+            })}
+          </div>
+          <div className="atlas-preview-integrity" role="note">
+            <div aria-hidden="true">
+              <span data-status="available">Deterministic</span>
+              <i />
+              <span data-status="conditional">Contextual</span>
+              <i />
+              <span data-status="gated">Unavailable</span>
+            </div>
+            <p>
+              Every claim carries its source and version. A system that lacks validated inputs or
+              approved calculations appears as an explicit gap—not invented insight.
+            </p>
+          </div>
+          <footer className="atlas-preview-footer">
+            <blockquote>
+              <span>Inside the atlas</span>
+              “Where independent signals agree, convergence is named. Where they pull in different
+              directions, the tension stays intact.”
+            </blockquote>
+            <Button onClick={() => void submitCheckout(checkoutState === "cancelled")}>
+              {checkoutState === "cancelled" ? "Resume secure checkout" : "Open your full atlas"}
+            </Button>
+          </footer>
         </Panel>
       ) : null}
       {profile ? (

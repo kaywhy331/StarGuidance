@@ -28,7 +28,8 @@ import { OracleTranscript } from "./oracle-transcript";
 import { QuestionComposer } from "./question-composer";
 import { ReadingClosure, ReadingSealed, type ReadingContinuationMode } from "./reading-closure";
 import type { ReadingPayload } from "./reading-types";
-import { playRitualSound } from "./ritual-audio";
+import { playRitualSound, useRitualAmbience } from "./ritual-audio";
+import { RitualControls } from "./ritual-controls";
 import { SafetyInterruptContent } from "./safety-interrupt-panel";
 import { TarotSpreadStage } from "./tarot-spread-stage";
 
@@ -68,18 +69,42 @@ function ShuffleShells({ phase }: { phase: "mixing" | "gathering" }) {
 
 function ShuffleGesture({ onEnergy }: { onEnergy: () => void }) {
   const surfaceRef = useRef<HTMLButtonElement>(null);
-  const pointer = useRef<{ id: number; x: number; y: number; distance: number } | undefined>(
-    undefined,
-  );
+  const pointer = useRef<
+    | {
+        id: number;
+        x: number;
+        y: number;
+        lastX: number;
+        lastY: number;
+        lastAt: number;
+        velocityX: number;
+        velocityY: number;
+        distance: number;
+      }
+    | undefined
+  >(undefined);
   const keyboardNudge = useRef(0);
   const lastSoundAt = useRef(0);
+  const lastHapticAt = useRef(0);
 
-  const setVector = (x: number, y: number, energy: number) => {
+  const setVector = (x: number, y: number, energy: number, velocityX = 0, velocityY = 0) => {
     const ritual = surfaceRef.current?.closest<HTMLElement>(".sanctuary-shuffle-ritual");
     if (!ritual) return;
     ritual.style.setProperty("--ritual-drift-x", `${Math.max(-68, Math.min(68, x))}px`);
     ritual.style.setProperty("--ritual-drift-y", `${Math.max(-45, Math.min(45, y))}px`);
     ritual.style.setProperty("--ritual-energy", String(Math.max(0, Math.min(1, energy))));
+    ritual.style.setProperty(
+      "--ritual-tilt-x",
+      `${Math.max(-7, Math.min(7, -y / 12 + velocityY / 180))}deg`,
+    );
+    ritual.style.setProperty(
+      "--ritual-tilt-y",
+      `${Math.max(-9, Math.min(9, x / 10 + velocityX / 150))}deg`,
+    );
+    ritual.style.setProperty(
+      "--ritual-velocity",
+      String(Math.max(0, Math.min(1, Math.hypot(velocityX, velocityY) / 1_200))),
+    );
   };
 
   const soundAtMostEvery = (milliseconds: number) => {
@@ -89,12 +114,31 @@ function ShuffleGesture({ onEnergy }: { onEnergy: () => void }) {
     onEnergy();
   };
 
+  const hapticAtMostEvery = (milliseconds: number, duration = 7) => {
+    const now = performance.now();
+    if (now - lastHapticAt.current < milliseconds || !("vibrate" in navigator)) return;
+    lastHapticAt.current = now;
+    navigator.vibrate(duration);
+  };
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY, distance: 0 };
+    pointer.current = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      lastAt: performance.now(),
+      velocityX: 0,
+      velocityY: 0,
+      distance: 0,
+    };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.dataset.active = "true";
+    event.currentTarget.dataset.settling = "false";
     setVector(0, 0, 0.35);
     soundAtMostEvery(0);
+    hapticAtMostEvery(0, 5);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -102,18 +146,38 @@ function ShuffleGesture({ onEnergy }: { onEnergy: () => void }) {
     if (!origin || origin.id !== event.pointerId) return;
     const x = event.clientX - origin.x;
     const y = event.clientY - origin.y;
+    const now = performance.now();
+    const elapsed = Math.max(8, now - origin.lastAt);
+    origin.velocityX = ((event.clientX - origin.lastX) / elapsed) * 1_000;
+    origin.velocityY = ((event.clientY - origin.lastY) / elapsed) * 1_000;
+    origin.lastX = event.clientX;
+    origin.lastY = event.clientY;
+    origin.lastAt = now;
     origin.distance = Math.max(origin.distance, Math.hypot(x, y));
-    setVector(x, y, Math.min(1, 0.35 + origin.distance / 150));
-    if (origin.distance > 24) soundAtMostEvery(240);
+    setVector(x, y, Math.min(1, 0.35 + origin.distance / 150), origin.velocityX, origin.velocityY);
+    if (origin.distance > 24) {
+      soundAtMostEvery(240);
+      hapticAtMostEvery(180);
+    }
   };
 
   const handlePointerEnd = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (pointer.current?.id !== event.pointerId) return;
+    const release = pointer.current;
+    if (release?.id !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
     event.currentTarget.dataset.active = "false";
+    event.currentTarget.dataset.settling = "true";
     pointer.current = undefined;
-    setVector(0, 0, 0.15);
+    setVector(
+      release.velocityX / 28,
+      release.velocityY / 28,
+      0.4,
+      release.velocityX,
+      release.velocityY,
+    );
+    requestAnimationFrame(() => setVector(0, 0, 0.15));
+    hapticAtMostEvery(0, 12);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -123,8 +187,9 @@ function ShuffleGesture({ onEnergy }: { onEnergy: () => void }) {
     const magnitude = 24 + (keyboardNudge.current % 3) * 7;
     const x = event.key === "ArrowLeft" ? -magnitude : event.key === "ArrowRight" ? magnitude : 0;
     const y = event.key === "ArrowUp" ? -magnitude : event.key === "ArrowDown" ? magnitude : 0;
-    setVector(x, y, 0.72);
+    setVector(x, y, 0.72, x * 18, y * 18);
     soundAtMostEvery(120);
+    hapticAtMostEvery(100, 6);
   };
 
   return (
@@ -132,6 +197,7 @@ function ShuffleGesture({ onEnergy }: { onEnergy: () => void }) {
       aria-label="Stir the deck. Drag or swipe, or use the arrow keys. The card order is already locked."
       className="tactile-shuffle-control"
       data-active="false"
+      data-settling="false"
       onClick={() => soundAtMostEvery(100)}
       onKeyDown={handleKeyDown}
       onPointerCancel={handlePointerEnd}
@@ -189,14 +255,19 @@ export function ReadingScene({
   const shuffleMeasured = useRef(false);
   const revealCompletionTimer = useRef<number | undefined>(undefined);
   const {
+    ambience,
     displayName,
+    narration,
     reducedMotion: preferenceMotionOff,
     sound,
+    toggleAmbience,
+    toggleNarration,
     toggleReducedMotion,
     toggleSound,
   } = useReadingPreferences(initialPreferences);
   const animationManaged = animationVariant !== "immersive-v1";
   const motionOff = preferenceMotionOff || animationManaged;
+  useRitualAmbience(ambience, String(state.value));
   const soundEnabled = useRef(sound);
 
   useEffect(() => {
@@ -596,34 +667,23 @@ export function ReadingScene({
           </strong>
         </div>
       )}
-      <header className="sanctuary-controls" aria-label="Reading controls">
-        <Link className="sanctuary-exit" href="/readings">
-          ← Exit
-        </Link>
-        <span className="text-sm text-[#c9bfd4]">For {displayName}</span>
-        <div className="sanctuary-control-group">
-          <button
-            aria-pressed={motionOff}
-            disabled={animationManaged}
-            onClick={toggleReducedMotion}
-            type="button"
-          >
-            Reduced motion <span>{animationManaged ? "managed" : motionOff ? "on" : "off"}</span>
-          </button>
-          <button aria-pressed={sound} onClick={toggleSound} type="button">
-            Sound <span>{sound ? "on" : "off"}</span>
-          </button>
-          {(state.matches("shuffling") || state.matches("dealing")) && !motionOff && (
-            <button
-              className="sanctuary-skip-animation"
-              onClick={toggleReducedMotion}
-              type="button"
-            >
-              Skip animation
-            </button>
-          )}
-        </div>
-      </header>
+      <RitualControls
+        ambience={ambience}
+        animationManaged={animationManaged}
+        displayName={displayName}
+        exitHref="/readings"
+        narration={narration}
+        reducedMotion={motionOff}
+        {...(reading?.profileSnapshotId ? { sigilSeed: reading.profileSnapshotId } : {})}
+        sound={sound}
+        toggleAmbience={toggleAmbience}
+        toggleNarration={toggleNarration}
+        toggleReducedMotion={toggleReducedMotion}
+        toggleSound={toggleSound}
+        {...((state.matches("shuffling") || state.matches("dealing")) && !motionOff
+          ? { onSkip: toggleReducedMotion }
+          : {})}
+      />
 
       <section
         className={`sanctuary-stage ${state.matches("shuffling") ? "is-shuffling" : ""} ${
@@ -849,7 +909,8 @@ export function ReadingScene({
             reducedMotion={motionOff}
             result={reading.result}
             retryToken={streamRetryToken}
-            soundEnabled={sound}
+            sigilSeed={reading.profileSnapshotId}
+            soundEnabled={narration}
             target={streamTarget}
           />
         )}

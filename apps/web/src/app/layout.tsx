@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import "@fontsource-variable/cormorant";
+import "@fontsource-variable/cormorant/wght-italic.css";
+import "@fontsource-variable/manrope";
 
 import "./globals.css";
 import { SiteAtmosphere } from "./site-atmosphere";

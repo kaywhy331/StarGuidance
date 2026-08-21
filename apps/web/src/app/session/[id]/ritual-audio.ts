@@ -1,14 +1,116 @@
 "use client";
 
+import { useEffect } from "react";
+
 export type RitualSound = "shuffle" | "gather" | "cut" | "deal" | "reveal" | "complete";
 
 let sharedContext: AudioContext | undefined;
+let ambienceNodes:
+  | {
+      context: AudioContext;
+      filter: BiquadFilterNode;
+      gain: GainNode;
+      oscillators: OscillatorNode[];
+    }
+  | undefined;
 
 function contextForGesture(): AudioContext | undefined {
   if (typeof window === "undefined" || !("AudioContext" in window)) return undefined;
   if (!sharedContext || sharedContext.state === "closed") sharedContext = new window.AudioContext();
   if (sharedContext.state === "suspended") void sharedContext.resume();
   return sharedContext;
+}
+
+export function primeRitualAudio() {
+  try {
+    return contextForGesture();
+  } catch {
+    return undefined;
+  }
+}
+
+const ambienceFrequencyByPhase: Readonly<Record<string, number>> = {
+  selectingReading: 87.31,
+  enteringQuestion: 98,
+  preparingDeck: 82.41,
+  shuffling: 110,
+  cuttingDeck: 73.42,
+  dealing: 92.5,
+  awaitingReveal: 77.78,
+  revealingCards: 103.83,
+  generatingSynthesis: 69.3,
+  revealingResult: 116.54,
+  complete: 98,
+};
+
+function stopAmbience() {
+  const nodes = ambienceNodes;
+  ambienceNodes = undefined;
+  if (!nodes) return;
+  const now = nodes.context.currentTime;
+  nodes.gain.gain.cancelScheduledValues(now);
+  nodes.gain.gain.setTargetAtTime(0.0001, now, 0.18);
+  window.setTimeout(() => {
+    for (const oscillator of nodes.oscillators) {
+      try {
+        oscillator.stop();
+      } catch {
+        // The oscillator may already have been released by the browser.
+      }
+    }
+    nodes.gain.disconnect();
+    nodes.filter.disconnect();
+  }, 900);
+}
+
+function setRitualAmbience(enabled: boolean, phase = "selectingReading") {
+  try {
+    if (!enabled) {
+      stopAmbience();
+      return;
+    }
+    const context = contextForGesture();
+    if (!context) return;
+    const root = ambienceFrequencyByPhase[phase] ?? 87.31;
+    if (ambienceNodes?.context === context) {
+      const now = context.currentTime;
+      ambienceNodes.oscillators[0]?.frequency.setTargetAtTime(root, now, 1.4);
+      ambienceNodes.oscillators[1]?.frequency.setTargetAtTime(root * 1.501, now, 1.7);
+      ambienceNodes.filter.frequency.setTargetAtTime(root * 4.2, now, 1.2);
+      return;
+    }
+
+    const gain = context.createGain();
+    const filter = context.createBiquadFilter();
+    const first = context.createOscillator();
+    const second = context.createOscillator();
+    const now = context.currentTime;
+    first.type = "sine";
+    second.type = "triangle";
+    first.frequency.value = root;
+    second.frequency.value = root * 1.501;
+    filter.type = "lowpass";
+    filter.frequency.value = root * 4.2;
+    filter.Q.value = 0.6;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.006, now + 1.8);
+    first.connect(filter);
+    second.connect(filter);
+    filter.connect(gain).connect(context.destination);
+    first.start();
+    second.start();
+    ambienceNodes = { context, filter, gain, oscillators: [first, second] };
+  } catch {
+    // Ambient audio is optional and never owns ritual state.
+  }
+}
+
+export function useRitualAmbience(enabled: boolean, phase?: string) {
+  useEffect(() => {
+    setRitualAmbience(enabled, phase);
+  }, [enabled, phase]);
+
+  useEffect(() => () => stopAmbience(), []);
 }
 
 function tone(

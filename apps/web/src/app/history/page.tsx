@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, EmptyState, LoadingState } from "@starguidance/design-system";
 
+import { PrivateSigil } from "../session/[id]/private-sigil";
+
 interface HistoryItem {
   id: string;
   spreadId: string;
@@ -59,7 +61,9 @@ function ReadingMemory({
 
   return (
     <article className="reading-memory">
-      <span aria-hidden="true" className="reading-memory-node" />
+      <span aria-hidden="true" className="reading-memory-node">
+        <PrivateSigil seed={item.id} subtle />
+      </span>
       <div className="reading-memory-panel">
         <Link
           aria-label={`Open reading: ${item.questionPreview}`}

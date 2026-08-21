@@ -40,7 +40,11 @@ export default defineConfig({
         PROFILE_ENGINE_URL: "http://127.0.0.1:8000",
       },
       reuseExistingServer: false,
-      timeout: 180_000,
+      // Next's production compilation includes strict type generation for the
+      // whole monorepo. Shared developer runners can exceed three minutes even
+      // when the build is healthy, so the browser harness must not fail before
+      // Next has a chance to report its own result.
+      timeout: 420_000,
       url: "http://127.0.0.1:3100",
     },
   ],

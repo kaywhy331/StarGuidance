@@ -15,20 +15,38 @@ The August 2026 experience pass treated immersion as coherence, agency, and emot
 | 9. Likely and alternate outcomes were visually flattened into prose.       | Added a conditional two-path trajectory compass ahead of agency, conditions, disconfirming evidence, and uncertainty.                                         | Copy continues to frame trajectories as conditional reflection, never guaranteed fact.                            |
 | 10. Completion dropped directly into a chatbot/history utility.            | Added a closing threshold with a question to carry, an explicit same-card continuation choice, a sealed-reading state, and a card-based memory constellation. | Follow-ups remain hidden until chosen and reuse the original draw/profile snapshot.                               |
 
+## Award-experience refinement
+
+A second refinement pass addressed the ten remaining experience gaps found during the complete product review.
+
+| Gap                                                                 | Implemented adjustment                                                                                                                                            | Integrity boundary                                                                                                         |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 1. Account creation opened as a conventional form.                  | Reframed signup as a two-stage threshold: access key first, then explicit service/privacy/age permissions.                                                        | Marketing remains off by default and required consent receipts keep their existing versions.                               |
+| 2. Six equally weighted spread cards created avoidable choice load. | The need-first selector now presents the recommended ritual and two nearby alternatives, with the complete catalog behind an explicit reveal.                     | Choosing a need changes presentation only and never enters shuffle input.                                                  |
+| 3. Utility controls wrapped into a mobile toolbar.                  | Replaced route-specific control clusters with one compact ritual HUD across setup, ritual, result, and preview.                                                   | Motion and audio controls remain labeled, keyboard-operable, and at least 44 CSS pixels on touch layouts.                  |
+| 4. The sanctuary changed motion but not emotional space.            | Added a phase gate, floor constellation, color veil, camera treatment, and phase-specific light states from intention through result.                             | Reduced-motion mode removes animation and transition while retaining the same content and phase information.               |
+| 5. Dragging the shuffle surface lacked physical response.           | Added velocity-sensitive 3D tilt, release inertia, shell separation, and optional short device haptics.                                                           | The interaction moves visual shells only; the cryptographically locked draw remains untouched.                             |
+| 6. One sound toggle conflated effects and narration.                | Split audio into card effects, a procedural phase-reactive atmosphere, and separately opted-in on-device narration.                                               | No remote audio asset or network voice receives reading prose; narration activates only when a local English voice exists. |
+| 7. Reading completion required a long sequence of passage clicks.   | Kept the paced guided thread and added a complete three-chapter story view with a final deliberate continuation action.                                           | Both formats render the same schema-validated result and locked cards.                                                     |
+| 8. Personalization had provenance but no visual memory.             | Added a deterministic private sigil derived only from an opaque snapshot identifier, plus separate reading-thread marks in history.                               | The sigil encodes no name, birth fact, card, question, or interpretive claim.                                              |
+| 9. The type system still depended on generic platform faces.        | Adopted self-hosted Cormorant and Manrope variable families with an editorial display/body hierarchy.                                                             | Both packages are pinned, OFL-1.1 licensed, and make no runtime request to a font service.                                 |
+| 10. The paid report read as a stack of generic panels.              | Rebuilt it as a pattern atlas with a cover, constellation index, four editorial chapters, source-status language, responsive reading layout, and print treatment. | Explicitly unavailable systems remain visible; web and PDF still share the same structured document model.                 |
+
 ## Interaction and accessibility contract
 
 - All essential ritual actions are native buttons or links with visible focus treatment.
 - Card reveal order is operable by touch, pointer, Tab, and Enter.
 - Reduced motion disables ornamental movement and cinematic transitions without skipping content.
 - `Gather now` shortens decorative shuffle time; the deck then deals automatically while still offering a brief optional symbolic cut.
-- Sound is optional, locally generated after interaction, and has a persistent on/off control.
+- Card effects, ambient room tone, and local narration are independently optional and persist only as preferences.
+- The complete-story view removes forced pagination without making follow-up controls appear until the reader deliberately finishes.
 - Horizontal mobile rails use scroll snap but retain normal DOM reading order.
 - The result renderer consumes validated structured data and never renders provider HTML or Markdown.
 - Closure is a decision point, not a destructive action; the reading is already durable before it appears.
 
 ## Performance contract
 
-The scene remains 2.5D DOM/CSS. It uses one responsive sanctuary asset, 15 lightweight shuffle shells, only the dealt physical cards, CSS transforms, and small Web Audio oscillators. It introduces no canvas, WebGL, video, remote font, analytics payload, or remote sound dependency.
+The scene remains 2.5D DOM/CSS. It uses one responsive sanctuary asset, 15 lightweight shuffle shells, only the dealt physical cards, CSS transforms, and small Web Audio oscillators. Cormorant and Manrope are bundled as self-hosted WOFF2 assets. The experience introduces no canvas, WebGL, video, runtime font service, private analytics payload, or remote sound dependency.
 
 The governed animation control selects `immersive-v1`, `quiet-v1`, or the complete non-motion path at request time. A restrictive animation kill switch therefore takes effect without a client rebuild and never removes content or controls. Privacy-safe browser measurement records only closed interaction stages such as shuffle start, card-reveal count, result view, and reading reopen; it never records card identity, question text, profile facts, reading URLs, or generated prose.
 

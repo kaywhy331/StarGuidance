@@ -9,6 +9,13 @@ import { POLICY_VERSIONS } from "@/lib/policies";
 
 export function SignUpForm() {
   const router = useRouter();
+  const [step, setStep] = useState<"identity" | "permission">("identity");
+  const [identity, setIdentity] = useState({
+    email: "",
+    displayName: "",
+    password: "",
+    confirmPassword: "",
+  });
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [pendingEmail, setPendingEmail] = useState<string>();
@@ -21,12 +28,15 @@ export function SignUpForm() {
         event.preventDefault();
         setError(undefined);
         setNotice(undefined);
-        const form = new FormData(event.currentTarget);
-        const password = String(form.get("password") ?? "");
-        if (password !== String(form.get("confirmPassword") ?? "")) {
-          setError("Passwords must match.");
+        if (step === "identity") {
+          if (identity.password !== identity.confirmPassword) {
+            setError("Passwords must match before you continue.");
+            return;
+          }
+          setStep("permission");
           return;
         }
+        const form = new FormData(event.currentTarget);
         const consents = {
           termsAccepted: form.get("termsAccepted") === "on",
           termsVersion: POLICY_VERSIONS.terms,
@@ -34,7 +44,7 @@ export function SignUpForm() {
           privacyVersion: POLICY_VERSIONS.privacy,
           ageConfirmed: form.get("ageConfirmed") === "on",
           ageEligibilityVersion: POLICY_VERSIONS.ageEligibility,
-          marketingAccepted: form.get("marketingAccepted") === "on",
+          marketingAccepted: false,
           marketingVersion: POLICY_VERSIONS.marketing,
         };
         setSubmitting(true);
@@ -43,9 +53,9 @@ export function SignUpForm() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             action: "sign-up",
-            email: form.get("email"),
-            password,
-            displayName: form.get("displayName"),
+            email: identity.email,
+            password: identity.password,
+            displayName: identity.displayName,
             consents,
           }),
         });
@@ -57,7 +67,7 @@ export function SignUpForm() {
         setSubmitting(false);
         if (!response.ok) return setError(payload.error ?? "Unable to create the account.");
         if (payload.pending) {
-          setPendingEmail(String(form.get("email") ?? ""));
+          setPendingEmail(identity.email);
           setNotice(
             "Account created. Check your email once to confirm it, then sign in with your password.",
           );
@@ -67,6 +77,14 @@ export function SignUpForm() {
         router.refresh();
       }}
     >
+      <ol aria-label="Account creation progress" className="account-form-progress">
+        <li aria-current={step === "identity" ? "step" : undefined}>
+          <span>01</span> Your key
+        </li>
+        <li aria-current={step === "permission" ? "step" : undefined}>
+          <span>02</span> Permission
+        </li>
+      </ol>
       {error ? (
         <p
           aria-live="assertive"
@@ -76,60 +94,103 @@ export function SignUpForm() {
           {error}
         </p>
       ) : null}
-      <Field autoComplete="email" label="Email" name="email" required type="email" />
-      <Field
-        autoComplete="nickname"
-        hint="Used in the reading experience; it is separate from your private birth name."
-        label="Display name"
-        maxLength={80}
-        name="displayName"
-        required
-      />
-      <Field
-        autoComplete="new-password"
-        hint="Use 12–72 characters. A passphrase is easiest to remember."
-        label="Password"
-        maxLength={72}
-        minLength={12}
-        name="password"
-        required
-        type="password"
-      />
-      <fieldset className="grid gap-3 rounded-2xl border border-white/10 p-4">
-        <legend className="px-2 text-sm text-[#c9bfd4]">Required beta acknowledgements</legend>
-        <label className="flex items-start gap-3 text-sm leading-6">
-          <input className="mt-1" name="termsAccepted" required type="checkbox" />
-          <span>
-            I agree to the versioned <Link href="/terms">Terms</Link>.
-          </span>
-        </label>
-        <label className="flex items-start gap-3 text-sm leading-6">
-          <input className="mt-1" name="privacyAccepted" required type="checkbox" />
-          <span>
-            I have read the versioned <Link href="/privacy">Privacy Notice</Link>.
-          </span>
-        </label>
-        <label className="flex items-start gap-3 text-sm leading-6">
-          <input className="mt-1" name="ageConfirmed" required type="checkbox" />
-          <span>I confirm that I am at least 18 years old.</span>
-        </label>
-      </fieldset>
-      <label className="flex items-start gap-3 rounded-2xl border border-white/10 p-4 text-sm leading-6">
-        <input className="mt-1" name="marketingAccepted" type="checkbox" />
-        <span>
-          Send me occasional product news. This is optional, is not required for service, and can be
-          changed later in Account settings.
-        </span>
-      </label>
-      <Field
-        autoComplete="new-password"
-        label="Confirm password"
-        maxLength={72}
-        minLength={12}
-        name="confirmPassword"
-        required
-        type="password"
-      />
+      {step === "identity" ? (
+        <fieldset className="account-form-stage">
+          <legend>Choose how you return</legend>
+          <p>Nothing entered here is used to select cards.</p>
+          <Field
+            autoComplete="email"
+            label="Email"
+            name="email"
+            onChange={(event) => setIdentity({ ...identity, email: event.target.value })}
+            required
+            type="email"
+            value={identity.email}
+          />
+          <Field
+            autoComplete="nickname"
+            hint="Used in the reading experience; separate from your private birth name."
+            label="Display name"
+            maxLength={80}
+            name="displayName"
+            onChange={(event) => setIdentity({ ...identity, displayName: event.target.value })}
+            required
+            value={identity.displayName}
+          />
+          <div className="account-password-grid">
+            <Field
+              autoComplete="new-password"
+              hint="Use 12–72 characters."
+              label="Password"
+              maxLength={72}
+              minLength={12}
+              name="password"
+              onChange={(event) => setIdentity({ ...identity, password: event.target.value })}
+              required
+              type="password"
+              value={identity.password}
+            />
+            <Field
+              autoComplete="new-password"
+              label="Confirm password"
+              maxLength={72}
+              minLength={12}
+              name="confirmPassword"
+              onChange={(event) =>
+                setIdentity({ ...identity, confirmPassword: event.target.value })
+              }
+              required
+              type="password"
+              value={identity.confirmPassword}
+            />
+          </div>
+          <Button type="submit">Continue to privacy commitments →</Button>
+          <p className="account-form-switch">
+            Already have an account? <Link href="/sign-in">Sign in</Link>
+          </p>
+        </fieldset>
+      ) : (
+        <fieldset className="account-form-stage account-permission-stage">
+          <legend>Open this space with permission</legend>
+          <p>
+            Review the three required commitments. Product updates stay off and can be enabled later
+            in Account settings.
+          </p>
+          <div className="account-identity-receipt" role="note">
+            <span aria-hidden="true">◈</span>
+            <span>
+              <strong>{identity.displayName}</strong>
+              <small>{identity.email}</small>
+            </span>
+          </div>
+          <div className="account-consent-list">
+            <label>
+              <input name="termsAccepted" required type="checkbox" />
+              <span>
+                I agree to the versioned <Link href="/terms">Terms</Link>.
+              </span>
+            </label>
+            <label>
+              <input name="privacyAccepted" required type="checkbox" />
+              <span>
+                I have read the versioned <Link href="/privacy">Privacy Notice</Link>.
+              </span>
+            </label>
+            <label>
+              <input name="ageConfirmed" required type="checkbox" />
+              <span>I confirm that I am at least 18 years old.</span>
+            </label>
+          </div>
+          <div className="account-form-actions">
+            <Button onClick={() => setStep("identity")} type="button" variant="quiet">
+              ← Back
+            </Button>
+            <Button disabled={submitting || Boolean(notice)} type="submit">
+              {submitting ? "Creating account…" : "Create private account"}
+            </Button>
+          </div>
+        </fieldset>
+      )}
       {notice ? (
         <div className="grid gap-3">
           <p aria-live="polite" className="text-sm leading-6 text-emerald-100">
@@ -158,15 +219,6 @@ export function SignUpForm() {
           </Button>
         </div>
       ) : null}
-      <p className="text-sm text-[#c9bfd4]">
-        Already have an account?{" "}
-        <Link className="text-[#d8b56d] underline-offset-4 hover:underline" href="/sign-in">
-          Sign in
-        </Link>
-      </p>
-      <Button disabled={submitting || Boolean(notice)} type="submit">
-        {submitting ? "Creating account…" : "Create private account"}
-      </Button>
     </form>
   );
 }

@@ -63,6 +63,10 @@ The built-in image-generation path was used; no API key or fallback CLI model wa
 
 The representative Pixel 7 Playwright check confirms that the browser selects the mobile sanctuary composition, renders no canvas, and stays below the 350,000-byte atmospheric-image transfer budget. The preferred mobile AVIF is 27,398 bytes; its WebP compatibility fallback is 92,332 bytes.
 
+## Typography provenance
+
+The product bundles `@fontsource-variable/cormorant@5.3.0` and `@fontsource-variable/manrope@5.3.0`. Both packages declare the SIL Open Font License 1.1 and include their license text in the installed package. The WOFF2 files are built with the application; StarGuidance does not call a hosted font service at runtime. Cormorant is used for editorial display and long-form reflective reading, while Manrope carries controls, labels, provenance, and accessibility-oriented utility copy.
+
 ## Deploy-preview evidence
 
 The checked-in screenshots were captured on 2026-08-20 from [Netlify Deploy Preview #19](https://deploy-preview-19--starguidance.netlify.app/visual-preview) at UI head `22ec54d5610a65f3801f3055467cb2e8be07c27c`. The route is noindexed and uses synthetic cards and prose only.

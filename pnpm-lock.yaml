@@ -41,6 +41,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@fontsource-variable/cormorant':
+        specifier: 5.3.0
+        version: 5.3.0
+      '@fontsource-variable/manrope':
+        specifier: 5.3.0
+        version: 5.3.0
       '@hookform/resolvers':
         specifier: 5.4.0
         version: 5.4.0(react-hook-form@7.82.0(react@19.2.8))
@@ -818,6 +824,12 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@fontsource-variable/cormorant@5.3.0':
+    resolution: {integrity: sha512-S3/jFZ2+Erx8ML5+lo71rYKqVpJF13CZ3yWX7xfjQk1wFcPhT9Gp+l2tnNSLOx5Mzjn3mQmVPutpvx91O2VqpQ==}
+
+  '@fontsource-variable/manrope@5.3.0':
+    resolution: {integrity: sha512-6D5dgokHsWDDMtmXHznKa0hK229NN+1a4BLPmUCLqcO1Pw5EEhWY5RFt0AcXnVRAljFFPfRtLkJePQj6LSsV6g==}
 
   '@hookform/resolvers@5.4.0':
     resolution: {integrity: sha512-EIsqr/t/qbinPIhGjMdtvutIN1Kk4uwbROE9/UQ93CAVGR7GkA7Y92+fX80OzXi/OB67jVFYwKGO1WzkxmkFZw==}
@@ -3803,6 +3815,10 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@fontsource-variable/cormorant@5.3.0': {}
+
+  '@fontsource-variable/manrope@5.3.0': {}
 
   '@hookform/resolvers@5.4.0(react-hook-form@7.82.0(react@19.2.8))':
     dependencies:
