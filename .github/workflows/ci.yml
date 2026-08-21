@@ -201,7 +201,7 @@ jobs:
       - run: >-
           pnpm --filter @starguidance/web exec playwright test
           --project=${{ matrix.project }}
-          --workers=2
+          --workers=1
 
   e2e_core:
     name: e2e-core
