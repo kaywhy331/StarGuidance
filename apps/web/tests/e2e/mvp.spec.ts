@@ -307,93 +307,92 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   await expect(page.locator('.oracle-entry[data-phase="narration"] h2')).toBeVisible();
 });
 
-test("all six selectable spreads use their configured spatial arrangements", async ({ page }) => {
-  test.setTimeout(180_000);
-  await createProfile(page);
-  await persistReadingPreferences(page, { reducedMotion: true, soundEnabled: false });
-  const cases = [
-    {
-      id: "one-card",
-      kind: "centered",
-      question: "Should I accept the invitation this week?",
-      positions: [[0, 0, 0]],
-      contextualNames: ["Yes / No Pivot"],
-    },
-    {
-      id: "three-card",
-      kind: "horizontal",
-      question: "What is causing this project to stall?",
-      positions: [
-        [0, 0, 0],
-        [1, 0, 0],
-        [2, 0, 0],
-      ],
-      contextualNames: ["The Problem", "The Cause", "The Resolution"],
-    },
-    {
-      id: "celtic-cross",
-      kind: "celtic-cross",
-      question: "What should I understand about this complex transition?",
-      positions: [
-        [2, 1, 0],
-        [2, 1, 90],
-        [2, 0, 0],
-        [2, 2, 0],
-        [1, 1, 0],
-        [3, 1, 0],
-        [4, 3, 0],
-        [4, 2, 0],
-        [4, 1, 0],
-        [4, 0, 0],
-      ],
-    },
-    {
-      id: "horseshoe",
-      kind: "horseshoe",
-      question: "What is shaping the next phase of this plan?",
-      positions: [
-        [0, 0, 0],
-        [1, 1, 0],
-        [2, 2, 0],
-        [2, 3, 0],
-        [2, 4, 0],
-        [3, 1, 0],
-        [4, 0, 0],
-      ],
-    },
-    {
-      id: "relationship",
-      kind: "relationship",
-      question: "What can I observe and choose in this relationship?",
-      positions: [
-        [0, 0, 0],
-        [2, 0, 0],
-        [0, 1, 0],
-        [2, 1, 0],
-        [1, 0, 0],
-        [1, 1, 0],
-        [1, 2, 0],
-      ],
-    },
-    {
-      id: "nine-card-matrix",
-      kind: "matrix",
-      question: "How is this situation developing across time and circumstance?",
-      positions: [
-        [0, 0, 0],
-        [1, 0, 0],
-        [2, 0, 0],
-        [0, 1, 0],
-        [1, 1, 0],
-        [2, 1, 0],
-        [0, 2, 0],
-        [1, 2, 0],
-        [2, 2, 0],
-      ],
-    },
-  ] as const;
+const configuredSpreadCases = [
+  {
+    id: "one-card",
+    kind: "centered",
+    question: "Should I accept the invitation this week?",
+    positions: [[0, 0, 0]],
+    contextualNames: ["Yes / No Pivot"],
+  },
+  {
+    id: "three-card",
+    kind: "horizontal",
+    question: "What is causing this project to stall?",
+    positions: [
+      [0, 0, 0],
+      [1, 0, 0],
+      [2, 0, 0],
+    ],
+    contextualNames: ["The Problem", "The Cause", "The Resolution"],
+  },
+  {
+    id: "celtic-cross",
+    kind: "celtic-cross",
+    question: "What should I understand about this complex transition?",
+    positions: [
+      [2, 1, 0],
+      [2, 1, 90],
+      [2, 0, 0],
+      [2, 2, 0],
+      [1, 1, 0],
+      [3, 1, 0],
+      [4, 3, 0],
+      [4, 2, 0],
+      [4, 1, 0],
+      [4, 0, 0],
+    ],
+  },
+  {
+    id: "horseshoe",
+    kind: "horseshoe",
+    question: "What is shaping the next phase of this plan?",
+    positions: [
+      [0, 0, 0],
+      [1, 1, 0],
+      [2, 2, 0],
+      [2, 3, 0],
+      [2, 4, 0],
+      [3, 1, 0],
+      [4, 0, 0],
+    ],
+  },
+  {
+    id: "relationship",
+    kind: "relationship",
+    question: "What can I observe and choose in this relationship?",
+    positions: [
+      [0, 0, 0],
+      [2, 0, 0],
+      [0, 1, 0],
+      [2, 1, 0],
+      [1, 0, 0],
+      [1, 1, 0],
+      [1, 2, 0],
+    ],
+  },
+  {
+    id: "nine-card-matrix",
+    kind: "matrix",
+    question: "How is this situation developing across time and circumstance?",
+    positions: [
+      [0, 0, 0],
+      [1, 0, 0],
+      [2, 0, 0],
+      [0, 1, 0],
+      [1, 1, 0],
+      [2, 1, 0],
+      [0, 2, 0],
+      [1, 2, 0],
+      [2, 2, 0],
+    ],
+  },
+] as const;
 
-  for (const spreadCase of cases) {
+for (const spreadCase of configuredSpreadCases) {
+  test(`configured ${spreadCase.id} spread uses its spatial arrangement`, async ({ page }) => {
+    await createProfile(page);
+    await persistReadingPreferences(page, { reducedMotion: true, soundEnabled: false });
     const radio = page.locator(`input[name="spread"][value="${spreadCase.id}"]`);
     if (!(await radio.locator("xpath=ancestor::label").isVisible())) {
       await page.getByRole("button", { name: /^Explore all \d+ rituals$/ }).click();
@@ -437,11 +436,8 @@ test("all six selectable spreads use their configured spatial arrangements", asy
       }, readingId);
       expect(names).toEqual(spreadCase.contextualNames);
     }
-
-    await page.goto("/readings");
-    await expect(page.locator(`input[name="spread"][value="${spreadCase.id}"]`)).toHaveCount(1);
-  }
-});
+  });
+}
 
 test("an authenticated session never loops back to the credential form", async ({ page }) => {
   await signIn(page);
