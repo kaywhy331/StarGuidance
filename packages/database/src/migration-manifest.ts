@@ -29,4 +29,5 @@ export const EXPECTED_MIGRATIONS = [
   "0021_optimal_frightful_four",
   "0022_outstanding_smasher",
   "0023_output_provenance",
+  "0024_immutable_content_versions",
 ] as const;

@@ -146,6 +146,10 @@ describe("governed runtime configuration API", () => {
     expect(serialized).toContain('"approvalPolicy"');
     expect(serialized).toContain('"createdByCurrentOperator":false');
     expect(serialized).not.toContain(otherOperatorId);
+    const contentSql = mocks.client.mock.calls
+      .map(([strings]) => (strings as TemplateStringsArray).join(" "))
+      .find((sql) => sql.includes("from decks"));
+    expect(contentSql).toContain("bool_and(active) as active from spreads group by id");
   });
 
   it("creates a validated immutable draft and audit receipt in one transaction", async () => {

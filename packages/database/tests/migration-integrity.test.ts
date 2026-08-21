@@ -86,6 +86,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0021_optimal_frightful_four": "620be686d4a1602b6f449ac0fa3dfb9cbca06d9d27e395dd4db420c0a5951aef",
   "0022_outstanding_smasher": "e3bbebde9605b48ae7829834b278273775aaddc6f78f0074ca30cfb1c360cdf4",
   "0023_output_provenance": "238cc827f006c73a66326b726d31b0f4df8f419c8ce8ae1334f53e0994b182a0",
+  "0024_immutable_content_versions":
+    "bee71d381cd1a2206d428841f9d795fbe7e2c8cf8833a50e2e4c78c5f5ce452e",
 };
 
 describe("migration history", () => {
@@ -217,6 +219,33 @@ describe("migration history", () => {
       /alter table "reading_outputs" add column "safety_policy_version" text default 'legacy-unrecorded' not null/i,
     );
     expect(sql).not.toMatch(/delete\s+from|drop\s+column|disable\s+row\s+level\s+security/i);
+  });
+
+  it("preserves historical tarot releases under version-qualified keys (0024)", () => {
+    const sql = executableSql("0024_immutable_content_versions");
+
+    expect(sql).toMatch(
+      /update\s+"card_meanings"[\s\S]*set\s+"deck_version"\s*=\s*card\."deck_version"[\s\S]*from\s+"cards"/i,
+    );
+    expect(sql).toMatch(
+      /update\s+"spread_positions"[\s\S]*set\s+"spread_version"\s*=\s*spread\."version"[\s\S]*from\s+"spreads"/i,
+    );
+    expect(sql).toMatch(
+      /add\s+constraint\s+"cards_id_deck_version_pk"\s+primary\s+key\s*\("id",\s*"deck_version"\)/i,
+    );
+    expect(sql).toMatch(
+      /add\s+constraint\s+"spreads_id_version_pk"\s+primary\s+key\s*\("id",\s*"version"\)/i,
+    );
+    expect(sql).toMatch(
+      /foreign\s+key\s*\("card_id",\s*"deck_version"\)[\s\S]*references\s+"public"\."cards"\("id",\s*"deck_version"\)/i,
+    );
+    expect(sql).toMatch(
+      /foreign\s+key\s*\("spread_id",\s*"spread_version"\)[\s\S]*references\s+"public"\."spreads"\("id",\s*"version"\)/i,
+    );
+    expect(sql).toMatch(/alter\s+column\s+"deck_version"\s+set\s+not\s+null/i);
+    expect(sql).toMatch(/alter\s+column\s+"spread_version"\s+set\s+not\s+null/i);
+    expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+column/i);
+    expect(sql).not.toMatch(/update\s+"(?:cards|spreads)"|set\s+"(?:payload|id|content_version)"/i);
   });
 
   it("orders the corrective migration after the migration that created the trigger", () => {

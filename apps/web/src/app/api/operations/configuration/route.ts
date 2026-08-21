@@ -100,7 +100,7 @@ export async function GET() {
       client<{ target_type: "deck" | "spread" | "product"; id: string; active: boolean }[]>`
         select 'deck'::text as target_type, version as id, active from decks
         union all
-        select 'spread'::text, id, active from spreads
+        select 'spread'::text, id, bool_and(active) as active from spreads group by id
         union all
         select 'product'::text, id, active from products
         order by target_type, id

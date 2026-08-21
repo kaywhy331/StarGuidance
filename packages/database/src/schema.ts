@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -110,47 +111,73 @@ export const decks = pgTable("decks", {
   active: boolean("active").default(true).notNull(),
   createdAt,
 });
-export const cards = pgTable("cards", {
-  id: text("id").primaryKey(),
-  deckVersion: text("deck_version")
-    .notNull()
-    .references(() => decks.version),
-  payload: jsonb("payload").notNull(),
-  createdAt,
-});
+export const cards = pgTable(
+  "cards",
+  {
+    id: text("id").notNull(),
+    deckVersion: text("deck_version")
+      .notNull()
+      .references(() => decks.version),
+    payload: jsonb("payload").notNull(),
+    createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.id, table.deckVersion], name: "cards_id_deck_version_pk" }),
+  ],
+);
 export const cardMeanings = pgTable(
   "card_meanings",
   {
     id,
-    cardId: text("card_id")
-      .notNull()
-      .references(() => cards.id, { onDelete: "cascade" }),
+    cardId: text("card_id").notNull(),
+    deckVersion: text("deck_version").notNull(),
     contentVersion: text("content_version").notNull(),
     payload: jsonb("payload").notNull(),
     createdAt,
   },
-  (table) => [uniqueIndex("card_meaning_content_unique").on(table.cardId, table.contentVersion)],
+  (table) => [
+    foreignKey({
+      columns: [table.cardId, table.deckVersion],
+      foreignColumns: [cards.id, cards.deckVersion],
+      name: "card_meanings_card_deck_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("card_meaning_content_unique").on(
+      table.cardId,
+      table.deckVersion,
+      table.contentVersion,
+    ),
+  ],
 );
-export const spreads = pgTable("spreads", {
-  id: text("id").primaryKey(),
-  version: text("version").notNull(),
-  payload: jsonb("payload").notNull(),
-  active: boolean("active").default(true).notNull(),
-  createdAt,
-});
+export const spreads = pgTable(
+  "spreads",
+  {
+    id: text("id").notNull(),
+    version: text("version").notNull(),
+    payload: jsonb("payload").notNull(),
+    active: boolean("active").default(true).notNull(),
+    createdAt,
+  },
+  (table) => [primaryKey({ columns: [table.id, table.version], name: "spreads_id_version_pk" })],
+);
 export const spreadPositions = pgTable(
   "spread_positions",
   {
     id,
-    spreadId: text("spread_id")
-      .notNull()
-      .references(() => spreads.id, { onDelete: "cascade" }),
+    spreadId: text("spread_id").notNull(),
+    spreadVersion: text("spread_version").notNull(),
     positionId: text("position_id").notNull(),
     displayOrder: integer("display_order").notNull(),
     payload: jsonb("payload").notNull(),
     createdAt,
   },
-  (table) => [uniqueIndex("spread_position_unique").on(table.spreadId, table.positionId)],
+  (table) => [
+    foreignKey({
+      columns: [table.spreadId, table.spreadVersion],
+      foreignColumns: [spreads.id, spreads.version],
+      name: "spread_positions_spread_version_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("spread_position_unique").on(table.spreadId, table.spreadVersion, table.positionId),
+  ],
 );
 export const readingSessions = pgTable(
   "reading_sessions",
@@ -160,9 +187,7 @@ export const readingSessions = pgTable(
     profileSnapshotId: uuid("profile_snapshot_id")
       .notNull()
       .references(() => profileSnapshots.id),
-    spreadId: text("spread_id")
-      .notNull()
-      .references(() => spreads.id),
+    spreadId: text("spread_id").notNull(),
     spreadVersion: text("spread_version").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     encryptedQuestion: text("encrypted_question").notNull(),
@@ -187,6 +212,11 @@ export const readingSessions = pgTable(
     updatedAt,
   },
   (table) => [
+    foreignKey({
+      columns: [table.spreadId, table.spreadVersion],
+      foreignColumns: [spreads.id, spreads.version],
+      name: "reading_sessions_spread_version_fk",
+    }),
     uniqueIndex("reading_sessions_user_idempotency_unique").on(table.userId, table.idempotencyKey),
   ],
 );

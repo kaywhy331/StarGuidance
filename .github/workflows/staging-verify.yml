@@ -65,7 +65,9 @@ jobs:
     env:
       APP_ENV: ${{ vars.APP_ENV || 'staging' }}
       RUNTIME_ADAPTER: ${{ vars.RUNTIME_ADAPTER || 'supabase' }}
-      STAGING_BASE_URL: ${{ vars.NETLIFY_PREVIEW_URL || inputs.preview_url }}
+      # The required dispatch input identifies the exact release candidate.
+      # Never let a stale environment default silently verify an older preview.
+      STAGING_BASE_URL: ${{ inputs.preview_url }}
       STAGING_RESULTS: ${{ github.workspace }}/staging-results.jsonl
       SUMMARY_FILE: ${{ github.workspace }}/staging-verification-summary.md
       STAGE_DIR: ${{ github.workspace }}/staging-stages

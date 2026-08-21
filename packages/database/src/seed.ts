@@ -34,11 +34,11 @@ try {
       await transaction`
         insert into cards (id, deck_version, payload)
         values (${card.id}, ${DECK_VERSION}, ${transaction.json(cardPayload)})
-        on conflict (id) do nothing
+        on conflict (id, deck_version) do nothing
       `;
       const [storedCard] = await transaction<{ matches: boolean }[]>`
-        select deck_version = ${DECK_VERSION} and payload = ${transaction.json(cardPayload)} as matches
-        from cards where id = ${card.id}
+        select payload = ${transaction.json(cardPayload)} as matches
+        from cards where id = ${card.id} and deck_version = ${DECK_VERSION}
       `;
       if (!storedCard?.matches) throw new Error(`SEED_VERSION_CONFLICT:card:${card.id}`);
       const meaningPayload = asJson({
@@ -49,17 +49,19 @@ try {
         attribution: card.attribution,
       });
       await transaction`
-        insert into card_meanings (card_id, content_version, payload)
-        select ${card.id}, ${TAROT_CONTENT_VERSION}, ${transaction.json(meaningPayload)}
+        insert into card_meanings (card_id, deck_version, content_version, payload)
+        select ${card.id}, ${DECK_VERSION}, ${TAROT_CONTENT_VERSION}, ${transaction.json(meaningPayload)}
         where not exists (
           select 1 from card_meanings
-          where card_id = ${card.id} and content_version = ${TAROT_CONTENT_VERSION}
+          where card_id = ${card.id} and deck_version = ${DECK_VERSION}
+            and content_version = ${TAROT_CONTENT_VERSION}
         )
       `;
       const [storedMeaning] = await transaction<{ matches: boolean }[]>`
         select payload = ${transaction.json(meaningPayload)} as matches
         from card_meanings
-        where card_id = ${card.id} and content_version = ${TAROT_CONTENT_VERSION}
+        where card_id = ${card.id} and deck_version = ${DECK_VERSION}
+          and content_version = ${TAROT_CONTENT_VERSION}
       `;
       if (!storedMeaning?.matches)
         throw new Error(`SEED_VERSION_CONFLICT:meaning:${card.id}:${TAROT_CONTENT_VERSION}`);
@@ -73,24 +75,25 @@ try {
       await transaction`
         insert into spreads (id, version, payload, active)
         values (${spread.id}, ${spread.version}, ${transaction.json(spreadPayload)}, ${active})
-        on conflict (id) do nothing
+        on conflict (id, version) do nothing
       `;
       const [storedSpread] = await transaction<{ matches: boolean }[]>`
-        select version = ${spread.version} and payload = ${transaction.json(spreadPayload)} as matches
-        from spreads where id = ${spread.id}
+        select payload = ${transaction.json(spreadPayload)} as matches
+        from spreads where id = ${spread.id} and version = ${spread.version}
       `;
       if (!storedSpread?.matches) throw new Error(`SEED_VERSION_CONFLICT:spread:${spread.id}`);
       for (const position of spread.positions) {
         const positionPayload = asJson(position);
         await transaction`
-          insert into spread_positions (spread_id, position_id, display_order, payload)
-          values (${spread.id}, ${position.id}, ${position.order}, ${transaction.json(positionPayload)})
-          on conflict (spread_id, position_id) do nothing
+          insert into spread_positions (spread_id, spread_version, position_id, display_order, payload)
+          values (${spread.id}, ${spread.version}, ${position.id}, ${position.order}, ${transaction.json(positionPayload)})
+          on conflict (spread_id, spread_version, position_id) do nothing
         `;
         const [storedPosition] = await transaction<{ matches: boolean }[]>`
-          select display_order = ${position.order} and payload = ${transaction.json(positionPayload)} as matches
-          from spread_positions
-          where spread_id = ${spread.id} and position_id = ${position.id}
+        select display_order = ${position.order} and payload = ${transaction.json(positionPayload)} as matches
+        from spread_positions
+          where spread_id = ${spread.id} and spread_version = ${spread.version}
+            and position_id = ${position.id}
         `;
         if (!storedPosition?.matches)
           throw new Error(`SEED_VERSION_CONFLICT:position:${spread.id}:${position.id}`);
