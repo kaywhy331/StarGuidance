@@ -41,6 +41,7 @@ export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthPro
   const birthTime = useWatch({ control: form.control, name: "birthTime" })?.trim();
   const completeness: ProfileCompleteness =
     birthplace && birthTime ? "complete" : birthplace ? "locationEnhanced" : "core";
+  const completenessValue = { core: 1, locationEnhanced: 2, complete: 3 }[completeness];
   const capability = {
     core: {
       label: "Core profile",
@@ -103,7 +104,11 @@ export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthPro
           <p>{capability.summary}</p>
           <div
             aria-label={`${capability.label} completeness`}
+            aria-valuemax={3}
+            aria-valuemin={1}
+            aria-valuenow={completenessValue}
             className="profile-capability__meter"
+            role="meter"
           >
             <i />
             <i />
