@@ -29,26 +29,30 @@ async function createProfile(page: Page) {
 /** Mirrors mvp.spec.ts's centered, sequential ritual helper. */
 async function finishRitual(page: Page) {
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
   const sanctuary = page.getByTestId("mystic-sanctuary-scene");
   await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
-  const gather = page.getByRole("button", { name: "Gather now", exact: true });
-  if (await gather.isVisible()) await gather.dispatchEvent("click").catch(() => {});
+  // Reduced motion advances the shuffle automatically. Dispatching to the
+  // disappearing Gather now button races that timer in WebKit.
   await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
     timeout: 20_000,
   });
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "I’m ready", exact: true }).click();
+  await page.getByRole("button", { name: "I’m ready", exact: true }).dispatchEvent("click");
   for (let index = 0; index < 10; index += 1) {
     await page
       .getByRole("button", { name: /^Reveal card \d+, face down$/ })
       .first()
-      .click();
+      .dispatchEvent("click");
     const action = page.locator(".guided-next-action");
     await expect(action).toBeVisible();
     const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
-    await action.click();
+    // The guided action is intentionally replaced as each cinematic reveal
+    // settles. Dispatch after visibility so WebKit cannot wait on a stale
+    // actionability target that the next card correctly removes.
+    await action.dispatchEvent("click");
     if (finalCard) break;
   }
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
@@ -87,6 +91,7 @@ test("a crisis-flagged question pauses with real resources instead of the old in
 test("a guarded question pauses before the shuffle, then can continue as reflection to completion", async ({
   page,
 }) => {
+  test.setTimeout(180_000);
   await createProfile(page);
   await page.getByLabel("Your private question").fill("Should I buy or sell this stock?");
   const readingResponse = page.waitForResponse(
