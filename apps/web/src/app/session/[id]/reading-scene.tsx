@@ -378,10 +378,11 @@ export function ReadingScene({
       return;
     }
 
-    // UX-004: cuttingDeck is a short compatibility/gather phase, never a
-    // decision stop. A reader may mark the symbolic cut before the timer
-    // settles, otherwise the deck proceeds whole without further input.
-    const timer = window.setTimeout(() => chooseCut(false), motionOff ? 0 : 1_200);
+    // UX-004: cuttingDeck is a brief compatibility/gather phase, never a
+    // decision stop. Keep the affordance present through the two-second deck
+    // gather so readers using touch, keyboard, or slower engines still have a
+    // calm opportunity to mark it before the deck proceeds on its own.
+    const timer = window.setTimeout(() => chooseCut(false), motionOff ? 0 : 4_000);
     return () => window.clearTimeout(timer);
   }, [chooseCut, cutTaken, motionOff, send, state]);
 

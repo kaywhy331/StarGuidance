@@ -593,10 +593,12 @@ test("omitted birth time never fabricates astrology or BaZi", async ({ page }) =
   // Only the report tests reach the checkout route, so under `next dev` this
   // navigation always pays that route's first-request compilation cost.
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
-  await expect(page.getByText("Western astrology")).toBeVisible();
-  await expect(page.getByText("BaZi Four Pillars")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Western astrology", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "BaZi Four Pillars", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Nine Star Ki", exact: true })).toBeVisible();
-  await expect(page.getByText("Planetary angularity and location")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Planetary angularity and location", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Explicitly unavailable")).toHaveCount(3);
 });
 

@@ -2970,8 +2970,8 @@ body {
   top: 54%;
   left: 50%;
   display: grid;
-  width: min(calc(100vw - 2rem), 25rem);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(calc(100vw - 2rem), 22rem);
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.7rem;
   translate: -50% -50%;
 }
@@ -3609,7 +3609,7 @@ body {
 
 .oracle-console-stack:has(.reading-result-overview),
 .oracle-console-stack:has(.reading-complete-story) {
-  height: clamp(28rem, 58dvh, 38rem);
+  height: clamp(28rem, 62dvh, 40rem);
 }
 
 .oracle-console-stack.is-inactive {

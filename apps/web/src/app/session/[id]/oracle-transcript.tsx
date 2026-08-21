@@ -59,7 +59,8 @@ function humanizeDomain(value: string) {
 
 export const NARRATION_TIMING = {
   boundaryLeadWords: 2,
-  silentWordIntervalMs: 145,
+  maxSilentRevealSteps: 16,
+  silentWordIntervalMs: 80,
   speechStartDelayMs: 520,
   spokenWordIntervalMs: 240,
 } as const;
@@ -111,10 +112,17 @@ function NarratedParagraph({
           .find((voice) => voice.localService && voice.lang.toLowerCase().startsWith("en"))
       : undefined;
     const localNarrationAvailable = soundEnabled && localEnglishVoice !== undefined;
+    // Keep the silent cinematic reveal compact even when a passage is long.
+    // Phrase-sized batches reduce paint churn and prevent the entrance effect
+    // from becoming the page's LCP bottleneck. Spoken narration still follows
+    // word boundaries at the more deliberate voice cadence below.
+    const wordsPerTick = localNarrationAvailable
+      ? 1
+      : Math.max(1, Math.ceil(words.length / NARRATION_TIMING.maxSilentRevealSteps));
     const revealTimer = window.setInterval(
       () =>
         setVisibleWords((count) => {
-          const next = monotonicVisibleWordCount(count, count + 1, words.length);
+          const next = monotonicVisibleWordCount(count, count + wordsPerTick, words.length);
           if (next >= words.length) window.clearInterval(revealTimer);
           return next;
         }),
@@ -308,7 +316,6 @@ function ReadingOverview({
             );
             return (
               <button
-                aria-label={`Focus ${card.positionName}: ${card.name}, ${card.orientation}`}
                 aria-pressed={activeCardIndex === cardIndex}
                 disabled={passageIndex < 0}
                 key={card.positionId}
@@ -318,6 +325,7 @@ function ReadingOverview({
                 <small>{card.positionName}</small>
                 <strong>{card.name}</strong>
                 <span>{card.orientation}</span>
+                <span className="sr-only">. Focus this card in the guided reading.</span>
               </button>
             );
           })}

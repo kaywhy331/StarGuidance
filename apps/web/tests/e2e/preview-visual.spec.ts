@@ -63,6 +63,9 @@ test("narration always advances visually and starts with a readable lead", () =>
   expect(monotonicVisibleWordCount(5, 7, 9)).toBe(7);
   expect(monotonicVisibleWordCount(8, 12, 9)).toBe(9);
   expect(NARRATION_TIMING.boundaryLeadWords).toBeGreaterThanOrEqual(2);
+  expect(
+    NARRATION_TIMING.maxSilentRevealSteps * NARRATION_TIMING.silentWordIntervalMs,
+  ).toBeLessThanOrEqual(1_500);
   expect(NARRATION_TIMING.speechStartDelayMs).toBeGreaterThan(
     NARRATION_TIMING.spokenWordIntervalMs,
   );
@@ -102,7 +105,7 @@ test("the visual preview follows the streamlined result and continuation sequenc
   await expect(lockedCards).toHaveCount(3);
   await expect(lockedCards.first().locator("small")).not.toBeEmpty();
   await expect(lockedCards.first().locator("strong")).not.toBeEmpty();
-  await expect(lockedCards.first().locator("span")).toHaveText(/upright|reversed/);
+  await expect(lockedCards.first().locator("span:not(.sr-only)")).toHaveText(/upright|reversed/);
 
   const titleMetrics = await overview.locator(".reading-result-header h2").evaluate((element) => {
     const style = getComputedStyle(element);

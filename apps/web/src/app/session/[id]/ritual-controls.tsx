@@ -80,7 +80,6 @@ export function RitualControls({
         <div className="ritual-hud__audio">
           <button
             aria-expanded={audioOpen}
-            aria-label={`Sound controls, ${activeAudioLayers} ${activeAudioLayers === 1 ? "layer" : "layers"} on`}
             aria-pressed={activeAudioLayers > 0}
             className="ritual-hud__toggle"
             onClick={() => setAudioOpen((open) => !open)}
