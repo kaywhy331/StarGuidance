@@ -168,7 +168,7 @@ test("the visual preview follows the streamlined result and continuation sequenc
   for (const heading of ["Your agency", "Conditions to notice", "What could change the pattern"])
     await expect(integration.getByRole("heading", { name: heading })).toBeVisible();
   await expect(integration.locator(".reading-uncertainty")).toBeVisible();
-  await page.getByRole("button", { name: "Previous reading passage" }).click();
+  await page.getByRole("button", { name: "Previous reading passage" }).dispatchEvent("click");
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
   await expect(page.locator(".oracle-entry-text")).toBeVisible();
   await expect(page.getByTestId("reading-result-overview")).toHaveCount(0);

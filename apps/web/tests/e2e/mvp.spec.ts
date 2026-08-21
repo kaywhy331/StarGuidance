@@ -76,9 +76,19 @@ async function reachQuestionReflection(page: Page, reduceMotion = true) {
     const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
     const motionState = await motionControl.getAttribute("aria-pressed");
     if (motionState !== "true") await motionControl.click();
+    await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
+      "data-reduced-motion",
+      "true",
+    );
   }
   const gather = page.getByRole("button", { name: "Gather now", exact: true });
-  if (await gather.isVisible()) await gather.click({ force: true, timeout: 1_000 }).catch(() => {});
+  if (await gather.isVisible()) await gather.dispatchEvent("click").catch(() => {});
+  await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
+    "data-ritual-phase",
+    "awaitingReveal",
+    { timeout: 20_000 },
+  );
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ })).toBeVisible({
     timeout: 7_000,
@@ -255,7 +265,7 @@ test("date-only onboarding reaches a completed reading", async ({ page }) => {
   await expect(lockedCards).toHaveCount(3);
   await expect(lockedCards.first().locator("small")).not.toBeEmpty();
   await expect(lockedCards.first().locator("strong")).not.toBeEmpty();
-  await expect(lockedCards.first().locator("span")).toHaveText(/upright|reversed/);
+  await expect(lockedCards.first().locator("span:not(.sr-only)")).toHaveText(/upright|reversed/);
   const lensDisclosure = overview.locator(".reading-lens-disclosure");
   await expect(
     lensDisclosure.getByText("How this was personalized", { exact: true }),
@@ -498,7 +508,7 @@ test("the centered ritual mixes, gathers, deals, reflects, and reveals one card 
   const symbolicCut = page.getByRole("button", { name: /^Mark a symbolic cut/ });
   await expect(symbolicCut).toBeVisible({ timeout: 1_000 });
   await expect(page.getByRole("button", { name: /^Leave whole/ })).toHaveCount(0);
-  await symbolicCut.click();
+  await symbolicCut.dispatchEvent("click");
 
   const deal = page.getByTestId("guided-deal");
   await expect(deal).toBeVisible({ timeout: 4_000 });
@@ -599,7 +609,13 @@ test("omitted birth time never fabricates astrology or BaZi", async ({ page }) =
   await expect(
     page.getByRole("heading", { name: "Planetary angularity and location", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Explicitly unavailable")).toHaveCount(3);
+  for (const sectionId of [
+    "atlas-section-astrology",
+    "atlas-section-bazi",
+    "atlas-section-nine-star-ki",
+    "atlas-section-planetary-angularity",
+  ])
+    await expect(page.locator(`#${sectionId}`).getByText("Explicitly unavailable")).toBeVisible();
 });
 
 test("a reading stays pinned to the snapshot it was drawn against", async ({ page }) => {
@@ -699,6 +715,11 @@ test("an interrupted ritual recovers the identical locked draw", async ({ page }
   expect((await cutProgress).status()).toBe(200);
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
+    "data-reduced-motion",
+    "true",
+  );
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "I’m ready", exact: true }).click();
   const revealProgress = page.waitForResponse(

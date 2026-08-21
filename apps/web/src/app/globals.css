@@ -7212,7 +7212,7 @@ body {
 
   .oracle-console-stack:has(.reading-result-overview),
   .oracle-console-stack:has(.reading-complete-story) {
-    height: min(63dvh, 36rem);
+    height: min(70dvh, 38rem);
   }
 
   .oracle-transcript {

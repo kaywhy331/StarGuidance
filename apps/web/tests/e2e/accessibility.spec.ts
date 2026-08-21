@@ -58,8 +58,14 @@ async function createReading(page: Page): Promise<void> {
   // reader-controlled sequence through standard buttons.
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  const sanctuary = page.getByTestId("mystic-sanctuary-scene");
+  await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
   const gather = page.getByRole("button", { name: "Gather now", exact: true });
-  if (await gather.isVisible()) await gather.click({ force: true, timeout: 1_000 }).catch(() => {});
+  if (await gather.isVisible()) await gather.dispatchEvent("click").catch(() => {});
+  await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
+    timeout: 20_000,
+  });
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "I’m ready", exact: true }).click();
   for (let index = 0; index < 10; index += 1) {
