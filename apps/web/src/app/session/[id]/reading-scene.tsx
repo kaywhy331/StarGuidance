@@ -398,20 +398,24 @@ export function ReadingScene({
     }
 
     setDealtCount(0);
-    reading.cards.forEach((_, index) => {
-      timers.push(
-        window.setTimeout(() => {
-          setDealtCount(index + 1);
-          if (soundEnabled.current) playRitualSound("deal", index);
-        }, index * 1_000),
-      );
-    });
-    timers.push(
-      window.setTimeout(
-        () => send({ type: "DEALT" }),
-        Math.max(0, reading.cards.length - 1) * 1_000 + 850,
-      ),
-    );
+    if (reading.cards.length === 0) {
+      timers.push(window.setTimeout(() => send({ type: "DEALT" }), 850));
+      return () => timers.forEach((timer) => window.clearTimeout(timer));
+    }
+
+    // Schedule each card only after the previous callback has run. If a slow
+    // browser resumes several overdue timers together, pre-scheduling every
+    // card lets React batch intermediate counts and visually skip a deal.
+    const dealNextCard = (index: number) => {
+      setDealtCount(index + 1);
+      if (soundEnabled.current) playRitualSound("deal", index);
+      if (index + 1 < reading.cards.length) {
+        timers.push(window.setTimeout(() => dealNextCard(index + 1), 1_000));
+        return;
+      }
+      timers.push(window.setTimeout(() => send({ type: "DEALT" }), 850));
+    };
+    timers.push(window.setTimeout(() => dealNextCard(0), 0));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [motionOff, reading, send, state]);
 

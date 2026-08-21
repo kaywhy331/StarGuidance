@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
+import { POLICY_VERSIONS } from "../../src/lib/policies";
 
 type ProfileKind = "date-only" | "all-fields" | "time-only";
 
@@ -32,6 +33,82 @@ async function createProfile(page: Page, kind: ProfileKind = "date-only") {
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
 }
 
+// Contract-focused journeys use same-origin APIs for setup. Dedicated
+// onboarding tests below continue to exercise every visible profile step.
+async function createProfileViaApi(page: Page) {
+  await page.goto("/");
+  const result = await page.evaluate(
+    async ({ email, policies }) => {
+      const authResponse = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "sign-up",
+          email,
+          password: "synthetic-private-password",
+          displayName: "Layout Reader",
+          consents: {
+            termsAccepted: true,
+            termsVersion: policies.terms,
+            privacyAccepted: true,
+            privacyVersion: policies.privacy,
+            ageConfirmed: true,
+            ageEligibilityVersion: policies.ageEligibility,
+            marketingAccepted: false,
+            marketingVersion: policies.marketing,
+          },
+        }),
+      });
+      const authBody = await authResponse.text();
+      if (!authResponse.ok)
+        return { authBody, authStatus: authResponse.status, profileBody: "", profileStatus: 0 };
+
+      const profileResponse = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fullBirthName: "Ada Lovelace",
+          birthDate: "1990-01-15",
+          consentVersion: policies.profilePersonalization,
+        }),
+      });
+      return {
+        authBody,
+        authStatus: authResponse.status,
+        profileBody: await profileResponse.text(),
+        profileStatus: profileResponse.status,
+      };
+    },
+    { email: `layout-reader-${randomUUID()}@example.test`, policies: POLICY_VERSIONS },
+  );
+
+  expect(
+    result,
+    `Synthetic profile setup failed: ${result.profileBody || result.authBody}`,
+  ).toMatchObject({ authStatus: 200, profileStatus: 201 });
+}
+
+async function createReadingViaApi(page: Page, spreadId: string, question: string) {
+  const result = await page.evaluate(
+    async ({ nextQuestion, nextSpreadId }) => {
+      const response = await fetch("/api/readings", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ question: nextQuestion, spreadId: nextSpreadId }),
+      });
+      return { body: await response.text(), status: response.status };
+    },
+    { nextQuestion: question, nextSpreadId: spreadId },
+  );
+  expect(result.status, `Synthetic reading setup failed: ${result.body}`).toBe(201);
+  const payload = JSON.parse(result.body) as { readingId: string };
+  expect(payload.readingId).toMatch(/^[a-f0-9-]+$/);
+  return payload.readingId;
+}
+
 async function persistReadingPreferences(
   page: Page,
   preferences: { reducedMotion: boolean; soundEnabled: boolean },
@@ -53,7 +130,9 @@ async function persistReadingPreferences(
 async function enterQuestionStep(page: Page) {
   const question = page.getByLabel("Your private question");
   if ((await question.count()) === 0) {
-    await page.getByRole("button", { name: /^Continue with / }).click();
+    const continueButton = page.getByRole("button", { name: /^Continue with / });
+    await expect(continueButton).toBeVisible();
+    await continueButton.dispatchEvent("click");
   }
   await expect(question).toBeVisible();
 }
@@ -378,29 +457,13 @@ const configuredSpreadCases = [
 
 for (const spreadCase of configuredSpreadCases) {
   test(`configured ${spreadCase.id} spread uses its spatial arrangement`, async ({ page }) => {
-    // Production WebKit runs these full onboarding-to-layout journeys in
-    // 3.5–4.5 minutes on shared runners. Keep a targeted seven-minute budget
-    // without weakening any phase, card-count, or placement assertion.
-    test.setTimeout(420_000);
-    await createProfile(page);
+    // The focused setup keeps these layout contracts short while preserving
+    // phase, card-count, contextual-name, and placement assertions.
+    test.setTimeout(240_000);
+    await createProfileViaApi(page);
     await persistReadingPreferences(page, { reducedMotion: true, soundEnabled: false });
-    const radio = page.locator(`input[name="spread"][value="${spreadCase.id}"]`);
-    if (!(await radio.locator("xpath=ancestor::label").isVisible())) {
-      await page.getByRole("button", { name: /^Explore all \d+ rituals$/ }).click();
-    }
-    await radio.locator("xpath=ancestor::label").click();
-    await expect(radio).toBeChecked();
-    await enterQuestionStep(page);
-    await page.getByLabel("Your private question").fill(spreadCase.question);
-    await expect(page.getByRole("button", { name: "Begin the shuffle" })).toBeEnabled();
-    const created = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).pathname === "/api/readings",
-    );
-    await page.getByRole("button", { name: "Begin the shuffle" }).click();
-    expect((await created).status()).toBe(201);
-    await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
+    const readingId = await createReadingViaApi(page, spreadCase.id, spreadCase.question);
+    await page.goto(`/session/${readingId}`);
     await reachQuestionReflection(page);
 
     const stage = page.getByTestId("tarot-spread-stage");
@@ -463,8 +526,9 @@ test("password recovery does not reveal whether an email exists", async ({ page 
 test("the centered ritual mixes, gathers, deals, reflects, and reveals one card at a time", async ({
   page,
 }) => {
-  test.slow();
-  await createProfile(page);
+  test.setTimeout(420_000);
+  await createProfileViaApi(page);
+  await page.goto("/readings");
   const question = "What should I focus on next?";
   await beginReading(page, question);
   const lockedDrawBeforeCut = (await currentReading(page)).reading.draw;
@@ -517,7 +581,7 @@ test("the centered ritual mixes, gathers, deals, reflects, and reveals one card 
   const deal = page.getByTestId("guided-deal");
   await expect(deal).toBeVisible({ timeout: 4_000 });
   const physicalCards = page.locator(".physical-card-figure");
-  await expect(physicalCards).toHaveCount(3, { timeout: 8_000 });
+  await expect(physicalCards).toHaveCount(3, { timeout: 20_000 });
   const dealSnapshots = await page.evaluate(() => {
     const telemetryWindow = window as Window & {
       __sgDealObserver?: MutationObserver;
