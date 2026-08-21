@@ -171,19 +171,29 @@ jobs:
         run: docker compose down --volumes --remove-orphans
 
   e2e_core_project:
-    name: e2e-core-${{ matrix.project }}
+    name: e2e-core-${{ matrix.lane }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
-          - project: desktop-chromium
+          - lane: desktop-chromium
+            project: desktop-chromium
             browser: chromium
-          - project: mobile-chromium
+            shard: "1/1"
+          - lane: mobile-chromium
+            project: mobile-chromium
             browser: chromium
-          - project: desktop-firefox
+            shard: "1/1"
+          - lane: desktop-firefox-1
+            project: desktop-firefox
             browser: firefox
+            shard: "1/2"
+          - lane: desktop-firefox-2
+            project: desktop-firefox
+            browser: firefox
+            shard: "2/2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -202,6 +212,7 @@ jobs:
           pnpm --filter @starguidance/web exec playwright test
           --project=${{ matrix.project }}
           --workers=1
+          --shard=${{ matrix.shard }}
 
   e2e_core:
     name: e2e-core
@@ -222,7 +233,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -241,7 +252,7 @@ jobs:
           pnpm --filter @starguidance/web exec playwright test
           --project=desktop-webkit
           --workers=1
-          --shard=${{ matrix.shard }}/3
+          --shard=${{ matrix.shard }}/5
 
   e2e:
     name: e2e

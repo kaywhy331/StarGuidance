@@ -8,9 +8,9 @@ export default defineConfig({
   // Long ritual flows run against the production Next.js server in the same
   // process budget as the browsers. Local workspaces may share that budget
   // with other preview/build processes, so they serialize by default. CI may
-  // override this per lane; animation-heavy browser lanes use one worker so a
-  // production server never has to drive two full rituals concurrently.
-  // CI gives WebKit three separate one-worker shards. Concurrent WebKit
+  // override this per lane; animation-heavy browser lanes use one worker and
+  // split longer engine inventories across isolated production servers.
+  // CI gives WebKit several separate one-worker shards. Concurrent WebKit
   // contexts can exhaust a shared runner, while one process running the full
   // suite accumulates enough contexts to become unstable late in the run.
   workers: process.env.CI ? 2 : 1,
