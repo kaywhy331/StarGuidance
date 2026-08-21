@@ -492,14 +492,41 @@ test("the centered ritual mixes, gathers, deals, reflects, and reveals one card 
   const symbolicCut = page.getByRole("button", { name: /^Mark a symbolic cut/ });
   await expect(symbolicCut).toBeVisible({ timeout: 1_000 });
   await expect(page.getByRole("button", { name: /^Leave whole/ })).toHaveCount(0);
+  await page.evaluate(() => {
+    const telemetryWindow = window as Window & {
+      __sgDealObserver?: MutationObserver;
+      __sgDealSnapshots?: Array<{ at: number; count: number }>;
+    };
+    telemetryWindow.__sgDealSnapshots = [];
+    let previousCount = document.querySelectorAll(".physical-card-figure").length;
+    const observer = new MutationObserver(() => {
+      const count = document.querySelectorAll(".physical-card-figure").length;
+      if (count === previousCount) return;
+      previousCount = count;
+      telemetryWindow.__sgDealSnapshots?.push({ at: performance.now(), count });
+      if (count >= 3) observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    telemetryWindow.__sgDealObserver = observer;
+  });
   await symbolicCut.dispatchEvent("click");
 
   const deal = page.getByTestId("guided-deal");
   await expect(deal).toBeVisible({ timeout: 4_000 });
   const physicalCards = page.locator(".physical-card-figure");
-  await expect(physicalCards).toHaveCount(1, { timeout: 2_000 });
-  await expect(physicalCards).toHaveCount(2, { timeout: 1_500 });
-  await expect(physicalCards).toHaveCount(3, { timeout: 3_000 });
+  await expect(physicalCards).toHaveCount(3, { timeout: 8_000 });
+  const dealSnapshots = await page.evaluate(() => {
+    const telemetryWindow = window as Window & {
+      __sgDealObserver?: MutationObserver;
+      __sgDealSnapshots?: Array<{ at: number; count: number }>;
+    };
+    telemetryWindow.__sgDealObserver?.disconnect();
+    return telemetryWindow.__sgDealSnapshots ?? [];
+  });
+  expect(dealSnapshots.map(({ count }) => count)).toEqual([1, 2, 3]);
+  for (let index = 1; index < dealSnapshots.length; index += 1) {
+    expect(dealSnapshots[index]!.at - dealSnapshots[index - 1]!.at).toBeGreaterThanOrEqual(650);
+  }
   await expect(physicalCards.locator(".physical-tarot-card.is-revealed")).toHaveCount(0);
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
 

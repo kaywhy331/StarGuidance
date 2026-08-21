@@ -182,10 +182,32 @@ jobs:
             project: desktop-chromium
             browser: chromium
             shard: "1/1"
-          - lane: mobile-chromium
+          # Mobile Chromium also accumulates enough full-page contexts to
+          # stall late in a 44-test run, so it shares Firefox's short budget.
+          - lane: mobile-chromium-1
             project: mobile-chromium
             browser: chromium
-            shard: "1/1"
+            shard: "1/6"
+          - lane: mobile-chromium-2
+            project: mobile-chromium
+            browser: chromium
+            shard: "2/6"
+          - lane: mobile-chromium-3
+            project: mobile-chromium
+            browser: chromium
+            shard: "3/6"
+          - lane: mobile-chromium-4
+            project: mobile-chromium
+            browser: chromium
+            shard: "4/6"
+          - lane: mobile-chromium-5
+            project: mobile-chromium
+            browser: chromium
+            shard: "5/6"
+          - lane: mobile-chromium-6
+            project: mobile-chromium
+            browser: chromium
+            shard: "6/6"
           # Firefox showed the same late-process renderer stall as WebKit once
           # a server had carried more than ten complete ritual contexts.
           - lane: desktop-firefox-1
@@ -250,9 +272,9 @@ jobs:
     timeout-minutes: 25
     strategy:
       fail-fast: false
-      # A production server remains intentionally local to each shard. WebKit
-      # becomes unreliable after roughly nine full ritual contexts on shared
-      # runners, so seven shards keep every process below that measured limit.
+      # A production server remains intentionally local to each shard. These
+      # lanes cover the general inventory; the six long spread journeys each
+      # receive their own clean server below.
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7]
     steps:
@@ -273,12 +295,41 @@ jobs:
           pnpm --filter @starguidance/web exec playwright test
           --project=desktop-webkit
           --workers=1
+          --grep-invert="configured .* spread uses its spatial arrangement"
           --shard=${{ matrix.shard }}/7
+
+  e2e_webkit_spread:
+    name: e2e-webkit-spread-${{ matrix.spread }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        spread: [one-card, three-card, celtic-cross, horseshoe, relationship, nine-card-matrix]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
+      - run: pnpm exec playwright install --with-deps webkit
+      - run: >-
+          pnpm --filter @starguidance/web exec playwright test
+          --project=desktop-webkit
+          --workers=1
+          --grep="configured ${{ matrix.spread }} spread uses its spatial arrangement"
 
   e2e:
     name: e2e
     if: ${{ always() }}
-    needs: [e2e_core, e2e_webkit]
+    needs: [e2e_core, e2e_webkit, e2e_webkit_spread]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -286,9 +337,11 @@ jobs:
         env:
           CORE_RESULT: ${{ needs.e2e_core.result }}
           WEBKIT_RESULT: ${{ needs.e2e_webkit.result }}
+          WEBKIT_SPREAD_RESULT: ${{ needs.e2e_webkit_spread.result }}
         run: |
           test "$CORE_RESULT" = success
           test "$WEBKIT_RESULT" = success
+          test "$WEBKIT_SPREAD_RESULT" = success
 
   migration:
     runs-on: ubuntu-latest
