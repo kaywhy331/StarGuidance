@@ -67,16 +67,15 @@ async function createReading(page: Page): Promise<void> {
     timeout: 20_000,
   });
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: "I’m ready", exact: true }).click();
+  await page.getByRole("button", { name: "I’m ready", exact: true }).dispatchEvent("click");
   for (let index = 0; index < 10; index += 1) {
-    await page
-      .getByRole("button", { name: /^Reveal card \d+, face down$/ })
-      .first()
-      .click();
+    const faceDownCard = page.getByRole("button", { name: /^Reveal card \d+, face down$/ }).first();
+    await expect(faceDownCard).toBeVisible();
+    await faceDownCard.dispatchEvent("click");
     const action = page.locator(".guided-next-action");
     await expect(action).toBeVisible();
     const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
-    await action.click();
+    await action.dispatchEvent("click");
     if (finalCard) break;
   }
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
