@@ -378,7 +378,10 @@ const configuredSpreadCases = [
 
 for (const spreadCase of configuredSpreadCases) {
   test(`configured ${spreadCase.id} spread uses its spatial arrangement`, async ({ page }) => {
-    test.slow();
+    // Production WebKit runs these full onboarding-to-layout journeys in
+    // 3.5–4.5 minutes on shared runners. Keep a targeted seven-minute budget
+    // without weakening any phase, card-count, or placement assertion.
+    test.setTimeout(420_000);
     await createProfile(page);
     await persistReadingPreferences(page, { reducedMotion: true, soundEnabled: false });
     const radio = page.locator(`input[name="spread"][value="${spreadCase.id}"]`);
