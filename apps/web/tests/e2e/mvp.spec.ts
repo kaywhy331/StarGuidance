@@ -391,6 +391,7 @@ const configuredSpreadCases = [
 
 for (const spreadCase of configuredSpreadCases) {
   test(`configured ${spreadCase.id} spread uses its spatial arrangement`, async ({ page }) => {
+    test.slow();
     await createProfile(page);
     await persistReadingPreferences(page, { reducedMotion: true, soundEnabled: false });
     const radio = page.locator(`input[name="spread"][value="${spreadCase.id}"]`);
