@@ -44,6 +44,14 @@ corepack pnpm dev
 
 Open `http://localhost:3000`. The example configuration explicitly sets `RUNTIME_ADAPTER=local`, `ALLOW_LOCAL_RUNTIME_ADAPTER=true`, and `APP_ENV=development`. All three policy conditions are required; profiles/readings/reports remain encrypted in process memory and disappear on restart. Never carry `ALLOW_LOCAL_RUNTIME_ADAPTER` into a hosted context.
 
+To exercise **Free Reading**, generate a distinct local guest key and place it in the uncommitted `apps/web/.env.local` as `GUEST_TRIAL_SECRET`:
+
+```bash
+openssl rand -base64 32
+```
+
+The value must be canonical base64 for exactly 32 random bytes. Do not reuse `DATA_ENCRYPTION_KEY` or commit the generated value. Missing or malformed configuration deliberately leaves the landing page available while the guest eligibility endpoint returns `503`; account signup and authenticated flows remain independent.
+
 The local-only adapter accepts any valid email and 12–72 character password through the production-shaped forms, but deliberately does not persist or validate the password. It exists for deterministic development and E2E flows only. Supabase mode performs the real credential verification.
 
 `READING_FOLLOW_UP_LIMIT` defaults to `1` and is bounded to 0–10. `READING_REREAD_COOLDOWN_MINUTES` defaults to `30` and is bounded to 0–1440; `0` disables only the same-question cooldown. `READING_ACCESS_MODE=unlimited` preserves the local fallback; `free-window` uses the bounded allowance/window values in `.env.example`. In Supabase mode, the seeded published runtime configuration supersedes these fallbacks and can be changed only through the governed operator workflow. `READING_SESSION_TTL_MINUTES` controls explicit locked-session expiry. The repeat check normalizes Unicode, case, whitespace, and punctuation, then links to the retained reading without drawing new cards. Motion/sound preferences use account settings with local fallback; durable adapters persist monotonic cut/reveal progress on the reading, with per-reading session storage only as a fallback.

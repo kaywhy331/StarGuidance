@@ -22,14 +22,29 @@ export default function TermsPage() {
       <section className="mt-10 grid gap-4 text-[#c9bfd4]">
         <h2 className="text-2xl text-white">What a reading is</h2>
         <p>
-          StarGuidance offers tarot readings for reflection and entertainment. A reading is an
-          interpretation of the cards you drew, read against the profile details you provided. It is
-          not a factual prediction, and it is not evidence about what has happened or will happen.
+          StarGuidance offers tarot readings for reflection and entertainment. A free guest reading
+          is profile-free; account readings may use the private profile details you provide to shape
+          interpretation. Neither is a factual prediction or evidence about what has happened or
+          will happen.
         </p>
         <p>
           Cards are selected by a cryptographically secure shuffle before any interpretation is
           written. The draw is locked at that moment and never changes — not on refresh, not on
           retry, and not as a result of anything the interpretation says.
+        </p>
+      </section>
+
+      <section className="mt-8 grid gap-4 text-[#c9bfd4]">
+        <h2 className="text-2xl text-white">Free reading and account continuation</h2>
+        <p>
+          Adults may experience one guest reading in a browser before creating an account. We use a
+          signed browser marker and a short network-level abuse quota to limit automated or repeated
+          guest access without hardware fingerprinting. You can sign up or sign in to ask the same
+          locked cards a follow-up; account creation does not entitle StarGuidance to redraw them.
+        </p>
+        <p>
+          A guest reading is not saved to account history. Saved readings, personalized profile use,
+          purchases, export, and account deletion controls begin inside an authenticated account.
         </p>
       </section>
 
@@ -50,8 +65,10 @@ export default function TermsPage() {
       <section className="mt-8 grid gap-4 text-[#c9bfd4]">
         <h2 className="text-2xl text-white">Your data</h2>
         <p>
-          Your birth details and questions are encrypted before storage. You can export everything
-          held about you, or delete your account and all of its data, from{" "}
+          Account birth details and questions are encrypted before database storage. The free guest
+          question is held only in an encrypted browser receipt as described in the Privacy Notice.
+          You can export everything held in your account, or delete the account and all of its data,
+          from{" "}
           <a className="underline" href="/settings/privacy">
             Privacy controls
           </a>

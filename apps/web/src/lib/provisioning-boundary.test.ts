@@ -28,6 +28,9 @@ const BOUNDARY_EXEMPT: Readonly<Record<string, string>> = {
     "starts and ends a Supabase Auth session; it holds no repository and creates no application row",
   "api/health/route.ts":
     "reports configuration names and booleans only, and reads no user-owned table",
+  "api/guest-readings/route.ts":
+    "creates an account-free deterministic reading, stores no user-owned row, and returns only " +
+    "an encrypted browser handoff receipt",
   "api/stripe/webhook/route.ts":
     "is an unauthenticated provider callback; ownership is resolved from the durable order row, " +
     "which an authenticated request created after requireUser() had already provisioned the user",

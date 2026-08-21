@@ -94,9 +94,9 @@ const credentials = {
 };
 const consents = {
   termsAccepted: true,
-  termsVersion: "terms-beta-2026-08-05",
+  termsVersion: "terms-beta-2026-08-21",
   privacyAccepted: true,
-  privacyVersion: "privacy-beta-2026-08-05",
+  privacyVersion: "privacy-beta-2026-08-21",
   ageConfirmed: true,
   ageEligibilityVersion: "age-18-beta-2026-08-05",
   marketingAccepted: false,
@@ -305,6 +305,63 @@ describe("email and password authentication", () => {
           "https://deploy-preview-4--starguidance.netlify.app/auth/callback?next=%2Fonboarding",
       },
     });
+  });
+
+  it("returns confirmed guest readers to their encrypted same-draw continuation", async () => {
+    supabase.signUp.mockResolvedValue({
+      data: {
+        session: null,
+        user: { id: "pending-guest", identities: [{ id: "identity" }], app_metadata: {} },
+      },
+      error: null,
+    });
+
+    await POST(
+      request({
+        ...credentials,
+        action: "sign-up",
+        displayName: "Nova",
+        consents,
+        next: "/free-reading?continue=1",
+      }),
+    );
+
+    expect(supabase.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: {
+          emailRedirectTo:
+            "https://synthetic.invalid/auth/callback?next=%2Ffree-reading%3Fcontinue%3D1",
+        },
+      }),
+    );
+  });
+
+  it("rejects an unapproved signup return destination", async () => {
+    supabase.signUp.mockResolvedValue({
+      data: {
+        session: null,
+        user: { id: "pending-reader", identities: [{ id: "identity" }], app_metadata: {} },
+      },
+      error: null,
+    });
+
+    await POST(
+      request({
+        ...credentials,
+        action: "sign-up",
+        displayName: "Nova",
+        consents,
+        next: "//evil.invalid",
+      }),
+    );
+
+    expect(supabase.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: {
+          emailRedirectTo: "https://synthetic.invalid/auth/callback?next=%2Fonboarding",
+        },
+      }),
+    );
   });
 
   it("resends signup confirmation without requiring another registration attempt", async () => {

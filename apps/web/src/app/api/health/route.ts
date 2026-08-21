@@ -12,6 +12,7 @@ import {
 } from "@starguidance/database";
 
 import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
+import { isValidGuestTrialSecret } from "@/lib/guest-reading-security";
 import { profileEngineBaseUrl } from "@/lib/profile-engine";
 import { findServiceUrlProblem } from "@/lib/service-url";
 import { isWeakSharedSecret } from "@/lib/shared-secret";
@@ -22,6 +23,7 @@ const REQUIRED_STAGING_ENVIRONMENT = [
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "DATABASE_URL",
   "DATA_ENCRYPTION_KEY",
+  "GUEST_TRIAL_SECRET",
   "SUPABASE_SERVICE_ROLE_KEY",
   "PROFILE_ENGINE_URL",
   "PROFILE_ENGINE_SHARED_SECRET",
@@ -417,6 +419,10 @@ export async function GET(request: Request) {
   if (configured("DATA_ENCRYPTION_KEY")) {
     if (!isValidEncryptionKey(process.env.DATA_ENCRYPTION_KEY as string))
       invalidEnvironmentVariables.push("DATA_ENCRYPTION_KEY");
+  }
+  if (configured("GUEST_TRIAL_SECRET")) {
+    if (!isValidGuestTrialSecret(process.env.GUEST_TRIAL_SECRET))
+      invalidEnvironmentVariables.push("GUEST_TRIAL_SECRET");
   }
   if (configured("DATA_ENCRYPTION_KEYS_PREVIOUS")) {
     const previous = (process.env.DATA_ENCRYPTION_KEYS_PREVIOUS as string)

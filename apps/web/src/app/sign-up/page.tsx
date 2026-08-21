@@ -2,18 +2,23 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Panel } from "@starguidance/design-system";
 
+import { safeAccountReturnPath } from "@/lib/account-return";
 import { requireUser } from "@/lib/auth";
 import { SignUpForm } from "./sign-up-form";
 
-export default async function SignUpPage() {
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const nextPath = safeAccountReturnPath(params.next);
   let authenticatedDestination: string | undefined;
   try {
     const user = await requireUser();
     authenticatedDestination = user.requiresPolicyReconsent
       ? "/consent"
-      : user.profile
-        ? "/readings"
-        : "/onboarding";
+      : (nextPath ?? (user.profile ? "/readings" : "/onboarding"));
   } catch {
     // Anonymous visitors should see the registration form.
   }
@@ -63,7 +68,7 @@ export default async function SignUpPage() {
           Your email unlocks this space. Profile details and readings remain isolated to your
           account.
         </p>
-        <SignUpForm />
+        <SignUpForm nextPath={nextPath} />
       </Panel>
     </main>
   );

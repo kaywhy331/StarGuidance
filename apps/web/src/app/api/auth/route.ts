@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 
 import { SESSION_COOKIE } from "@/lib/auth";
+import { safeAccountReturnPath } from "@/lib/account-return";
 import { isHostedNetlifyRuntime } from "@/lib/hosted-runtime";
 import { createLocalSession } from "@/lib/local-store";
 import { recordSecurityAudit } from "@/lib/persistence";
@@ -45,9 +46,14 @@ const requestSchema = z.discriminatedUnion("action", [
     password: passwordSchema,
     displayName: z.string().trim().min(1).max(80),
     consents: signupConsentSchema,
+    next: z.string().optional(),
   }),
   z.object({ action: z.literal("request-password-reset"), email: emailSchema }),
-  z.object({ action: z.literal("resend-confirmation"), email: emailSchema }),
+  z.object({
+    action: z.literal("resend-confirmation"),
+    email: emailSchema,
+    next: z.string().optional(),
+  }),
   z.object({ action: z.literal("update-password"), password: passwordSchema }),
 ]);
 
@@ -176,7 +182,7 @@ export async function POST(request: Request) {
     const callbackUrl = new URL("/auth/callback", appUrl);
 
     if (input.action === "resend-confirmation") {
-      callbackUrl.searchParams.set("next", "/onboarding");
+      callbackUrl.searchParams.set("next", safeAccountReturnPath(input.next) ?? "/onboarding");
       const { error } = await supabase.auth.resend({
         type: "signup",
         email: input.email,
@@ -221,7 +227,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, pending: true });
     }
 
-    callbackUrl.searchParams.set("next", "/onboarding");
+    callbackUrl.searchParams.set("next", safeAccountReturnPath(input.next) ?? "/onboarding");
     const { data, error } = await supabase.auth.signUp({
       email: input.email,
       password: input.password,

@@ -45,6 +45,7 @@ const SECRET_VALUES = {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-anon-key",
   DATABASE_URL: "postgresql://synthetic.invalid/database",
   DATA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+  GUEST_TRIAL_SECRET: Buffer.alloc(32, 17).toString("base64"),
   SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-role-key",
   PROFILE_ENGINE_URL: "https://profile-engine.synthetic.invalid",
   PROFILE_ENGINE_SHARED_SECRET: "synthetic-profile-engine-shared-secret",
@@ -144,6 +145,27 @@ describe("deployment health", () => {
       "rolname = 'starguidance_app'",
     );
     for (const value of Object.values(SECRET_VALUES)) expect(serialized).not.toContain(value);
+  });
+
+  it("fails readiness closed on a malformed guest-trial key", async () => {
+    configureStaging();
+    vi.stubEnv("GUEST_TRIAL_SECRET", "not-canonical-base64");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const response = await GET(readinessRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.invalidEnvironmentVariables).toContain("GUEST_TRIAL_SECRET");
+    expect(JSON.stringify(body)).not.toContain("not-canonical-base64");
   });
 
   it("stays ready on the deterministic fallback when live AI is unavailable", async () => {

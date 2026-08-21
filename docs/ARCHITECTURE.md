@@ -2,6 +2,12 @@
 
 StarGuidance is a modular pnpm monorepo. Next.js owns product orchestration, FastAPI owns deterministic profile calculations, and independent packages own draw, state-machine, persistence, UI, and narration boundaries.
 
+## Account-free trial flow
+
+The public `/free-reading` lane intentionally does not create an anonymous user, profile, database reading, or AI-provider request. After current Terms, Privacy Notice, and age acknowledgement, `POST /api/guest-readings` classifies safety before drawing, selects one or three cards through the same CSPRNG tarot domain, and runs only the deterministic narrator. The server returns a display contract without the raw question plus an opaque AES-256-GCM receipt containing the exact draw, result, classification, and question for seven days. Display recovery uses session storage; the encrypted receipt uses local storage solely for an explicit account handoff.
+
+A browser-generated random UUID and signed HttpOnly cookie enforce the normal one-reading allowance without fingerprinting. A trusted-edge network address, when available, is converted to a keyed digest and passed through the shared distributed rate limiter only as an automation backstop; it does not choose cards or become a user identity. After signup, sign-in, email confirmation, or policy re-consent, the allow-listed `/free-reading?continue=1` return path sends the opaque receipt to an authenticated continuation endpoint. That endpoint decrypts the receipt server-side, reconstructs the same versioned cards, and answers the follow-up deterministically, optionally with the authenticated user's minimal private trait lens. It does not redraw, call live AI, or silently add the guest artifact to account history.
+
 ## Request flow
 
 1. An authenticated user submits birth facts to the web server; no sensitive field enters a URL.

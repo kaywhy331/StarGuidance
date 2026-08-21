@@ -12,8 +12,10 @@ test("the primary threshold remains legible and contained on a mobile viewport",
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  const primaryEntry = page.getByRole("link", { name: "Begin privately" });
+  const primaryEntry = page.getByRole("link", { name: "Free Reading" });
   await expect(primaryEntry).toBeVisible();
+  await expect(primaryEntry).toHaveAttribute("href", "/free-reading");
+  await expect(page.getByRole("link", { name: "Sign up", exact: true })).toBeVisible();
   const presentation = await primaryEntry.evaluate((element) => {
     const style = getComputedStyle(element);
     return {

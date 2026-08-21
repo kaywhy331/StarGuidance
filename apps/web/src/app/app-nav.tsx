@@ -17,6 +17,7 @@ const hiddenRoutes = [
   "/",
   "/readings",
   "/visual-preview",
+  "/free-reading",
   "/sign-in",
   "/sign-up",
   "/forgot-password",

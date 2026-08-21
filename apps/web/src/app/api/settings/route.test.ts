@@ -98,9 +98,9 @@ describe("account settings and consent route", () => {
       patchRequest({
         action: "accept-required-policies",
         termsAccepted: true,
-        termsVersion: "terms-beta-2026-08-05",
+        termsVersion: "terms-beta-2026-08-21",
         privacyAccepted: true,
-        privacyVersion: "privacy-beta-2026-08-05",
+        privacyVersion: "privacy-beta-2026-08-21",
         ageConfirmed: true,
         ageEligibilityVersion: "age-18-beta-2026-08-05",
       }),

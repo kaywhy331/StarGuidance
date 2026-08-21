@@ -37,16 +37,17 @@ export default function HomePage() {
             <span>A genuinely random draw.</span>
           </h1>
           <p className="home-hero__lede">
-            A quiet tarot ritual shaped by a private birth profile. Your profile deepens the
-            interpretation—never which cards appear.
+            Experience one genuinely random reading before creating an account. If you choose to
+            stay, a private birth profile can deepen future interpretations—never which cards
+            appear.
           </p>
           <div className="home-hero__actions">
-            <Link className="sg-button sg-button--primary" href="/sign-up">
-              <span>Begin privately</span>
+            <Link className="sg-button sg-button--primary" href="/free-reading">
+              <span>Free Reading</span>
               <span aria-hidden="true">↗</span>
             </Link>
-            <Link className="sg-button sg-button--secondary" href="/readings">
-              Explore the ritual
+            <Link className="sg-button sg-button--secondary" href="/sign-up">
+              Sign up
             </Link>
           </div>
           <ul aria-label="Privacy commitments" className="home-trust-list">
@@ -87,8 +88,10 @@ export default function HomePage() {
       <section aria-label="How StarGuidance works" className="home-passage">
         <article>
           <span>01</span>
-          <h2>Offer only what you know</h2>
-          <p>Name and birth date form the core. Place and time remain entirely optional.</p>
+          <h2>Experience it first</h2>
+          <p>
+            Take one private, profile-free reading before deciding whether to create an account.
+          </p>
         </article>
         <article>
           <span>02</span>
@@ -97,8 +100,8 @@ export default function HomePage() {
         </article>
         <article>
           <span>03</span>
-          <h2>Leave with something useful</h2>
-          <p>Read conditional trajectories, practical agency, and one question to carry forward.</p>
+          <h2>Continue only if it helps</h2>
+          <p>Sign up to ask the same cards a follow-up and unlock saved, personalized readings.</p>
         </article>
       </section>
 

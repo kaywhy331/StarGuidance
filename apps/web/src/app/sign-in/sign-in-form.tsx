@@ -5,7 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Field } from "@starguidance/design-system";
 
-export function SignInForm({ initialError }: { initialError?: string | undefined }) {
+export function SignInForm({
+  initialError,
+  nextPath,
+}: {
+  initialError?: string | undefined;
+  nextPath?: string | undefined;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | undefined>(initialError);
   const [submitting, setSubmitting] = useState(false);
@@ -29,7 +35,7 @@ export function SignInForm({ initialError }: { initialError?: string | undefined
         const payload = (await response.json()) as { authenticated?: boolean; error?: string };
         setSubmitting(false);
         if (!response.ok) return setError(payload.error ?? "Unable to sign in securely.");
-        router.push("/consent");
+        router.push(nextPath ?? "/consent");
         router.refresh();
       }}
     >
@@ -55,7 +61,7 @@ export function SignInForm({ initialError }: { initialError?: string | undefined
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <Link
           className="inline-flex min-h-11 items-center text-[#d8b56d] underline-offset-4 hover:underline"
-          href="/sign-up"
+          href={nextPath ? `/sign-up?next=${encodeURIComponent(nextPath)}` : "/sign-up"}
         >
           Create an account
         </Link>
