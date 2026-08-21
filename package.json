@@ -23,7 +23,7 @@
   "devDependencies": {
     "@netlify/plugin-nextjs": "5.15.12",
     "@playwright/test": "1.61.1",
-    "@types/node": "24.13.3",
+    "@types/node": "26.2.0",
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.0",
     "prettier": "3.9.6",
