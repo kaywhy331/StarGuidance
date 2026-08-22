@@ -50,6 +50,36 @@ describe("request metadata security", () => {
     }
   });
 
+  it("accepts the configured production origin when Netlify exposes its internal branch host", () => {
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://starguidance.netlify.app");
+    const productionRequest = request({
+      host: "main--starguidance.netlify.app",
+      "x-forwarded-host": "main--starguidance.netlify.app",
+      origin: "https://starguidance.netlify.app",
+    });
+
+    expect(() => assertSameOrigin(productionRequest)).not.toThrow();
+    expect(() =>
+      assertSameOrigin(
+        request({
+          host: "main--starguidance.netlify.app",
+          "x-forwarded-host": "main--starguidance.netlify.app",
+          origin: "https://attacker.invalid",
+        }),
+      ),
+    ).toThrow();
+  });
+
+  it("does not trust the configured production origin in a deploy preview", () => {
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://starguidance.netlify.app");
+
+    expect(() =>
+      assertSameOrigin(request({ origin: "https://starguidance.netlify.app" })),
+    ).toThrow();
+  });
+
   it("uses only the provider-authenticated address and ignores raw forwarded spoofing", () => {
     expect(
       clientRateLimitKey(
