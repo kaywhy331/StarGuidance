@@ -827,7 +827,7 @@ test("AI-disabled mode returns the deterministic conversational fallback", async
   await waitForReadingSections(page);
   for (let index = 0; index < 5; index += 1) await nextReadingSection(page);
   await expect(page.locator(".oracle-entry-text")).toContainText(
-    /if the current energy continues/i,
+    /if the current pattern continues/i,
   );
   await nextReadingSection(page);
   await expect(page.locator(".oracle-entry-text")).toContainText(/there is another route/i);
@@ -920,7 +920,7 @@ test("the selected relationship topic remains authoritative in the generated res
   expect((await currentReading(page)).reading.questionClassification.topic).toBe("relationships");
   await finishRitual(page);
   const openingNarration = page.locator(".oracle-entry-text");
-  await expect(openingNarration).toContainText("this connection");
+  await expect(openingNarration).toContainText("this relationship");
   await expect(openingNarration).not.toContainText("structure around your work");
 });
 
