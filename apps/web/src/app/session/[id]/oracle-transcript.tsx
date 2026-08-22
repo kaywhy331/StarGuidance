@@ -30,6 +30,16 @@ interface TranscriptEntry extends PhaseEvent {
 
 type ReadingPassage = ReadingResult["passages"][number];
 
+const CARD_FOCUSED_PASSAGE_ROLES = new Set<ReadingPassage["role"]>([
+  "situation",
+  "underlyingPattern",
+  "development",
+]);
+
+export function isCardFocusedGuidedPassage(role: ReadingPassage["role"]): boolean {
+  return CARD_FOCUSED_PASSAGE_ROLES.has(role);
+}
+
 const passageRoleLabels: Record<ReadingPassage["role"], string> = {
   opening: "Opening insight",
   situation: "The situation",
@@ -656,12 +666,17 @@ export function OracleTranscript({
   const boundedIndex = Math.min(activeIndex, maximumIndex);
   const showingIntegration = integrationAvailable && boundedIndex === entries.length;
   const activeEntry = showingIntegration ? undefined : entries[boundedIndex];
-  const activeCardIndex =
-    boundedIndex === 0 || showingIntegration ? null : cardIndexFor(entries, boundedIndex, cards);
-  const activeCard = activeCardIndex === null ? undefined : cards[activeCardIndex];
   const activePassage = activeEntry?.passageId
     ? result.passages.find(({ id }) => id === activeEntry.passageId)
     : undefined;
+  const activeCardIndex =
+    boundedIndex === 0 ||
+    showingIntegration ||
+    !activePassage ||
+    !isCardFocusedGuidedPassage(activePassage.role)
+      ? null
+      : cardIndexFor(entries, boundedIndex, cards);
+  const activeCard = activeCardIndex === null ? undefined : cards[activeCardIndex];
   const activeChapter = activePassage
     ? completeReadingChapters.find((chapter) =>
         (chapter.roles as readonly string[]).includes(activePassage.role),

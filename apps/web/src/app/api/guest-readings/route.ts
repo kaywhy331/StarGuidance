@@ -6,7 +6,6 @@ import {
   DeterministicFallbackProvider,
   GUARDED_CATEGORIES,
 } from "@starguidance/ai";
-import { GENERAL_READING_QUESTION } from "@starguidance/contracts";
 import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
 import { createLockedDraw } from "@starguidance/tarot-domain";
 import { z } from "zod";
@@ -27,6 +26,7 @@ import {
   issueGuestTrialMarker,
   verifyGuestTrialMarker,
 } from "@/lib/guest-reading-security";
+import { guestDateLensStatements } from "@/lib/guest-date-lens";
 import { guestReadingDisplay } from "@/lib/guest-reading-server";
 import {
   assertRateLimit,
@@ -117,8 +117,12 @@ export async function POST(request: Request) {
     const networkRateLimitKey = guestTrialNetworkRateLimitKey(clientRateLimitKey(request));
     if (networkRateLimitKey) await assertRateLimit(networkRateLimitKey, 30, 60 * 60 * 1_000);
 
-    const question = input.generalReading ? GENERAL_READING_QUESTION : input.question;
-    const questionClassification = classifyQuestionContext(question, input);
+    const question = input.question;
+    const questionClassification = classifyQuestionContext(question, {
+      topic: "general",
+      horizon: "open",
+      generalReading: false,
+    });
     const safety = classifyQuestion(question);
     if (safety.interrupt) return noStore(NextResponse.json({ safety }, { status: 422 }));
     if (GUARDED_CATEGORIES.has(safety.category) && !input.continueAsReflection)
@@ -131,12 +135,17 @@ export async function POST(request: Request) {
       return noStore(
         NextResponse.json({ error: "That free spread is unavailable." }, { status: 404 }),
       );
+    const relevantTraitStatements = await guestDateLensStatements(
+      input.birthDate,
+      question,
+      questionClassification,
+    );
     const draw = createLockedDraw({ cards: tarotCards, deckVersion: DECK_VERSION, spread });
     const generated = await new DeterministicFallbackProvider().generateWithProvenance({
       draw,
       question,
       questionClassification,
-      relevantTraitStatements: [],
+      relevantTraitStatements,
     });
     const createdAt = new Date().toISOString();
     const issued = issueGuestReadingReceipt(
@@ -188,10 +197,20 @@ export async function POST(request: Request) {
           { status: 503 },
         ),
       );
+    if (error instanceof Error && error.message === "GUEST_DATE_LENS_UNAVAILABLE")
+      return noStore(
+        NextResponse.json(
+          { error: "Birthday personalization is temporarily unavailable. Try again shortly." },
+          { status: 503 },
+        ),
+      );
     if (error instanceof z.ZodError)
       return noStore(
         NextResponse.json(
-          { error: "Choose a free spread, add an intention, and accept the guest terms." },
+          {
+            error:
+              "Choose a free spread, enter your birthday and question, and accept the guest terms.",
+          },
           { status: 422 },
         ),
       );

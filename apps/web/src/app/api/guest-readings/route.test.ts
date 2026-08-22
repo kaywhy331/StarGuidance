@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const cookie = vi.hoisted(() => ({ value: undefined as string | undefined }));
+const dateLens = vi.hoisted(() => ({ statements: vi.fn() }));
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     get: () => (cookie.value ? { value: cookie.value } : undefined),
   }),
+}));
+vi.mock("@/lib/guest-date-lens", () => ({
+  guestDateLensStatements: dateLens.statements,
 }));
 
 import { GUEST_DEVICE_HEADER, guestReadingResponseSchema } from "@/lib/guest-reading-contract";
@@ -34,10 +38,8 @@ function request(body: Record<string, unknown>): Request {
 
 const validInput = {
   spreadId: "three-card",
+  birthDate: "1990-01-15",
   question: "What can I understand about a change at work?",
-  topic: "career",
-  horizon: "weeks",
-  generalReading: false,
   continueAsReflection: false,
   termsAccepted: true,
   privacyAccepted: true,
@@ -50,6 +52,10 @@ beforeEach(() => {
   vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
   vi.stubEnv("GUEST_TRIAL_SECRET", Buffer.alloc(32, 23).toString("base64"));
   cookie.value = undefined;
+  dateLens.statements.mockReset();
+  dateLens.statements.mockResolvedValue([
+    "You tend to regain momentum through self-directed action and tangible movement.",
+  ]);
   resetRequestSecurityForTests();
 });
 
@@ -107,6 +113,12 @@ describe("free guest reading", () => {
     expect(body.reading.draw.id).toBe(body.reading.id);
     expect(body.receipt).not.toContain(validInput.question);
     expect(JSON.stringify(body.reading)).not.toContain(validInput.question);
+    expect(JSON.stringify(body)).not.toContain(validInput.birthDate);
+    expect(dateLens.statements).toHaveBeenCalledWith(
+      validInput.birthDate,
+      validInput.question,
+      expect.objectContaining({ topic: "career", horizon: "open", generalReading: false }),
+    );
     expect(response.headers.get("set-cookie")).toContain("starguidance_guest_trial=");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
@@ -134,6 +146,28 @@ describe("free guest reading", () => {
     const response = await POST(request({ ...validInput, ageConfirmed: false }));
 
     expect(response.status).toBe(422);
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("requires a real birthday and a user-authored question", async () => {
+    for (const input of [
+      { ...validInput, birthDate: "not-a-date" },
+      { ...validInput, question: "   " },
+    ]) {
+      const response = await POST(request(input));
+      expect(response.status).toBe(422);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    expect(dateLens.statements).not.toHaveBeenCalled();
+  });
+
+  it("does not issue a draw when birthday personalization is unavailable", async () => {
+    dateLens.statements.mockRejectedValueOnce(new Error("GUEST_DATE_LENS_UNAVAILABLE"));
+
+    const response = await POST(request(validInput));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/birthday/i) });
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 });

@@ -23,9 +23,9 @@ export default function TermsPage() {
         <h2 className="text-2xl text-white">What a reading is</h2>
         <p>
           StarGuidance offers tarot readings for reflection and entertainment. A free guest reading
-          is profile-free; account readings may use the private profile details you provide to shape
-          interpretation. Neither is a factual prediction or evidence about what has happened or
-          will happen.
+          uses only stable traits derived from the birthday you provide; account readings may use
+          the fuller private profile details you provide to shape interpretation. Neither is a
+          factual prediction or evidence about what has happened or will happen.
         </p>
         <p>
           Cards are selected by a cryptographically secure shuffle before any interpretation is
@@ -41,6 +41,11 @@ export default function TermsPage() {
           signed browser marker and a short network-level abuse quota to limit automated or repeated
           guest access without hardware fingerprinting. You can sign up or sign in to ask the same
           locked cards a follow-up; account creation does not entitle StarGuidance to redraw them.
+        </p>
+        <p>
+          The guest birthday is processed transiently by the private calculation service and is not
+          placed in the browser-held reading receipt or saved to account history. It personalizes
+          interpretation only and never affects which cards are drawn.
         </p>
         <p>
           A guest reading is not saved to account history. Saved readings, personalized profile use,

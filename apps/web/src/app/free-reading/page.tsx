@@ -8,7 +8,7 @@ import { GuestReadingExperience } from "./guest-reading-experience";
 export const metadata = {
   title: "Free Tarot Reading · StarGuidance",
   description:
-    "Experience one private, profile-free tarot reading before choosing whether to create an account.",
+    "Experience one private, birthday-personalized tarot reading before choosing whether to create an account.",
 };
 
 export default async function FreeReadingPage({
