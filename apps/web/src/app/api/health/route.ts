@@ -12,7 +12,11 @@ import {
 } from "@starguidance/database";
 
 import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
-import { isValidGuestTrialSecret } from "@/lib/guest-reading-security";
+import {
+  guestTrialKeySource,
+  isValidGuestTrialSecret,
+  type GuestTrialKeySource,
+} from "@/lib/guest-reading-security";
 import { profileEngineBaseUrl } from "@/lib/profile-engine";
 import { findServiceUrlProblem } from "@/lib/service-url";
 import { isWeakSharedSecret } from "@/lib/shared-secret";
@@ -23,7 +27,6 @@ const REQUIRED_STAGING_ENVIRONMENT = [
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "DATABASE_URL",
   "DATA_ENCRYPTION_KEY",
-  "GUEST_TRIAL_SECRET",
   "SUPABASE_SERVICE_ROLE_KEY",
   "PROFILE_ENGINE_URL",
   "PROFILE_ENGINE_SHARED_SECRET",
@@ -410,10 +413,11 @@ export async function GET(request: Request) {
     name,
     present: configured(name),
   }));
-  const missingEnvironmentVariables = requiredEnvironment
+  const missingEnvironmentVariables: string[] = requiredEnvironment
     .filter(({ present }) => !present)
     .map(({ name }) => name);
   const invalidEnvironmentVariables: string[] = [];
+  let guestTrialSource: GuestTrialKeySource | null = null;
   if (process.env.AI_PROVIDER?.trim() === "groq")
     invalidEnvironmentVariables.push(...configuredAiProviderRoute().invalidEnvironmentVariables);
   if (configured("DATA_ENCRYPTION_KEY")) {
@@ -423,6 +427,11 @@ export async function GET(request: Request) {
   if (configured("GUEST_TRIAL_SECRET")) {
     if (!isValidGuestTrialSecret(process.env.GUEST_TRIAL_SECRET))
       invalidEnvironmentVariables.push("GUEST_TRIAL_SECRET");
+  }
+  try {
+    guestTrialSource = guestTrialKeySource();
+  } catch {
+    if (!configured("GUEST_TRIAL_SECRET")) missingEnvironmentVariables.push("GUEST_TRIAL_SECRET");
   }
   if (configured("DATA_ENCRYPTION_KEYS_PREVIOUS")) {
     const previous = (process.env.DATA_ENCRYPTION_KEYS_PREVIOUS as string)
@@ -507,6 +516,9 @@ export async function GET(request: Request) {
       requiredEnvironment,
       missingEnvironmentVariables,
       invalidEnvironmentVariables,
+      guestTrial: {
+        keySource: guestTrialSource,
+      },
       // Report only a provider class and an approved-contract boolean. The
       // credential and arbitrary environment values never enter this payload.
       interpretation,

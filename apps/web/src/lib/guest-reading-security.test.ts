@@ -4,6 +4,7 @@ import type { GuestReceiptPayload } from "./guest-reading-contract";
 import {
   assertGuestTrialConfigured,
   GuestTrialConfigurationError,
+  guestTrialKeySource,
   guestTrialNetworkRateLimitKey,
   issueGuestReadingReceipt,
   issueGuestTrialMarker,
@@ -120,7 +121,41 @@ describe("guest trial markers", () => {
     expect(guestTrialNetworkRateLimitKey("client:unresolved")).toBeUndefined();
   });
 
+  it("derives a per-site, per-PR key only for an eligible Netlify deploy preview", () => {
+    vi.stubEnv("GUEST_TRIAL_SECRET", "");
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("SITE_ID", "79c8fce9-0a4b-4dee-b3f0-965c31478547");
+    vi.stubEnv("GUEST_TRIAL_PREVIEW_ID", "24");
+    vi.stubEnv("DATA_ENCRYPTION_KEY", Buffer.alloc(32, 41).toString("base64"));
+    const device = "298741d3-1dc1-4563-9a4f-52a4cfa0be67";
+    const marker = issueGuestTrialMarker(device, now);
+
+    expect(guestTrialKeySource()).toBe("netlify-deploy-preview-derived");
+    expect(verifyGuestTrialMarker(marker, device, now)).toBe(true);
+
+    vi.stubEnv("GUEST_TRIAL_PREVIEW_ID", "25");
+    expect(verifyGuestTrialMarker(marker, device, now)).toBe(false);
+  });
+
+  it("does not derive a guest key outside an identified staging deploy preview", () => {
+    vi.stubEnv("GUEST_TRIAL_SECRET", "");
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("SITE_ID", "79c8fce9-0a4b-4dee-b3f0-965c31478547");
+    vi.stubEnv("GUEST_TRIAL_PREVIEW_ID", "24");
+    vi.stubEnv("DATA_ENCRYPTION_KEY", Buffer.alloc(32, 41).toString("base64"));
+
+    expect(assertGuestTrialConfigured).toThrow(GuestTrialConfigurationError);
+
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("GUEST_TRIAL_PREVIEW_ID", "");
+    expect(assertGuestTrialConfigured).toThrow(GuestTrialConfigurationError);
+  });
+
   it("fails closed when the deployment has no valid signing secret", () => {
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("SITE_ID", "79c8fce9-0a4b-4dee-b3f0-965c31478547");
+    vi.stubEnv("GUEST_TRIAL_PREVIEW_ID", "24");
+    vi.stubEnv("DATA_ENCRYPTION_KEY", Buffer.alloc(32, 41).toString("base64"));
     vi.stubEnv("GUEST_TRIAL_SECRET", "not-a-key");
 
     expect(assertGuestTrialConfigured).toThrow(GuestTrialConfigurationError);

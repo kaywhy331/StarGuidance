@@ -19,7 +19,11 @@ export const GUEST_TRIAL_COOKIE = "starguidance_guest_trial";
 export const GUEST_TRIAL_COOKIE_TTL_SECONDS = 365 * 24 * 60 * 60;
 export const GUEST_READING_RECEIPT_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+export type GuestTrialKeySource = "dedicated" | "netlify-deploy-preview-derived";
+
 const RECEIPT_CONTEXT = Buffer.from("starguidance:guest-reading-receipt:v1", "utf8");
+const netlifySiteIdSchema = z.string().uuid();
+const netlifyReviewIdSchema = z.string().regex(/^[1-9]\d{0,19}$/);
 
 const markerSchema = z
   .object({
@@ -32,7 +36,9 @@ const markerSchema = z
 
 export class GuestTrialConfigurationError extends Error {
   constructor() {
-    super("GUEST_TRIAL_SECRET must be canonical base64 for exactly 32 bytes.");
+    super(
+      "Guest trial key material is unavailable or invalid. Configure a canonical base64 32-byte GUEST_TRIAL_SECRET.",
+    );
     this.name = "GuestTrialConfigurationError";
   }
 }
@@ -43,10 +49,39 @@ export function isValidGuestTrialSecret(encoded: string | undefined): boolean {
   return decoded.length === 32 && decoded.toString("base64") === encoded;
 }
 
-function guestSecret(): Buffer {
+function decodeDataEncryptionKey(encoded: string | undefined): Buffer | undefined {
+  if (!encoded || encoded !== encoded.trim()) return undefined;
+  const decoded = Buffer.from(encoded, "base64");
+  const canonical = decoded.toString("base64");
+  return decoded.length === 32 && canonical.replace(/=+$/, "") === encoded.replace(/=+$/, "")
+    ? decoded
+    : undefined;
+}
+
+function deployPreviewSecret(): Buffer | undefined {
+  if (process.env.APP_ENV !== "staging") return undefined;
+  const siteId = netlifySiteIdSchema.safeParse(process.env.SITE_ID);
+  const reviewId = netlifyReviewIdSchema.safeParse(process.env.GUEST_TRIAL_PREVIEW_ID);
+  const encryptionRoot = decodeDataEncryptionKey(process.env.DATA_ENCRYPTION_KEY);
+  if (!siteId.success || !reviewId.success || !encryptionRoot) return undefined;
+  return createHmac("sha256", encryptionRoot)
+    .update(`starguidance:guest-preview-root:v1:site:${siteId.data}:review:${reviewId.data}`)
+    .digest();
+}
+
+function guestSecretResolution(): { secret: Buffer; source: GuestTrialKeySource } {
   const encoded = process.env.GUEST_TRIAL_SECRET;
-  if (!encoded || !isValidGuestTrialSecret(encoded)) throw new GuestTrialConfigurationError();
-  return Buffer.from(encoded, "base64");
+  if (encoded) {
+    if (!isValidGuestTrialSecret(encoded)) throw new GuestTrialConfigurationError();
+    return { secret: Buffer.from(encoded, "base64"), source: "dedicated" };
+  }
+  const previewSecret = deployPreviewSecret();
+  if (previewSecret) return { secret: previewSecret, source: "netlify-deploy-preview-derived" };
+  throw new GuestTrialConfigurationError();
+}
+
+function guestSecret(): Buffer {
+  return guestSecretResolution().secret;
 }
 
 function derivedKey(purpose: "device" | "marker" | "network" | "receipt"): Buffer {
@@ -57,6 +92,10 @@ function derivedKey(purpose: "device" | "marker" | "network" | "receipt"): Buffe
 
 export function assertGuestTrialConfigured(): void {
   void guestSecret();
+}
+
+export function guestTrialKeySource(): GuestTrialKeySource {
+  return guestSecretResolution().source;
 }
 
 function hmac(value: string): Buffer {

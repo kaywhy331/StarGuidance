@@ -67,6 +67,21 @@ describe("free guest reading", () => {
     });
   });
 
+  it("enables eligibility with the isolated Netlify deploy-preview key", async () => {
+    vi.stubEnv("GUEST_TRIAL_SECRET", "");
+    vi.stubEnv("APP_ENV", "staging");
+    vi.stubEnv("RUNTIME_ADAPTER", "supabase");
+    vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "");
+    vi.stubEnv("SITE_ID", "79c8fce9-0a4b-4dee-b3f0-965c31478547");
+    vi.stubEnv("GUEST_TRIAL_PREVIEW_ID", "24");
+    vi.stubEnv("DATA_ENCRYPTION_KEY", Buffer.alloc(32, 43).toString("base64"));
+
+    const response = await GET(request({}));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ eligible: true, signupRequired: false });
+  });
+
   it("returns one locked deterministic reading without returning the raw question", async () => {
     const response = await POST(request(validInput));
     const body = guestReadingResponseSchema.parse(await response.json());
