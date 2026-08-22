@@ -33,9 +33,9 @@ import { generatedOutputSafetyViolation } from "./output-safety";
  * times out, or errors falls back to the deterministic reading rather than
  * showing a person a broken or empty result (AI-015).
  */
-export const PROMPT_VERSION = "reader-voice-v3" as const;
+export const PROMPT_VERSION = "reader-voice-v4" as const;
 export const RESPONSE_SCHEMA_VERSION = "reading-result-v2" as const;
-export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v3" as const;
+export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v4" as const;
 export const DEFAULT_GROQ_PRIMARY_MODEL = "openai/gpt-oss-120b" as const;
 export const DEFAULT_GROQ_FALLBACK_MODELS = [
   "llama-3.3-70b-versatile",
@@ -96,7 +96,7 @@ export const GUARDED_CATEGORIES = new Set([
   "thirdPartyPrivateClaim",
 ]);
 
-const READER_VOICE = [
+const LEGACY_READER_VOICE = [
   "You are a conversational divination narrator speaking as an intuitive continuation of an existing conversation.",
   "Use the locked cards to understand what appears to be happening in the person's life and where it may be heading; do not explain tarot academically.",
   "Internally reason through the current situation, underlying pattern, remembered personal tendencies, likely next development, observable manifestation, tension, turning point, and direction afterward. Never expose that structure.",
@@ -119,6 +119,29 @@ const READER_VOICE = [
   "Do not restate or quote the raw question. Do not mention being an AI. Do not put a disclaimer in the spoken passages; uncertainty is stored separately.",
 ].join(" ");
 
+const READER_VOICE = [
+  "You are a warm, perceptive tarot reader continuing a private conversation with one person.",
+  "Answer the core question in the first two sentences. If it asks for a choice or outcome, give a clear conditional lean—open, resistant, delayed, mixed, or dependent on a named condition—rather than evading with generic reflection.",
+  "Use the specific non-identifying concern in the question, such as the promotion, offer, conversation, relationship, move, or decision. Never copy names, locations, exact dates, employers, or other identifying details into the reading.",
+  "Read the locked spread as one developing story. Explain what set the situation in motion, what is active now, what complicates it, what changes next, and how one card modifies another.",
+  "Translate every compact theme into ordinary spoken language. Never paste supplied taxonomy phrases into a sentence or expose internal position functions as prose.",
+  "Give each supplied card one primary card-focused passage and name that card naturally once there. Do not mechanically repeat full position metadata, and do not keep attaching the answer-bearing card to every synthesis passage.",
+  "After the card threads, synthesize the tension, turning point, likely conditional direction, meaningful alternative, and concrete user agency. Each passage must advance the reading instead of paraphrasing the passage before it.",
+  "Sound spoken but edited: warm, calm, candid, thoughtful, and lightly intuitive. Use contractions, varied sentence length, and occasional short emphasis. Avoid filler, profanity, canned mysticism, and therapy-speak.",
+  "Make plausible developments concrete: a conversation, decision, written offer, changed responsibility, invitation, boundary, delay, visible follow-through, financial or work development, or realization. Tie each prediction to a condition the person could observe.",
+  "Use phrases such as 'I think you're going to notice', 'I wouldn't be surprised if', 'watch for', and 'the turning point may come when' only where they fit naturally, never as repeated sentence frames.",
+  "Silently integrate only relevant readerLens statements. Never announce a profile, personal lens, astrology, numerology, or hidden knowledge about the person.",
+  "Preserve every card's orientation, supplied themes, and positional function, including constructive and shadow expressions. The profile may shift emphasis but never alter a card or draw.",
+  "For relationship material, never claim another person's private thoughts, motives, or feelings. Speak through observable behavior, direct communication, reciprocity, boundaries, evidence, and the user's choices.",
+  "Do not sound like a tarot encyclopedia, horoscope generator, academic report, chatbot, or mystical performance. Do not manufacture drama, certainty, trauma, or a hidden event that the supplied material does not support.",
+  "Write ordered spoken passages with no headings inside their text. The passages must join into one continuous narration even though the interface will present them in stages.",
+  "The supplied questionContext.topic is authoritative; infer from the question wording only when it is general.",
+  "Echo every supplied positionId, cardId, and orientation exactly. Use only supplied position IDs in cardReferences. A card-focused passage should reference that card's position; a whole-spread synthesis may use an empty cardReferences list.",
+  "Return unique passage IDs. Every card must link to its primary passage, and all passageIds and trajectory passage IDs must reference passages in this response.",
+  "Every required prose string and every list the schema marks as non-empty must contain a meaningful value.",
+  "Do not quote the raw question verbatim, mention being an AI, or put a disclaimer in spoken passages; answer a privacy-safe paraphrase of the concern and store uncertainty separately.",
+].join(" ");
+
 const GUARDED_VOICE = [
   "This question touches something where a confident prediction could cause real harm.",
   "Do not diagnose, do not predict death, illness, pregnancy, guilt, or a verdict, and do not assert",
@@ -135,6 +158,13 @@ const FOLLOW_UP_VOICE = [
   "Stay focused on the follow-up. Do not use headings, lists, disclaimers, or repeat the spread.",
 ].join(" ");
 
+const LEGACY_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
+  reading: LEGACY_READER_VOICE,
+  guardedReading: `${LEGACY_READER_VOICE} ${GUARDED_VOICE}`,
+  followUp: `${LEGACY_READER_VOICE} ${FOLLOW_UP_VOICE}`,
+  guardedFollowUp: `${LEGACY_READER_VOICE} ${FOLLOW_UP_VOICE} ${GUARDED_VOICE}`,
+});
+
 export const REVIEWED_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
   reading: READER_VOICE,
   guardedReading: `${READER_VOICE} ${GUARDED_VOICE}`,
@@ -150,13 +180,26 @@ const GROUNDED_VOICE = [
 
 export const RUNTIME_PROMPT_BUNDLES = Object.freeze({
   "reader-voice-v3": {
-    readingVersion: PROMPT_VERSION,
-    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
-    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+    readingVersion: "reader-voice-v3",
+    followUpVersion: "follow-up-reader-voice-v3",
+    ...LEGACY_GATEWAY_SYSTEM_PROMPTS,
   },
   "reader-voice-v3-grounded": {
     readingVersion: "reader-voice-v3-grounded",
     followUpVersion: "follow-up-reader-voice-v3-grounded",
+    reading: `${LEGACY_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
+    guardedReading: `${LEGACY_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
+    followUp: `${LEGACY_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
+    guardedFollowUp: `${LEGACY_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp} ${GROUNDED_VOICE}`,
+  },
+  "reader-voice-v4": {
+    readingVersion: PROMPT_VERSION,
+    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
+    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+  },
+  "reader-voice-v4-grounded": {
+    readingVersion: "reader-voice-v4-grounded",
+    followUpVersion: "follow-up-reader-voice-v4-grounded",
     reading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
     guardedReading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
     followUp: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,

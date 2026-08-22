@@ -467,11 +467,11 @@ test("a reading is created against the active snapshot with a locked draw", asyn
   const persistedProviderId = outputProvenance?.providerId ?? "";
   const liveProvenance =
     approvedLiveProviderIds.has(persistedProviderId) &&
-    outputProvenance?.promptVersion === "reader-voice-v3" &&
-    outputProvenance.schemaVersion === "reading-result-v2";
+    ["reader-voice-v3", "reader-voice-v4"].includes(outputProvenance?.promptVersion ?? "") &&
+    outputProvenance?.schemaVersion === "reading-result-v2";
   const deterministicProvenance =
     outputProvenance?.providerId === "deterministic-fallback-v1" &&
-    outputProvenance.promptVersion === "deterministic-fallback-v3" &&
+    outputProvenance.promptVersion === "deterministic-fallback-v4" &&
     outputProvenance.schemaVersion === "reading-result-v2";
   const configuredProvenance =
     interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
@@ -498,14 +498,15 @@ test("a reading is created against the active snapshot with a locked draw", asyn
         : outputProvenance?.providerId
           ? "other"
           : "absent";
-  const promptState =
-    outputProvenance?.promptVersion === "reader-voice-v3"
-      ? "approved-live"
-      : outputProvenance?.promptVersion === "deterministic-fallback-v3"
-        ? "deterministic-fallback"
-        : outputProvenance?.promptVersion
-          ? "other"
-          : "absent";
+  const promptState = ["reader-voice-v3", "reader-voice-v4"].includes(
+    outputProvenance?.promptVersion ?? "",
+  )
+    ? "approved-live"
+    : outputProvenance?.promptVersion === "deterministic-fallback-v4"
+      ? "deterministic-fallback"
+      : outputProvenance?.promptVersion
+        ? "other"
+        : "absent";
   const schemaState =
     reading.outputProvenance?.schemaVersion === "reading-result-v2"
       ? "approved"

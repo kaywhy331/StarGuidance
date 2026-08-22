@@ -62,9 +62,16 @@ const subjectVoices: Record<QuestionSubject, SubjectVoice> = {
 };
 
 const subjectPatterns: readonly [RegExp, QuestionSubject][] = [
-  [/\b(work|career|job|business|project|lead|colleague|manager|role)\b/i, "work"],
-  [/\b(love|relationship|partner|friend|family|communicat|conflict|marriage)\b/i, "relationship"],
-  [/\b(change|move|choice|decide|direction|future|next|should i)\b/i, "change"],
+  [
+    /\b(work|career|job|business|project|lead|colleague|coworker|manager|boss|role|position|promot\w*|raise|salary|pay|income|interview|hiring|offer|employment|contract|client|company|team|freelance)\b/i,
+    "work",
+  ],
+  [
+    /\b(love|relationship|partner|friend|family|communicat\w*|conflict|marriage|reconcil\w*|reconnect|break ?up)\b/i,
+    "relationship",
+  ],
+  [/\b(change|move|relocat\w*|choice|decide|direction|future|next|should i)\b/i, "change"],
+  [/\b(wellbeing|well-being|balance|rest|energy|habit|stress|burnout|overwhelm)\b/i, "wellbeing"],
 ];
 
 const selectedTopicSubjects: Partial<Record<ReadingTopic, QuestionSubject>> = {

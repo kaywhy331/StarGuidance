@@ -54,6 +54,21 @@ const passageRoleLabels: Record<ReadingPassage["role"], string> = {
   safety: "Scope and care",
 };
 
+type PassageLabelCard = Pick<DealtCardView, "name" | "orientation" | "positionName">;
+
+export function passagePresentation(
+  role: ReadingPassage["role"],
+  referencedCards: readonly PassageLabelCard[],
+): { readonly label: string; readonly detail?: string } {
+  const card = referencedCards.length === 1 ? referencedCards[0] : undefined;
+  if (card && isCardFocusedGuidedPassage(role))
+    return {
+      label: card.positionName,
+      detail: `${card.name}${card.orientation === "reversed" ? " · Reversed" : ""}`,
+    };
+  return { label: passageRoleLabels[role] };
+}
+
 const profileSourceLabels: Readonly<Record<string, string>> = {
   numerology: "Numerology",
   dreamspell: "Dreamspell",
@@ -487,17 +502,12 @@ function CompleteReading({
                 const referencedCards = passage.cardReferences
                   .map((positionId) => cardByPosition.get(positionId))
                   .filter((card): card is DealtCardView => Boolean(card));
+                const presentation = passagePresentation(passage.role, referencedCards);
                 return (
                   <section className="reading-complete-story__passage" key={passage.id}>
                     <div>
-                      <span>{passageRoleLabels[passage.role]}</span>
-                      {referencedCards.length > 0 && (
-                        <small>
-                          {referencedCards
-                            .map((card) => `${card.positionName} · ${card.name}`)
-                            .join(" / ")}
-                        </small>
-                      )}
+                      <span>{presentation.label}</span>
+                      {presentation.detail && <small>{presentation.detail}</small>}
                     </div>
                     <p>{passage.text}</p>
                   </section>
@@ -880,8 +890,8 @@ export function OracleTranscript({
               {activeEntry.phase === "followUp"
                 ? "Same cards · continuing reflection"
                 : [
-                    activePassage ? passageRoleLabels[activePassage.role] : "Guided passage",
-                    activeCard?.positionName,
+                    activeCard?.positionName ??
+                      (activePassage ? passageRoleLabels[activePassage.role] : "Guided passage"),
                     activeCard?.orientation,
                   ]
                     .filter(Boolean)

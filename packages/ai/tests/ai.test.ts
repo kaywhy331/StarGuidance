@@ -206,8 +206,10 @@ describe("AI boundary", () => {
     });
     const narration = result.passages.map(({ text }) => text).join(" ");
     expect(result.passages[0]?.text).toMatch(
-      /^The Four of Pentacles feels like .*stability is going to matter more than expansion/i,
+      /^The short answer about your work situation .*not fully settled/i,
     );
+    expect(result.passages[0]?.text).toContain("Four of Pentacles");
+    expect(result.passages[0]?.text).toContain("protect security");
     expect(narration).toContain(
       "you tend to regain momentum through self-directed action and tangible movement",
     );
@@ -252,9 +254,8 @@ describe("AI boundary", () => {
       }),
       relevantTraitStatements: [],
     });
-    expect(result.passages[0]?.text).toMatch(
-      /obstructed or premature rather than like a clean no/i,
-    );
+    expect(result.passages[0]?.text).toMatch(/not a simple yes or no/i);
+    expect(result.passages[0]?.text).toMatch(/delay or revision rather than a clean, final no/i);
     expect(JSON.stringify(result)).not.toMatch(/guaranteed (yes|no)/i);
   });
   it("rejects invalid provider output", async () => {
@@ -332,7 +333,7 @@ describe("AI boundary", () => {
     });
     expect(withProvenance.provenance).toEqual({
       providerId: "deterministic-fallback-v1",
-      promptVersion: "deterministic-fallback-v3",
+      promptVersion: "deterministic-fallback-v4",
       schemaVersion: "follow-up-result-v1",
     });
 
@@ -414,6 +415,14 @@ describe("readings answer the question that was asked", () => {
     expect(spoken(love)).toContain("connection");
   });
 
+  it("changes the focus for two different questions in the same life area", async () => {
+    const promotion = await generate("Will I get the promotion at work?");
+    const departure = await generate("Should I leave my job?");
+    expect(spoken(promotion)).toContain("the promotion");
+    expect(spoken(departure)).toContain("whether this work still fits");
+    expect(spoken(promotion)).not.toBe(spoken(departure));
+  });
+
   it("carries every card's positional interpretation in natural passages (AI-005)", async () => {
     const question = "What should I focus on at work?";
     const classification = questionClassification(question);
@@ -421,11 +430,83 @@ describe("readings answer the question that was asked", () => {
     const contextualPositions = resolveSpreadPositions(spread, classification);
     for (const [index, position] of contextualPositions.entries()) {
       const card = result.cards[index]!;
+      const expectedCard = tarotCards[[16, 45, 17][index]!]!;
       expect(card.positionId).toBe(spread.positions[index]!.id);
       const passages = result.passages.filter(({ id }) => card.passageIds.includes(id));
-      expect(passages.some(({ text }) => text.includes(position.interpretiveFunction))).toBe(true);
-      expect(passages.some(({ text }) => text.includes(position.displayName))).toBe(false);
+      expect(passages.some(({ text }) => text.includes(expectedCard.name))).toBe(true);
+      expect(passages.some(({ text }) => text.includes(position.interpretiveFunction))).toBe(false);
     }
+  });
+
+  it("turns a nine-card matrix into a connected answer without exposing taxonomy prose", async () => {
+    const matrix = spreads.find(({ id }) => id === "nine-card-matrix")!;
+    const cardIds = [
+      "swords-ace",
+      "pentacles-nine",
+      "wands-nine",
+      "pentacles-seven",
+      "cups-eight",
+      "pentacles-five",
+      "pentacles-four",
+      "major-02",
+      "major-04",
+    ];
+    const orientations = [
+      "upright",
+      "upright",
+      "reversed",
+      "upright",
+      "upright",
+      "reversed",
+      "upright",
+      "upright",
+      "reversed",
+    ] as const;
+    const question = "Will I get the promotion at work in the next few months?";
+    const result = await new DeterministicFallbackProvider().generate({
+      draw: {
+        id: "reported-matrix-reading",
+        deckVersion: DECK_VERSION,
+        spreadId: matrix.id,
+        spreadVersion: matrix.version,
+        shuffleVersion: "secure-fisher-yates-v1",
+        lockedAt: new Date(0).toISOString(),
+        assignments: matrix.positions.map((position, index) => ({
+          positionId: position.id,
+          cardId: cardIds[index]!,
+          orientation: orientations[index]!,
+          order: index,
+        })),
+      },
+      question,
+      questionClassification: classifyQuestionContext(question, {
+        topic: "career",
+        horizon: "months",
+        generalReading: false,
+      }),
+      relevantTraitStatements: traits,
+    });
+    const narration = spoken(result);
+    const threads = result.passages.filter(({ id }) => id.startsWith("thread-"));
+
+    expect(result.passages[0]?.text).toMatch(/^The short answer about the promotion/i);
+    expect(result.passages[0]?.text).toContain("delay or revision");
+    expect(threads).toHaveLength(9);
+    for (const [index, thread] of threads.entries()) {
+      const card = tarotCards.find(({ id }) => id === cardIds[index]);
+      expect(thread.text).toContain(card?.name);
+      expect(thread.cardReferences).toEqual([matrix.positions[index]!.id]);
+    }
+    expect(threads[0]?.text).toMatch(/^Looking back/i);
+    expect(threads[3]?.text).toMatch(/^Inside the situation now/i);
+    expect(threads[8]?.text).toMatch(/^As the whole spread comes together/i);
+    expect(narration).not.toMatch(
+      /blocked or internalized form|delayed or turned inward|the user's current inner reality/i,
+    );
+    for (const passage of result.passages.filter(
+      ({ role }) => !["opening", "situation", "underlyingPattern", "development"].includes(role),
+    ))
+      expect(passage.cardReferences).toEqual([]);
   });
 
   it("changes with orientation on the identical cards", async () => {
@@ -455,10 +536,11 @@ describe("readings answer the question that was asked", () => {
 
   it("derives the trajectory and its conditions from the drawn cards (AI-011)", async () => {
     const result = await generate("Should I take the new role at work?");
-    expect(result.trajectory.conditions.join(" ")).toContain("Decision Pivot");
+    expect(result.trajectory.conditions.join(" ")).toContain("the role");
+    expect(result.trajectory.conditions.join(" ")).toContain(tarotCards[17]!.name);
     expect(
       result.passages.find(({ id }) => id === result.trajectory.likelyPassageId)?.text,
-    ).toContain(tarotCards[17]!.uprightThemes[0]!);
+    ).toContain("work");
   });
 
   it("keeps future language conditional and never guarantees an outcome (AI-008)", async () => {

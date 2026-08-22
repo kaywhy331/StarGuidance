@@ -218,6 +218,23 @@ describe("the provider transport boundary", () => {
     });
   });
 
+  it("uses the question-first connected reader prompt by default", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(successfulResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { provenance } = await provider().generateWithProvenance(input);
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      messages: { role: string; content: string }[];
+    };
+    const system = request.messages[0]?.content ?? "";
+
+    expect(system).toContain("Answer the core question in the first two sentences");
+    expect(system).toContain("Read the locked spread as one developing story");
+    expect(system).toContain("Never paste supplied taxonomy phrases");
+    expect(system).toContain("Give each supplied card one primary card-focused passage");
+    expect(provenance.promptVersion).toBe("reader-voice-v4");
+  });
+
   it("uses separate gateway and Cloudflare Access credentials on a custom HTTPS /v1 route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(successfulResponse());
     vi.stubGlobal("fetch", fetchMock);
@@ -344,7 +361,7 @@ describe("one-section follow-ups", () => {
       result: { response: "One answer." },
       provenance: {
         providerId: "groq:test-model",
-        promptVersion: "follow-up-reader-voice-v3",
+        promptVersion: "follow-up-reader-voice-v4",
         schemaVersion: "follow-up-result-v1",
       },
     });
@@ -365,7 +382,7 @@ describe("one-section follow-ups", () => {
 
     expect(generated.provenance).toMatchObject({
       providerId: "deterministic-fallback-v1:after-groq-provider-unavailable",
-      promptVersion: "deterministic-fallback-v3",
+      promptVersion: "deterministic-fallback-v4",
       schemaVersion: "follow-up-result-v1",
     });
   });
@@ -1037,7 +1054,7 @@ describe("a person always gets a reading (AI-015)", () => {
     expect(result.cards).toHaveLength(spread.positions.length);
     expect(provenance).toEqual({
       providerId: "deterministic-fallback-v1:after-groq-provider-unavailable",
-      promptVersion: "deterministic-fallback-v3",
+      promptVersion: "deterministic-fallback-v4",
       schemaVersion: "reading-result-v2",
     });
   });

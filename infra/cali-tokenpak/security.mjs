@@ -34,10 +34,16 @@ const FOLLOW_UP_SCHEMA_NAME = "follow_up";
 const GPT_OSS_PREFIX = "openai/gpt-oss-";
 const JSON_OBJECT_MODEL = "llama-3.3-70b-versatile";
 const REVIEWED_PROMPT_HASHES = new Map([
+  // reader-voice-v3 reading, guarded reading, follow-up, and guarded follow-up.
   ["6cbd882b93824b7ed2fa16a81b188d19224c5ad895abf5f91460fb0fd1181fd4", READING_SCHEMA_NAME],
   ["acb8039252911fa626ecf1dc2f2158e0bccdc5b2e4f9e9dccab8fd2e7c28ebbf", READING_SCHEMA_NAME],
   ["f4d4b305ebae00f4f295abd29fa462061de64326b0e8687f2240412c65f17f40", FOLLOW_UP_SCHEMA_NAME],
   ["0a0ee7b20f9473cf37c5334a99d910b251009e7b4f139e0fa16df405c54ad9f8", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v4 question-first reading, guarded reading, follow-up, and guarded follow-up.
+  ["281342777701f199e8cefc05f2b3d1cc1657ae5a677ab16fcbf63d7f9192947a", READING_SCHEMA_NAME],
+  ["8d2615a0faf9c21e26fe32c91dbbab4e5056dba96d150f68fd455eadb8966429", READING_SCHEMA_NAME],
+  ["c9895d3207fe0a445d94f91a27ef1f28cd0075d2ba70e085b28b90506c5e38c3", FOLLOW_UP_SCHEMA_NAME],
+  ["467fd8a2ecf5481e0429edf29117ad3c33c629316748151b9d8a2113bb4c3eb3", FOLLOW_UP_SCHEMA_NAME],
 ]);
 const SPREAD_POSITIONS = new Map([
   ["one-card", ["card-1"]],

@@ -52,7 +52,12 @@ export const contentConfigurationSchema = z
 
 export const promptConfigurationSchema = z
   .object({
-    bundleId: z.enum(["reader-voice-v3", "reader-voice-v3-grounded"]),
+    bundleId: z.enum([
+      "reader-voice-v3",
+      "reader-voice-v3-grounded",
+      "reader-voice-v4",
+      "reader-voice-v4-grounded",
+    ]),
     safetyPolicyVersion: z.literal("question-safety-v2"),
   })
   .strict();
@@ -152,7 +157,7 @@ export function defaultRuntimeConfiguration(): RuntimeConfiguration {
       interpretationRulesVersion: "interpretation-rules-v1",
       enabledSpreadIds: spreads.map(({ id }) => id),
     },
-    prompts: { bundleId: "reader-voice-v3", safetyPolicyVersion: "question-safety-v2" },
+    prompts: { bundleId: "reader-voice-v4", safetyPolicyVersion: "question-safety-v2" },
     commerce: {
       readingAccessMode:
         process.env.READING_ACCESS_MODE === "free-window" ? "free-window" : "unlimited",
