@@ -50,7 +50,7 @@ To exercise **Free Reading**, generate a distinct local guest key and place it i
 openssl rand -base64 32
 ```
 
-The value must be canonical base64 for exactly 32 random bytes. Do not reuse `DATA_ENCRYPTION_KEY` or commit the generated value. The domain-separated fallback used by a genuine Netlify Deploy Preview is build-bound to that context and is deliberately unavailable to ordinary local development; do not imitate it by copying the data key into `GUEST_TRIAL_SECRET`. Missing or malformed local configuration leaves the landing page available while the guest eligibility endpoint returns `503`; account signup and authenticated flows remain independent.
+The value must be canonical base64 for exactly 32 random bytes. Do not reuse `DATA_ENCRYPTION_KEY` or commit the generated value. The domain-separated fallback used by genuine Netlify preview and production builds is build-bound to those contexts and deliberately unavailable to ordinary local development; do not imitate it by copying the data key into `GUEST_TRIAL_SECRET`. Missing or malformed local configuration leaves the landing page available while the guest eligibility endpoint returns `503`; account signup and authenticated flows remain independent.
 
 The local-only adapter accepts any valid email and 12–72 character password through the production-shaped forms, but deliberately does not persist or validate the password. It exists for deterministic development and E2E flows only. Supabase mode performs the real credential verification.
 
