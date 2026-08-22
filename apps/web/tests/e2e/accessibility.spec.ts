@@ -117,6 +117,30 @@ test("onboarding exposes valid automated WCAG semantics", async ({ page }) => {
   ).toEqual([]);
 });
 
+test("the account-free reading threshold exposes valid automated WCAG semantics", async ({
+  page,
+}) => {
+  await page.goto("/free-reading");
+  await expect(
+    page.getByRole("heading", { name: "Meet the cards before you decide to stay." }),
+  ).toBeVisible();
+  let scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  expect(
+    scan.violations
+      .filter(({ impact }) => impact === "critical" || impact === "serious")
+      .map(({ id }) => id),
+  ).toEqual([]);
+
+  await page.getByRole("button", { name: /Continue with Three-Card Spread/ }).click();
+  await expect(page.getByLabel("Your private guest question")).toBeVisible();
+  scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  expect(
+    scan.violations
+      .filter(({ impact }) => impact === "critical" || impact === "serious")
+      .map(({ id }) => id),
+  ).toEqual([]);
+});
+
 test("200% text reflows public, onboarding, and completed-reading controls at 320px", async ({
   page,
 }) => {

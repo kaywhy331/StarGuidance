@@ -38,6 +38,7 @@ export default defineConfig({
         AI_PROVIDER: "disabled",
         PAYMENTS_PROVIDER: "local",
         ENABLE_PROFILE_REPORTS: "true",
+        GUEST_TRIAL_SECRET: Buffer.alloc(32, 31).toString("base64"),
         PROFILE_ENGINE_URL: "http://127.0.0.1:8000",
       },
       reuseExistingServer: false,

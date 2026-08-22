@@ -35,7 +35,7 @@ Prepared for Kevin
 ## Executive summary
 The product delivers immersive tarot readings personalized by a private birth profile assembled from Western astrology (Whole Sign and Placidus), Pythagorean numerology, BaZi Four Pillars, Dreamspell Galactic Signature, Nine Star Ki, and planetary-angularity mapping. The profile is not displayed in the standard tarot experience; it is converted into a compact plain-language personality lens used to emphasize relevant card meanings. Users may later purchase a detailed profile report that reveals supported underlying systems and cross-system synthesis.
 
-The user experience remains simple on the surface: create an account, enter minimum birth details, select a reading, ask a question, experience the shuffle/deal/reveal sequence, and receive a structured interpretation. Behind that surface, calculations, random card selection, AI interpretation, privacy controls, content versioning, and payment fulfillment are separated so each can be tested and audited.
+The user experience remains simple on the surface: choose **Free Reading** to experience one profile-free deterministic ritual before signup, or choose **Sign up** to begin the private profile journey immediately. A guest who wants to ask the same cards a follow-up creates or enters an account without triggering a redraw. Behind that surface, guest entitlements, calculations, random card selection, AI interpretation, privacy controls, content versioning, and payment fulfillment are separated so each can be tested and audited.
 
 > **Non-negotiable architecture rule**
 >
@@ -45,6 +45,7 @@ The user experience remains simple on the surface: create an account, enter mini
 - **Required profile inputs:** full birth name and date of birth.
 - **Optional enhancement inputs:** a free-text birth city/country and a single birth-time field.
 - **Private personalization:** the base reading uses plain-language traits without showing placements, numbers, pillars, or signature labels.
+- **Try-before-account entry:** one profile-free deterministic reading is available before signup; follow-up and saved/personalized experiences require an account.
 - **Tarot integrity:** the profile affects interpretation, never card selection.
 - **MVP readings:** 1-card Focus, 3-card Direction, 5-card Crossroads, and 7-card Deeper Outlook.
 - **Immersive experience:** full-screen shuffle, automatic deal, user-controlled flips, progressive spoken-paced passages, and final integration.
@@ -158,11 +159,12 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | DEC-012 | Dreamspell terminology and artwork will be original or properly licensed. | Required |
 | DEC-013 | Paid readings may use public-domain/historical calculation methods with original interpretation, but proprietary modern chart systems, branding, tables, and teaching content require written commercial permission before software activation. | Owner-directed / required |
 | DEC-014 | Systems whose owners forbid the intended hosted/report use are omitted rather than shipped as disabled branded components. Nine Star Ki uses local versioned mathematics, an explicit third-star convention, and original prose/assets only. | Owner-directed / required |
+| DEC-015 | Landing entry offers **Free Reading** and **Sign up**. The guest lane allows one browser-marked, profile-free deterministic reading; signup/sign-in unlocks a follow-up on the exact encrypted draw without silently saving the guest artifact. IP is only a privacy-minimized automation signal, not the entitlement identity. | Owner-directed / confirmed |
 
 ## 3.2 MVP scope
 | **Included** | **Deferred / future** |
 | --- | --- |
-| Account, consent, private birth profile, profile completeness | Guest personalized readings and anonymous profile storage |
+| Account, consent, private birth profile, profile completeness; one profile-free guest reading with account handoff | Guest personalized readings and anonymous profile storage |
 | Western Whole Sign + Placidus, planetary angularity, numerology, BaZi, Dreamspell, and Nine Star Ki | Additional forecasting techniques, compatibility, and proprietary modern systems that do not permit the intended use |
 | One deck, four versioned spreads, upright/reversed | Deck marketplace, custom spreads, community decks |
 | Secure random draw, shuffle/deal/reveal, results, one follow-up | Unlimited chat, live readers, multiplayer/social features |
@@ -182,6 +184,9 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 *The user sees one coherent ritual; the system coordinates multiple deterministic and AI services behind it.*
 
 ## 4.1 Primary journey
+
+The landing page presents two explicit choices: **Free Reading** and **Sign up**. The account journey remains the full personalized path below. The guest path first accepts the current service/age acknowledgements, completes one deterministic one- or three-card ritual without birth data or an AI-provider call, and then offers signup/sign-in for a follow-up using the exact encrypted draw. The guest artifact is not saved to account history; future personalized/saved readings begin after onboarding.
+
 | **Step** | **User experience** | **System behavior** |
 | --- | --- | --- |
 | 1 | Understands the product and chooses to begin. | Public page explains personalization, privacy, optional birth time, tarot randomness, and report offer. |
@@ -199,7 +204,8 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 ## 4.2 Screen inventory
 | **Route / screen** | **Purpose** | **Primary completion state** |
 | --- | --- | --- |
-| / | Brand, product explanation, trust, reading preview, report offer | User starts account creation or explores pricing |
+| / | Brand, product explanation, trust, reading preview, **Free Reading** and **Sign up** | User chooses guest experience or account creation |
+| /free-reading | Profile-free one- or three-card trial and encrypted account handoff | Reading completes before auth; follow-up conversion preserves the exact draw |
 | /sign-in | Email and password account access | Authenticated session |
 | /sign-up | Private account registration | Account created or one-time confirmation pending |
 | /forgot-password | Non-enumerating account recovery request | Recovery email requested |
@@ -232,12 +238,12 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 ## 5.1 Account, consent, and identity
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **ACC-001** | Public visitors can view marketing pages, product explanations, pricing, and privacy information without an account. | **Must** | Public routes load without authentication and contain no personalized or private data. |
+| **ACC-001** | Public visitors can view marketing pages, product explanations, pricing, privacy information, and complete one profile-free guest reading without an account. | **Must** | Public routes load without authentication; the guest lane requests no birth data, calls no live AI provider, returns no raw question, and does not create an anonymous database user or reading. |
 | **ACC-002** | An authenticated account is required before a user can create a private birth profile, save a reading, or purchase a report. | **Must** | Unauthenticated users are redirected to sign in; no birth data is persisted to an anonymous browser session. |
 | **ACC-003** | MVP authentication supports conventional email and password credentials. | **Must** | New users can register, returning users can sign in without an email link, passwords are 12–72 characters, account recovery is non-enumerating, and all flows provide actionable error states. |
 | **ACC-004** | Social sign-in is supported behind a feature flag. | **Should** | Google and/or Apple sign-in can be enabled without changing user or profile schemas. |
 | **ACC-005** | The account display name is separate from the encrypted birth name used for numerology. | **Must** | Reading UI uses the display name; the birth name is never used as the public-facing account label. |
-| **ACC-006** | Age eligibility, Terms, Privacy Notice, and spiritual-entertainment disclosure are accepted before profile creation. | **Must** | Consent versions and timestamps are stored; unchecked required consent blocks continuation. |
+| **ACC-006** | Age eligibility, Terms, Privacy Notice, and spiritual-entertainment disclosure are accepted before profile creation or a guest draw. | **Must** | Account consent versions and timestamps are stored; the guest lane requires the current acknowledgements before drawing; unchecked required consent blocks continuation. |
 | **ACC-007** | Marketing consent is optional and independent from service consent. | **Must** | Users can complete onboarding without marketing consent and can change it later. |
 | **ACC-008** | Account sessions are protected and revocable. | **Must** | Logout invalidates the active session; optional signup-confirmation and password-recovery tokens expire; suspicious session events are logged without PII. |
 
@@ -322,8 +328,8 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **RDG-006** | Question input is length-limited and private. | **Must** | The UI enforces the configured limit, stores the question encrypted, and never places the raw text in analytics or URLs. |
 | **RDG-007** | Questions are classified before the draw for domain, intent, time horizon, and safety risk. | **Must** | Classification is stored separately from the raw question and is used to select content and safety behavior. |
 | **RDG-008** | The interface helps users ask actionable questions. | **Must** | Examples encourage user-centered, bounded questions and discourage unverifiable accusations about third parties. |
-| **RDG-009** | Reading entitlements are configurable. | **Must** | Admin can set free allowances, prices, credits, or report-only monetization without changing reading code. |
-| **RDG-010** | Starting a reading creates a durable session before animation begins. | **Must** | The session has a unique ID, profile snapshot, spread version, entitlement decision, and recoverable initial state. |
+| **RDG-009** | Reading entitlements are configurable. | **Must** | Authenticated allowances remain operator-configurable; the account-free trial is separately limited by a signed browser marker plus a privacy-minimized network automation quota. |
+| **RDG-010** | Starting an authenticated reading creates a durable session before animation begins; starting a guest trial locks a recoverable encrypted browser receipt before animation. | **Must** | An authenticated session has a unique ID, profile snapshot, spread version, entitlement decision, and server-recoverable state. A guest receipt has a unique ID, locked versioned draw, authenticated encryption, fixed expiry, and no profile snapshot. |
 
 **Epic completion criteria**
 
@@ -644,6 +650,8 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | POST /readings/{id}/draw | Session ID + deck/spread versions | Locked draw; idempotent; no profile input |
 | POST /readings/{id}/generate | Locked draw + curated meanings + compact lens + question | Validated structured result or deterministic fallback |
 | POST /readings/{id}/follow-up | Original context + one follow-up question | Child structured response; no redraw |
+| POST /guest-readings | Guest question/classification + one- or three-card spread + acknowledgements | CSPRNG locked deterministic reading + encrypted seven-day handoff; no anonymous database row or AI call |
+| POST /guest-readings/continue | Authenticated user + encrypted handoff + optional follow-up | Exact draw recovery or same-draw deterministic follow-up; no redraw |
 | POST /checkout/report | User + profile snapshot + product | Hosted checkout session |
 | POST /webhooks/payment | Signed provider event | Idempotent order, entitlement, and job transition |
 | POST /reports/{id}/generate | Paid entitlement + profile snapshot | Durable structured report and export status |
@@ -908,7 +916,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 - Western astrology aspect/orb set, BaZi boundary conventions, Pythagorean master-number rules, Dreamspell content scope, and final Nine Star Ki boundary/reference approval.
 - Whether the paid report includes a rendered natal chart wheel in MVP or a later release.
 - Supported launch countries/currencies and localized crisis/support content.
-- Account sign-in methods and whether a future unpersonalized guest demo is desired.
+- Additional account sign-in methods beyond email/password.
 
 ## 13.3 Change control
 Any change that affects card randomness, profile capability rules, safety policy, restricted profile visibility, payment entitlement, or data retention requires a documented decision, updated requirement/acceptance criteria, test impact review, and version increment. Cosmetic copy and layout changes may use normal design review when they do not alter those behaviors.

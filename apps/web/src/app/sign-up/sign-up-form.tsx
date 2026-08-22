@@ -7,7 +7,7 @@ import { Button, Field } from "@starguidance/design-system";
 
 import { POLICY_VERSIONS } from "@/lib/policies";
 
-export function SignUpForm() {
+export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
   const router = useRouter();
   const [step, setStep] = useState<"identity" | "permission">("identity");
   const [identity, setIdentity] = useState({
@@ -57,6 +57,7 @@ export function SignUpForm() {
             password: identity.password,
             displayName: identity.displayName,
             consents,
+            next: nextPath,
           }),
         });
         const payload = (await response.json()) as {
@@ -73,7 +74,7 @@ export function SignUpForm() {
           );
           return;
         }
-        router.push("/onboarding");
+        router.push(nextPath ?? "/onboarding");
         router.refresh();
       }}
     >
@@ -146,7 +147,10 @@ export function SignUpForm() {
           </div>
           <Button type="submit">Continue to privacy commitments →</Button>
           <p className="account-form-switch">
-            Already have an account? <Link href="/sign-in">Sign in</Link>
+            Already have an account?{" "}
+            <Link href={nextPath ? `/sign-in?next=${encodeURIComponent(nextPath)}` : "/sign-in"}>
+              Sign in
+            </Link>
           </p>
         </fieldset>
       ) : (
@@ -205,7 +209,11 @@ export function SignUpForm() {
               const response = await fetch("/api/auth", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ action: "resend-confirmation", email: pendingEmail }),
+                body: JSON.stringify({
+                  action: "resend-confirmation",
+                  email: pendingEmail,
+                  next: nextPath,
+                }),
               });
               const payload = (await response.json()) as { error?: string };
               setSubmitting(false);

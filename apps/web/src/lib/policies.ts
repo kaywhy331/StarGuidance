@@ -1,8 +1,8 @@
-export const POLICY_EFFECTIVE_DATE = "2026-08-05";
+export const POLICY_EFFECTIVE_DATE = "2026-08-21";
 
 export const POLICY_VERSIONS = {
-  terms: "terms-beta-2026-08-05",
-  privacy: "privacy-beta-2026-08-05",
+  terms: "terms-beta-2026-08-21",
+  privacy: "privacy-beta-2026-08-21",
   ageEligibility: "age-18-beta-2026-08-05",
   marketing: "marketing-beta-v1",
   profilePersonalization: "profile-personalization-v1",

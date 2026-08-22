@@ -1303,6 +1303,6 @@ test("the standing terms are reachable from every page instead of every reading"
   await terms.click();
   await expect(page).toHaveURL(/\/terms$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(/Terms/i);
-  await expect(page.getByText(/not a factual prediction/i)).toBeVisible();
+  await expect(page.getByText(/factual prediction or evidence/i)).toBeVisible();
   await expect(page.getByText(/crisis/i).first()).toBeVisible();
 });

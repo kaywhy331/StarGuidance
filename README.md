@@ -1,6 +1,6 @@
 # StarGuidance
 
-StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. The safe beta supports email/password accounts, private onboarding and profile correction, immutable profile snapshots, six selectable spreads (including the four foundational reading types), structured topic/intent/horizon intake, a question-free general-reading path, high-stakes confirmation before any draw, server-recoverable locked rituals, direct finished-reading views, deterministic interpretation fallback, configurable same-draw follow-ups and reading allowances, separate experience/outcome feedback, history, and privacy controls. A 17-section profile report, purchased-report history, test Checkout lifecycle, durable fulfillment, and authenticated tagged PDF are implemented behind a default-off release gate; owner commerce, accessibility-review, and production-provider gates still block public launch.
+StarGuidance is a private tarot experience in which deterministic birth-profile traits personalize interpretation while a cryptographically secure draw chooses cards independently. Visitors can first complete one profile-free deterministic reading without an account, then sign up or sign in to recover those exact cards and ask a follow-up; no birth data or AI-provider request enters that guest lane. The safe beta also supports email/password accounts, private onboarding and profile correction, immutable profile snapshots, six selectable spreads (including the four foundational reading types), structured topic/intent/horizon intake, a question-free general-reading path, high-stakes confirmation before any draw, server-recoverable locked rituals, direct finished-reading views, deterministic interpretation fallback, configurable same-draw follow-ups and reading allowances, separate experience/outcome feedback, history, and privacy controls. A 17-section profile report, purchased-report history, test Checkout lifecycle, durable fulfillment, and authenticated tagged PDF are implemented behind a default-off release gate; owner commerce, accessibility-review, and production-provider gates still block public launch.
 
 The reading ritual uses an original responsive cosmic Gothic sanctuary, card-specific illustrated faces, a physical 3D card system, and an authenticated streaming oracle transcript. See [artwork provenance](docs/ARTWORK-PROVENANCE.md) for sources, prompts, rights boundaries, hashes, and performance budgets.
 
@@ -26,7 +26,7 @@ Western astrology, BaZi, and planetary-angularity mapping return typed unavailab
 
 ## Configuration
 
-Copy `.env.example` to `.env.local` and keep every secret blank until its local or hosted adapter is intentionally configured. The canonical inventory includes runtime selection, encryption, Supabase, readiness/worker authentication, profile-engine guards, AI, Stripe, reading allowance/session TTL, aggregate alert delivery, and server-only support/operator UUID allowlists. `READING_ACCESS_MODE=unlimited` is the local fallback; durable environments seed conservative published configuration. Support sees masked diagnostics only. Operators can create validated configuration drafts, while a different operator must approve them before publication; rollback, content activation, and restrictive emergency kill switches are audited.
+Copy `.env.example` to `.env.local` and keep every secret blank until its local or hosted adapter is intentionally configured. The canonical inventory includes runtime selection, encryption, the separate production `GUEST_TRIAL_SECRET`, Supabase, readiness/worker authentication, profile-engine guards, AI, Stripe, reading allowance/session TTL, aggregate alert delivery, and server-only support/operator UUID allowlists. Local and production guest trials fail closed when that key is missing or malformed. A Netlify Deploy Preview may instead derive a per-site/per-PR guest subroot from `DATA_ENCRYPTION_KEY`: the build must identify the deploy-preview context and inline its non-secret review ID, while the runtime must independently identify staging and the Netlify site. This exception never activates in production, and a malformed dedicated guest key is never bypassed. `READING_ACCESS_MODE=unlimited` is the local fallback; durable environments seed conservative published configuration. Support sees masked diagnostics only. Operators can create validated configuration drafts, while a different operator must approve them before publication; rollback, content activation, and restrictive emergency kill switches are audited.
 
 ## Run and verify
 
@@ -59,6 +59,10 @@ The deterministic reading provider is the default. Live AI requires credentials 
 
 ## Review evidence
 
+- [Account-free reading selection, desktop](docs/screenshots/free-reading-selection-desktop-chromium.png)
+- [Account-free reading selection, mobile](docs/screenshots/free-reading-selection-mobile-chromium.png)
+- [Same-draw account gate, desktop](docs/screenshots/free-reading-result-gate-desktop-chromium.png)
+- [Same-draw account gate, mobile](docs/screenshots/free-reading-result-gate-mobile-chromium.png)
 - [Desktop completed reading](docs/screenshots/completed-reading-desktop-chromium.png)
 - [Mobile completed reading](docs/screenshots/completed-reading-mobile-chromium.png)
 

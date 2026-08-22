@@ -36,6 +36,11 @@ const nextConfig: NextConfig = {
     // is testing was built from the commit under test rather than an earlier
     // one; the health endpoint withholds it outside staging.
     DEPLOYED_COMMIT_REF: process.env.COMMIT_REF ?? "",
+    // REVIEW_ID is also build-only. Inline only its non-secret identifier for
+    // deploy previews so server code can derive a per-site/per-PR guest key
+    // without permitting that fallback in branch deploys or production.
+    GUEST_TRIAL_PREVIEW_ID:
+      process.env.CONTEXT === "deploy-preview" ? (process.env.REVIEW_ID ?? "") : "",
   },
   experimental: {
     typedEnv: true,

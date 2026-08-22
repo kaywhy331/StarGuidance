@@ -45,6 +45,7 @@ const SECRET_VALUES = {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-anon-key",
   DATABASE_URL: "postgresql://synthetic.invalid/database",
   DATA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+  GUEST_TRIAL_SECRET: Buffer.alloc(32, 17).toString("base64"),
   SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-role-key",
   PROFILE_ENGINE_URL: "https://profile-engine.synthetic.invalid",
   PROFILE_ENGINE_SHARED_SECRET: "synthetic-profile-engine-shared-secret",
@@ -57,7 +58,7 @@ const SECRET_VALUES = {
 function configureStaging() {
   vi.stubEnv("APP_ENV", "staging");
   vi.stubEnv("RUNTIME_ADAPTER", "supabase");
-  vi.stubEnv("SITE_ID", "synthetic-netlify-site-id");
+  vi.stubEnv("SITE_ID", "79c8fce9-0a4b-4dee-b3f0-965c31478547");
   vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "");
   vi.stubEnv("AI_PROVIDER", "groq");
   vi.stubEnv("AI_PROVIDER_MODEL", "openai/gpt-oss-120b");
@@ -127,6 +128,7 @@ describe("deployment health", () => {
         transport: "direct-groq",
         approvedLiveProviderConfigured: true,
       },
+      guestTrial: { keySource: "dedicated" },
       profileEngine: {
         healthStatus: 200,
         unauthorizedComputeStatus: 401,
@@ -144,6 +146,49 @@ describe("deployment health", () => {
       "rolname = 'starguidance_app'",
     );
     for (const value of Object.values(SECRET_VALUES)) expect(serialized).not.toContain(value);
+  });
+
+  it("fails readiness closed on a malformed guest-trial key", async () => {
+    configureStaging();
+    vi.stubEnv("GUEST_TRIAL_SECRET", "not-canonical-base64");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const response = await GET(readinessRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.invalidEnvironmentVariables).toContain("GUEST_TRIAL_SECRET");
+    expect(JSON.stringify(body)).not.toContain("not-canonical-base64");
+  });
+
+  it("accepts the domain-separated guest key on a Netlify deploy preview", async () => {
+    configureStaging();
+    vi.stubEnv("GUEST_TRIAL_SECRET", "");
+    vi.stubEnv("GUEST_TRIAL_PREVIEW_ID", "24");
+    database.client.unsafe.mockResolvedValue([{ schema_ready: true, rls_ready: true }]);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 })),
+    );
+
+    const response = await GET(readinessRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.missingEnvironmentVariables).not.toContain("GUEST_TRIAL_SECRET");
+    expect(body.guestTrial).toEqual({ keySource: "netlify-deploy-preview-derived" });
   });
 
   it("stays ready on the deterministic fallback when live AI is unavailable", async () => {
