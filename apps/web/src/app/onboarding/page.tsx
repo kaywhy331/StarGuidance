@@ -30,15 +30,9 @@ export default async function OnboardingPage() {
         </p>
         <h1>Begin with what you know.</h1>
         <p>
-          Two essentials create a meaningful starting point. Optional place and time simply widen
-          what can be calculated safely; absence is never filled with an assumption.
+          Your birth name and birthdate are required. Birthplace and birth time are optional, and
+          you can simply choose “I don&apos;t know” for either one.
         </p>
-        <div className="onboarding-integrity-note">
-          <span aria-hidden="true">◇</span>
-          <span>
-            Your profile shapes <em>how</em> the cards are read—never which cards are drawn.
-          </span>
-        </div>
       </header>
       <BirthProfileForm {...(initialProfile ? { initialProfile } : {})} />
     </main>
