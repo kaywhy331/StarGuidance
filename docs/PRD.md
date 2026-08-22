@@ -12,7 +12,7 @@ Prepared for Kevin
 
 > **Core product decision**
 >
-> Birth name and date of birth are required. Birth city/country and birth time are two independent optional fields. Onboarding asks four simple questions and does not require timezone entry or a time-confidence mode. Missing data reduces profile detail but never blocks a tarot reading.
+> Birth name and date of birth are required and visibly marked with `*`. Birth city/country and birth time are two independent optional fields with separate “I don't know” controls. All four details appear together in one form; onboarding does not request a timezone or expose internal calculation methods. Missing data never blocks a tarot reading.
 
 ## Document control
 | **Field** | **Value** |
@@ -146,7 +146,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **ID** | **Decision** | **Status** |
 | --- | --- | --- |
 | DEC-001 | Birth name and date of birth are required for personalized readings. | Confirmed |
-| DEC-002 | Birth city/country and birth time are independent optional fields; onboarding does not ask for timezone or time-confidence modes. | Owner-directed / confirmed |
+| DEC-002 | Birth city/country and birth time are independent optional fields in the same form as the required fields; each has an “I don't know” control, while onboarding asks for no timezone or time-confidence mode. | Owner-directed / confirmed |
 | DEC-003 | The private profile is used for readings but is not displayed in the base experience. | Confirmed |
 | DEC-004 | A detailed profile report is sold separately. | Confirmed |
 | DEC-005 | Profile data affects interpretation, never card selection. | Recommended / launch-critical |
@@ -258,14 +258,14 @@ The landing page presents two explicit choices: **Free Reading** and **Sign up**
 ## 5.2 Birth profile onboarding
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **PRO-001** | Full birth name and date of birth are the minimum required inputs for a personalized profile. | **Must** | The Continue action is disabled until both fields are valid and the privacy explanation has been acknowledged. |
-| **PRO-002** | Birth city/country is one optional free-text field. | **Must** | The interface never asks for a street address, country code, coordinates, IANA timezone, or additional location subfields. |
-| **PRO-003** | Birth time is one optional time field. | **Must** | Users can enter a time or leave it blank without selecting Unknown, Exact, or Approximate. |
+| **PRO-001** | Full birth name and date of birth are the minimum required inputs for a personalized profile. | **Must** | All four birth-detail inputs appear in one form; name/date are marked with `*`, and Save validates both before submission after the privacy explanation has been acknowledged. |
+| **PRO-002** | Birth city/country is one optional free-text field. | **Must** | Users can enter a city/country or independently select “I don't know,” which clears and disables only birthplace; the interface never asks for a street address, coordinates, timezone, or additional location subfields. |
+| **PRO-003** | Birth time is one optional time field. | **Must** | Users can enter a time or independently select “I don't know”; the control clears and disables only birth time and never asks them to classify precision. |
 | **PRO-004** | Birthplace and birth time are independent. | **Must** | Either optional field can be supplied without the other and profile creation is never blocked by missing timezone context. |
 | **PRO-005** | The system never invents a default birth time. | **Must** | Unknown times remain null; noon, midnight, sunrise, or inferred times are not stored as the user's birth time. |
 | **PRO-006** | Time-sensitive calculations fail closed when required context is unavailable. | **Should** | The entered time is retained, but astrology or BaZi facts requiring validated timezone context remain unavailable rather than being guessed. |
-| **PRO-007** | The onboarding copy explains the benefit of optional details without implying guaranteed predictive accuracy. | **Must** | Copy states that time and place unlock a more detailed astrological profile, including houses and Ascendant where available. |
-| **PRO-008** | Users see profile completeness status, not the hidden horoscope interpretation. | **Must** | The base experience may show Core, Location-Enhanced, or Complete; it does not expose placements, pillars, numbers, or signature details. |
+| **PRO-007** | Onboarding explains which details are required or optional without disclosing internal reading-generation tactics. | **Must** | Copy tells users how to complete or skip each field but does not name calculation systems, profile capabilities, placements, pillars, signatures, or interpretation methods. |
+| **PRO-008** | Onboarding keeps profile completeness and calculation capabilities private. | **Must** | The form shows only the supplied facts, privacy handling, and validation state; it does not display Core, Location-Enhanced, Complete, or a checklist of derived capabilities. |
 | **PRO-009** | The hidden profile is used internally to personalize tarot language and emphasis. | **Must** | The reading service receives a compact trait lens, not the full raw calculation payload. |
 | **PRO-010** | Base tarot readings do not reveal paid-report details. | **Must** | Generated readings may use plain-language traits but must not reveal raw natal placements, numerology values, BaZi pillars, or Galactic Signature labels. |
 | **PRO-011** | Users can update optional birth data later. | **Must** | Saving changes creates a new profile snapshot; future readings use the new snapshot while historical readings retain the original snapshot reference. |
@@ -279,9 +279,9 @@ The landing page presents two explicit choices: **Free Reading** and **Sign up**
 
 | **[ ]** Core onboarding completes successfully using only birth name and date of birth. |
 | --- |
-| **[ ]** Birth city/country and birth time remain independent optional fields with no timezone or confidence-mode questions. |
+| **[ ]** All four details appear in one form; birth city/country and birth time remain independent optional fields with “I don't know” controls and no timezone or confidence-mode questions. |
 | **[ ]** An omitted time remains absent and no birth time is fabricated. |
-| **[ ]** The user sees completeness and editable facts but not the hidden profile interpretation. |
+| **[ ]** The user sees editable facts and private-handling copy but no completeness taxonomy, calculation-system names, capability checklist, or hidden profile interpretation. |
 | **[ ]** Updating profile facts creates a new snapshot and leaves historical readings unchanged. |
 | **[ ]** Unicode and non-Latin name cases follow the approved numerology handling policy. |
 

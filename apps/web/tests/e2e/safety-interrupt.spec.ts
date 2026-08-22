@@ -19,9 +19,10 @@ async function createProfile(page: Page) {
   await signIn(page);
   await page.getByLabel("Full birth name").fill("Ada Lovelace");
   await page.getByLabel("Date of birth").fill("1990-01-15");
-  await page.getByRole("button", { name: "Continue to optional context" }).click();
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await page
+    .getByRole("checkbox", { name: /I consent to the private use of my birth details/i })
+    .check();
+  await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
   await page.getByRole("button", { name: /^Continue with / }).click();
 }

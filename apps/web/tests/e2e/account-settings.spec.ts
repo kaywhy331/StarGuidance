@@ -94,9 +94,10 @@ test("display identity, reading preferences, and reversible marketing consent pe
   await page.goto("/onboarding");
   await page.getByLabel("Full birth name").fill("Synthetic Reference");
   await page.getByLabel("Date of birth").fill("1990-01-15");
-  await page.getByRole("button", { name: "Continue to optional context" }).click();
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await page
+    .getByRole("checkbox", { name: /I consent to the private use of my birth details/i })
+    .check();
+  await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
   await expect(page.getByText("For Nova", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Reduced motion/i })).toHaveAttribute(

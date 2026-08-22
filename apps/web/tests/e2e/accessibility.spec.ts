@@ -53,9 +53,10 @@ async function createReading(page: Page): Promise<void> {
   await reachOnboarding(page);
   await page.getByLabel("Full birth name").fill("Accessible Synthetic");
   await page.getByLabel("Date of birth").fill("1990-01-15");
-  await page.getByRole("button", { name: "Continue to optional context" }).click();
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await page
+    .getByRole("checkbox", { name: /I consent to the private use of my birth details/i })
+    .check();
+  await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
   await page.getByRole("button", { name: /^Continue with / }).click();
   await page.getByLabel("Your private question").fill("What should I notice now?");
@@ -106,8 +107,13 @@ test("skip navigation and keyboard focus remain visibly operable", async ({ page
 
 test("onboarding exposes valid automated WCAG semantics", async ({ page }) => {
   await reachOnboarding(page);
-  await expect(page.getByLabel("Core profile completeness")).toHaveAttribute("role", "meter");
-  await expect(page.getByLabel("Core profile completeness")).toHaveAttribute("aria-valuenow", "1");
+  const details = page.getByRole("group", { name: "Your birth details" });
+  await expect(details.getByLabel("Full birth name")).toHaveAttribute("required", "");
+  await expect(details.getByLabel("Date of birth")).toHaveAttribute("required", "");
+  await expect(details.getByRole("switch", { name: "I don't know my birthplace" })).toBeVisible();
+  await expect(
+    details.getByRole("switch", { name: "I don't know the time of birth" }),
+  ).toBeVisible();
 
   const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   expect(

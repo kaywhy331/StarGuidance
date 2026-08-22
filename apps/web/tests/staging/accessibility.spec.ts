@@ -199,8 +199,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
 
   await page.getByLabel("Full birth name").fill("Axe Synthetic");
   await page.getByLabel("Date of birth").fill("1988-03-21");
-  await page.getByRole("button", { name: "Continue to optional context" }).click();
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
+  await page
+    .getByRole("checkbox", { name: /I consent to the private use of my birth details/i })
+    .check();
   const profileResponsePromise = page
     .waitForResponse(
       (response) =>
@@ -209,7 +210,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
       { timeout: 60_000 },
     )
     .catch(() => undefined);
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await page.getByRole("button", { name: "Save and continue" }).click();
   const profileResponse = await profileResponsePromise;
   try {
     await expect(page).toHaveURL(/\/readings$/, { timeout: CLIENT_TRANSITION_TIMEOUT_MS });

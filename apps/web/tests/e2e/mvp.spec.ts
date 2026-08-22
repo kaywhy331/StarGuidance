@@ -24,12 +24,13 @@ async function createProfile(page: Page, kind: ProfileKind = "date-only") {
   await signIn(page);
   await page.getByLabel("Full birth name").fill("Ada Lovelace");
   await page.getByLabel("Date of birth").fill("1990-01-15");
-  await page.getByRole("button", { name: "Continue to optional context" }).click();
   if (kind === "all-fields")
     await page.getByLabel("Birth city / country").fill("London, United Kingdom");
   if (kind !== "date-only") await page.getByLabel("Birth time").fill("08:15");
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await page
+    .getByRole("checkbox", { name: /I consent to the private use of my birth details/i })
+    .check();
+  await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
 }
 
@@ -326,6 +327,38 @@ test("reading selection and question entry stay focused, reversible steps", asyn
 
   await expect(page.getByRole("radiogroup", { name: "Reading type" })).toBeVisible();
   await expect(relationshipSpread).toBeChecked();
+});
+
+test("onboarding keeps every birth detail in one private form", async ({ page }) => {
+  await signIn(page);
+  const form = page.locator("form.onboarding-form");
+  const birthName = form.getByLabel("Full birth name");
+  const birthDate = form.getByLabel("Date of birth");
+  const birthplace = form.getByLabel("Birth city / country");
+  const birthTime = form.getByLabel("Birth time");
+
+  await expect(birthName).toBeVisible();
+  await expect(birthName).toHaveAttribute("required", "");
+  await expect(form.getByText("Full birth name *", { exact: true })).toBeVisible();
+  await expect(birthDate).toBeVisible();
+  await expect(birthDate).toHaveAttribute("required", "");
+  await expect(form.getByText("Date of birth *", { exact: true })).toBeVisible();
+  await expect(birthplace).toBeVisible();
+  await expect(birthTime).toBeVisible();
+  await expect(form.getByText("Name numerology", { exact: true })).toHaveCount(0);
+  await expect(form.getByText("Dreamspell signature", { exact: true })).toHaveCount(0);
+  await expect(form.getByText("Stable date traits", { exact: true })).toHaveCount(0);
+
+  await birthplace.fill("London, United Kingdom");
+  await form.getByRole("switch", { name: "I don't know my birthplace" }).check();
+  await expect(birthplace).toBeDisabled();
+  await expect(birthplace).toHaveValue("");
+  await expect(birthTime).toBeEnabled();
+
+  await birthTime.fill("08:15");
+  await form.getByRole("switch", { name: "I don't know the time of birth" }).check();
+  await expect(birthTime).toBeDisabled();
+  await expect(birthTime).toHaveValue("");
 });
 
 test("date-only onboarding reaches a completed reading", async ({ page }) => {
@@ -750,12 +783,13 @@ test("a reading stays pinned to the snapshot it was drawn against", async ({ pag
   await page.goto("/onboarding");
   await expect(page.getByLabel("Full birth name")).toHaveValue("Ada Lovelace");
   await expect(page.getByLabel("Date of birth")).toHaveValue("1990-01-15");
-  await page.getByRole("button", { name: "Continue to optional context" }).click();
   await expect(page.getByLabel("Birth time")).toHaveValue("08:15");
   await expect(page.getByLabel("Birth city / country")).toHaveValue("London, United Kingdom");
   await page.getByLabel("Birth city / country").fill("Edinburgh, United Kingdom");
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Save new profile snapshot" }).click();
+  await page
+    .getByRole("checkbox", { name: /I consent to the private use of my birth details/i })
+    .check();
+  await page.getByRole("button", { name: "Save updated profile" }).click();
   await expect(page).toHaveURL(/\/readings$/);
 
   const after = await page.evaluate(
