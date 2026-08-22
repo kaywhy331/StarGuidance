@@ -24,10 +24,17 @@ export default function PrivacyNoticePage() {
         <section className="grid gap-3">
           <h2 className="text-2xl text-white">Your free reading before signup</h2>
           <p>
-            You can complete one profile-free reading without an account. Your browser creates a
-            random device ID; StarGuidance uses it with a signed, HttpOnly trial cookie and a local
-            trial marker to remember that this browser has received its free reading. This is not a
-            hardware fingerprint, and no birth information is requested or used.
+            You can complete one birthday-personalized reading without an account. Your browser
+            creates a random device ID; StarGuidance uses it with a signed, HttpOnly trial cookie
+            and a local trial marker to remember that this browser has received its free reading.
+            This is not a hardware fingerprint.
+          </p>
+          <p>
+            Your birthday is sent only to StarGuidance&apos;s private calculation service. The guest
+            narrator receives a compact lens made from stable date-derived numerology traits—not the
+            raw date. The raw birthday is discarded after that request and is not placed in the
+            encrypted guest receipt, account database, session storage, local storage, URL, or
+            analytics. It never influences card selection and is not sent to an AI provider.
           </p>
           <p>
             The guest question is processed in server memory by the deterministic narrator and is

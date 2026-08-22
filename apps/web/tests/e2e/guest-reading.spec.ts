@@ -27,6 +27,16 @@ async function revealGuestCards(page: Page) {
   }
 
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
+  const transcript = page.getByTestId("oracle-transcript");
+  const nextPassage = page.getByRole("button", { name: "Next reading passage" });
+  for (let index = 0; index < 3; index += 1) await nextPassage.click();
+  await expect(transcript).toHaveAttribute("data-active-card-index", "2");
+  await nextPassage.click();
+  await expect(transcript).not.toHaveAttribute("data-active-card-index", /.+/);
+  await expect(page.getByRole("heading", { name: "Turning point", exact: true })).toBeVisible();
+  await nextPassage.click();
+  await expect(page.getByRole("heading", { name: "Likely trajectory", exact: true })).toBeVisible();
+
   const completeStory = page.getByRole("button", { name: "Read as one story" });
   await expect(completeStory).toBeEnabled();
   await completeStory.dispatchEvent("click");
@@ -49,9 +59,17 @@ test("a visitor reads before signup and continues with the exact cards", async (
   await expect(
     page.getByRole("heading", { name: "Meet the cards before you decide to stay." }),
   ).toBeVisible({ timeout: 30_000 });
+  const spreadOptions = page.getByRole("radiogroup", { name: "Free reading type" });
+  const spreadBox = await spreadOptions.boundingBox();
+  const viewport = page.viewportSize();
+  if (!spreadBox || !viewport) throw new Error("The centered spread selector must be measurable.");
+  expect(Math.abs(spreadBox.x + spreadBox.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2);
   await captureGuestReview(page, testInfo, "free-reading-selection");
   await page.getByRole("button", { name: /Continue with Three-Card Spread/ }).click();
   await page.getByRole("button", { name: "Reduce motion" }).click();
+  await expect(page.getByRole("combobox")).toHaveCount(0);
+  await expect(page.getByText(/Use a general reading instead/i)).toHaveCount(0);
+  await page.getByLabel("Your birthday").fill("1990-01-15");
   await page.getByLabel(/I agree to the Terms/i).check();
   await page.getByLabel(/I have read the Privacy Notice/i).check();
   await page.getByLabel(/I confirm that I am at least 18/i).check();

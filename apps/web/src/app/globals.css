@@ -5415,7 +5415,29 @@ body {
 }
 
 .guest-reading-entry {
-  width: min(70rem, calc(100vw - 2rem));
+  right: 1rem;
+  left: 1rem;
+  width: auto;
+}
+
+.guest-reading-entry .ritual-spread-options {
+  width: min(46rem, 100%);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-inline: auto;
+}
+
+.guest-reading-entry .ritual-spread-options label > span {
+  text-align: center;
+}
+
+.guest-reading-entry.reading-question-stage > div {
+  margin-inline: auto;
+  text-align: center;
+}
+
+.guest-reading-entry .selected-ritual-summary {
+  margin-inline: auto;
+  text-align: center;
 }
 
 .guest-reading-intro {
@@ -5433,6 +5455,48 @@ body {
   max-height: min(52dvh, 32rem);
   overflow: auto;
   scrollbar-width: thin;
+}
+
+.guest-question-console .entry-privacy-note {
+  text-align: center;
+}
+
+.guest-birth-date-field {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgb(227 202 139 / 0.24);
+  border-radius: 0.9rem;
+  background: rgb(4 17 22 / 0.58);
+  text-align: center;
+}
+
+.guest-birth-date-field > span {
+  color: #edd28b;
+  font: 600 0.78rem/1.3 var(--font-body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.guest-birth-date-field input {
+  width: min(22rem, 100%);
+  min-height: 3rem;
+  margin-inline: auto;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgb(220 199 138 / 0.34);
+  border-radius: 0.75rem;
+  background: rgb(3 14 20 / 0.9);
+  color: #f5f1e7;
+  color-scheme: dark;
+  font: 1rem var(--font-body);
+  text-align: center;
+}
+
+.guest-birth-date-field small {
+  max-width: 34rem;
+  margin-inline: auto;
+  color: #a9bfba;
+  font: 0.78rem/1.45 var(--font-body);
 }
 
 .guest-policy-consents {
@@ -5649,7 +5713,19 @@ body {
   }
 
   .guest-reading-entry {
-    width: calc(100vw - 1rem);
+    right: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+  }
+
+  .guest-reading-entry .ritual-spread-options {
+    width: min(22rem, calc(100vw - 1rem));
+    grid-auto-columns: auto;
+    grid-auto-flow: row;
+    grid-template-columns: 1fr;
+    justify-content: center;
+    overflow: visible;
+    scroll-snap-type: none;
   }
 
   .guest-question-console {

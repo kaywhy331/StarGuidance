@@ -1,11 +1,10 @@
 import { z } from "zod";
 import {
+  birthDateSchema,
   followUpResultSchema,
   oracleStreamEventSchema,
   questionClassificationSchema,
-  readingHorizonSchema,
   readingResultSchema,
-  readingTopicSchema,
 } from "@starguidance/contracts";
 
 export const FREE_GUEST_SPREAD_IDS = ["three-card", "one-card"] as const;
@@ -17,22 +16,15 @@ export const GUEST_TRIAL_LOCAL_MARKER_KEY = "sg:guest-trial-used:v1";
 
 export const guestDeviceIdSchema = z.string().uuid();
 
-export const guestReadingInputSchema = z
-  .object({
-    spreadId: z.enum(FREE_GUEST_SPREAD_IDS),
-    question: z.string().trim().max(500).default(""),
-    topic: readingTopicSchema.optional().default("general"),
-    horizon: readingHorizonSchema.optional().default("open"),
-    generalReading: z.boolean().optional().default(false),
-    continueAsReflection: z.boolean().optional().default(false),
-    termsAccepted: z.literal(true),
-    privacyAccepted: z.literal(true),
-    ageConfirmed: z.literal(true),
-  })
-  .superRefine((input, context) => {
-    if (!input.generalReading && !input.question)
-      context.addIssue({ code: "custom", message: "Enter a question or choose General reading." });
-  });
+export const guestReadingInputSchema = z.object({
+  spreadId: z.enum(FREE_GUEST_SPREAD_IDS),
+  birthDate: birthDateSchema,
+  question: z.string().trim().min(1).max(500),
+  continueAsReflection: z.boolean().optional().default(false),
+  termsAccepted: z.literal(true),
+  privacyAccepted: z.literal(true),
+  ageConfirmed: z.literal(true),
+});
 
 export const guestDrawSchema = z
   .object({

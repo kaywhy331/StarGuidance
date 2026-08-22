@@ -4,12 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMachine } from "@xstate/react";
 import type { SafetyCategory } from "@starguidance/ai";
-import {
-  GENERAL_READING_QUESTION,
-  type OracleStreamEvent,
-  type ReadingHorizon,
-  type ReadingTopic,
-} from "@starguidance/contracts";
+import type { OracleStreamEvent } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
 import {
@@ -88,10 +83,8 @@ export function GuestReadingExperience({
 }) {
   const [state, send] = useMachine(readingMachine);
   const [selected, setSelected] = useState<FreeSpread["id"]>("three-card");
+  const [birthDate, setBirthDate] = useState("");
   const [question, setQuestion] = useState("");
-  const [topic, setTopic] = useState<ReadingTopic>("general");
-  const [horizon, setHorizon] = useState<ReadingHorizon>("open");
-  const [generalReading, setGeneralReading] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
@@ -120,6 +113,7 @@ export function GuestReadingExperience({
 
   const selectedSpread = spreads.find(({ id }) => id === selected) ?? spreads[0];
   const consentsReady = termsAccepted && privacyAccepted && ageConfirmed;
+  const intakeReady = consentsReady && Boolean(birthDate);
   const restoredQuestion = question || "The intention you brought to this private moment";
   const continuationReadingRevealed = useMemo(
     () => new Set(continuationReading?.cards.map((_, index) => index) ?? []),
@@ -294,10 +288,8 @@ export function GuestReadingExperience({
         },
         body: JSON.stringify({
           spreadId: selectedSpread.id,
+          birthDate,
           question,
-          topic,
-          horizon,
-          generalReading,
           continueAsReflection,
           termsAccepted,
           privacyAccepted,
@@ -479,7 +471,7 @@ export function GuestReadingExperience({
                   <small>
                     {followUpResult.personalizedByPrivateProfile
                       ? "Your private profile shaped this follow-up; it did not alter the cards."
-                      : "This follow-up used no birth profile and did not alter the cards."}
+                      : "This follow-up used no account profile and did not alter the cards."}
                   </small>
                   <div className="guest-conversion-actions">
                     <Link
@@ -616,8 +608,8 @@ export function GuestReadingExperience({
           <p>One reading · no account</p>
           <h1>Meet the cards before you decide to stay.</h1>
           <p className="guest-reading-intro">
-            Choose a profile-free ritual. The draw is genuinely random; the deterministic narrator
-            receives no birth data and no AI-provider request is made.
+            Choose a birthday-personalized ritual. Your date shapes the interpretation only; the
+            draw stays genuinely random and no AI-provider request is made.
           </p>
           <div aria-label="Free reading type" className="ritual-spread-options" role="radiogroup">
             {spreads.map((spread) => (
@@ -667,68 +659,39 @@ export function GuestReadingExperience({
                 type="button"
               >
                 <span>{selectedSpread?.name}</span>
-                <small>Profile-free · change reading</small>
+                <small>Birthday-personalized · change reading</small>
               </button>
             </div>
           </section>
           <div className="oracle-console-stack reading-entry-console reading-question-console guest-question-console">
             <p className="entry-privacy-note">
-              Your question is processed in memory, omitted from the response, and never put in a
-              URL or analytics.
+              Your birthday is used by our private calculation service, then discarded from the
+              guest handoff. Your raw date and question never enter a URL, analytics, or an AI
+              provider.
             </p>
             {!guardedPrompt ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="grid gap-1 text-sm">
-                    <span>Topic</span>
-                    <select
-                      onChange={(event) => setTopic(event.target.value as ReadingTopic)}
-                      value={topic}
-                    >
-                      <option value="general">General</option>
-                      <option value="career">Career and work</option>
-                      <option value="relationships">Relationships</option>
-                      <option value="change">Change and decisions</option>
-                      <option value="wellbeing">Balance and wellbeing</option>
-                    </select>
-                  </label>
-                  <label className="grid gap-1 text-sm">
-                    <span>Time horizon</span>
-                    <select
-                      onChange={(event) => setHorizon(event.target.value as ReadingHorizon)}
-                      value={horizon}
-                    >
-                      <option value="open">Open-ended</option>
-                      <option value="immediate">Right now</option>
-                      <option value="weeks">Next few weeks</option>
-                      <option value="months">Next few months</option>
-                    </select>
-                  </label>
-                  <label className="flex items-start gap-2 text-sm sm:col-span-2">
-                    <input
-                      checked={generalReading}
-                      onChange={(event) => {
-                        setGeneralReading(event.target.checked);
-                        setQuestion(event.target.checked ? GENERAL_READING_QUESTION : "");
-                        if (event.target.checked) {
-                          setTopic("general");
-                          setHorizon("open");
-                        }
-                      }}
-                      type="checkbox"
-                    />
-                    Use a general reading instead of writing a specific question.
-                  </label>
-                </div>
+                <label className="guest-birth-date-field">
+                  <span>Your birthday</span>
+                  <input
+                    aria-describedby="guest-birth-date-help"
+                    autoComplete="bday"
+                    onChange={(event) => setBirthDate(event.target.value)}
+                    required
+                    type="date"
+                    value={birthDate}
+                  />
+                  <small id="guest-birth-date-help">
+                    Used once to derive a stable date-based lens. It does not choose your cards or
+                    become part of the saved guest receipt.
+                  </small>
+                </label>
                 <QuestionComposer
-                  disabled={!consentsReady}
-                  hint="Shift+Enter adds a line. Your question is not stored in guest browser history."
+                  disabled={!intakeReady}
+                  hint="Write the question in your own words. Shift+Enter adds a line."
                   label="Your private guest question"
                   loading={loading}
-                  onChange={(value) => {
-                    setGeneralReading(false);
-                    setQuestion(value);
-                  }}
+                  onChange={setQuestion}
                   onSubmit={() => beginReading()}
                   placeholder="What can I understand or do about…"
                   submitLabel="Begin my free reading"
@@ -795,8 +758,12 @@ export function GuestReadingExperience({
                 </div>
               </div>
             )}
-            {!consentsReady && !guardedPrompt ? (
-              <p className="guest-consent-hint">Accept all three guest commitments to begin.</p>
+            {!intakeReady && !guardedPrompt ? (
+              <p className="guest-consent-hint">
+                {!birthDate
+                  ? "Enter your birthday, then accept all three guest commitments to begin."
+                  : "Accept all three guest commitments to begin."}
+              </p>
             ) : null}
             {error ? (
               <p className="sanctuary-error" role="alert">

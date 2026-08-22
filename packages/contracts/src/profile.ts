@@ -3,6 +3,18 @@ import { z } from "zod";
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+export const birthDateSchema = z
+  .string()
+  .regex(isoDatePattern, "Use an ISO date in YYYY-MM-DD format.")
+  .superRefine((birthDate, context) => {
+    const parsedDate = new Date(`${birthDate}T00:00:00.000Z`);
+    if (Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== birthDate) {
+      context.addIssue({ code: "custom", message: "Enter a real calendar date." });
+    } else if (parsedDate > new Date()) {
+      context.addIssue({ code: "custom", message: "Birth date cannot be in the future." });
+    }
+  });
+
 const optionalBirthplaceSchema = z
   .string()
   .trim()
@@ -20,32 +32,12 @@ const optionalBirthTimeSchema = z
   .refine((value) => value.length === 0 || clockPattern.test(value), "Enter a valid birth time.")
   .optional();
 
-export const birthProfileInputSchema = z
-  .object({
-    fullBirthName: z.string().trim().min(1).max(200),
-    birthDate: z.string().regex(isoDatePattern, "Use an ISO date in YYYY-MM-DD format."),
-    birthplace: optionalBirthplaceSchema,
-    birthTime: optionalBirthTimeSchema,
-  })
-  .superRefine((profile, context) => {
-    const parsedDate = new Date(`${profile.birthDate}T00:00:00.000Z`);
-    if (
-      Number.isNaN(parsedDate.valueOf()) ||
-      parsedDate.toISOString().slice(0, 10) !== profile.birthDate
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "Enter a real calendar date.",
-        path: ["birthDate"],
-      });
-    } else if (parsedDate > new Date()) {
-      context.addIssue({
-        code: "custom",
-        message: "Birth date cannot be in the future.",
-        path: ["birthDate"],
-      });
-    }
-  });
+export const birthProfileInputSchema = z.object({
+  fullBirthName: z.string().trim().min(1).max(200),
+  birthDate: birthDateSchema,
+  birthplace: optionalBirthplaceSchema,
+  birthTime: optionalBirthTimeSchema,
+});
 
 export const profileCompletenessSchema = z.enum(["core", "locationEnhanced", "complete"]);
 

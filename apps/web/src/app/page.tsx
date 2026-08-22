@@ -90,7 +90,8 @@ export default function HomePage() {
           <span>01</span>
           <h2>Experience it first</h2>
           <p>
-            Take one private, profile-free reading before deciding whether to create an account.
+            Take one private, birthday-personalized reading before deciding whether to create an
+            account.
           </p>
         </article>
         <article>
