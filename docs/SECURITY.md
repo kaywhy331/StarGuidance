@@ -53,7 +53,7 @@ The remaining security and operations gates are:
 - provider no-retention contracts, production redaction sampling, backup/restore, incident response, and regional crisis resources;
 - ownership and rehearsal of the implemented aggregate alert receiver plus provider-native uptime/database/billing alerts and independent review — `main` branch protection and required checks are enforced (verified 2026-08-06), and distributed rate limiting for serverless instances is implemented on the `supabase` runtime adapter (Postgres-backed, migration `0006_rate_limit_buckets`, verified 2026-08-06);
 - legal-owner review of the versioned beta Terms, Privacy Notice, age policy, retention schedule, and launch regions.
-- configuration of a distinct managed production `GUEST_TRIAL_SECRET`, followed by desktop/mobile/private-browsing tests of marker expiry, storage-cleared behavior, account handoff, shared-network limits, and seven-day receipt expiry at the exact candidate commit; Netlify Deploy Previews use the narrowly gated, per-site/per-PR derived subroot documented in Operations, never the production guest key;
+- selection and rehearsal of the guest-key mode: prefer a distinct managed `GUEST_TRIAL_SECRET`; when it is unavailable, Netlify preview/production builds use the narrowly gated derived subroots documented in Operations. Follow with desktop/mobile/private-browsing tests of marker expiry, storage-cleared behavior, account handoff, shared-network limits, and seven-day receipt expiry at the exact candidate commit;
 
 The concrete role boundary, key-rotation commands, CI logical restore, guarded retention tool, telemetry boundary, and incident procedure are documented in [Operations and recovery](OPERATIONS.md).
 

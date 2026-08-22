@@ -137,6 +137,22 @@ describe("guest trial markers", () => {
     expect(verifyGuestTrialMarker(marker, device, now)).toBe(false);
   });
 
+  it("derives a per-site key only for an identified Netlify production build", () => {
+    vi.stubEnv("GUEST_TRIAL_SECRET", "");
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("SITE_ID", "79c8fce9-0a4b-4dee-b3f0-965c31478547");
+    vi.stubEnv("GUEST_TRIAL_PRODUCTION_BUILD", "netlify-production-v1");
+    vi.stubEnv("DATA_ENCRYPTION_KEY", Buffer.alloc(32, 47).toString("base64"));
+    const device = "298741d3-1dc1-4563-9a4f-52a4cfa0be67";
+    const marker = issueGuestTrialMarker(device, now);
+
+    expect(guestTrialKeySource()).toBe("netlify-production-derived");
+    expect(verifyGuestTrialMarker(marker, device, now)).toBe(true);
+
+    vi.stubEnv("SITE_ID", "ff9ab7ec-d78e-44f3-ac12-fb84363eb0b8");
+    expect(verifyGuestTrialMarker(marker, device, now)).toBe(false);
+  });
+
   it("does not derive a guest key outside an identified staging deploy preview", () => {
     vi.stubEnv("GUEST_TRIAL_SECRET", "");
     vi.stubEnv("APP_ENV", "production");
@@ -148,6 +164,11 @@ describe("guest trial markers", () => {
 
     vi.stubEnv("APP_ENV", "staging");
     vi.stubEnv("GUEST_TRIAL_PREVIEW_ID", "");
+    vi.stubEnv("GUEST_TRIAL_PRODUCTION_BUILD", "netlify-production-v1");
+    expect(assertGuestTrialConfigured).toThrow(GuestTrialConfigurationError);
+
+    vi.stubEnv("APP_ENV", "production");
+    vi.stubEnv("GUEST_TRIAL_PRODUCTION_BUILD", "not-a-production-build");
     expect(assertGuestTrialConfigured).toThrow(GuestTrialConfigurationError);
   });
 

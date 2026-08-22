@@ -19,7 +19,8 @@ export const GUEST_TRIAL_COOKIE = "starguidance_guest_trial";
 export const GUEST_TRIAL_COOKIE_TTL_SECONDS = 365 * 24 * 60 * 60;
 export const GUEST_READING_RECEIPT_TTL_SECONDS = 7 * 24 * 60 * 60;
 
-export type GuestTrialKeySource = "dedicated" | "netlify-deploy-preview-derived";
+export type GuestTrialKeySource =
+  "dedicated" | "netlify-deploy-preview-derived" | "netlify-production-derived";
 
 const RECEIPT_CONTEXT = Buffer.from("starguidance:guest-reading-receipt:v1", "utf8");
 const netlifySiteIdSchema = z.string().uuid();
@@ -69,6 +70,20 @@ function deployPreviewSecret(): Buffer | undefined {
     .digest();
 }
 
+function productionSecret(): Buffer | undefined {
+  if (
+    process.env.APP_ENV !== "production" ||
+    process.env.GUEST_TRIAL_PRODUCTION_BUILD !== "netlify-production-v1"
+  )
+    return undefined;
+  const siteId = netlifySiteIdSchema.safeParse(process.env.SITE_ID);
+  const encryptionRoot = decodeDataEncryptionKey(process.env.DATA_ENCRYPTION_KEY);
+  if (!siteId.success || !encryptionRoot) return undefined;
+  return createHmac("sha256", encryptionRoot)
+    .update(`starguidance:guest-production-root:v1:site:${siteId.data}`)
+    .digest();
+}
+
 function guestSecretResolution(): { secret: Buffer; source: GuestTrialKeySource } {
   const encoded = process.env.GUEST_TRIAL_SECRET;
   if (encoded) {
@@ -77,6 +92,9 @@ function guestSecretResolution(): { secret: Buffer; source: GuestTrialKeySource 
   }
   const previewSecret = deployPreviewSecret();
   if (previewSecret) return { secret: previewSecret, source: "netlify-deploy-preview-derived" };
+  const deployedProductionSecret = productionSecret();
+  if (deployedProductionSecret)
+    return { secret: deployedProductionSecret, source: "netlify-production-derived" };
   throw new GuestTrialConfigurationError();
 }
 

@@ -41,6 +41,11 @@ const nextConfig: NextConfig = {
     // without permitting that fallback in branch deploys or production.
     GUEST_TRIAL_PREVIEW_ID:
       process.env.CONTEXT === "deploy-preview" ? (process.env.REVIEW_ID ?? "") : "",
+    // A production build gets a separate non-secret marker. Runtime still has
+    // to prove APP_ENV=production, a valid Netlify SITE_ID, and a valid managed
+    // encryption root before the production guest subroot can be derived.
+    GUEST_TRIAL_PRODUCTION_BUILD:
+      process.env.CONTEXT === "production" ? "netlify-production-v1" : "",
   },
   experimental: {
     typedEnv: true,
