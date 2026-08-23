@@ -2289,26 +2289,32 @@ body {
 }
 
 .mystic-sanctuary[data-ritual-phase="selectingReading"] .sanctuary-light,
-.mystic-sanctuary[data-ritual-phase="enteringQuestion"] .sanctuary-light {
+.mystic-sanctuary[data-ritual-phase="questionConfirmed"] .sanctuary-light,
+.mystic-sanctuary[data-ritual-phase="enteringQuestion"] .sanctuary-light,
+.mystic-sanctuary[data-ritual-phase="questionDrafting"] .sanctuary-light {
   opacity: 0.72;
   animation-duration: 15s;
 }
 
-.mystic-sanctuary[data-ritual-phase="selectingReading"] .sanctuary-phase-gate {
+.mystic-sanctuary[data-ritual-phase="selectingReading"] .sanctuary-phase-gate,
+.mystic-sanctuary[data-ritual-phase="questionConfirmed"] .sanctuary-phase-gate {
   opacity: 0.13;
 }
 
-.mystic-sanctuary[data-ritual-phase="enteringQuestion"] .sanctuary-background img {
+.mystic-sanctuary[data-ritual-phase="enteringQuestion"] .sanctuary-background img,
+.mystic-sanctuary[data-ritual-phase="questionDrafting"] .sanctuary-background img {
   filter: saturate(0.78) contrast(1.08) brightness(0.68) hue-rotate(-8deg);
   transform: scale(1.055);
 }
 
-.mystic-sanctuary[data-ritual-phase="enteringQuestion"] .sanctuary-phase-gate {
+.mystic-sanctuary[data-ritual-phase="enteringQuestion"] .sanctuary-phase-gate,
+.mystic-sanctuary[data-ritual-phase="questionDrafting"] .sanctuary-phase-gate {
   opacity: 0.3;
   transform: translate3d(-50%, 3%, 0) scale(0.9);
 }
 
 .mystic-sanctuary[data-ritual-phase="preparingDeck"] .sanctuary-phase-gate,
+.mystic-sanctuary[data-ritual-phase="focusing"] .sanctuary-phase-gate,
 .mystic-sanctuary[data-ritual-phase="shuffling"] .sanctuary-phase-gate {
   border-color: rgb(220 198 132 / 0.25);
   opacity: 0.64;
@@ -2338,30 +2344,35 @@ body {
 }
 
 .mystic-sanctuary[data-ritual-phase="cuttingDeck"] .sanctuary-light,
+.mystic-sanctuary[data-ritual-phase="optionalCut"] .sanctuary-light,
 .mystic-sanctuary[data-ritual-phase="awaitingReveal"] .sanctuary-light {
   opacity: 0.58;
   animation-duration: 18s;
 }
 
 .mystic-sanctuary[data-ritual-phase="cuttingDeck"] .sanctuary-phase-gate,
+.mystic-sanctuary[data-ritual-phase="optionalCut"] .sanctuary-phase-gate,
 .mystic-sanctuary[data-ritual-phase="awaitingReveal"] .sanctuary-phase-gate {
   opacity: 0.25;
   transform: translate3d(-50%, 1%, 0) scale(0.92);
 }
 
 .mystic-sanctuary[data-ritual-phase="dealing"] .sanctuary-phase-gate,
-.mystic-sanctuary[data-ritual-phase="revealingCards"] .sanctuary-phase-gate {
+.mystic-sanctuary[data-ritual-phase="revealingCards"] .sanctuary-phase-gate,
+.mystic-sanctuary[data-ritual-phase="revealing"] .sanctuary-phase-gate {
   opacity: 0.78;
   transform: translate3d(-50%, -3%, 0) scale(1.08);
 }
 
 .mystic-sanctuary[data-ritual-phase="dealing"] .sanctuary-floor-constellation,
-.mystic-sanctuary[data-ritual-phase="revealingCards"] .sanctuary-floor-constellation {
+.mystic-sanctuary[data-ritual-phase="revealingCards"] .sanctuary-floor-constellation,
+.mystic-sanctuary[data-ritual-phase="revealing"] .sanctuary-floor-constellation {
   opacity: 0.42;
   transform: translateX(-50%) perspective(34rem) rotateX(66deg) scale(1.02);
 }
 
-.mystic-sanctuary[data-ritual-phase="revealingCards"] .sanctuary-particles i {
+.mystic-sanctuary[data-ritual-phase="revealingCards"] .sanctuary-particles i,
+.mystic-sanctuary[data-ritual-phase="revealing"] .sanctuary-particles i {
   animation-duration: calc(9s + var(--particle-index) * 0.45s);
   box-shadow: 0 0 16px 4px rgb(239 214 143 / 0.36);
 }
@@ -2372,6 +2383,8 @@ body {
 }
 
 .mystic-sanctuary[data-ritual-phase="generatingSynthesis"] .sanctuary-phase-veil,
+.mystic-sanctuary[data-ritual-phase="interpretationStreaming"] .sanctuary-phase-veil,
+.mystic-sanctuary[data-ritual-phase="fullSpreadReady"] .sanctuary-phase-veil,
 .mystic-sanctuary[data-ritual-phase="revealingResult"] .sanctuary-phase-veil,
 .mystic-sanctuary[data-ritual-phase="complete"] .sanctuary-phase-veil {
   background:
@@ -2381,6 +2394,8 @@ body {
 }
 
 .mystic-sanctuary[data-ritual-phase="generatingSynthesis"] .sanctuary-phase-gate,
+.mystic-sanctuary[data-ritual-phase="interpretationStreaming"] .sanctuary-phase-gate,
+.mystic-sanctuary[data-ritual-phase="fullSpreadReady"] .sanctuary-phase-gate,
 .mystic-sanctuary[data-ritual-phase="revealingResult"] .sanctuary-phase-gate,
 .mystic-sanctuary[data-ritual-phase="complete"] .sanctuary-phase-gate {
   border-color: rgb(239 215 145 / 0.34);
@@ -3040,21 +3055,23 @@ body {
   bottom: auto;
 }
 
+.sanctuary-gather-ritual {
+  overflow-y: auto;
+  padding-block: clamp(9rem, 22vh, 12rem) 1rem;
+}
+
 .ritual-cut-actions {
-  position: absolute;
+  position: relative;
   z-index: 23;
-  top: 54%;
-  left: 50%;
   display: grid;
-  width: min(calc(100vw - 2rem), 22rem);
-  grid-template-columns: minmax(0, 1fr);
+  width: min(calc(100vw - 2rem), 32rem);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
-  translate: -50% -50%;
 }
 
 .ritual-cut-action {
   display: grid;
-  min-height: 8.5rem;
+  min-height: 5.25rem;
   place-items: center;
   align-content: safe center;
   gap: 0.2rem;
@@ -5024,6 +5041,7 @@ body {
   top: 4.75rem;
   right: 1rem;
   bottom: clamp(14.5rem, 31dvh, 20rem);
+  left: 1rem;
   display: grid;
   align-content: safe center;
   justify-items: center;
@@ -7784,12 +7802,11 @@ body {
   }
 
   .ritual-cut-actions {
-    top: 57%;
     width: calc(100vw - 1rem);
   }
 
   .ritual-cut-action {
-    min-height: 7.8rem;
+    min-height: 4.75rem;
     padding: 0.75rem 0.5rem;
   }
 

@@ -1,4 +1,5 @@
 import {
+  GENERAL_READING_QUESTION,
   followUpResultSchema,
   oracleStreamEventSchema,
   questionClassificationSchema,
@@ -13,31 +14,19 @@ import {
   type ProfileTrait,
   type ReadingOutputProvenance,
   type ReadingResult,
+  type ReadingConfiguration,
 } from "@starguidance/contracts";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
 import {
   answerCard,
+  drawShape,
   guardedDirectAnswer,
+  guardedQuestionConnection,
   questionSubject,
   resolveDraw,
   subjectVoices,
 } from "./interpretation";
-import {
-  agencyNarration as conversationalAgencyNarration,
-  agencySteps,
-  alternateNarration as conversationalAlternateNarration,
-  buildQuestionFrame,
-  cardNarration as conversationalCardNarration,
-  closingNarration as conversationalClosingNarration,
-  disconfirmingEvidence as conversationalDisconfirmingEvidence,
-  likelyNarration as conversationalLikelyNarration,
-  narrationTitle as conversationalNarrationTitle,
-  openingNarration as conversationalOpeningNarration,
-  reflectionQuestion as conversationalReflectionQuestion,
-  trajectoryConditions,
-  turningPointNarration as conversationalTurningPointNarration,
-} from "./fallback-narration";
 import type { RuntimePromptBundleId } from "./groq-provider";
 
 export interface InterpretationProvider<TInput, TOutput> {
@@ -46,8 +35,8 @@ export interface InterpretationProvider<TInput, TOutput> {
 }
 
 export const FALLBACK_PROVIDER_ID = "deterministic-fallback-v1" as const;
-export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v4" as const;
-export const READING_RESULT_SCHEMA_VERSION = "reading-result-v2" as const;
+export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v5" as const;
+export const READING_RESULT_SCHEMA_VERSION = "reading-result-v3" as const;
 
 export interface ReadingGenerationOutcome {
   result: ReadingResult;
@@ -156,13 +145,28 @@ const inferredTopics: readonly [ReadingTopic, RegExp][] = [
 
 export function classifyQuestionContext(
   question: string,
-  input: { topic: ReadingTopic; horizon: ReadingHorizon; generalReading: boolean },
+  input: {
+    topic?: ReadingTopic;
+    horizon?: ReadingHorizon;
+    generalReading?: boolean;
+  } = {},
 ): QuestionClassification {
+  const generalReading = input.generalReading ?? question.trim() === GENERAL_READING_QUESTION;
+  const selectedTopic = input.topic ?? "general";
+  const inferredHorizon: ReadingHorizon =
+    input.horizon ??
+    (/\b(today|tonight|right now|immediate(?:ly)?|next few days?)\b/i.test(question)
+      ? "immediate"
+      : /\b(week|weeks|next month)\b/i.test(question)
+        ? "weeks"
+        : /\b(month|months|this year|next year)\b/i.test(question)
+          ? "months"
+          : "open");
   const topic =
-    input.generalReading || input.topic !== "general"
-      ? input.topic
+    generalReading || selectedTopic !== "general"
+      ? selectedTopic
       : (inferredTopics.find(([, pattern]) => pattern.test(question))?.[0] ?? "general");
-  const intent = input.generalReading
+  const intent = generalReading
     ? "generalReflection"
     : /\b(choose|choice|decid|should i|which path)\b/i.test(question)
       ? "decisionSupport"
@@ -174,14 +178,116 @@ export function classifyQuestionContext(
   return questionClassificationSchema.parse({
     version: "question-classification-v1",
     topic,
-    horizon: input.horizon,
+    horizon: inferredHorizon,
     intent,
-    generalReading: input.generalReading,
+    generalReading,
   });
+}
+
+export interface QuestionReview {
+  readonly encouragedForm: boolean;
+  readonly reformulationReason?: "binary" | "deterministic" | "third_party_private";
+  readonly suggestedQuestion?: string;
+}
+
+/**
+ * Reviews form without mutating the question. The caller must show any
+ * suggestion and obtain confirmation for the exact wording ultimately used.
+ */
+export function reviewTarotQuestion(question: string): QuestionReview {
+  const normalized = question.trim();
+  const safety = classifyQuestion(normalized);
+  if (
+    safety.category === "thirdPartyPrivateClaim" ||
+    /\b(?:what|how) (?:does|is|are) (?:he|she|they) (?:think|feel|want)\b/i.test(normalized)
+  )
+    return {
+      encouragedForm: false,
+      reformulationReason: "third_party_private",
+      suggestedQuestion:
+        "What should I understand about the behavior I can observe, the conversation available to me, and the choices that are mine?",
+    };
+  if (/\b(?:definitely|guaranteed|exactly when|certain(?:ly)?|for sure)\b/i.test(normalized))
+    return {
+      encouragedForm: false,
+      reformulationReason: "deterministic",
+      suggestedQuestion:
+        "What should I understand about the current conditions, possible direction, and what I can influence?",
+    };
+  if (/^(?:will|is|are|does|do|did|can|should|has|have|was|were)\b/i.test(normalized))
+    return {
+      encouragedForm: false,
+      reformulationReason: "binary",
+      suggestedQuestion:
+        "What should I understand about the situation, its present direction, and my most useful next step?",
+    };
+  return { encouragedForm: /^(?:what|how)\b/i.test(normalized) };
+}
+
+export function classifyFollowUpScope(input: {
+  originalQuestion: string;
+  originalClassification: QuestionClassification;
+  followUpQuestion: string;
+}): { sameReading: boolean; reason?: "subject" | "decision" | "person" | "horizon" } {
+  const followUp = input.followUpQuestion.trim();
+  const referencesSpreadStructure =
+    /\b(?:card|spread|position|situation|challenge|direction|focus|path a|path b|foundation|incoming influence|outcome)\b/i.test(
+      followUp,
+    );
+  const inferredTopic = inferredTopics.find(([, pattern]) => pattern.test(followUp))?.[0];
+  const namesConcreteChangeSubject = /\b(?:move|relocat\w*|home|transition)\b/i.test(followUp);
+  // Generic movement words such as "direction", "future", and "next" describe
+  // how the existing subject develops; they do not establish a new life
+  // subject. Concrete change language (for example, a move or relocation) can.
+  const explicitTopic =
+    inferredTopic === "change" && (referencesSpreadStructure || !namesConcreteChangeSubject)
+      ? undefined
+      : inferredTopic;
+  if (
+    explicitTopic &&
+    input.originalClassification.topic !== "general" &&
+    explicitTopic !== input.originalClassification.topic
+  )
+    return { sameReading: false, reason: "subject" };
+  const followUpContext = classifyQuestionContext(followUp);
+  const explicitlyNamesHorizon =
+    /\b(today|tonight|right now|next few days?|weeks?|months?|this year|next year)\b/i.test(
+      followUp,
+    );
+  if (
+    explicitlyNamesHorizon &&
+    input.originalClassification.horizon !== "open" &&
+    followUpContext.horizon !== input.originalClassification.horizon
+  )
+    return { sameReading: false, reason: "horizon" };
+  if (
+    /\b(?:new|different|another) (?:question|topic|decision|person|relationship)\b/i.test(followUp)
+  )
+    return { sameReading: false, reason: "subject" };
+  if (
+    /\bwhat about (?:my|the) (?:job|career|relationship|move|home|health|money)\b/i.test(followUp)
+  )
+    return { sameReading: false, reason: "decision" };
+  const originalPeople = new Set(
+    input.originalQuestion.match(/\b(?:my (?:partner|friend|boss|manager|ex)|he|she|they)\b/gi) ??
+      [],
+  );
+  const followUpPeople =
+    followUp.match(/\b(?:my (?:partner|friend|boss|manager|ex)|he|she|they)\b/gi) ?? [];
+  if (
+    followUpPeople.some(
+      (person) =>
+        originalPeople.size > 0 &&
+        ![...originalPeople].some((original) => original.toLowerCase() === person.toLowerCase()),
+    )
+  )
+    return { sameReading: false, reason: "person" };
+  return { sameReading: true };
 }
 
 export interface ReadingGenerationInput {
   readonly draw: LockedDraw;
+  readonly configuration: ReadingConfiguration;
   readonly question: string;
   readonly questionClassification: QuestionClassification;
   readonly relevantTraitStatements: readonly string[];
@@ -267,7 +373,10 @@ function tensionLensStatement(tension: ProfileTension): string {
 }
 
 export function readingLensStatements(
-  lens: { readonly traitIndexes: readonly number[]; readonly tensionIndexes?: readonly number[] },
+  lens: {
+    readonly traitIndexes: readonly number[];
+    readonly tensionIndexes?: readonly number[] | undefined;
+  },
   traits: readonly ProfileTrait[],
   tensions: readonly ProfileTension[] = [],
 ): readonly string[] {
@@ -334,100 +443,180 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
     const safety = classifyQuestion(input.question);
     const subject = questionSubject(input.question, input.questionClassification.topic);
     const voice = subjectVoices[subject];
-    const resolved = resolveDraw(input.draw, input.questionClassification);
+    const resolved = resolveDraw(
+      input.draw,
+      input.questionClassification,
+      input.configuration.positions,
+    );
     const answer = answerCard(input.draw, resolved);
-    const traits = input.relevantTraitStatements;
-    const frame = buildQuestionFrame(input.question, input.questionClassification, subject);
     const guarded = safety.category !== "ordinary";
-    const agency = agencySteps(frame, answer, traits, guarded);
-    const reflection = conversationalReflectionQuestion(frame, answer);
-    const openingId = "opening";
-    const turningId = "turning-point";
-    const likelyId = "likely-trajectory";
-    const alternateId = "alternate-trajectory";
-    const agencyId = "agency";
-    const closingId = "closing";
-    const cardPassages = resolved.map((entry, index) => ({
-      id: `thread-${index + 1}`,
-      role:
-        index === 0
-          ? ("situation" as const)
-          : index === resolved.length - 1
-            ? ("development" as const)
-            : ("underlyingPattern" as const),
-      text: conversationalCardNarration(entry, frame, index, guarded),
-      cardReferences: [entry.position.id],
-    }));
-    const passages = [
-      {
-        id: openingId,
-        role: safety.category === "ordinary" ? ("opening" as const) : ("safety" as const),
-        text:
-          safety.category === "ordinary"
-            ? conversationalOpeningNarration(answer, frame, resolved)
-            : guardedDirectAnswer(
-                safety.category,
-                voice.about,
-                `This reading won't turn that into a factual prediction. ${safety.guidance}`,
-              ),
-        cardReferences: [answer.position.id],
-      },
-      ...cardPassages,
-      {
-        id: turningId,
-        role: "turningPoint" as const,
-        text: conversationalTurningPointNarration(answer, resolved, frame, traits[0]),
-        cardReferences: [],
-      },
-      {
-        id: likelyId,
-        role: "trajectory" as const,
-        text: conversationalLikelyNarration(answer, resolved, frame, guarded),
-        cardReferences: [],
-      },
-      {
-        id: alternateId,
-        role: "alternative" as const,
-        text: conversationalAlternateNarration(resolved, frame, guarded),
-        cardReferences: [],
-      },
-      {
-        id: agencyId,
-        role: "agency" as const,
-        text: conversationalAgencyNarration(agency),
-        cardReferences: [],
-      },
-      {
-        id: closingId,
-        role: "closing" as const,
-        text: conversationalClosingNarration(frame, answer),
-        cardReferences: [],
-      },
-    ];
-
-    return readingResultSchema.parse({
-      schemaVersion: "reading-result-v2",
-      title: conversationalNarrationTitle(frame, answer),
-      passages,
-      cards: resolved.map((entry, index) => ({
+    const named = (entry: (typeof resolved)[number]) =>
+      entry.orientation === "reversed" ? `${entry.card.name} reversed` : entry.card.name;
+    const themes = (entry: (typeof resolved)[number]) => entry.themes.slice(0, 2).join(" and ");
+    const byPosition = new Map(resolved.map((entry) => [entry.position.id, entry]));
+    const relationshipRules = input.configuration.capabilities.linkedPositions;
+    const cardResults = resolved.map((entry) => {
+      const relationshipNotes = relationshipRules
+        .filter(({ positionIds }) => positionIds.includes(entry.position.id))
+        .flatMap((rule) => {
+          const linked = rule.positionIds
+            .filter((positionId) => positionId !== entry.position.id)
+            .flatMap((positionId) => {
+              const candidate = byPosition.get(positionId);
+              return candidate ? [candidate] : [];
+            });
+          if (linked.length === 0) return [];
+          const relationshipLanguage = {
+            sequence: "develops in sequence with",
+            compare: "must be compared directly with",
+            tension: "creates a live tension with",
+            integration: "finds its integration through",
+          }[rule.relationship];
+          return [
+            `${named(entry)} in ${entry.position.displayName} ${relationshipLanguage} ${linked.map((candidate) => `${named(candidate)} in ${candidate.position.displayName}`).join(" and ")}.`,
+          ];
+        });
+      const suitReinforcement =
+        entry.card.suit === null
+          ? undefined
+          : resolved.find(
+              (candidate) =>
+                candidate.position.id !== entry.position.id &&
+                candidate.card.suit === entry.card.suit,
+            );
+      if (suitReinforcement)
+        relationshipNotes.push(
+          `${entry.card.name} and ${suitReinforcement.card.name} reinforce the ${entry.card.suit} emphasis across ${entry.position.displayName} and ${suitReinforcement.position.displayName}.`,
+        );
+      const reversalContext =
+        entry.orientation === "reversed"
+          ? ` Here the reversal is read as ${entry.reversalFacet ?? "blocked or internalized"}, not as an automatic opposite or negative verdict.`
+          : "";
+      const ordinaryPositionMeaning =
+        `${named(entry)} brings ${themes(entry)} into ${entry.position.displayName}, whose function is ${entry.position.interpretiveFunction}. ` +
+        `For ${voice.noun}, this points to the part of the situation that this position is designed to examine.${reversalContext}`;
+      return {
         positionId: entry.position.id,
+        positionLabel: entry.position.displayName,
         cardId: entry.card.id,
         orientation: entry.orientation,
-        passageIds: [
-          `thread-${index + 1}`,
-          ...(entry.position.id === answer.position.id ? [openingId] : []),
+        coreMeaning:
+          entry.orientation === "reversed"
+            ? `${entry.card.name} carries ${themes(entry)} through a ${entry.reversalFacet ?? "blocked or internalized"} expression.`
+            : `${entry.card.name} carries ${themes(entry)}.`,
+        positionInterpretation: guarded
+          ? guardedQuestionConnection(
+              safety.category,
+              entry.position.order,
+              ordinaryPositionMeaning,
+            )
+          : ordinaryPositionMeaning,
+        relationshipNotes,
+        supportingEvidence: [
+          `${entry.card.name}: approved ${entry.orientation} themes — ${entry.themes.join(", ")}.`,
+          `${entry.position.displayName}: ${entry.position.interpretiveFunction}.`,
+          ...(entry.reversalFacet ? [`Approved reversal facet: ${entry.reversalFacet}.`] : []),
         ],
-      })),
-      trajectory: {
-        likelyPassageId: likelyId,
-        conditions: trajectoryConditions(answer, resolved, frame),
-        alternatePassageId: alternateId,
+      };
+    });
+
+    const first = resolved[0]!;
+    const directAnswer = guarded
+      ? guardedDirectAnswer(
+          safety.category,
+          voice.about,
+          `This reading will not turn the question into a factual prediction. ${safety.guidance}`,
+        )
+      : resolved.length === 1
+        ? `The strongest message is ${themes(answer)}. ${named(answer)} in ${answer.position.displayName} suggests that the useful focus is ${answer.position.interpretiveFunction}, with the clearest leverage in what you can notice and respond to now.`
+        : `The current pattern begins with ${themes(first)} in ${first.position.displayName} and resolves through ${themes(answer)} in ${answer.position.displayName}. The spread suggests that ${voice.wellPhrase} depends less on forcing an answer and more on working honestly with that movement.`;
+
+    const rankCounts = new Map<string, number>();
+    for (const entry of resolved)
+      rankCounts.set(entry.card.rank, (rankCounts.get(entry.card.rank) ?? 0) + 1);
+    const repeatedRanks = [...rankCounts.entries()].filter(([, count]) => count > 1);
+    const courtCards = resolved.filter(({ card }) => /page|knight|queen|king/i.test(card.rank));
+    const overallPattern = [
+      drawShape(resolved),
+      repeatedRanks.length > 0
+        ? `The repeated ${repeatedRanks.map(([rank]) => rank).join(" and ")} rank${repeatedRanks.length === 1 ? " creates" : "s create"} an echo across positions rather than an isolated message.`
+        : "",
+      courtCards.length > 1
+        ? `${courtCards.length} court cards put roles, maturity, and ways of relating at the center of the spread.`
+        : "",
+      relationshipRules.length > 0
+        ? `The configured spread links ${relationshipRules.map(({ id }) => id.replaceAll("-", " ")).join(", ")}; those links guide the synthesis below.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const sequence = resolved
+      .map((entry, index) =>
+        index === 0
+          ? `${named(entry)} establishes ${entry.position.displayName.toLowerCase()} as ${themes(entry)}`
+          : `${named(entry)} moves the reading through ${entry.position.displayName.toLowerCase()} toward ${themes(entry)}`,
+      )
+      .join("; ");
+    const synthesis = `${sequence}. Taken together, these are not separate dictionary meanings: ${named(answer)} carries the spread's strongest answer because it occupies ${answer.position.displayName}, while the other positions show what supports, complicates, or redirects it.`;
+
+    const trajectoryEntries = input.configuration.capabilities.trajectoryPositionIds.flatMap(
+      (positionId) => {
+        const entry = byPosition.get(positionId);
+        return entry ? [entry] : [];
       },
-      userAgency: agency,
-      reflectionQuestion: reflection,
-      disconfirmingEvidence: conversationalDisconfirmingEvidence(frame, answer),
-      uncertainty:
-        "Tarot offers a conditional interpretation, not factual proof or a guarantee. New evidence, choices, and changing conditions can alter the direction described.",
+    );
+    const questionSupportsOutlook =
+      input.questionClassification.horizon !== "open" ||
+      ["planning", "decisionSupport"].includes(input.questionClassification.intent) ||
+      input.draw.spreadId === "outlook";
+    const likelyTrajectory =
+      trajectoryEntries.length > 0 && questionSupportsOutlook
+        ? `Under present conditions, ${trajectoryEntries.map((entry) => `${named(entry)} in ${entry.position.displayName}`).join(" with ")} suggests movement toward ${trajectoryEntries.map(themes).join(" alongside ")}. This is conditional on the current pattern continuing and on the guidance positions being acted on.`
+        : null;
+    const alternativeGroup = input.configuration.capabilities.alternativePositionGroups[0] ?? [];
+    const alternativeEntries = alternativeGroup.flatMap((positionId) => {
+      const entry = byPosition.get(positionId);
+      return entry ? [entry] : [];
+    });
+    const alternatePath =
+      alternativeEntries.length >= 2
+        ? `The spread contains a real branch: ${alternativeEntries.map((entry) => `${entry.position.displayName} carries ${named(entry)} and ${themes(entry)}`).join(", while ")}. The difference between those paths is structural in this spread, not an outcome added after the draw.`
+        : null;
+    const timing = input.configuration.capabilities.timingMethod
+      ? `Timing is interpreted only through the approved ${input.configuration.capabilities.timingMethod.id} method and its configured positions; it remains conditional rather than an exact date.`
+      : null;
+    const userAgency = guarded
+      ? `${safety.guidance} The strongest leverage appears to be checking observable evidence, naming one boundary or question clearly, and choosing the next proportionate action rather than treating the spread as proof.`
+      : `The strongest leverage appears in ${answer.position.displayName}: name one observable sign of ${themes(answer)}, then take one proportionate action that fits ${answer.position.interpretiveFunction}. Revisit the reading when evidence changes, not simply to seek a different draw.`;
+    const personalizationLens =
+      input.configuration.personalizationMode === "personalized_tarot" &&
+      input.relevantTraitStatements.length > 0
+        ? {
+            label: "Personalized reflection" as const,
+            observations: input.relevantTraitStatements
+              .slice(0, 3)
+              .map(
+                (trait) =>
+                  `Your private reflection lens notes that ${naturalTrait(trait)}. This may make ${themes(answer)} especially relevant to notice, but it does not change ${answer.card.name}'s meaning or the draw.`,
+              ),
+          }
+        : null;
+
+    return readingResultSchema.parse({
+      schemaVersion: "reading-result-v3",
+      directAnswer,
+      overallPattern,
+      cards: cardResults,
+      synthesis,
+      likelyTrajectory,
+      alternatePath,
+      timing,
+      userAgency,
+      reflectionPrompt: answer.card.reflectivePrompt,
+      uncertaintyNote:
+        "This is a conditional tarot interpretation, not factual proof or a guaranteed outcome. New evidence, choices, and changing conditions can alter the pattern.",
+      personalizationLens,
       safetyFlags: safety.category === "ordinary" ? [] : [safety.category],
     });
   }
@@ -450,25 +639,26 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
   async generateFollowUpWithProvenance(
     input: FollowUpGenerationInput,
   ): Promise<FollowUpGenerationOutcome> {
-    const resolved = resolveDraw(input.draw, input.questionClassification);
-    const answer = answerCard(input.draw, resolved);
-    const originalThread = input.originalResult.cards.find(
-      ({ positionId }) => positionId === answer.position.id,
+    const resolved = resolveDraw(
+      input.draw,
+      input.questionClassification,
+      input.configuration.positions,
     );
-    const originalPassage = input.originalResult.passages.find(({ id }) =>
-      originalThread?.passageIds.includes(id),
+    const answer = answerCard(input.draw, resolved);
+    const originalCard = input.originalResult.cards.find(
+      ({ positionId }) => positionId === answer.position.id,
     );
     const trait = naturalTrait(input.relevantTraitStatements[0]);
     return {
       result: followUpResultSchema.parse({
         response: [
           `Coming back to ${answer.card.name}${answer.orientation === "reversed" ? " reversed" : ""}, the part that matters now is ${answer.themes.join(" and ")}.`,
-          originalPassage?.text ??
+          originalCard?.positionInterpretation ??
             "That was already the thread carrying the original reading forward.",
           trait
             ? `Because ${trait}, I think the useful move is to notice the moment that familiar response begins and choose deliberately there.`
             : "I think the useful move is to wait for one observable change, then respond to that rather than to the fear of what might happen.",
-          `For now, ${(input.originalResult.userAgency[0] ?? "Keep the next step small enough to revise").replace(/[.?!]+$/, "").replace(/^[A-Z]/, (letter) => letter.toLowerCase())}.`,
+          `For now, ${input.originalResult.userAgency.replace(/[.?!]+$/, "").replace(/^[A-Z]/, (letter) => letter.toLowerCase())}.`,
         ].join(" "),
       }),
       provenance: {
@@ -510,18 +700,77 @@ export interface StreamingInterpretationAdapter {
 
 export function createOracleStreamEvents(result: ReadingResult): readonly OracleStreamEvent[] {
   const validated = readingResultSchema.parse(result);
-  // Uncertainty and audit metadata remain stored on the result, while the
-  // spoken stream contains only the ordered narration the reader authored.
-  return validated.passages.map((passage, sequence) =>
-    oracleStreamEventSchema.parse({
-      type: "phase",
-      sequence,
-      phase: "narration",
-      heading: sequence === 0 ? validated.title : "The reading continues",
-      text: passage.text,
-      passageId: passage.id,
-      cardPositionIds: passage.cardReferences,
-    }),
+  const authored = [
+    {
+      phase: "directAnswer" as const,
+      heading: "What the cards indicate",
+      text: validated.directAnswer,
+    },
+    {
+      phase: "overallPattern" as const,
+      heading: "The pattern across the spread",
+      text: validated.overallPattern,
+    },
+    ...validated.cards.map((card) => ({
+      phase: "cardInterpretation" as const,
+      heading: card.positionLabel,
+      text: [card.coreMeaning, card.positionInterpretation, ...card.relationshipNotes].join(" "),
+      cardPositionIds: [card.positionId],
+    })),
+    {
+      phase: "synthesis" as const,
+      heading: "How the cards work together",
+      text: validated.synthesis,
+      cardPositionIds: validated.cards.map(({ positionId }) => positionId),
+    },
+    ...(validated.likelyTrajectory
+      ? [
+          {
+            phase: "likelyTrajectory" as const,
+            heading: "Conditional trajectory",
+            text: validated.likelyTrajectory,
+          },
+        ]
+      : []),
+    ...(validated.alternatePath
+      ? [
+          {
+            phase: "alternatePath" as const,
+            heading: "The other path in this spread",
+            text: validated.alternatePath,
+          },
+        ]
+      : []),
+    ...(validated.timing
+      ? [{ phase: "timing" as const, heading: "Timing", text: validated.timing }]
+      : []),
+    {
+      phase: "userAgency" as const,
+      heading: "Your leverage",
+      text: validated.userAgency,
+    },
+    ...(validated.personalizationLens
+      ? [
+          {
+            phase: "personalization" as const,
+            heading: "Why this may be especially relevant to you",
+            text: validated.personalizationLens.observations.join(" "),
+          },
+        ]
+      : []),
+    {
+      phase: "reflectionPrompt" as const,
+      heading: "Reflection",
+      text: validated.reflectionPrompt,
+    },
+    {
+      phase: "uncertainty" as const,
+      heading: "A note on uncertainty",
+      text: validated.uncertaintyNote,
+    },
+  ];
+  return authored.map((entry, sequence) =>
+    oracleStreamEventSchema.parse({ type: "phase", sequence, ...entry }),
   );
 }
 
@@ -539,7 +788,7 @@ export function createFollowUpStreamEvents(result: FollowUpResult): readonly Ora
 }
 
 export class PersistedResultStreamAdapter implements StreamingInterpretationAdapter {
-  readonly id = "persisted-result-stream-v2";
+  readonly id = "persisted-result-stream-v3";
 
   async *streamPersistedResult(result: ReadingResult): AsyncIterable<OracleStreamEvent> {
     for (const event of createOracleStreamEvents(result)) yield event;

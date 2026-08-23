@@ -58,9 +58,15 @@ async function createReading(page: Page): Promise<void> {
     .check();
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
-  await page.getByRole("button", { name: /^Continue with / }).click();
   await page.getByLabel("Your private question").fill("What should I notice now?");
+  await page.getByRole("button", { name: "Review my question" }).click();
+  await page.getByRole("button", { name: "Confirm this question" }).click();
+  await page
+    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
+    .click();
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
+  await page.getByRole("button", { name: "Finish shuffling" }).click();
+  await page.getByRole("button", { name: /^No cut/ }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   // Keep the accessibility suite fast while exercising the same centered,
   // reader-controlled sequence through standard buttons.
@@ -77,16 +83,7 @@ async function createReading(page: Page): Promise<void> {
   });
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "I’m ready", exact: true }).dispatchEvent("click");
-  for (let index = 0; index < 10; index += 1) {
-    const faceDownCard = page.getByRole("button", { name: /^Reveal card \d+, face down$/ }).first();
-    await expect(faceDownCard).toBeVisible();
-    await faceDownCard.dispatchEvent("click");
-    const action = page.locator(".guided-next-action");
-    await expect(action).toBeVisible();
-    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
-    await action.dispatchEvent("click");
-    if (finalCard) break;
-  }
+  await page.getByRole("button", { name: "Reveal All" }).dispatchEvent("click");
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -128,7 +125,7 @@ test("the account-free reading threshold exposes valid automated WCAG semantics"
 }) => {
   await page.goto("/free-reading");
   await expect(
-    page.getByRole("heading", { name: "Meet the cards before you decide to stay." }),
+    page.getByRole("heading", { name: "What would you like the cards to illuminate?" }),
   ).toBeVisible();
   let scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   expect(
@@ -137,7 +134,6 @@ test("the account-free reading threshold exposes valid automated WCAG semantics"
       .map(({ id }) => id),
   ).toEqual([]);
 
-  await page.getByRole("button", { name: /Continue with Three-Card Spread/ }).click();
   await expect(page.getByLabel("Your private guest question")).toBeVisible();
   scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   expect(

@@ -79,14 +79,16 @@ async function processJob(
     const snapshot = (
       await persistence.repositories.profileSnapshots.get(job.userId, reading.profileSnapshotId)
     )?.snapshot;
-    const relevantTraitStatements = snapshot
-      ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
-      : [];
+    const relevantTraitStatements =
+      reading.configuration.personalizationMode === "personalized_tarot" && snapshot
+        ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
+        : [];
     generationStartedAt = Date.now();
     const generated = await createInterpretationProvider(
       interpretationRuntimeOptions(runtimeConfiguration),
     ).generateWithProvenance({
       draw: reading.draw,
+      configuration: reading.configuration,
       question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
       questionClassification: reading.questionClassification,
       relevantTraitStatements,

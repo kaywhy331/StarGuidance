@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { createFollowUpLineage, createLockedDraw, retryLockedDraw, secureShuffle } from "../src";
+import {
+  commitDrawServerSeed,
+  createFollowUpLineage,
+  createLockedDraw,
+  finalizeCommittedDraw,
+  retryLockedDraw,
+  secureShuffle,
+} from "../src";
 import type { Spread, TarotCard } from "../src";
 
 const cards: TarotCard[] = Array.from({ length: 8 }, (_, index) => ({
@@ -83,5 +90,81 @@ describe("locked draw", () => {
     });
     expect(retryLockedDraw(draw)).toBe(draw);
     expect(createFollowUpLineage(draw, "follow-up-1").draw).toBe(draw);
+  });
+
+  it("finalizes deterministically from committed server entropy and a browser nonce", () => {
+    const serverSeed = Buffer.alloc(32, 7).toString("base64url");
+    const clientNonce = Buffer.alloc(32, 19).toString("base64url");
+    const input = {
+      cards,
+      deckVersion: "test-deck-v1",
+      spread,
+      sessionId: "reading-committed-1",
+      serverSeed,
+      serverSeedCommitment: commitDrawServerSeed(serverSeed),
+      clientNonce,
+      cutIndex: 0,
+      reversalMode: "reversals_enabled" as const,
+      now: new Date("2026-01-01T00:00:00Z"),
+    };
+    expect(finalizeCommittedDraw(input)).toEqual(finalizeCommittedDraw(input));
+    expect(finalizeCommittedDraw(input).proof).toMatchObject({
+      cutIndex: 0,
+      reversalMode: "reversals_enabled",
+    });
+  });
+
+  it("applies a selected cut as a measurable rotation before assignment", () => {
+    const serverSeed = Buffer.alloc(32, 11).toString("base64url");
+    const clientNonce = Buffer.alloc(32, 23).toString("base64url");
+    const common = {
+      cards,
+      deckVersion: "test-deck-v1",
+      spread,
+      sessionId: "reading-committed-cut",
+      serverSeed,
+      serverSeedCommitment: commitDrawServerSeed(serverSeed),
+      clientNonce,
+      reversalMode: "upright_only" as const,
+    };
+    const uncut = finalizeCommittedDraw({ ...common, cutIndex: 0 });
+    const cut = finalizeCommittedDraw({ ...common, cutIndex: 2 });
+    expect(cut.assignments.map(({ cardId }) => cardId)).not.toEqual(
+      uncut.assignments.map(({ cardId }) => cardId),
+    );
+    expect(cut.proof?.cutIndex).toBe(2);
+  });
+
+  it("keeps every card upright when reversals are disabled", () => {
+    const serverSeed = Buffer.alloc(32, 13).toString("base64url");
+    const draw = finalizeCommittedDraw({
+      cards,
+      deckVersion: "test-deck-v1",
+      spread,
+      sessionId: "reading-upright-only",
+      serverSeed,
+      serverSeedCommitment: commitDrawServerSeed(serverSeed),
+      clientNonce: Buffer.alloc(32, 29).toString("base64url"),
+      cutIndex: 0,
+      reversalMode: "upright_only",
+    });
+    expect(draw.assignments.every(({ orientation }) => orientation === "upright")).toBe(true);
+  });
+
+  it("rejects a seed that does not match the commitment", () => {
+    const committed = Buffer.alloc(32, 31).toString("base64url");
+    expect(() =>
+      finalizeCommittedDraw({
+        cards,
+        deckVersion: "test-deck-v1",
+        spread,
+        sessionId: "reading-bad-commitment",
+        serverSeed: Buffer.alloc(32, 32).toString("base64url"),
+        serverSeedCommitment: commitDrawServerSeed(committed),
+        clientNonce: Buffer.alloc(32, 33).toString("base64url"),
+        cutIndex: 0,
+        reversalMode: "reversals_enabled",
+      }),
+    ).toThrow(/commitment/i);
   });
 });

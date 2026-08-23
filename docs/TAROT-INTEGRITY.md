@@ -1,23 +1,59 @@
-# Tarot draw integrity
+# Tarot consultation and draw integrity
 
-The original StarGuidance illustrated deck has 78 unique IDs: 22 Major Arcana and 56 Minor Arcana, with 14 cards in each suit. Every card includes upright/reversed themes, event tags, a reflective prompt, a content version, editorial attribution, and versioned artwork metadata. No copyrighted deck artwork or guidebook copy is included.
+StarGuidance treats the reading ritual as part of draw finalization, not as an animation over cards that were already selected. A reading exists before the ritual, but its final card-position-orientation assignments do not exist until the reader completes or skips shuffling and makes or declines the optional cut.
+
+## Governed content
+
+The original StarGuidance illustrated deck has 78 unique IDs: 22 Major Arcana and 56 Minor Arcana, with 14 cards in each suit. Every card includes upright themes, contextual reversed themes, approved reversal facets, event tags, a reflective prompt, content provenance, and versioned artwork metadata. No copyrighted deck artwork or guidebook copy is included.
 
 - Content version: `starguidance-original-v1`
 - Deck version: `starguidance-illustrated-v3`
 - Artwork version: `starguidance-celestial-gothic-v3`
-- Spread-catalog version: `starguidance-spreads-v2`
-- Interpretation-rules version: `interpretation-rules-v1`
+- Spread-catalog version: `starguidance-spreads-v3`
+- Draw version: `fisher-yates-committed-v2`
+- Entropy version: `hmac-sha256-domain-stream-v1`
+- Result schema: `reading-result-v3`
 
-Those five release coordinates—deck, card set, meanings, spread catalog, and interpretation rules—are explicit in the governed `content` runtime payload. Durable environments seed a conservative published release. Card rows are keyed by `(card ID, deck version)`, meanings retain that same deck coordinate, and spreads/positions are keyed by `(spread ID, spread version)`, so a new release can reuse stable canonical IDs without overwriting the rows required by historical readings. Seed conflict checks fail if any existing deck, card, meaning, spread, or position payload differs under the same version; reseeding never rewrites published content or re-enables a disabled deck/spread/product. A new release is introduced as an immutable reviewed source bundle, then created as a configuration draft, approved by a different operator, and published atomically; an earlier approved release remains rollback-capable. Direct deck/spread activation controls can remove content from new readings immediately without changing historical draws; spread-family activation is fail-closed across every stored version of the same canonical ID.
+Decks, meanings, spread definitions, positions, capability metadata, prompts, and schemas are versioned. Spread positions and their functions are snapshotted when the spread is confirmed, before any card is known, and cannot be reassigned afterward. Older rows remain readable by their version-qualified keys; reseeding refuses to overwrite published content under an existing version.
 
-`fisher-yates-csprng-v1` calls Node's cryptographic `randomInt` for every Fisher–Yates swap and for each independent reversal decision. Tests assert shuffle bounds, unique cards, Major/Minor/suit counts, spread positions, and immutable same-draw retry/follow-up behavior.
+## Causal draw protocol
 
-New readings may select only the six current spread IDs. The four retired IDs remain seeded inactive and in the application content catalog solely so an existing locked reading can preserve its original positional meanings and layout. One- and three-card contextual roles are chosen deterministically from the persisted question classification after the draw; this changes interpretation labels, never card selection.
+The server creates a 32-byte CSPRNG seed when the confirmed question, spread, safety decision, reversal preference, and personalization mode are prepared. It returns only a SHA-256 commitment and keeps the seed inside an authenticated-encryption ceremony token. Preparation returns no card IDs, orientations, or assignments.
 
-The draw function accepts only card content, deck version, spread configuration, optional time/ID metadata, and an injectable random source for tests. It accepts no profile identifier, traits, birth facts, question, classifier result, prompt, or AI output. Profile snapshot lineage is stored on the reading record outside the shuffle boundary.
+After the reader completes or skips the shuffle and chooses a cut, the browser supplies a fresh 32-byte Web Crypto nonce. `finalizeCommittedDraw` verifies the seed commitment, then derives independent HMAC-SHA-256 streams for permutation and orientation from the server seed, client nonce, reading/session ID, deck version, spread ID, and spread version. The question, profile, classifier result, payment state, card meanings, and AI output are absent from this boundary and cannot influence selection.
 
-The server stores the complete card-position-orientation assignment before interpretation generation. A generation failure changes only generation status. Retry and follow-up operations return the original draw; a redraw requires a new reading session. A normalized repeat of the same question during `READING_REREAD_COOLDOWN_MINUTES` returns a link to the retained reading and its unlock time. Browser tests compare serialized draws before/after recovery, retry, and follow-up.
+The permutation stream drives Fisher–Yates with rejection sampling, avoiding modulo bias. A selected cut is then applied as an exact rotation of that shuffled deck; tests prove the offset changes the resulting assignment. Orientation uses a separate domain-separated stream. The first required cards are assigned to the already-snapshotted positions, and the session, complete draw, and interpretation job are persisted atomically before dealing starts. Account readings retain the server seed only as application-encrypted audit material; it is never exposed to the browser or provider. The durable proof stores the commitment, a client-nonce hash, cut index, reversal mode, and algorithm versions rather than the raw client nonce.
 
-The shuffle animation renders 15 lightweight shells, not 78 complex cards. Cutting cannot modify the already locked assignment. The sanctuary moves automatically from gathering into dealing; during that brief compatibility phase the reader may mark an optional symbolic cut, but the ritual never waits for a Cut/Skip decision. Any face-down card can then be selected by click, tap, or keyboard. Returning to the spread is required between reveals so the user remains in control of order; there is no convenience action that silently turns the remaining cards. None of these gestures can change the already-persisted assignment, only how it is watched. `{cutTaken, revealedIndexes}` is monotonically validated and persisted on the reading for exact server-backed recovery; per-reading session storage is only a fallback. Completed history entries use the pre-revealed `/reading/[id]` result route. See [Known gaps](KNOWN-GAPS.md) for the remaining manual keyboard/screen-reader/real-device review.
+Skipping animation advances to finalization immediately but uses the same entropy protocol. A refresh before finalization restores the seed commitment and ritual stage without inventing a draw. A refresh, retry, stream failure, or reconnect after finalization restores the exact locked assignments. Once a draw is locked, shuffle UI events cannot modify it.
 
-Every card has a unique original v3 SVG face with a card-specific constellation, horizon, symbolic orb, and spatial frame. The immutable v2 route remains readable for historical draws. The shared generated back and sanctuary assets are documented in [ARTWORK-PROVENANCE.md](ARTWORK-PROVENANCE.md). Artwork lookup happens after the draw through the locked `cardId`; artwork metadata, asset loading, profile data, and question text never enter the shuffle function.
+The legacy `fisher-yates-csprng-v1` helper remains available only for historical fixtures and low-level compatibility tests. User-facing account and guest creation routes use the committed v2 finalizer.
+
+## Reversals
+
+Every reading snapshots either `reversals_enabled` or `upright_only`; reversals are an optional method, not the only legitimate one. When disabled, all assignments are upright. When enabled and allowed by the spread, orientation is selected securely and persisted.
+
+A reversed card is not interpreted as an automatic opposite or negative. Curated card content supplies only approved contextual facets such as blocked, internalized, delayed, imbalanced, excessive, deficient, avoided, releasing, and recovering. The interpreter may use a facet only when supported by the card, position, question, and surrounding spread.
+
+## Deal, reveal, and result gate
+
+Locked cards deal face down into their canonical positions. The default reveal order follows numbered position order; tap, click, Enter, and Space are supported, along with an explicit Reveal All control and reduced-motion path. A single reveal exposes only card name, persisted orientation, spread-position title, and one concise position-aware baseline meaning. Unrevealed card fronts and identifying DOM attributes are not rendered.
+
+Whole-reading prose may be generated privately after locking, but it is withheld by both the API and UI until every card is revealed and the machine reaches `fullSpreadReady`. The stream then renders a spread-aware result; it never emits a fixed eight-part transcript or invents unsupported sections.
+
+## Interpretation grounding
+
+Before prose is shown, the deterministic reader and live-provider prompt contract perform question analysis, positional analysis, and a whole-spread scan. Each card result records its core curated meaning, position interpretation, relationship notes, and supporting evidence. The scan considers repeated suits/elements, Major Arcana concentration, repeated numbers/ranks, court patterns, reinforcement, conflict, configured movement, and explicitly linked positions. Synthesis connects those observations into one answer rather than repeating dictionary definitions.
+
+`directAnswer`, card evidence, `synthesis`, `userAgency`, `reflectionPrompt`, and `uncertaintyNote` form the stable core. `likelyTrajectory`, `alternatePath`, and `timing` are nullable and may appear only when the snapshotted spread capabilities and question support them. A one-card Focus reading cannot manufacture an alternate trajectory. Crossroads can compare configured paths; Deeper Outlook can discuss only its configured outlook positions. Timing remains null unless an approved timing method is present.
+
+`pure_tarot` sends no profile traits. `personalized_tarot` may send only the minimized plain-language lens relevant to the confirmed question. Profile observations are rendered separately under `Personalized reflection`; they may change emphasis or examples but cannot select cards, change orientation, redefine a position, reverse card meaning, or manufacture a prediction. Raw birth facts and hidden astrology, numerology, BaZi, Dreamspell, or Nine Star Ki labels do not enter the base reading.
+
+Provider output must validate against the exact locked card/position/orientation tuples and spread capabilities. Unsafe, malformed, contradictory, or unsupported output falls back deterministically without changing the draw. Results render as components, never arbitrary provider HTML or Markdown.
+
+## Follow-ups and history
+
+A clarification on the original subject and horizon reuses the same reading ID, cards, positions, orientations, profile snapshot, and original result. A materially different subject, decision, person, or horizon is rejected as a follow-up and must create a new reading session. Dislike, dispute, refresh, retry, or rephrasing never causes a redraw, and MVP adds no clarifier cards.
+
+Authenticated history remains immutable and opens the completed draw directly. Guest recovery uses an encrypted, device-bound receipt and also restores the exact assignments; losing ephemeral reveal progress can return the cards face down, but it cannot invent or replace them. Browser and domain tests compare locked draws across finalization, cut offsets, recovery, retry, and follow-up.
+
+The sanctuary still renders 15 lightweight shuffle shells rather than 78 full cards. Each revealed card resolves its original v3 SVG artwork only after the draw through the locked `cardId`; artwork loading never participates in selection. See [Artwork provenance](ARTWORK-PROVENANCE.md) and [Known gaps](KNOWN-GAPS.md) for rights and remaining manual accessibility/device gates.

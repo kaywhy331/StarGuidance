@@ -28,6 +28,8 @@ export type SensitiveDataClass =
   | "profile-input"
   | "profile-calculations"
   | "reading-question"
+  | "draw-ceremony"
+  | "draw-server-seed"
   | "follow-up-question"
   | "feedback-comment"
   | "report-source";

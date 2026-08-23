@@ -8,6 +8,7 @@ import {
   profileSnapshotSchema,
   profileTraitSchema,
   questionClassificationSchema,
+  readingConfigurationSchema,
   readingEntitlementDecisionSchema,
   readingOutputProvenanceSchema,
   readingResultSchema,
@@ -42,7 +43,7 @@ import {
   createDatabaseClient,
   insertInterpretationJob,
 } from "@starguidance/database";
-import { TAROT_CONTENT_VERSION } from "@starguidance/tarot-content";
+import { findSpread, TAROT_CONTENT_VERSION } from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
 import { profileDerivedPayload } from "./profile-storage";
@@ -135,6 +136,23 @@ function reportFromRows(report: DatabaseRow, sections: readonly DatabaseRow[]): 
       };
     }),
   };
+}
+
+function historicalReadingConfiguration(row: DatabaseRow) {
+  const spread = findSpread(String(row.spread_id), String(row.spread_version));
+  if (!spread) throw new Error("READING_SPREAD_MISSING");
+  return readingConfigurationSchema.parse({
+    version: "reading-configuration-v1",
+    reversalMode: "reversals_enabled",
+    personalizationMode: "personalized_tarot",
+    positions: spread.positions,
+    capabilities: {
+      trajectoryPositionIds: spread.capabilities?.trajectoryPositionIds ?? [],
+      alternativePositionGroups: spread.capabilities?.alternativePositionGroups ?? [],
+      timingMethod: spread.capabilities?.timingMethod ?? null,
+      linkedPositions: spread.capabilities?.linkedPositions ?? [],
+    },
+  });
 }
 
 export function createPostgresRepositories(
@@ -449,7 +467,7 @@ export function createPostgresRepositories(
 
   const hydrateReading = async (tx: Transaction, row: DatabaseRow): Promise<StoredReading> => {
     const [drawRow] = await tx`
-      select deck_version, shuffle_version, assignments, locked_at
+      select deck_version, shuffle_version, assignments, proof, encrypted_server_seed, locked_at
       from reading_draws where reading_id = ${String(row.id)}
     `;
     if (!drawRow) throw new Error("LOCKED_DRAW_MISSING");
@@ -460,6 +478,7 @@ export function createPostgresRepositories(
       spreadVersion: String(row.spread_version),
       shuffleVersion: String(drawRow.shuffle_version),
       assignments: drawRow.assignments as LockedDraw["assignments"],
+      ...(drawRow.proof ? { proof: drawRow.proof as NonNullable<LockedDraw["proof"]> } : {}),
       lockedAt: iso(drawRow.locked_at as Date),
     };
     const [outputRow] = await tx`
@@ -487,7 +506,13 @@ export function createPostgresRepositories(
         : {}),
       expiresAt: iso(row.expires_at as Date),
       spreadId: String(row.spread_id),
+      configuration: row.configuration
+        ? readingConfigurationSchema.parse(row.configuration)
+        : historicalReadingConfiguration(row),
       encryptedQuestion: String(row.encrypted_question),
+      ...(drawRow.encrypted_server_seed
+        ? { encryptedServerSeed: String(drawRow.encrypted_server_seed) }
+        : {}),
       safetyClassification: String(row.safety_classification),
       draw,
       ...(outputRow ? { result: readingResultSchema.parse(outputRow.payload) } : {}),
@@ -543,14 +568,18 @@ export function createPostgresRepositories(
           insert into reading_sessions (
             id, user_id, profile_snapshot_id, spread_id, spread_version, idempotency_key,
             encrypted_question,
-            reading_lens, question_classification, entitlement_decision, expires_at,
+            reading_lens, configuration, question_classification, entitlement_decision,
+            ritual_progress, expires_at,
             safety_classification, state, created_at
           ) values (
             ${reading.id}, ${reading.userId}, ${reading.profileSnapshotId}, ${reading.spreadId},
             ${reading.draw.spreadVersion}, ${reading.idempotencyKey}, ${reading.encryptedQuestion},
             ${tx.json(json(reading.readingLens))},
+            ${tx.json(json(reading.configuration))},
             ${tx.json(json(reading.questionClassification))},
-            ${tx.json(json(reading.entitlementDecision))}, ${reading.expiresAt},
+            ${tx.json(json(reading.entitlementDecision))},
+            ${reading.ritualProgress ? tx.json(json(reading.ritualProgress)) : null},
+            ${reading.expiresAt},
             ${reading.safetyClassification}, ${reading.generationStatus},
             ${reading.createdAt}
           )
@@ -567,11 +596,13 @@ export function createPostgresRepositories(
         }
         await tx`
           insert into reading_draws (
-            user_id, reading_id, deck_version, shuffle_version, assignments, locked_at
+            user_id, reading_id, deck_version, shuffle_version, assignments, proof,
+            encrypted_server_seed, locked_at
           ) values (
             ${reading.userId}, ${reading.id}, ${reading.draw.deckVersion},
             ${reading.draw.shuffleVersion}, ${tx.json(json(reading.draw.assignments))},
-            ${reading.draw.lockedAt}
+            ${reading.draw.proof ? tx.json(json(reading.draw.proof)) : null},
+            ${reading.encryptedServerSeed ?? null}, ${reading.draw.lockedAt}
           )
         `;
         // Same transaction as the reading it belongs to (see

@@ -33,6 +33,18 @@ function reading(id: string, idempotencyKey: string): StoredReading {
     },
     expiresAt: "2026-08-12T00:00:00.000Z",
     spreadId: "single-focus",
+    configuration: {
+      version: "reading-configuration-v1",
+      reversalMode: "reversals_enabled",
+      personalizationMode: "pure_tarot",
+      positions: [],
+      capabilities: {
+        trajectoryPositionIds: [],
+        alternativePositionGroups: [],
+        timingMethod: null,
+        linkedPositions: [],
+      },
+    },
     encryptedQuestion: "encrypted-question",
     safetyClassification: "ordinary",
     draw: {

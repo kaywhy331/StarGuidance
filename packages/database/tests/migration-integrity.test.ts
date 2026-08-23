@@ -88,6 +88,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0023_output_provenance": "238cc827f006c73a66326b726d31b0f4df8f419c8ce8ae1334f53e0994b182a0",
   "0024_immutable_content_versions":
     "bee71d381cd1a2206d428841f9d795fbe7e2c8cf8833a50e2e4c78c5f5ce452e",
+  "0025_committed_draw_lifecycle":
+    "cfd7055877f764cf098108223c977b8f9658076e7b67bc9da08c93ec669bbb8c",
 };
 
 describe("migration history", () => {
@@ -246,6 +248,18 @@ describe("migration history", () => {
     expect(sql).toMatch(/alter\s+column\s+"spread_version"\s+set\s+not\s+null/i);
     expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+column/i);
     expect(sql).not.toMatch(/update\s+"(?:cards|spreads)"|set\s+"(?:payload|id|content_version)"/i);
+  });
+
+  it("adds committed-draw proof and immutable reading configuration without rewriting history (0025)", () => {
+    const sql = executableSql("0025_committed_draw_lifecycle");
+    expect(sql).toMatch(/alter\s+table\s+"reading_draws"\s+add\s+column\s+"proof"\s+jsonb/i);
+    expect(sql).toMatch(
+      /alter\s+table\s+"reading_draws"\s+add\s+column\s+"encrypted_server_seed"\s+text/i,
+    );
+    expect(sql).toMatch(
+      /alter\s+table\s+"reading_sessions"\s+add\s+column\s+"configuration"\s+jsonb/i,
+    );
+    expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+(?:table|column)/i);
   });
 
   it("orders the corrective migration after the migration that created the trigger", () => {

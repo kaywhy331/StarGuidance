@@ -4,18 +4,22 @@ import {
   classifyQuestionContext,
   createInterpretationProvider,
   GUARDED_CATEGORIES,
+  readingLensStatements,
+  reviewTarotQuestion,
   selectReadingLens,
 } from "@starguidance/ai";
 import {
+  drawFinalizationInputSchema,
   GENERAL_READING_QUESTION,
-  readingHorizonSchema,
-  readingTopicSchema,
+  personalizationModeSchema,
+  reversalModeSchema,
 } from "@starguidance/contracts";
 import { DECK_VERSION, findSpread, spreads, tarotCards } from "@starguidance/tarot-content";
-import { createLockedDraw } from "@starguidance/tarot-domain";
+import { finalizeCommittedDraw } from "@starguidance/tarot-domain";
 import type { StoredReading } from "@starguidance/database";
 import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
+import { issueDrawCeremony, publicDrawCeremony, readDrawCeremony } from "@/lib/draw-ceremony";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
 import {
@@ -33,19 +37,17 @@ import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib
 import { getRuntimeAdapter } from "@/lib/runtime";
 import { getRuntimeConfiguration, interpretationRuntimeOptions } from "@/lib/runtime-configuration";
 
-const inputSchema = z
+const prepareInputSchema = z
   .object({
+    action: z.literal("prepare"),
     spreadId: z.string().min(1),
-    question: z.string().trim().max(500).default(""),
-    topic: readingTopicSchema.optional().default("general"),
-    horizon: readingHorizonSchema.optional().default("open"),
-    generalReading: z.boolean().optional().default(false),
+    question: z.string().trim().min(1).max(500),
+    questionConfirmed: z.literal(true),
+    reversalMode: reversalModeSchema.default("reversals_enabled"),
+    personalizationMode: personalizationModeSchema.default("personalized_tarot"),
     continueAsReflection: z.boolean().optional().default(false),
   })
-  .superRefine((input, context) => {
-    if (!input.generalReading && !input.question)
-      context.addIssue({ code: "custom", message: "Enter a question or choose General reading." });
-  });
+  .strict();
 const idempotencyKeySchema = z.string().uuid();
 
 export async function POST(request: Request) {
@@ -62,44 +64,198 @@ export async function POST(request: Request) {
       if (crisisSafety.category === "selfHarmCrisis")
         return NextResponse.json({ safety: crisisSafety }, { status: 422 });
     }
+
     const user = await requireUser();
     assertCurrentPolicyConsents(user);
-    await assertRateLimit(`reading:${user.id}`, 12);
-    const idempotencyKey = idempotencyKeySchema.parse(request.headers.get("idempotency-key"));
+    await assertRateLimit(`reading:${user.id}`, 16);
+
+    if (typeof body === "object" && body !== null && "action" in body && body.action === "review") {
+      const input = z
+        .object({ action: z.literal("review"), question: z.string().trim().min(1).max(500) })
+        .strict()
+        .parse(body);
+      return NextResponse.json({
+        question: input.question,
+        review: reviewTarotQuestion(input.question),
+        safety: classifyQuestion(input.question),
+      });
+    }
+
     const persistence = persistenceFor(user);
     const runtimeConfiguration = await getRuntimeConfiguration();
-    const profile = await persistence.repositories.birthProfiles.getActive(user.id);
-    if (!profile)
-      return NextResponse.json({ error: "Complete a private profile first." }, { status: 409 });
-    const input = inputSchema.parse(body);
-    const question = input.generalReading ? GENERAL_READING_QUESTION : input.question;
-    const questionClassification = classifyQuestionContext(question, input);
-    const safety = classifyQuestion(question);
-    if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
-    if (GUARDED_CATEGORIES.has(safety.category) && !input.continueAsReflection)
+
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "action" in body &&
+      body.action === "prepare"
+    ) {
+      const input = prepareInputSchema.parse(body);
+      const idempotencyKey = idempotencyKeySchema.parse(request.headers.get("idempotency-key"));
+      const profile = await persistence.repositories.birthProfiles.getActive(user.id);
+      if (!profile)
+        return NextResponse.json({ error: "Complete a private profile first." }, { status: 409 });
+
+      const question = input.question;
+      const questionClassification = classifyQuestionContext(question);
+      const safety = classifyQuestion(question);
+      if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
+      if (GUARDED_CATEGORIES.has(safety.category) && !input.continueAsReflection)
+        return NextResponse.json(
+          { safety, reflectionAcknowledgementRequired: true },
+          { status: 409 },
+        );
+      const spread = spreads.find(({ id }) => id === input.spreadId);
+      if (!spread) return NextResponse.json({ error: "Unknown spread." }, { status: 404 });
+      if (!runtimeConfiguration.content.enabledSpreadIds.includes(spread.id))
+        return NextResponse.json(
+          { error: "That spread is currently unavailable." },
+          { status: 409 },
+        );
+
+      const previousReadings = await persistence.repositories.readingSessions.list(user.id);
+      const idempotent = previousReadings.find(({ idempotencyKey: key }) => key === idempotencyKey);
+      if (idempotent)
+        return NextResponse.json({
+          readingId: idempotent.id,
+          generationStatus: idempotent.generationStatus,
+          idempotentReplay: true,
+        });
+      const entitlementDecision = readingEntitlementDecision(
+        previousReadings,
+        Date.now(),
+        runtimeConfiguration.commerce,
+      );
+      if (entitlementDecision.outcome === "limitReached")
+        return NextResponse.json(
+          {
+            error: "Your included reading allowance is used for this window.",
+            entitlementDecision,
+          },
+          { status: 429 },
+        );
+      const retained = findRetainedReading(
+        previousReadings,
+        question,
+        (encrypted) => persistence.decrypt(encrypted, "reading-question"),
+        runtimeConfiguration.commerce.rereadCooldownMinutes * 60_000,
+      );
+      if (retained)
+        return NextResponse.json(
+          {
+            error:
+              "You asked this recently. Keep the existing cards in view before starting another reading.",
+            cooldownActive: true,
+            retainedReadingId: retained.reading.id,
+            availableAt: retained.availableAt,
+          },
+          { status: 409 },
+        );
+
+      const selectedLens =
+        input.personalizationMode === "personalized_tarot"
+          ? selectReadingLens(
+              question,
+              profile.snapshot.traits,
+              profile.snapshot.tensions,
+              questionClassification.topic,
+            )
+          : {
+              version: "question-trait-lens-v2" as const,
+              traitIndexes: [],
+              tensionIndexes: [],
+              statements: [],
+            };
+      const { ceremony } = issueDrawCeremony(persistence, {
+        userId: user.id,
+        idempotencyKey,
+        deckVersion: DECK_VERSION,
+        profileSnapshotId: profile.snapshot.id,
+        readingLens: {
+          version: selectedLens.version,
+          traitIndexes: selectedLens.traitIndexes,
+          tensionIndexes: selectedLens.tensionIndexes,
+        },
+        question,
+        questionClassification,
+        entitlementDecision,
+        safetyClassification: safety.category,
+        continueAsReflection: input.continueAsReflection,
+        spread,
+        reversalMode: input.reversalMode,
+        personalizationMode: input.personalizationMode,
+      });
+      await recordAudit(user.id, "reading.ritual.prepared", "reading", ceremony.sessionId);
       return NextResponse.json(
-        { safety, reflectionAcknowledgementRequired: true },
+        {
+          ceremony,
+          questionReview: reviewTarotQuestion(question),
+          questionClassification,
+          safety,
+          entitlementDecision,
+        },
+        { status: 201 },
+      );
+    }
+
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "action" in body &&
+      body.action === "restore"
+    ) {
+      const input = z
+        .object({ action: z.literal("restore"), ceremonyToken: z.string().min(32).max(65_536) })
+        .strict()
+        .parse(body);
+      const privateCeremony = readDrawCeremony(persistence, input.ceremonyToken, user.id);
+      const finalized = await persistence.repositories.readingSessions.get(
+        user.id,
+        privateCeremony.readingId,
+      );
+      return NextResponse.json(
+        finalized
+          ? {
+              readingId: finalized.id,
+              generationStatus: finalized.generationStatus,
+              idempotentReplay: true,
+            }
+          : { ceremony: publicDrawCeremony(privateCeremony, input.ceremonyToken) },
+      );
+    }
+
+    const input = drawFinalizationInputSchema.parse(body);
+    const ceremony = readDrawCeremony(persistence, input.ceremonyToken, user.id);
+    const alreadyFinalized = await persistence.repositories.readingSessions.get(
+      user.id,
+      ceremony.readingId,
+    );
+    if (alreadyFinalized)
+      return NextResponse.json({
+        readingId: alreadyFinalized.id,
+        generationStatus: alreadyFinalized.generationStatus,
+        idempotentReplay: true,
+      });
+
+    const spread = findSpread(ceremony.spread.id, ceremony.spread.version);
+    if (!spread || ceremony.deckVersion !== DECK_VERSION)
+      return NextResponse.json(
+        { error: "The prepared deck or spread is no longer available. Start the ritual again." },
         { status: 409 },
       );
-    const spread = spreads.find(({ id }) => id === input.spreadId);
-    if (!spread) return NextResponse.json({ error: "Unknown spread." }, { status: 404 });
     if (!runtimeConfiguration.content.enabledSpreadIds.includes(spread.id))
       return NextResponse.json({ error: "That spread is currently unavailable." }, { status: 409 });
 
     const previousReadings = await persistence.repositories.readingSessions.list(user.id);
     const idempotent = previousReadings.find(
-      (candidate) => candidate.idempotencyKey === idempotencyKey,
+      ({ idempotencyKey }) => idempotencyKey === ceremony.idempotencyKey,
     );
     if (idempotent)
-      return NextResponse.json(
-        {
-          readingId: idempotent.id,
-          safety,
-          generationStatus: idempotent.generationStatus,
-          idempotentReplay: true,
-        },
-        { status: 200 },
-      );
+      return NextResponse.json({
+        readingId: idempotent.id,
+        generationStatus: idempotent.generationStatus,
+        idempotentReplay: true,
+      });
     const entitlementDecision = readingEntitlementDecision(
       previousReadings,
       Date.now(),
@@ -107,15 +263,12 @@ export async function POST(request: Request) {
     );
     if (entitlementDecision.outcome === "limitReached")
       return NextResponse.json(
-        {
-          error: "Your included reading allowance is used for this window.",
-          entitlementDecision,
-        },
+        { error: "Your included reading allowance is used for this window.", entitlementDecision },
         { status: 429 },
       );
     const retained = findRetainedReading(
       previousReadings,
-      question,
+      ceremony.question,
       (encrypted) => persistence.decrypt(encrypted, "reading-question"),
       runtimeConfiguration.commerce.rereadCooldownMinutes * 60_000,
     );
@@ -131,49 +284,57 @@ export async function POST(request: Request) {
         { status: 409 },
       );
 
-    const readingLens = selectReadingLens(
-      question,
-      profile.snapshot.traits,
-      profile.snapshot.tensions,
-      questionClassification.topic,
-    );
-    const draw = createLockedDraw({
+    const lockedSpread = {
+      ...spread,
+      positions: ceremony.configuration.positions,
+      capabilities: ceremony.configuration.capabilities,
+    };
+    const draw = finalizeCommittedDraw({
       cards: tarotCards,
-      deckVersion: DECK_VERSION,
-      spread,
+      deckVersion: ceremony.deckVersion,
+      spread: lockedSpread,
+      sessionId: ceremony.readingId,
+      serverSeed: ceremony.serverSeed,
+      serverSeedCommitment: ceremony.serverSeedCommitment,
+      clientNonce: input.clientNonce,
+      cutIndex: input.cutIndex,
+      reversalMode: ceremony.configuration.reversalMode,
     });
+    const now = new Date();
     const reading: StoredReading = {
       id: draw.id,
       userId: user.id,
-      idempotencyKey,
-      profileSnapshotId: profile.snapshot.id,
-      readingLens: {
-        version: readingLens.version,
-        traitIndexes: readingLens.traitIndexes,
-        tensionIndexes: readingLens.tensionIndexes,
-      },
-      questionClassification,
+      idempotencyKey: ceremony.idempotencyKey,
+      profileSnapshotId: ceremony.profileSnapshotId,
+      readingLens: ceremony.readingLens,
+      questionClassification: ceremony.questionClassification,
       entitlementDecision,
-      expiresAt: new Date(Date.now() + readingSessionTtlMs()).toISOString(),
-      spreadId: spread.id,
-      encryptedQuestion: persistence.encrypt(question, "reading-question"),
-      safetyClassification: safety.category,
+      ritualProgress: {
+        version: "ritual-progress-v2",
+        phase: "drawLocked",
+        cutIndex: input.cutIndex,
+        revealedIndexes: [],
+        updatedAt: now.toISOString(),
+      },
+      expiresAt: new Date(now.getTime() + readingSessionTtlMs()).toISOString(),
+      spreadId: ceremony.spread.id,
+      configuration: ceremony.configuration,
+      encryptedQuestion: persistence.encrypt(ceremony.question, "reading-question"),
+      encryptedServerSeed: persistence.encrypt(ceremony.serverSeed, "draw-server-seed"),
+      safetyClassification: ceremony.safetyClassification,
       draw,
       generationStatus: "pending",
       followUps: [],
-      createdAt: new Date().toISOString(),
+      createdAt: now.toISOString(),
     };
     const persisted = await persistence.repositories.readingSessions.createLocked(reading);
     if (persisted.id !== reading.id)
-      return NextResponse.json(
-        {
-          readingId: persisted.id,
-          safety,
-          generationStatus: persisted.generationStatus,
-          idempotentReplay: true,
-        },
-        { status: 200 },
-      );
+      return NextResponse.json({
+        readingId: persisted.id,
+        generationStatus: persisted.generationStatus,
+        idempotentReplay: true,
+      });
+
     await recordAudit(user.id, "reading.draw.locked", "reading", reading.id);
     await Promise.all([
       tryRecordProductEvent({
@@ -189,10 +350,11 @@ export async function POST(request: Request) {
         idempotencyKey: `reading:${reading.id}:question`,
         name: "question_submitted",
         properties: {
-          topic: questionClassification.topic,
-          horizon: questionClassification.horizon,
-          questionLength: input.generalReading ? 0 : input.question.length,
-          generalReading: input.generalReading,
+          topic: ceremony.questionClassification.topic,
+          horizon: ceremony.questionClassification.horizon,
+          questionLength:
+            ceremony.question === GENERAL_READING_QUESTION ? 0 : ceremony.question.length,
+          generalReading: ceremony.questionClassification.generalReading,
         },
       }),
       tryRecordProductEvent({
@@ -205,13 +367,18 @@ export async function POST(request: Request) {
         },
       }),
     ]);
+
+    const snapshot = (
+      await persistence.repositories.profileSnapshots.get(user.id, ceremony.profileSnapshotId)
+    )?.snapshot;
+    const relevantTraitStatements =
+      ceremony.configuration.personalizationMode === "personalized_tarot" && snapshot
+        ? readingLensStatements(ceremony.readingLens, snapshot.traits, snapshot.tensions)
+        : [];
     if (
       process.env.APP_ENV === "test" &&
       request.headers.get("x-e2e-force-generation-failure") === "1"
     ) {
-      // Synthetic-only: simulate a job that exhausted its retries, without
-      // running the real provider or touching the job row, so nothing
-      // reprocesses it later during the same test.
       await persistence.repositories.readingSessions.setGenerationStatus(
         user.id,
         reading.id,
@@ -224,18 +391,16 @@ export async function POST(request: Request) {
         properties: { errorClass: "unclassified", statusClass: "failed" },
       });
     } else if (getRuntimeAdapter() !== "supabase") {
-      // The local runtime adapter has no interpretation_jobs table (see
-      // apps/web/src/lib/repositories/local.ts) and never runs on Netlify, so
-      // it keeps generating synchronously exactly as before.
       const generationStartedAt = Date.now();
       try {
         const generated = await createInterpretationProvider(
           interpretationRuntimeOptions(runtimeConfiguration),
         ).generateWithProvenance({
           draw,
-          question,
-          questionClassification,
-          relevantTraitStatements: readingLens.statements,
+          configuration: ceremony.configuration,
+          question: ceremony.question,
+          questionClassification: ceremony.questionClassification,
+          relevantTraitStatements,
         });
         await persistence.repositories.outputs.save(user.id, reading.id, generated.result, {
           ...generated.provenance,
@@ -243,11 +408,6 @@ export async function POST(request: Request) {
           safetyPolicyVersion: runtimeConfiguration.prompts.safetyPolicyVersion,
         });
         reading.generationStatus = "ready";
-        await persistence.repositories.readingSessions.setGenerationStatus(
-          user.id,
-          reading.id,
-          "ready",
-        );
         const provider = classifyProductProvider(generated.provenance.providerId);
         await tryRecordProductEvent({
           idempotencyKey: `reading:${reading.id}:generation-completed`,
@@ -261,18 +421,6 @@ export async function POST(request: Request) {
             statusClass: "ready",
           },
         });
-        if (provider === "deterministic")
-          await tryRecordProductEvent({
-            idempotencyKey: `reading:${reading.id}:fallback-used`,
-            name: "fallback_used",
-            properties: {
-              provider,
-              modelVersion: productModelVersion(generated.provenance.providerId),
-              generationMode: "deterministic",
-              fallbackUsed: true,
-              statusClass: "ready",
-            },
-          });
       } catch {
         reading.generationStatus = "failed";
         await persistence.repositories.readingSessions.setGenerationStatus(
@@ -291,18 +439,10 @@ export async function POST(request: Request) {
         });
       }
     } else {
-      // createLocked already enqueued this reading's interpretation job in
-      // the same transaction (see insertInterpretationJob). Draining it here
-      // keeps today's near-synchronous latency in the common case; if this
-      // attempt is interrupted or the provider fails transiently, the job
-      // stays durably claimable and the Netlify-scheduled sweep
-      // (/api/internal/interpretation-jobs) finishes it later — the
-      // "survives serverless interruption" property docs/KNOWN-GAPS.md
-      // called out.
       try {
         await runInterpretationJobs(1);
       } catch {
-        // Best-effort inline attempt; the durable job row survives regardless.
+        // The atomically enqueued job remains available to the scheduled worker.
       }
       const current = await persistence.repositories.readingSessions.get(user.id, reading.id);
       reading.generationStatus = current?.generationStatus ?? reading.generationStatus;
@@ -310,8 +450,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         readingId: reading.id,
-        safety,
-        questionClassification,
+        drawProof: draw.proof,
+        safety: classifyQuestion(ceremony.question),
+        questionClassification: ceremony.questionClassification,
         entitlementDecision,
         generationStatus: reading.generationStatus,
       },
@@ -371,7 +512,9 @@ export async function GET() {
             orientation,
             artPath: `/art/tarot/${artworkRouteVersion}/${cardId}.svg`,
           })),
-          resultTitle: stored.result?.title,
+          resultTitle: stored.result
+            ? `${stored.result.directAnswer.slice(0, 72)}${stored.result.directAnswer.length > 72 ? "…" : ""}`
+            : undefined,
           generationStatus,
           followUpCount: stored.followUps.length,
           feedbackSubmitted: feedback.some(

@@ -3,6 +3,7 @@ import type {
   ProfileSnapshot,
   ProfileTrait,
   QuestionClassification,
+  ReadingConfiguration,
   ReadingEntitlementDecision,
   ReadingOutputProvenance,
   ReadingResult,
@@ -52,7 +53,7 @@ export interface ProfileTraitRecord {
 export interface ReadingLensRecord {
   version: string;
   traitIndexes: readonly number[];
-  tensionIndexes?: readonly number[];
+  tensionIndexes?: readonly number[] | undefined;
 }
 
 export interface StoredFollowUp {
@@ -87,7 +88,9 @@ export interface StoredReading {
   ritualProgress?: StoredRitualProgress;
   expiresAt: string;
   spreadId: string;
+  configuration: ReadingConfiguration;
   encryptedQuestion: string;
+  encryptedServerSeed?: string;
   safetyClassification: string;
   draw: LockedDraw;
   result?: ReadingResult;

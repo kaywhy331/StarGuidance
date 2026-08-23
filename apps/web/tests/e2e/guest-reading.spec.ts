@@ -1,74 +1,20 @@
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-async function captureGuestReview(page: Page, testInfo: TestInfo, name: string) {
-  if (!process.env.CAPTURE_GUEST_SCREENSHOTS) return;
-  await page.screenshot({
-    animations: "disabled",
-    caret: "hide",
-    path: path.resolve(
-      process.cwd(),
-      "../../docs/screenshots",
-      `${name}-${testInfo.project.name}.png`,
-    ),
-  });
-}
-
-async function revealGuestCards(page: Page) {
-  await expect(page.getByTestId("guest-question-reflection")).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "I’m ready" }).dispatchEvent("click");
-
-  for (let index = 0; index < 3; index += 1) {
-    const card = page.getByRole("button", { name: /^Reveal card \d+, face down$/ }).first();
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await card.dispatchEvent("click");
-  }
-
-  await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
-  const transcript = page.getByTestId("oracle-transcript");
-  const nextPassage = page.getByRole("button", { name: "Next reading passage" });
-  for (let index = 0; index < 3; index += 1) await nextPassage.click();
-  await expect(transcript).toHaveAttribute("data-active-card-index", "2");
-  await nextPassage.click();
-  await expect(transcript).not.toHaveAttribute("data-active-card-index", /.+/);
-  await expect(page.getByRole("heading", { name: "Turning point", exact: true })).toBeVisible();
-  await nextPassage.click();
-  await expect(page.getByRole("heading", { name: "Likely trajectory", exact: true })).toBeVisible();
-
-  const completeStory = page.getByRole("button", { name: "Read as one story" });
-  await expect(completeStory).toBeEnabled();
-  await completeStory.dispatchEvent("click");
-  await page.getByRole("button", { name: /Continue with these cards/ }).dispatchEvent("click");
-  await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
-}
-
-test("a visitor reads before signup and continues with the exact cards", async ({
+test("a visitor completes a causal free reading before signup and continues with the exact cards", async ({
   page,
-}, testInfo) => {
-  test.setTimeout(150_000);
-
+}) => {
+  test.setTimeout(180_000);
   await page.goto("/");
   const freeReading = page.getByRole("link", { name: "Free Reading" });
-  await expect(freeReading).toBeVisible();
   await expect(freeReading).toHaveAttribute("href", "/free-reading");
-  await expect(page.getByRole("link", { name: "Sign up", exact: true })).toBeVisible();
-  await Promise.all([page.waitForURL(/\/free-reading$/, { timeout: 30_000 }), freeReading.click()]);
+  await freeReading.click();
 
   await expect(
-    page.getByRole("heading", { name: "Meet the cards before you decide to stay." }),
+    page.getByRole("heading", { name: "What would you like the cards to illuminate?" }),
   ).toBeVisible({ timeout: 30_000 });
-  const spreadOptions = page.getByRole("radiogroup", { name: "Free reading type" });
-  const spreadBox = await spreadOptions.boundingBox();
-  const viewport = page.viewportSize();
-  if (!spreadBox || !viewport) throw new Error("The centered spread selector must be measurable.");
-  expect(Math.abs(spreadBox.x + spreadBox.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2);
-  await captureGuestReview(page, testInfo, "free-reading-selection");
-  await page.getByRole("button", { name: /Continue with Three-Card Spread/ }).click();
   await page.getByRole("button", { name: "Reduce motion" }).click();
-  await expect(page.getByRole("combobox")).toHaveCount(0);
-  await expect(page.getByText(/Use a general reading instead/i)).toHaveCount(0);
   await page.getByLabel("Your birthday").fill("1990-01-15");
   await page.getByLabel(/I agree to the Terms/i).check();
   await page.getByLabel(/I have read the Privacy Notice/i).check();
@@ -76,35 +22,95 @@ test("a visitor reads before signup and continues with the exact cards", async (
   await page
     .getByLabel("Your private guest question")
     .fill("What can I understand about the next step in my work?");
+  await page.getByRole("button", { name: "Review my question" }).click();
+  await expect(page.getByTestId("guest-question-confirmation")).toContainText(
+    "What can I understand about the next step in my work?",
+  );
+  await page.getByRole("button", { name: "Confirm this question" }).click();
 
-  const creation = page.waitForResponse(
+  const spreadOptions = page.getByRole("radiogroup", { name: "Free reading type" });
+  await expect(spreadOptions).toBeVisible();
+  const spreadBox = await spreadOptions.boundingBox();
+  const viewport = page.viewportSize();
+  if (!spreadBox || !viewport) throw new Error("The centered spread selector must be measurable.");
+  expect(Math.abs(spreadBox.x + spreadBox.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(3);
+  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Situation");
+  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Challenge");
+  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Direction");
+
+  const prepared = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/api/guest-readings",
+      new URL(response.url()).pathname === "/api/guest-readings" &&
+      response.request().postData()?.includes('"action":"prepare"') === true,
   );
-  await page.getByRole("button", { name: "Begin my free reading" }).click();
-  expect((await creation).status()).toBe(201);
+  await page
+    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
+    .click();
+  const preparedResponse = await prepared;
+  expect(preparedResponse.status()).toBe(201);
+  expect(JSON.stringify(await preparedResponse.json())).not.toMatch(
+    /"cardId"|"assignments"|"orientation"/,
+  );
 
-  await revealGuestCards(page);
-  await captureGuestReview(page, testInfo, "free-reading-result-gate");
+  await page.getByRole("button", { name: "Begin the shuffle" }).click();
+  await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+    "data-ritual-phase",
+    "shuffling",
+  );
+  await page.getByRole("button", { name: "Finish shuffling" }).click();
+  const finalized = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/guest-readings" &&
+      response.request().postData()?.includes('"action":"finalize"') === true,
+  );
+  await page.getByRole("button", { name: /^No cut/ }).click();
+  const finalizedResponse = await finalized;
+  expect(finalizedResponse.status()).toBe(201);
+  const finalizedBody = (await finalizedResponse.json()) as {
+    reading: { cards: unknown[]; result?: unknown };
+  };
+  expect(finalizedBody.reading.cards).toHaveLength(3);
+  expect(finalizedBody.reading.result).toBeUndefined();
+
+  await expect(page.getByTestId("guest-question-reflection")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".physical-card-front")).toHaveCount(0);
+  await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
+  await page.getByRole("button", { name: "I’m ready" }).click();
+  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
+  await expect(page.getByTestId("guest-guided-reveal-panel")).toContainText("Situation");
+  await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
+  await page.getByRole("button", { name: /Return to the spread/ }).click();
+  await page.getByRole("button", { name: "Reveal All" }).click();
+
+  await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
   const originalCards = await page
     .getByTestId("tarot-spread-stage")
     .locator(".physical-tarot-card")
     .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-card-id")));
   expect(originalCards).toHaveLength(3);
 
-  // Remove display recovery and the redundant local allowance marker while
-  // retaining the encrypted receipt, browser device ID, and HttpOnly cookie.
-  // The server marker alone should now route the browser to account conversion.
   await page.evaluate(() => {
     sessionStorage.clear();
     localStorage.removeItem("sg:guest-trial-used:v1");
   });
   await page.goto("/free-reading");
-  await expect(
-    page.getByRole("heading", { name: "Keep going inside a private account." }),
-  ).toBeVisible();
-  await page.getByRole("link", { name: "Sign up", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Your locked tarot spread" })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.locator(".physical-card-front")).toHaveCount(0);
+  await page.getByRole("button", { name: "I’m ready" }).click();
+  await page.getByRole("button", { name: "Reveal All" }).click();
+  await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
+  const refreshedCards = await page
+    .getByTestId("tarot-spread-stage")
+    .locator(".physical-tarot-card")
+    .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-card-id")));
+  expect(refreshedCards).toEqual(originalCards);
+  await page.getByRole("link", { name: "Sign up to continue" }).click();
   await expect(page).toHaveURL(/\/sign-up\?next=/);
 
   await page.getByLabel("Email").fill(`guest-${randomUUID()}@example.test`);
@@ -127,8 +133,10 @@ test("a visitor reads before signup and continues with the exact cards", async (
 
   await page
     .getByLabel("Ask these same cards one follow-up")
-    .fill("What is one practical way to meet that next step?");
+    .fill("What is one practical way to meet that same next step?");
   await page.getByRole("button", { name: "Ask the same cards" }).click();
-  await expect(page.getByRole("heading", { name: "One more edge comes into view." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "A clarification from the original spread" }),
+  ).toBeVisible();
   await expect(page.getByText(/did not alter the cards/i)).toBeVisible();
 });

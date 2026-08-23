@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   createInterpretationProvider,
+  classifyFollowUpScope,
   classifyQuestion,
   readingLensStatements,
-  selectReadingLens,
 } from "@starguidance/ai";
 import { actorTransaction, reenqueueInterpretationJob } from "@starguidance/database";
 import { ritualProgressSchema } from "@starguidance/contracts";
-import { findSpread, resolveSpreadPositions, tarotCards } from "@starguidance/tarot-content";
+import { findSpread, tarotCards } from "@starguidance/tarot-content";
 import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
@@ -23,13 +23,31 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("followUp"), question: z.string().trim().min(1).max(500) }),
   z.object({
     action: z.literal("progress"),
-    phase: z.enum(["cuttingDeck", "revealingCards", "complete"]),
-    cutTaken: z.boolean(),
+    phase: z.enum([
+      "drawLocked",
+      "dealing",
+      "awaitingReveal",
+      "revealing",
+      "fullSpreadReady",
+      "interpretationStreaming",
+      "followUpAvailable",
+      "complete",
+    ]),
+    cutIndex: z.number().int().min(0).max(77),
     revealedIndexes: z.array(z.number().int().nonnegative()).max(10),
   }),
 ]);
 
-const ritualPhaseRank = { cuttingDeck: 0, revealingCards: 1, complete: 2 } as const;
+const ritualPhaseRank = {
+  drawLocked: 0,
+  dealing: 1,
+  awaitingReveal: 2,
+  revealing: 3,
+  fullSpreadReady: 4,
+  interpretationStreaming: 5,
+  followUpAvailable: 6,
+  complete: 7,
+} as const;
 
 async function ownedReading(id: string) {
   const user = await requireUser();
@@ -43,10 +61,8 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     const owned = await ownedReading((await context.params).id);
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { reading } = owned;
-    const spread = findSpread(reading.spreadId);
-    const positions = spread
-      ? resolveSpreadPositions(spread, reading.questionClassification)
-      : undefined;
+    const spread = findSpread(reading.spreadId, reading.draw.spreadVersion);
+    const positions = reading.configuration.positions;
     const runtimeConfiguration = await getRuntimeConfiguration();
     const configuredFollowUpLimit = followUpLimit(runtimeConfiguration.commerce);
     const [feedback, storedProfile] = await Promise.all([
@@ -70,33 +86,42 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           // versions never move it, and a caller cannot otherwise tell which
           // version of themselves a past reading interpreted.
           profileSnapshotId: reading.profileSnapshotId,
-          personalization: snapshot
-            ? {
-                lensVersion: reading.readingLens.version,
-                snapshotVersion: snapshot.version,
-                completeness: snapshot.completeness,
-                traits: lensTraits.map((trait) => ({
-                  domain: trait.domain,
-                  sourceSystem: trait.sourceSystem,
-                  stability: trait.stability,
-                  confidence: trait.confidence,
-                  calculationVersion: trait.calculationVersion,
-                })),
-                tensionCount: reading.readingLens.tensionIndexes?.length ?? 0,
-                rawBirthDataSharedWithNarrator: false as const,
-              }
-            : undefined,
+          configuration: reading.configuration,
+          personalization:
+            reading.configuration.personalizationMode === "personalized_tarot" && snapshot
+              ? {
+                  lensVersion: reading.readingLens.version,
+                  snapshotVersion: snapshot.version,
+                  completeness: snapshot.completeness,
+                  traits: lensTraits.map((trait) => ({
+                    domain: trait.domain,
+                    sourceSystem: trait.sourceSystem,
+                    stability: trait.stability,
+                    confidence: trait.confidence,
+                    calculationVersion: trait.calculationVersion,
+                  })),
+                  tensionCount: reading.readingLens.tensionIndexes?.length ?? 0,
+                  rawBirthDataSharedWithNarrator: false as const,
+                }
+              : undefined,
           draw: reading.draw,
           cards: reading.draw.assignments.map((assignment) => {
             const card = tarotCards.find(({ id }) => id === assignment.cardId);
             const position = positions?.find(({ id }) => id === assignment.positionId);
             if (!card) throw new Error("Locked draw references unavailable card content.");
+            const themes =
+              assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes;
+            const reversalFacet =
+              assignment.orientation === "reversed" ? card.reversalFacets?.[0] : undefined;
             return {
               cardId: card.id,
               name: card.name,
               orientation: assignment.orientation,
-              themes:
-                assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes,
+              themes,
+              baselineMeaning:
+                assignment.orientation === "reversed"
+                  ? `In ${position?.displayName ?? "this position"}, ${card.name} reversed may show a ${reversalFacet ?? "blocked or internalized"} expression of ${themes.slice(0, 2).join(" and ")}.`
+                  : `In ${position?.displayName ?? "this position"}, ${card.name} highlights ${themes.slice(0, 2).join(" and ")}.`,
               positionId: assignment.positionId,
               positionName: position?.displayName ?? assignment.positionId.replaceAll("-", " "),
               positionDescription:
@@ -115,7 +140,12 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
               artwork: card.artwork,
             };
           }),
-          result: reading.result,
+          result:
+            reading.ritualProgress &&
+            ritualPhaseRank[reading.ritualProgress.phase] >= ritualPhaseRank.fullSpreadReady &&
+            reading.ritualProgress.revealedIndexes.length === reading.draw.assignments.length
+              ? reading.result
+              : undefined,
           outputProvenance: reading.outputProvenance,
           generationStatus: reading.generationStatus,
           questionClassification: reading.questionClassification,
@@ -205,7 +235,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const previous = reading.ritualProgress;
       if (
         previous &&
-        (previous.cutTaken !== input.cutTaken ||
+        (previous.cutIndex !== input.cutIndex ||
           ritualPhaseRank[input.phase] < ritualPhaseRank[previous.phase] ||
           previous.revealedIndexes.some((index) => !revealedIndexes.includes(index)))
       )
@@ -213,15 +243,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           { error: "Ritual progress cannot move backward or change the recorded cut." },
           { status: 409 },
         );
-      if (input.phase === "complete" && revealedIndexes.length !== reading.draw.assignments.length)
+      if (
+        ["fullSpreadReady", "interpretationStreaming", "followUpAvailable", "complete"].includes(
+          input.phase,
+        ) &&
+        revealedIndexes.length !== reading.draw.assignments.length
+      )
         return NextResponse.json(
           { error: "Every locked card must be revealed before the ritual is complete." },
           { status: 422 },
         );
       const progress = ritualProgressSchema.parse({
-        version: "ritual-progress-v1",
+        version: "ritual-progress-v2",
         phase: input.phase,
-        cutTaken: input.cutTaken,
+        cutIndex: input.cutIndex,
         revealedIndexes,
         updatedAt: new Date().toISOString(),
       });
@@ -246,11 +281,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (getRuntimeAdapter() !== "supabase") {
         const generated = await provider.generateWithProvenance({
           draw: reading.draw,
+          configuration: reading.configuration,
           question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
           questionClassification: reading.questionClassification,
-          relevantTraitStatements: snapshot
-            ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
-            : [],
+          relevantTraitStatements:
+            reading.configuration.personalizationMode === "personalized_tarot" && snapshot
+              ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
+              : [],
         });
         await persistence.repositories.outputs.save(user.id, reading.id, generated.result, {
           ...generated.provenance,
@@ -297,33 +334,59 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const runtimeConfiguration = await getRuntimeConfiguration();
     const configuredFollowUpLimit = followUpLimit(runtimeConfiguration.commerce);
     activeFollowUpLimit = configuredFollowUpLimit;
-    if (reading.followUps.length >= configuredFollowUpLimit)
-      return NextResponse.json(
-        { error: followUpLimitMessage(configuredFollowUpLimit) },
-        { status: 409 },
-      );
     if (!reading.result)
       return NextResponse.json(
         { error: "The original reading must be complete before asking a follow-up." },
         { status: 409 },
       );
+    const fullSpreadReady =
+      reading.ritualProgress !== undefined &&
+      ["fullSpreadReady", "interpretationStreaming", "followUpAvailable", "complete"].includes(
+        reading.ritualProgress.phase,
+      ) &&
+      reading.ritualProgress.revealedIndexes.length === reading.draw.assignments.length;
+    if (!fullSpreadReady)
+      return NextResponse.json(
+        { error: "Reveal the complete spread before asking a clarification." },
+        { status: 409 },
+      );
+    const originalQuestion = persistence.decrypt(reading.encryptedQuestion, "reading-question");
+    const followUpScope = classifyFollowUpScope({
+      originalQuestion,
+      originalClassification: reading.questionClassification,
+      followUpQuestion: input.question,
+    });
+    if (!followUpScope.sameReading)
+      return NextResponse.json(
+        {
+          error:
+            "That changes the subject, decision, person, or time horizon. Start a new reading so the new question can receive its own confirmed spread and draw.",
+          newReadingRequired: true,
+          reason: followUpScope.reason,
+        },
+        { status: 409 },
+      );
+    if (reading.followUps.length >= configuredFollowUpLimit)
+      return NextResponse.json(
+        { error: followUpLimitMessage(configuredFollowUpLimit) },
+        { status: 409 },
+      );
     const snapshot = (
       await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
     )?.snapshot;
-    const lens = selectReadingLens(
-      input.question,
-      snapshot?.traits ?? [],
-      snapshot?.tensions ?? [],
-      reading.questionClassification.topic,
-    );
+    const lensStatements =
+      reading.configuration.personalizationMode === "personalized_tarot" && snapshot
+        ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
+        : [];
     const provider = createInterpretationProvider(
       interpretationRuntimeOptions(runtimeConfiguration),
     );
     const generated = await provider.generateFollowUpWithProvenance({
       draw: reading.draw,
+      configuration: reading.configuration,
       question: input.question,
       questionClassification: reading.questionClassification,
-      relevantTraitStatements: lens.statements,
+      relevantTraitStatements: lensStatements,
       originalResult: reading.result,
     });
     const result = generated.result;

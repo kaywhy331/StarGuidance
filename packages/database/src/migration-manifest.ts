@@ -30,4 +30,5 @@ export const EXPECTED_MIGRATIONS = [
   "0022_outstanding_smasher",
   "0023_output_provenance",
   "0024_immutable_content_versions",
+  "0025_committed_draw_lifecycle",
 ] as const;
