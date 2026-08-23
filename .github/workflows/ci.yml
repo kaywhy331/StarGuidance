@@ -306,7 +306,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        spread: [one-card, three-card, celtic-cross, horseshoe, relationship, nine-card-matrix]
+        spread:
+          [
+            one-card,
+            three-card,
+            crossroads,
+            outlook,
+            celtic-cross,
+            horseshoe,
+            relationship,
+            nine-card-matrix,
+          ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -334,7 +344,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        spread: [one-card, three-card, celtic-cross, horseshoe, relationship, nine-card-matrix]
+        spread:
+          [
+            one-card,
+            three-card,
+            crossroads,
+            outlook,
+            celtic-cross,
+            horseshoe,
+            relationship,
+            nine-card-matrix,
+          ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -379,7 +399,7 @@ jobs:
     strategy:
       fail-fast: false
       # A production server remains intentionally local to each shard. These
-      # lanes cover the general inventory; the six long spread journeys each
+      # lanes cover the general inventory; the eight spread journeys each
       # receive their own clean server below.
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7]
@@ -411,7 +431,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        spread: [one-card, three-card, celtic-cross, horseshoe, relationship, nine-card-matrix]
+        spread:
+          [
+            one-card,
+            three-card,
+            crossroads,
+            outlook,
+            celtic-cross,
+            horseshoe,
+            relationship,
+            nine-card-matrix,
+          ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5

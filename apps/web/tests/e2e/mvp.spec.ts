@@ -243,6 +243,141 @@ for (const contract of spreadContracts) {
   });
 }
 
+const configuredSpreadCases = [
+  {
+    id: "one-card",
+    kind: "centered",
+    positions: [[0, 0, 0]],
+  },
+  {
+    id: "three-card",
+    kind: "horizontal",
+    positions: [
+      [0, 0, 0],
+      [1, 0, 0],
+      [2, 0, 0],
+    ],
+  },
+  {
+    id: "crossroads",
+    kind: "legacy",
+    positions: [
+      [1, 2, 0],
+      [1, 0, 0],
+      [0, 1, 0],
+      [2, 1, 0],
+      [1, 1, 0],
+    ],
+  },
+  {
+    id: "outlook",
+    kind: "legacy",
+    positions: [
+      [0, 2, 0],
+      [1, 2, 0],
+      [2, 2, 0],
+      [0, 1, 0],
+      [2, 1, 0],
+      [0, 0, 0],
+      [2, 0, 0],
+    ],
+  },
+  {
+    id: "celtic-cross",
+    kind: "celtic-cross",
+    positions: [
+      [2, 1, 0],
+      [2, 1, 90],
+      [2, 0, 0],
+      [2, 2, 0],
+      [1, 1, 0],
+      [3, 1, 0],
+      [4, 3, 0],
+      [4, 2, 0],
+      [4, 1, 0],
+      [4, 0, 0],
+    ],
+  },
+  {
+    id: "horseshoe",
+    kind: "horseshoe",
+    positions: [
+      [0, 0, 0],
+      [1, 1, 0],
+      [2, 2, 0],
+      [2, 3, 0],
+      [2, 4, 0],
+      [3, 1, 0],
+      [4, 0, 0],
+    ],
+  },
+  {
+    id: "relationship",
+    kind: "relationship",
+    positions: [
+      [0, 0, 0],
+      [2, 0, 0],
+      [0, 1, 0],
+      [2, 1, 0],
+      [1, 0, 0],
+      [1, 1, 0],
+      [1, 2, 0],
+    ],
+  },
+  {
+    id: "nine-card-matrix",
+    kind: "matrix",
+    positions: [
+      [0, 0, 0],
+      [1, 0, 0],
+      [2, 0, 0],
+      [0, 1, 0],
+      [1, 1, 0],
+      [2, 1, 0],
+      [0, 2, 0],
+      [1, 2, 0],
+      [2, 2, 0],
+    ],
+  },
+] as const;
+
+for (const spreadCase of configuredSpreadCases) {
+  test(`configured ${spreadCase.id} spread uses its spatial arrangement`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await createAccountAndProfileViaApi(page);
+    const ceremony = await prepareReadingViaApi(page, {
+      spreadId: spreadCase.id,
+      question: "What should I understand about the path in front of me?",
+      personalizationMode: "pure_tarot",
+    });
+    const finalized = await finalizeReadingViaApi(page, ceremony, 20);
+    await page.goto(`/session/${finalized.readingId}`);
+
+    const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+    await expect(motionControl).toBeVisible({ timeout: 20_000 });
+    if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+      await motionControl.dispatchEvent("click");
+    await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
+      "data-ritual-phase",
+      "awaitingReveal",
+      { timeout: 20_000 },
+    );
+
+    const stage = page.getByTestId("tarot-spread-stage");
+    await expect(stage).toHaveAttribute("data-layout-kind", spreadCase.kind);
+    const figures = stage.locator(".physical-card-figure");
+    await expect(figures).toHaveCount(spreadCase.positions.length);
+    const renderedPositions = await figures.evaluateAll((elements) =>
+      elements.map((element) => [
+        Number(element.getAttribute("data-spread-column")),
+        Number(element.getAttribute("data-spread-row")),
+        Number(element.getAttribute("data-spread-rotation")),
+      ]),
+    );
+    expect(renderedPositions).toEqual(spreadCase.positions);
+  });
+}
+
 test("refresh, replay, and same-question clarification preserve the exact locked draw", async ({
   page,
 }) => {
