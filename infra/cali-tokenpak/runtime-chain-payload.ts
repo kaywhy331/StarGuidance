@@ -49,13 +49,19 @@ const provider = new GroqInterpretationProvider({
   model: "openai/gpt-oss-120b",
 });
 const payload = provider.buildPayload(input);
-const schema = reviewedReadingResponseSchema(
-  payload.cards.map((entry) => ({
-    position: { id: entry.positionId },
-    card: { id: entry.cardId },
-    orientation: entry.orientation,
-  })),
-);
+const resolved = draw.assignments.map((assignment) => {
+  const position = spread.positions.find(({ id }) => id === assignment.positionId);
+  const card = tarotCards.find(({ id }) => id === assignment.cardId);
+  assert(position);
+  assert(card);
+  return {
+    position,
+    card,
+    orientation: assignment.orientation,
+    themes: assignment.orientation === "upright" ? card.uprightThemes : card.reversedThemes,
+  };
+});
+const schema = reviewedReadingResponseSchema(resolved, input.configuration);
 
 process.stdout.write(
   JSON.stringify({
