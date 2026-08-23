@@ -127,16 +127,18 @@ export function PhysicalTarotCard({
         </picture>
         <span className="card-sheen" />
       </span>
-      <span aria-hidden={!revealed} className="physical-card-front">
-        <img
-          alt={revealed ? card.artwork.altText : ""}
-          className={card.orientation === "reversed" ? "card-art-reversed" : ""}
-          decoding="async"
-          draggable={false}
-          src={card.artwork.frontAsset}
-        />
-        <span className="card-sheen" aria-hidden="true" />
-      </span>
+      {revealed && (
+        <span className="physical-card-front">
+          <img
+            alt={card.artwork.altText}
+            className={card.orientation === "reversed" ? "card-art-reversed" : ""}
+            decoding="async"
+            draggable={false}
+            src={card.artwork.frontAsset}
+          />
+          <span className="card-sheen" aria-hidden="true" />
+        </span>
+      )}
     </span>
   );
 
@@ -156,8 +158,6 @@ export function PhysicalTarotCard({
           aria-describedby={`card-position-${index}`}
           aria-label={`Reveal card ${index + 1}, face down`}
           className={cardClassName}
-          data-card-id={card.cardId}
-          data-orientation={card.orientation}
           onClick={onReveal}
           ref={setCardRef}
           type="button"
@@ -171,8 +171,9 @@ export function PhysicalTarotCard({
             revealed ? `${card.name}, ${card.orientation}` : `Card ${index + 1}, face down`
           }
           className={cardClassName}
-          data-card-id={card.cardId}
-          data-orientation={card.orientation}
+          {...(revealed
+            ? { "data-card-id": card.cardId, "data-orientation": card.orientation }
+            : {})}
           ref={setCardRef}
           role="img"
         >

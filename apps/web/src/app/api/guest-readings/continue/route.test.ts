@@ -40,6 +40,14 @@ function request(body: Record<string, unknown>): Request {
 
 async function receipt() {
   const spread = spreads.find(({ id }) => id === "one-card")!;
+  if (!spread.capabilities) throw new Error("Test spread capabilities are required");
+  const configuration = {
+    version: "reading-configuration-v1" as const,
+    reversalMode: "reversals_enabled" as const,
+    personalizationMode: "pure_tarot" as const,
+    positions: spread.positions,
+    capabilities: spread.capabilities,
+  };
   const draw = createLockedDraw({ cards: tarotCards, deckVersion: DECK_VERSION, spread });
   const question = "What deserves my attention now?";
   const questionClassification = classifyQuestionContext(question, {
@@ -49,6 +57,7 @@ async function receipt() {
   });
   const result = await new DeterministicFallbackProvider().generate({
     draw,
+    configuration,
     question,
     questionClassification,
     relevantTraitStatements: [],
@@ -57,6 +66,8 @@ async function receipt() {
     readingId: draw.id,
     question,
     questionClassification,
+    configuration,
+    readerLens: [],
     draw,
     result,
     createdAt: new Date().toISOString(),
@@ -82,7 +93,7 @@ afterEach(() => {
 });
 
 describe("account-gated guest continuation", () => {
-  it("recovers the same locked draw from the encrypted receipt without returning the question", async () => {
+  it("recovers the same locked draw and owner-visible confirmed question", async () => {
     const response = await POST(request({ action: "recover", receipt: await receipt() }));
     const body = (await response.json()) as { reading: unknown };
     const reading = guestReadingDisplaySchema.parse(body.reading);
@@ -91,7 +102,7 @@ describe("account-gated guest continuation", () => {
     expect(reading.cards.map(({ cardId }) => cardId)).toEqual(
       reading.draw.assignments.map(({ cardId }) => cardId),
     );
-    expect(JSON.stringify(body)).not.toContain("What deserves my attention now?");
+    expect(reading.question).toBe("What deserves my attention now?");
   });
 
   it("answers one same-draw follow-up only after authentication", async () => {

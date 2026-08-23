@@ -59,6 +59,27 @@ import { GET, POST } from "./route";
 
 const user = { id: "84efdc32-5402-4d7d-97ef-94fb4143ac45", email: "reader@example.test" };
 const readingId = "c3c0b413-e890-4162-bf13-a54d47ab6c7e";
+const oneCardConfiguration = {
+  version: "reading-configuration-v1",
+  reversalMode: "reversals_enabled",
+  personalizationMode: "pure_tarot",
+  positions: [
+    {
+      id: "card-1",
+      displayName: "Focus",
+      interpretiveFunction: "the concentrated center of the reading",
+      description: "The central theme, what to notice, and practical guidance.",
+      order: 0,
+      placement: { column: 0, row: 0, rotation: 0, layer: 0 },
+    },
+  ],
+  capabilities: {
+    trajectoryPositionIds: [],
+    alternativePositionGroups: [],
+    timingMethod: null,
+    linkedPositions: [],
+  },
+} as const;
 
 function request(question: string): Request {
   return new Request(`https://staging.invalid/api/readings/${readingId}`, {
@@ -88,7 +109,9 @@ describe("reading ritual payload", () => {
       id: readingId,
       userId: user.id,
       profileSnapshotId: "548e8158-2b54-4d28-a6bd-b6a4223f820b",
+      readingLens: { version: "question-trait-lens-v2", traitIndexes: [], tensionIndexes: [] },
       spreadId: "one-card",
+      configuration: oneCardConfiguration,
       encryptedQuestion: "encrypted-question",
       questionClassification: {
         version: "question-classification-v1",
@@ -154,7 +177,9 @@ describe("reading ritual payload", () => {
       id: readingId,
       userId: user.id,
       profileSnapshotId: "548e8158-2b54-4d28-a6bd-b6a4223f820b",
+      readingLens: { version: "question-trait-lens-v2", traitIndexes: [], tensionIndexes: [] },
       spreadId: "one-card",
+      configuration: oneCardConfiguration,
       encryptedQuestion: "encrypted-question",
       questionClassification: {
         version: "question-classification-v1",

@@ -21,6 +21,17 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const target = new URL(request.url).searchParams.get("target") ?? "primary";
     const primary = target === "primary";
+    const fullSpreadReady =
+      reading.ritualProgress !== undefined &&
+      ["fullSpreadReady", "interpretationStreaming", "followUpAvailable", "complete"].includes(
+        reading.ritualProgress.phase,
+      ) &&
+      reading.ritualProgress.revealedIndexes.length === reading.draw.assignments.length;
+    if (primary && !fullSpreadReady)
+      return Response.json(
+        { error: "Reveal every card before opening the whole-spread interpretation." },
+        { status: 409 },
+      );
     const result = primary
       ? reading.result
       : reading.followUps.find(({ id }) => id === target)?.result;

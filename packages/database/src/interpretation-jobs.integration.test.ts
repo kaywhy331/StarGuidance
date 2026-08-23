@@ -238,51 +238,35 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
           readingId,
           job,
           result: {
-            schemaVersion: "reading-result-v2",
-            title: "Synthetic",
-            passages: [
-              {
-                id: "opening",
-                role: "opening",
-                text: "Synthetic opening narration.",
-                cardReferences: ["focus"],
-              },
-              {
-                id: "trajectory",
-                role: "trajectory",
-                text: "Synthetic likely trajectory.",
-                cardReferences: ["focus"],
-              },
-              {
-                id: "alternate",
-                role: "alternative",
-                text: "Synthetic alternate trajectory.",
-                cardReferences: [],
-              },
-            ],
+            schemaVersion: "reading-result-v3",
+            directAnswer: "Synthetic direct answer.",
+            overallPattern: "Synthetic whole-spread pattern.",
             cards: [
               {
                 positionId: "focus",
+                positionLabel: "Focus",
                 cardId: "major-00",
                 orientation: "upright",
-                passageIds: ["opening", "trajectory"],
+                coreMeaning: "Synthetic core meaning.",
+                positionInterpretation: "Synthetic position-aware interpretation.",
+                relationshipNotes: [],
+                supportingEvidence: ["The Fool upright in Focus."],
               },
             ],
-            trajectory: {
-              likelyPassageId: "trajectory",
-              conditions: ["Synthetic condition"],
-              alternatePassageId: "alternate",
-            },
-            userAgency: ["Synthetic agency"],
-            reflectionQuestion: "Synthetic reflection question",
-            disconfirmingEvidence: ["Synthetic disconfirming evidence"],
-            uncertainty: "Synthetic uncertainty",
+            synthesis: "Synthetic synthesis.",
+            likelyTrajectory: null,
+            alternatePath: null,
+            timing: null,
+            userAgency: "Synthetic agency.",
+            reflectionPrompt: "Synthetic reflection question?",
+            uncertaintyNote: "Synthetic uncertainty.",
+            personalizationLens: null,
             safetyFlags: [],
           },
           provenance: {
             providerId: "test",
-            promptVersion: "v2",
-            schemaVersion: "reading-result-v2",
+            promptVersion: "v5",
+            schemaVersion: "reading-result-v3",
           },
         }),
       ),
@@ -308,51 +292,35 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
       readingId,
       job,
       result: {
-        schemaVersion: "reading-result-v2" as const,
-        title: "Authoritative synthetic result",
-        passages: [
-          {
-            id: "opening",
-            role: "opening" as const,
-            text: "Synthetic opening narration.",
-            cardReferences: ["focus"],
-          },
-          {
-            id: "trajectory",
-            role: "trajectory" as const,
-            text: "Synthetic likely trajectory.",
-            cardReferences: ["focus"],
-          },
-          {
-            id: "alternate",
-            role: "alternative" as const,
-            text: "Synthetic alternate trajectory.",
-            cardReferences: [],
-          },
-        ],
+        schemaVersion: "reading-result-v3" as const,
+        directAnswer: "Authoritative synthetic result",
+        overallPattern: "Synthetic whole-spread pattern.",
         cards: [
           {
             positionId: "focus",
+            positionLabel: "Focus",
             cardId: "major-00",
             orientation: "upright" as const,
-            passageIds: ["opening", "trajectory"],
+            coreMeaning: "Synthetic core meaning.",
+            positionInterpretation: "Synthetic position-aware interpretation.",
+            relationshipNotes: [],
+            supportingEvidence: ["The Fool upright in Focus."],
           },
         ],
-        trajectory: {
-          likelyPassageId: "trajectory",
-          conditions: ["Synthetic condition"],
-          alternatePassageId: "alternate",
-        },
-        userAgency: ["Synthetic agency"],
-        reflectionQuestion: "Synthetic reflection question",
-        disconfirmingEvidence: ["Synthetic disconfirming evidence"],
-        uncertainty: "Synthetic uncertainty",
+        synthesis: "Synthetic synthesis.",
+        likelyTrajectory: null,
+        alternatePath: null,
+        timing: null,
+        userAgency: "Synthetic agency.",
+        reflectionPrompt: "Synthetic reflection question?",
+        uncertaintyNote: "Synthetic uncertainty.",
+        personalizationLens: null,
         safetyFlags: [],
       },
       provenance: {
         providerId: "test",
-        promptVersion: "v2",
-        schemaVersion: "reading-result-v2" as const,
+        promptVersion: "v5",
+        schemaVersion: "reading-result-v3" as const,
       },
     };
 
@@ -363,11 +331,11 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
     expect(outcomes.sort()).toEqual([false, true]);
     const [row] = await sql!`
-      select count(*)::integer as count, min(payload->>'title') as title
+      select count(*)::integer as count, min(payload->>'directAnswer') as answer
       from reading_outputs where reading_id = ${readingId}
     `;
     expect(row?.count).toBe(1);
-    expect(row?.title).toBe("Authoritative synthetic result");
+    expect(row?.answer).toBe("Authoritative synthetic result");
   });
 
   it("marks the owning reading failed", async () => {

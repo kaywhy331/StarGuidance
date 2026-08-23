@@ -64,22 +64,23 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
   await expect(
-    page.getByRole("heading", { name: "What kind of space do you need?" }),
+    page.getByRole("heading", { name: "What would you like the cards to illuminate?" }),
   ).toBeVisible();
-  await capturePage(page, testInfo, "reading-selection");
-
-  await page.getByRole("button", { name: /^Continue with / }).click();
   await page.getByLabel("Your private question").fill("What can support my next grounded step?");
+  await page.getByRole("button", { name: "Review my question" }).click();
+  await page.getByRole("button", { name: "Confirm this question" }).click();
+  await capturePage(page, testInfo, "reading-selection");
+  await page
+    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
+    .click();
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
-  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
-  await expect(page.getByText("Shuffling your cards", { exact: true })).toBeVisible();
+  await expect(page.getByText("Shuffling the committed deck", { exact: true })).toBeVisible();
   await capturePage(page, testInfo, "shuffle-deal");
-
-  // Gather early for a deterministic capture while retaining the authored
-  // two-second gather, one-second deal cadence, and five-second reflection.
-  const gather = page.getByRole("button", { name: "Gather now", exact: true });
-  if (await gather.isVisible())
-    await gather.click({ force: true, timeout: 1_000 }).catch(() => undefined);
+  await page.getByRole("button", { name: "Finish shuffling" }).click();
+  await page.getByRole("button", { name: /^Cut at the center/ }).click();
+  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
+  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toBeVisible({
     timeout: 12_000,
@@ -89,25 +90,10 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await expect(page.getByTestId("tarot-spread-stage")).toHaveAttribute("data-focus-mode", "reveal");
   await capturePage(page, testInfo, "card-reveal");
 
-  for (let index = 0; index < 10; index += 1) {
-    const action = page.locator(".guided-next-action");
-    await expect(action).toBeVisible();
-    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
-    await action.click();
-    if (finalCard) break;
-    await page
-      .getByRole("button", { name: /^Reveal card \d+, face down$/ })
-      .first()
-      .click();
-  }
+  await page.getByRole("button", { name: /Return to the spread/ }).click();
+  await page.getByRole("button", { name: "Reveal All" }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
-  await page.getByRole("button", { name: "Next reading passage" }).click();
-  await expect(page.locator('.oracle-entry[data-phase="narration"]')).toBeVisible();
-  await expect(
-    page.locator('.oracle-entry[data-phase="narration"] .oracle-word:not(.is-visible)'),
-  ).toHaveCount(0, { timeout: 12_000 });
-  await expect(page.locator(".physical-card-figure.is-reading-subject")).toBeVisible();
+  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
   await capturePage(page, testInfo, "reading-result");
 
   await page.goto("/profile");

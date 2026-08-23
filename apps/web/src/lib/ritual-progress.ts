@@ -1,6 +1,6 @@
 export interface RitualProgress {
   revealedIndexes: readonly number[];
-  cutTaken: boolean;
+  cutIndex: number;
 }
 
 interface SessionStorageLike {
@@ -20,9 +20,20 @@ export function readRitualProgress(
   try {
     const parsed = JSON.parse(storage.getItem(key(readingId)) ?? "null") as unknown;
     if (!parsed || typeof parsed !== "object") return undefined;
-    const candidate = parsed as { revealedIndexes?: unknown; cutTaken?: unknown };
-    if (!Array.isArray(candidate.revealedIndexes) || typeof candidate.cutTaken !== "boolean")
-      return undefined;
+    const candidate = parsed as {
+      revealedIndexes?: unknown;
+      cutIndex?: unknown;
+      cutTaken?: unknown;
+    };
+    if (!Array.isArray(candidate.revealedIndexes)) return undefined;
+    const historicalCut = candidate.cutTaken === true ? 39 : 0;
+    const cutIndex =
+      typeof candidate.cutIndex === "number" &&
+      Number.isInteger(candidate.cutIndex) &&
+      candidate.cutIndex >= 0 &&
+      candidate.cutIndex <= 77
+        ? candidate.cutIndex
+        : historicalCut;
     const revealedIndexes = [
       ...new Set(
         candidate.revealedIndexes.filter(
@@ -30,7 +41,7 @@ export function readRitualProgress(
         ),
       ),
     ].sort((a, b) => a - b);
-    return { revealedIndexes, cutTaken: candidate.cutTaken };
+    return { revealedIndexes, cutIndex };
   } catch {
     return undefined;
   }
@@ -46,10 +57,10 @@ export function writeRitualProgress(
       key(readingId),
       JSON.stringify({
         revealedIndexes: [...new Set(progress.revealedIndexes)].sort((a, b) => a - b),
-        cutTaken: progress.cutTaken,
+        cutIndex: progress.cutIndex,
       }),
     );
   } catch {
-    // A blocked session store degrades to a fresh ritual, never a changed draw.
+    // A blocked session store degrades to server recovery, never a changed draw.
   }
 }

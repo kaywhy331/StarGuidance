@@ -192,6 +192,7 @@ export const readingSessions = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     encryptedQuestion: text("encrypted_question").notNull(),
     readingLens: jsonb("reading_lens").notNull(),
+    configuration: jsonb("configuration"),
     questionClassification: jsonb("question_classification")
       .default(
         sql`'{"version":"question-classification-v1","topic":"general","horizon":"open","intent":"generalReflection","generalReading":false}'::jsonb`,
@@ -232,6 +233,8 @@ export const readingDraws = pgTable("reading_draws", {
     .references(() => decks.version),
   shuffleVersion: text("shuffle_version").notNull(),
   assignments: jsonb("assignments").notNull(),
+  proof: jsonb("proof"),
+  encryptedServerSeed: text("encrypted_server_seed"),
   lockedAt: timestamp("locked_at", { withTimezone: true }).notNull(),
   createdAt,
 });

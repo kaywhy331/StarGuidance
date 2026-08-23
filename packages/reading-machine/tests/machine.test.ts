@@ -1,79 +1,106 @@
-import { createActor } from "xstate";
+import { createActor, type ActorRefFrom } from "xstate";
 import { describe, expect, it } from "vitest";
 
 import { readingMachine } from "../src";
 
-describe("reading state machine", () => {
-  it("rejects invalid transitions", () => {
-    const actor = createActor(readingMachine).start();
-    actor.send({ type: "DEALT" });
-    expect(actor.getSnapshot().value).toBe("idle");
-  });
+type ReadingActor = ActorRefFrom<typeof readingMachine>;
 
-  it("routes generation failure to same-session retry", () => {
-    const actor = createActor(readingMachine).start();
-    for (const event of [
-      { type: "START" },
-      { type: "SELECT" },
-      { type: "QUESTION_ACCEPTED" },
-      { type: "DECK_READY" },
-      { type: "SHUFFLE_COMPLETE" },
-      { type: "SKIP_CUT" },
-      { type: "DEALT" },
-      { type: "REVEAL" },
-      { type: "ALL_REVEALED" },
-      { type: "GENERATION_FAILED" },
-      { type: "RETRY_GENERATION" },
-    ] as const)
-      actor.send(event);
-    expect(actor.getSnapshot().value).toBe("generatingSynthesis");
-  });
+function prepareThroughSpread(actor: ReadingActor) {
+  actor.send({ type: "START" });
+  actor.send({ type: "DRAFT_QUESTION" });
+  actor.send({ type: "CONFIRM_QUESTION" });
+  actor.send({ type: "CONFIRM_SPREAD" });
+}
 
-  it("supports the automatic no-cut compatibility transition into dealing", () => {
+function reachLockedDraw(actor: ReadingActor, cut = false) {
+  prepareThroughSpread(actor);
+  actor.send({ type: "SAFETY_APPROVED" });
+  actor.send({ type: "FOCUS_COMPLETE" });
+  actor.send({ type: "SHUFFLE_COMPLETE" });
+  actor.send({ type: cut ? "CUT" : "SKIP_CUT" });
+  expect(actor.getSnapshot().value).toBe("drawFinalizing");
+  actor.send({ type: "DRAW_LOCKED" });
+}
+
+describe("committed-draw reading lifecycle", () => {
+  it("does not accept a locked draw before question, spread, shuffle, and cut completion", () => {
     const actor = createActor(readingMachine).start();
     actor.send({ type: "START" });
-    actor.send({ type: "SELECT" });
-    actor.send({ type: "QUESTION_ACCEPTED" });
-    actor.send({ type: "DECK_READY" });
+    actor.send({ type: "DRAW_LOCKED" });
+    expect(actor.getSnapshot().value).toBe("readingCreated");
+    actor.send({ type: "DRAFT_QUESTION" });
+    actor.send({ type: "CONFIRM_QUESTION" });
+    actor.send({ type: "CONFIRM_SPREAD" });
+    actor.send({ type: "SAFETY_APPROVED" });
+    actor.send({ type: "DRAW_LOCKED" });
+    expect(actor.getSnapshot().value).toBe("focusing");
+  });
+
+  it("places both a chosen cut and no-cut skip in drawFinalizing before drawLocked", () => {
+    for (const cut of [false, true]) {
+      const actor = createActor(readingMachine).start();
+      reachLockedDraw(actor, cut);
+      expect(actor.getSnapshot().value).toBe("drawLocked");
+    }
+  });
+
+  it("returns to optionalCut when atomic finalization fails", () => {
+    const actor = createActor(readingMachine).start();
+    prepareThroughSpread(actor);
+    actor.send({ type: "SAFETY_APPROVED" });
+    actor.send({ type: "FOCUS_COMPLETE" });
     actor.send({ type: "SHUFFLE_COMPLETE" });
-    expect(actor.getSnapshot().value).toBe("cuttingDeck");
-    actor.send({ type: "SKIP_CUT" });
-    expect(actor.getSnapshot().value).toBe("dealing");
+    actor.send({ type: "CUT" });
+    actor.send({ type: "FINALIZATION_FAILED" });
+    expect(actor.getSnapshot().value).toBe("optionalCut");
   });
 
-  it("interrupts high-stakes questions before deck preparation", () => {
+  it("does not begin whole-spread interpretation until all cards are revealed", () => {
     const actor = createActor(readingMachine).start();
-    actor.send({ type: "START" });
-    actor.send({ type: "SELECT" });
+    reachLockedDraw(actor);
+    actor.send({ type: "BEGIN_DEAL" });
+    actor.send({ type: "DEALT" });
+    actor.send({ type: "BEGIN_INTERPRETATION" });
+    expect(actor.getSnapshot().value).toBe("awaitingReveal");
+    actor.send({ type: "REVEAL" });
+    actor.send({ type: "BEGIN_INTERPRETATION" });
+    expect(actor.getSnapshot().value).toBe("revealing");
+    actor.send({ type: "ALL_REVEALED" });
+    expect(actor.getSnapshot().value).toBe("fullSpreadReady");
+    actor.send({ type: "BEGIN_INTERPRETATION" });
+    expect(actor.getSnapshot().value).toBe("interpretationStreaming");
+  });
+
+  it("retries interpretation in the same locked session", () => {
+    const actor = createActor(readingMachine).start();
+    reachLockedDraw(actor);
+    for (const type of [
+      "BEGIN_DEAL",
+      "DEALT",
+      "REVEAL",
+      "ALL_REVEALED",
+      "BEGIN_INTERPRETATION",
+    ] as const)
+      actor.send({ type });
+    actor.send({ type: "GENERATION_FAILED" });
+    expect(actor.getSnapshot().value).toBe("generationFailed");
+    actor.send({ type: "RETRY_GENERATION" });
+    expect(actor.getSnapshot().value).toBe("interpretationStreaming");
+  });
+
+  it("requires acknowledgement before a guarded reading reaches focus", () => {
+    const actor = createActor(readingMachine).start();
+    prepareThroughSpread(actor);
     actor.send({ type: "HIGH_STAKES" });
     expect(actor.getSnapshot().value).toBe("highStakesQuestion");
-  });
-
-  it("restarts a high-stakes question back to the question step", () => {
-    const actor = createActor(readingMachine).start();
-    actor.send({ type: "START" });
-    actor.send({ type: "SELECT" });
-    actor.send({ type: "HIGH_STAKES" });
-    actor.send({ type: "RESTART" });
-    expect(actor.getSnapshot().value).toBe("enteringQuestion");
-  });
-
-  it("returns from question entry to reading selection", () => {
-    const actor = createActor(readingMachine).start();
-    actor.send({ type: "START" });
-    actor.send({ type: "SELECT" });
-    actor.send({ type: "CHANGE_READING" });
-    expect(actor.getSnapshot().value).toBe("selectingReading");
-  });
-
-  it("continues a high-stakes question only after acknowledged deck preparation", () => {
-    const actor = createActor(readingMachine).start();
-    actor.send({ type: "START" });
-    actor.send({ type: "SELECT" });
-    actor.send({ type: "HIGH_STAKES" });
     actor.send({ type: "CONTINUE_AS_REFLECTION" });
-    expect(actor.getSnapshot().value).toBe("preparingDeck");
-    actor.send({ type: "DECK_READY" });
-    expect(actor.getSnapshot().value).toBe("shuffling");
+    expect(actor.getSnapshot().value).toBe("focusing");
+  });
+
+  it("restores a finalized session directly to the exact locked draw", () => {
+    const actor = createActor(readingMachine).start();
+    actor.send({ type: "START" });
+    actor.send({ type: "RESTORE_LOCKED" });
+    expect(actor.getSnapshot().value).toBe("drawLocked");
   });
 });

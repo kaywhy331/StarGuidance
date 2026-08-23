@@ -36,12 +36,14 @@ export default async function FreeReadingPage({
       requiresPolicyReconsent={requiresPolicyReconsent}
       spreads={spreads
         .filter(({ id }) => FREE_GUEST_SPREAD_IDS.some((guestId) => guestId === id))
-        .map(({ id, name, purpose, estimatedMinutes, positions }) => ({
+        .map(({ id, version, name, purpose, estimatedMinutes, positions }) => ({
           id: id as (typeof FREE_GUEST_SPREAD_IDS)[number],
+          version,
           name,
           purpose,
           estimatedMinutes,
           count: positions.length,
+          positions,
         }))}
     />
   );

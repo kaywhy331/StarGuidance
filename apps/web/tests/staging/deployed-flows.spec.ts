@@ -214,15 +214,44 @@ async function activeSnapshot(page: Page): Promise<{ id: string; version: number
 }
 
 async function createReading(page: Page, question: string): Promise<string> {
-  const { status, body } = await apiPost<{ readingId?: string }>(page, "/api/readings", {
-    // One card is sufficient for persistence/isolation assertions and avoids
-    // burning the live provider's staging quota on content the gate never reads.
+  // One card is sufficient for persistence/isolation assertions and avoids
+  // burning the live provider's staging quota on content the gate never reads.
+  // The preparation response intentionally contains no card assignment: the
+  // browser contributes fresh entropy only after the ritual is prepared.
+  const prepared = await apiPost<{
+    ceremony?: { token?: string; sessionId?: string; serverSeedCommitment?: string };
+  }>(page, "/api/readings", {
+    action: "prepare",
     spreadId: "one-card",
     question,
+    questionConfirmed: true,
+    reversalMode: "reversals_enabled",
+    personalizationMode: "personalized_tarot",
   });
-  if (status !== 201 || !body.readingId)
-    throw new Error(`creating a reading returned status ${status}`);
-  return body.readingId;
+  const ceremony = prepared.body.ceremony;
+  if (
+    prepared.status !== 201 ||
+    !ceremony?.token ||
+    !ceremony.sessionId ||
+    !ceremony.serverSeedCommitment
+  )
+    throw new Error(`preparing a reading returned status ${prepared.status}`);
+
+  const clientNonce = await page.evaluate(() => {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  });
+  const finalized = await apiPost<{ readingId?: string }>(page, "/api/readings", {
+    action: "finalize",
+    ceremonyToken: ceremony.token,
+    clientNonce,
+    cutIndex: 0,
+  });
+  if (finalized.status !== 201 || finalized.body.readingId !== ceremony.sessionId)
+    throw new Error(`finalizing a reading returned status ${finalized.status}`);
+  return finalized.body.readingId;
 }
 
 async function readingState(page: Page, id: string): Promise<ReadingResponse["reading"]> {
@@ -467,12 +496,14 @@ test("a reading is created against the active snapshot with a locked draw", asyn
   const persistedProviderId = outputProvenance?.providerId ?? "";
   const liveProvenance =
     approvedLiveProviderIds.has(persistedProviderId) &&
-    outputProvenance?.promptVersion === "reader-voice-v3" &&
-    outputProvenance.schemaVersion === "reading-result-v2";
+    ["reader-voice-v5", "reader-voice-v5-grounded"].includes(
+      outputProvenance?.promptVersion ?? "",
+    ) &&
+    outputProvenance?.schemaVersion === "reading-result-v3";
   const deterministicProvenance =
     outputProvenance?.providerId === "deterministic-fallback-v1" &&
-    outputProvenance.promptVersion === "deterministic-fallback-v3" &&
-    outputProvenance.schemaVersion === "reading-result-v2";
+    outputProvenance.promptVersion === "deterministic-fallback-v5" &&
+    outputProvenance.schemaVersion === "reading-result-v3";
   const configuredProvenance =
     interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
   const safeFallbackReasons = [
@@ -498,16 +529,17 @@ test("a reading is created against the active snapshot with a locked draw", asyn
         : outputProvenance?.providerId
           ? "other"
           : "absent";
-  const promptState =
-    outputProvenance?.promptVersion === "reader-voice-v3"
-      ? "approved-live"
-      : outputProvenance?.promptVersion === "deterministic-fallback-v3"
-        ? "deterministic-fallback"
-        : outputProvenance?.promptVersion
-          ? "other"
-          : "absent";
+  const promptState = ["reader-voice-v5", "reader-voice-v5-grounded"].includes(
+    outputProvenance?.promptVersion ?? "",
+  )
+    ? "approved-live"
+    : outputProvenance?.promptVersion === "deterministic-fallback-v5"
+      ? "deterministic-fallback"
+      : outputProvenance?.promptVersion
+        ? "other"
+        : "absent";
   const schemaState =
-    reading.outputProvenance?.schemaVersion === "reading-result-v2"
+    reading.outputProvenance?.schemaVersion === "reading-result-v3"
       ? "approved"
       : "absent-or-other";
 

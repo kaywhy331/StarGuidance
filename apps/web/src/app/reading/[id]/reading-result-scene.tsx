@@ -294,7 +294,7 @@ export function ReadingResultScene({
                 followUpsRemaining={reading.followUpsRemaining}
                 onAskFollowUp={() => setContinuationMode("follow-up")}
                 onClose={() => setContinuationMode("closed")}
-                reflectionQuestion={reading.result.reflectionQuestion}
+                reflectionQuestion={reading.result.reflectionPrompt}
               />
             )}
 

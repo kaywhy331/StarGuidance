@@ -30,6 +30,13 @@ const questionContext = {
   generalReading: false,
 };
 const positions = resolveSpreadPositions(spread, questionContext);
+const configuration = {
+  version: "reading-configuration-v1",
+  reversalMode: "reversals_enabled",
+  personalizationMode: "personalized_tarot",
+  positions,
+  capabilities: spread.capabilities,
+};
 const cards = positions.map((position, index) => {
   const card = tarotCards[index + 10];
   const orientation = index === 1 ? "reversed" : "upright";
@@ -37,55 +44,46 @@ const cards = positions.map((position, index) => {
     positionId: position.id,
     positionName: position.displayName,
     positionMeans: position.interpretiveFunction,
+    positionDescription: position.description,
     cardId: card.id,
     card: card.name,
     arcana: card.arcana,
     orientation,
     themes: orientation === "upright" ? card.uprightThemes : card.reversedThemes,
+    domainTags: card.eventTags,
+    approvedReversalFacets: orientation === "reversed" ? card.reversalFacets : [],
   };
 });
 const readingPayload = {
   question: "Should I take the new role at work?",
   questionContext,
   spreadId: spread.id,
+  spreadCapabilities: configuration.capabilities,
+  trajectoryAllowed: configuration.capabilities.trajectoryPositionIds.length > 0,
+  alternatePathAllowed: configuration.capabilities.alternativePositionGroups.length > 0,
+  timingAllowed: configuration.capabilities.timingMethod !== null,
+  personalizationAllowed: true,
   answerPositionId: cards[2].positionId,
   cards,
   readerLens: ["You commit quickly once a direction feels right."],
 };
 const originalReading = {
-  title: "The direction ahead",
-  passages: [
-    {
-      id: "opening",
-      role: "opening",
-      text: "A deliberate step is taking shape.",
-      cardReferences: [cards[2].positionId],
-    },
-    {
-      id: "likely",
-      role: "trajectory",
-      text: "Preparation may reveal the next opening.",
-      cardReferences: [cards[2].positionId],
-    },
-    {
-      id: "alternate",
-      role: "alternative",
-      text: "Moving early leaves another route open.",
-      cardReferences: [cards[0].positionId],
-    },
-  ],
-  cards: cards.map((card, index) => ({
+  directAnswer: "A deliberate step is taking shape.",
+  overallPattern: "The challenge and direction ask for a measured decision.",
+  cards: cards.map((card) => ({
     positionId: card.positionId,
+    positionLabel: card.positionName,
     cardId: card.cardId,
     orientation: card.orientation,
-    passageIds: [index === 0 ? "alternate" : "likely"],
+    coreMeaning: card.themes[0],
+    positionInterpretation: `${card.card} speaks through ${card.positionName}.`,
+    relationshipNotes: [],
+    supportingEvidence: [`${card.card} in ${card.positionName}`],
   })),
-  trajectory: {
-    likelyPassageId: "likely",
-    conditions: ["Create a workable structure."],
-    alternatePassageId: "alternate",
-  },
-  userAgency: ["Choose the next concrete milestone."],
+  synthesis: "Preparation may reveal the next opening.",
+  likelyTrajectory: "The direction remains conditional on a workable structure.",
+  alternatePath: null,
+  userAgency: "Choose the next concrete milestone.",
 };
 
 function requestPayload(overrides = {}) {
@@ -95,10 +93,11 @@ function requestPayload(overrides = {}) {
     overrides.schema ??
     reviewedReadingResponseSchema(
       cards.map((entry) => ({
-        position: { id: entry.positionId },
+        position: { id: entry.positionId, displayName: entry.positionName },
         card: { id: entry.cardId },
         orientation: entry.orientation,
       })),
+      configuration,
     );
   const model = overrides.model ?? "openai/gpt-oss-120b";
   return {
@@ -155,10 +154,24 @@ describe("gateway security primitives", () => {
       requestPayload({ systemPrompt: "Return JSON." }),
       requestPayload({ userPayload: { prompt: "arbitrary" } }),
       requestPayload({
+        userPayload: { ...readingPayload, trajectoryAllowed: false },
+      }),
+      requestPayload({
+        userPayload: { ...readingPayload, personalizationAllowed: false },
+      }),
+      requestPayload({
         userPayload: {
           ...readingPayload,
           cards: readingPayload.cards.map((card, index) =>
             index === 0 ? { ...card, card: "Invented card name" } : card,
+          ),
+        },
+      }),
+      requestPayload({
+        userPayload: {
+          ...readingPayload,
+          cards: readingPayload.cards.map((card, index) =>
+            index === 0 ? { ...card, approvedReversalFacets: ["negative"] } : card,
           ),
         },
       }),

@@ -35,8 +35,8 @@ describe("governed runtime configuration", () => {
     vi.stubEnv("STRIPE_PROFILE_REPORT_PRICE_ID", "price_reviewed_v1");
     const configuration = await getRuntimeConfiguration();
 
-    expect(configuration.content.enabledSpreadIds).toHaveLength(6);
-    expect(configuration.prompts.bundleId).toBe("reader-voice-v3");
+    expect(configuration.content.enabledSpreadIds).toHaveLength(8);
+    expect(configuration.prompts.bundleId).toBe("reader-voice-v5");
     expect(configuration.models.primaryModel).toBe("approved-primary");
     expect(profileReportsEnabled(configuration)).toBe(true);
   });

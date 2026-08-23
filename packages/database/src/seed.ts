@@ -137,6 +137,28 @@ try {
       ],
       ["reader-voice-v3-grounded", "reviewed concrete and observable live-reading variant"],
       ["follow-up-reader-voice-v3-grounded", "reviewed concrete continuation variant"],
+      [
+        "deterministic-fallback-v4",
+        "question-first credential-free reader with original spoken card language",
+      ],
+      [
+        "reader-voice-v4",
+        "question-first connected live narrator with privacy-safe focus and card progression",
+      ],
+      ["follow-up-reader-voice-v4", "question-first continuation of a locked connected reading"],
+      ["reader-voice-v5", "spread-aware evidence contract with capability-gated sections"],
+      ["follow-up-reader-voice-v5", "same-draw subject-bound clarification"],
+      ["deterministic-fallback-v5", "spread-aware credential-free evidence fallback"],
+      ["reader-voice-v5-grounded", "spread-aware evidence contract with observable emphasis"],
+      ["follow-up-reader-voice-v5-grounded", "grounded same-draw clarification"],
+      [
+        "reader-voice-v4-grounded",
+        "question-first connected live narrator with concrete observable emphasis",
+      ],
+      [
+        "follow-up-reader-voice-v4-grounded",
+        "question-first connected continuation with concrete observable emphasis",
+      ],
     ] as const;
     for (const [version, purpose] of promptSeeds) {
       await transaction`
@@ -164,7 +186,7 @@ try {
       {
         domain: "prompts",
         payload: {
-          bundleId: "reader-voice-v3",
+          bundleId: "reader-voice-v5",
           safetyPolicyVersion: "question-safety-v2",
         },
       },

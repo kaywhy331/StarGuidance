@@ -32,6 +32,7 @@ export const legacyReadingResultSchema = z
   })
   .strict();
 
+/** Historical narration-first v2 payload. */
 export const readingPassageRoleSchema = z.enum([
   "opening",
   "situation",
@@ -51,7 +52,6 @@ export const readingPassageSchema = z
     id: z.string().min(1),
     role: readingPassageRoleSchema,
     text: z.string().min(1),
-    /** Position IDs are presentation metadata and are never rendered as prose. */
     cardReferences: z.array(z.string().min(1)).max(10),
   })
   .strict();
@@ -61,7 +61,6 @@ export const readingCardThreadSchema = z
     positionId: z.string().min(1),
     cardId: z.string().min(1),
     orientation: z.enum(["upright", "reversed"]),
-    /** Passage IDs carrying this card's interpretation. */
     passageIds: z.array(z.string().min(1)).min(1),
   })
   .strict();
@@ -85,121 +84,143 @@ export const readingResultV2Schema = z
     uncertainty: z.string().min(1),
     safetyFlags: z.array(z.string()),
   })
+  .strict();
+
+export const readingEvidenceCardSchema = z
+  .object({
+    positionId: z.string().min(1),
+    positionLabel: z.string().min(1),
+    cardId: z.string().min(1),
+    orientation: z.enum(["upright", "reversed"]),
+    coreMeaning: z.string().min(1),
+    positionInterpretation: z.string().min(1),
+    relationshipNotes: z.array(z.string().min(1)).max(12),
+    supportingEvidence: z.array(z.string().min(1)).min(1).max(12),
+  })
+  .strict();
+
+export const personalizationLensResultSchema = z
+  .object({
+    label: z.literal("Personalized reflection"),
+    observations: z.array(z.string().min(1)).min(1).max(6),
+  })
+  .strict();
+
+/**
+ * Current spread-aware contract. Nullable sections are semantic: null means
+ * the configured spread/question does not support that claim.
+ */
+export const readingResultV3Schema = z
+  .object({
+    schemaVersion: z.literal("reading-result-v3"),
+    directAnswer: z.string().min(1),
+    overallPattern: z.string().min(1),
+    cards: z.array(readingEvidenceCardSchema).min(1).max(10),
+    synthesis: z.string().min(1),
+    likelyTrajectory: z.string().min(1).nullable(),
+    alternatePath: z.string().min(1).nullable(),
+    timing: z.string().min(1).nullable(),
+    userAgency: z.string().min(1),
+    reflectionPrompt: z.string().min(1),
+    uncertaintyNote: z.string().min(1),
+    personalizationLens: personalizationLensResultSchema.nullable(),
+    safetyFlags: z.array(z.string()),
+  })
   .strict()
   .superRefine((result, context) => {
-    const passageIds = new Set(result.passages.map(({ id }) => id));
-    if (passageIds.size !== result.passages.length)
-      context.addIssue({ code: "custom", message: "Reading passage IDs must be unique." });
     const positions = new Set(result.cards.map(({ positionId }) => positionId));
     if (positions.size !== result.cards.length)
       context.addIssue({ code: "custom", message: "Reading card positions must be unique." });
-    for (const card of result.cards)
-      for (const passageId of card.passageIds)
-        if (!passageIds.has(passageId))
-          context.addIssue({
-            code: "custom",
-            message: `Card thread references unknown passage ${passageId}.`,
-          });
-    for (const passage of result.passages)
-      for (const positionId of passage.cardReferences)
-        if (!positions.has(positionId))
-          context.addIssue({
-            code: "custom",
-            message: `Passage references unknown position ${positionId}.`,
-          });
-    for (const passageId of [
-      result.trajectory.likelyPassageId,
-      result.trajectory.alternatePassageId,
-    ])
-      if (!passageIds.has(passageId))
-        context.addIssue({
-          code: "custom",
-          message: `Trajectory references unknown passage ${passageId}.`,
-        });
+    const cards = new Set(result.cards.map(({ cardId }) => cardId));
+    if (cards.size !== result.cards.length)
+      context.addIssue({ code: "custom", message: "Reading card IDs must be unique." });
   });
 
 export type LegacyReadingResult = z.infer<typeof legacyReadingResultSchema>;
 
-function legacyPassageId(prefix: string, index?: number): string {
-  return index === undefined ? `legacy-${prefix}` : `legacy-${prefix}-${index + 1}`;
-}
-
-export function normalizeReadingResult(value: unknown): z.infer<typeof readingResultV2Schema> {
-  const current = readingResultV2Schema.safeParse(value);
-  if (current.success) return current.data;
-  const legacy = legacyReadingResultSchema.parse(value);
-  const openingId = legacyPassageId("opening");
-  const cardPassages = legacy.cards.map((card, index) => ({
-    id: legacyPassageId("card", index),
-    role: "situation" as const,
-    text: [card.traditionalMeaning, card.personalizedMeaning, card.questionConnection].join(" "),
-    cardReferences: [card.positionId],
-  }));
-  const likelyId = legacyPassageId("trajectory");
-  const alternateId = legacyPassageId("alternative");
-  const passages = [
-    {
-      id: openingId,
-      role: "opening" as const,
-      text: `${legacy.directAnswer} ${legacy.centralTheme}`,
-      cardReferences: [] as string[],
-    },
-    ...cardPassages,
-    {
-      id: legacyPassageId("synthesis"),
-      role: "development" as const,
-      text: legacy.synthesis,
-      cardReferences: legacy.cards.map(({ positionId }) => positionId),
-    },
-    {
-      id: likelyId,
-      role: "trajectory" as const,
-      text: `${legacy.likelyTrajectory.summary} This remains most likely while ${legacy.likelyTrajectory.conditions.join("; ")}.`,
-      cardReferences: [] as string[],
-    },
-    {
-      id: alternateId,
-      role: "alternative" as const,
-      text: legacy.likelyTrajectory.alternateTrajectory,
-      cardReferences: [] as string[],
-    },
-    {
-      id: legacyPassageId("agency"),
-      role: "agency" as const,
-      text: legacy.userAgency.join(". "),
-      cardReferences: [] as string[],
-    },
-    {
-      id: legacyPassageId("reflection"),
-      role: "reflection" as const,
-      text: legacy.reflectionQuestion,
-      cardReferences: [] as string[],
-    },
-  ];
-  return readingResultV2Schema.parse({
-    schemaVersion: "reading-result-v2",
-    title: legacy.title,
-    passages,
-    cards: legacy.cards.map((card, index) => ({
-      positionId: card.positionId,
-      cardId: card.cardId,
-      orientation: card.orientation,
-      passageIds: [legacyPassageId("card", index), legacyPassageId("synthesis")],
-    })),
-    trajectory: {
-      likelyPassageId: likelyId,
-      conditions: legacy.likelyTrajectory.conditions,
-      alternatePassageId: alternateId,
-    },
-    userAgency: legacy.userAgency,
-    reflectionQuestion: legacy.reflectionQuestion,
-    disconfirmingEvidence: legacy.disconfirmingEvidence,
-    uncertainty: legacy.uncertainty,
-    safetyFlags: legacy.safetyFlags,
+function normalizeV2(value: z.infer<typeof readingResultV2Schema>) {
+  const passageById = new Map(value.passages.map((passage) => [passage.id, passage]));
+  const opening = value.passages.find(({ role }) => role === "opening" || role === "safety");
+  const pattern = value.passages.find(({ role }) =>
+    ["underlyingPattern", "development", "turningPoint"].includes(role),
+  );
+  const likely = passageById.get(value.trajectory.likelyPassageId);
+  const alternate = passageById.get(value.trajectory.alternatePassageId);
+  return readingResultV3Schema.parse({
+    schemaVersion: "reading-result-v3",
+    directAnswer: opening?.text ?? value.title,
+    overallPattern: pattern?.text ?? opening?.text ?? value.title,
+    cards: value.cards.map((card) => {
+      const passages = card.passageIds.flatMap((id) => {
+        const passage = passageById.get(id);
+        return passage ? [passage] : [];
+      });
+      const interpretation = passages.map(({ text }) => text).join(" ") || value.title;
+      return {
+        positionId: card.positionId,
+        positionLabel: card.positionId.replaceAll("-", " "),
+        cardId: card.cardId,
+        orientation: card.orientation,
+        coreMeaning: passages[0]?.text ?? interpretation,
+        positionInterpretation: interpretation,
+        relationshipNotes: passages
+          .filter(({ cardReferences }) => cardReferences.length > 1)
+          .map(({ text }) => text),
+        supportingEvidence: [`${card.cardId} in ${card.positionId}`],
+      };
+    }),
+    synthesis:
+      value.passages
+        .filter(({ role }) => ["development", "turningPoint", "closing"].includes(role))
+        .map(({ text }) => text)
+        .join(" ") || value.title,
+    likelyTrajectory: likely?.text ?? null,
+    alternatePath: alternate?.text ?? null,
+    timing: null,
+    userAgency: value.userAgency.join(" "),
+    reflectionPrompt: value.reflectionQuestion,
+    uncertaintyNote: value.uncertainty,
+    personalizationLens: null,
+    safetyFlags: value.safetyFlags,
   });
 }
 
-/** Reads both persisted v1 and narration-first v2, always returning v2. */
+function normalizeLegacy(value: LegacyReadingResult) {
+  return readingResultV3Schema.parse({
+    schemaVersion: "reading-result-v3",
+    directAnswer: value.directAnswer,
+    overallPattern: value.centralTheme,
+    cards: value.cards.map((card) => ({
+      positionId: card.positionId,
+      positionLabel: card.positionId.replaceAll("-", " "),
+      cardId: card.cardId,
+      orientation: card.orientation,
+      coreMeaning: card.traditionalMeaning,
+      positionInterpretation: card.questionConnection,
+      relationshipNotes: [],
+      supportingEvidence: [`${card.cardId} in ${card.positionId}`],
+    })),
+    synthesis: value.synthesis,
+    likelyTrajectory: value.likelyTrajectory.summary,
+    alternatePath: value.likelyTrajectory.alternateTrajectory,
+    timing: null,
+    userAgency: value.userAgency.join(" "),
+    reflectionPrompt: value.reflectionQuestion,
+    uncertaintyNote: value.uncertainty,
+    personalizationLens: null,
+    safetyFlags: value.safetyFlags,
+  });
+}
+
+export function normalizeReadingResult(value: unknown): z.infer<typeof readingResultV3Schema> {
+  const current = readingResultV3Schema.safeParse(value);
+  if (current.success) return current.data;
+  const v2 = readingResultV2Schema.safeParse(value);
+  if (v2.success) return normalizeV2(v2.data);
+  return normalizeLegacy(legacyReadingResultSchema.parse(value));
+}
+
+/** Reads persisted v1/v2/v3, always returning the current evidence contract. */
 export const readingResultSchema = z.unknown().transform((value, context) => {
   try {
     return normalizeReadingResult(value);
@@ -214,19 +235,9 @@ export const readingResultSchema = z.unknown().transform((value, context) => {
 
 export type ReadingResult = z.infer<typeof readingResultSchema>;
 
-export const followUpResultSchema = z
-  .object({
-    response: z.string().min(1),
-  })
-  .strict();
-
+export const followUpResultSchema = z.object({ response: z.string().min(1) }).strict();
 export type FollowUpResult = z.infer<typeof followUpResultSchema>;
 
-/**
- * Converts the former full-reading follow-up payload into the current single
- * response contract. This keeps existing persisted readings readable while
- * ensuring every follow-up renders as one cohesive section.
- */
 export function normalizeFollowUpResult(value: unknown): FollowUpResult {
   const current = followUpResultSchema.safeParse(value);
   if (current.success) return current.data;
@@ -248,17 +259,18 @@ export const readingOutputProvenanceSchema = z.object({
   contentVersion: z.string().min(1).optional(),
   safetyPolicyVersion: z.string().min(1).optional(),
 });
-
 export type ReadingOutputProvenance = z.infer<typeof readingOutputProvenanceSchema>;
 
 export const oraclePhaseSchema = z.enum([
-  "narration",
-  "openingTheme",
+  "directAnswer",
+  "overallPattern",
   "cardInterpretation",
-  "overallSynthesis",
+  "synthesis",
   "likelyTrajectory",
-  "alternateTrajectory",
+  "alternatePath",
+  "timing",
   "userAgency",
+  "personalization",
   "reflectionPrompt",
   "followUp",
   "uncertainty",
@@ -271,7 +283,6 @@ export const oracleStreamEventSchema = z.discriminatedUnion("type", [
     phase: oraclePhaseSchema,
     heading: z.string().min(1),
     text: z.string().min(1),
-    passageId: z.string().min(1).optional(),
     cardPositionIds: z.array(z.string().min(1)).max(10).optional(),
   }),
   z.object({ type: z.literal("complete") }),

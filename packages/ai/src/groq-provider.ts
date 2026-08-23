@@ -1,10 +1,10 @@
 import {
   followUpResultSchema,
-  readingResultV2Schema,
+  readingResultV3Schema,
   type FollowUpResult,
+  type ReadingConfiguration,
   type ReadingResult,
 } from "@starguidance/contracts";
-import { z } from "zod";
 
 import {
   classifyQuestion,
@@ -33,9 +33,9 @@ import { generatedOutputSafetyViolation } from "./output-safety";
  * times out, or errors falls back to the deterministic reading rather than
  * showing a person a broken or empty result (AI-015).
  */
-export const PROMPT_VERSION = "reader-voice-v3" as const;
-export const RESPONSE_SCHEMA_VERSION = "reading-result-v2" as const;
-export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v3" as const;
+export const PROMPT_VERSION = "reader-voice-v5" as const;
+export const RESPONSE_SCHEMA_VERSION = "reading-result-v3" as const;
+export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v5" as const;
 export const DEFAULT_GROQ_PRIMARY_MODEL = "openai/gpt-oss-120b" as const;
 export const DEFAULT_GROQ_FALLBACK_MODELS = [
   "llama-3.3-70b-versatile",
@@ -96,7 +96,7 @@ export const GUARDED_CATEGORIES = new Set([
   "thirdPartyPrivateClaim",
 ]);
 
-const READER_VOICE = [
+const LEGACY_READER_VOICE = [
   "You are a conversational divination narrator speaking as an intuitive continuation of an existing conversation.",
   "Use the locked cards to understand what appears to be happening in the person's life and where it may be heading; do not explain tarot academically.",
   "Internally reason through the current situation, underlying pattern, remembered personal tendencies, likely next development, observable manifestation, tension, turning point, and direction afterward. Never expose that structure.",
@@ -119,6 +119,25 @@ const READER_VOICE = [
   "Do not restate or quote the raw question. Do not mention being an AI. Do not put a disclaimer in the spoken passages; uncertainty is stored separately.",
 ].join(" ");
 
+const READER_VOICE = [
+  "You are a warm, perceptive tarot reader conducting a private consultation from a locked spread.",
+  "Before writing, internally analyze the question's subject, decision or tension, requested horizon, and the user's agency. Then interpret every card through its approved orientation meaning, immutable position function, question, and domain tags.",
+  "Scan the whole spread for repeated suits or elements, Major Arcana concentration, repeated ranks, court patterns, reinforcing cards, conflicts, directional movement, and only the explicit linked-position rules supplied in spreadCapabilities.",
+  "Answer the core question clearly, then explain every card's contribution and synthesize one coherent story. Do not write a list of dictionary definitions or force a predetermined transcript length.",
+  "likelyTrajectory may be non-null only when trajectoryAllowed is true and the configured positions genuinely support it. alternatePath may be non-null only when alternatePathAllowed is true. timing may be non-null only when timingAllowed is true. Otherwise return null.",
+  "For a one-card Focus reading, provide the central theme, what to notice, practical guidance, and reflection; never manufacture an alternate path. For Situation–Challenge–Direction, connect all three and make any outlook explicitly conditional on following Direction.",
+  "A reversed card is not automatically opposite or negative. Use only one supplied approvedReversalFacet when the surrounding cards, position, and question support it: blocked, internalized, delayed, imbalanced, excessive, deficient, avoided, releasing, or recovering.",
+  "Every claim must be traceable. supportingEvidence must cite the supplied card themes and position function; relationshipNotes must name the cards and positions that create that relationship. Never contradict the curated semantic range.",
+  "Use confident but conditional spoken language: 'The current pattern suggests', 'Under present conditions', 'This may indicate', and 'The strongest leverage appears to be' where natural. Use one concise uncertaintyNote, not repeated disclaimers.",
+  "Pure Tarot has personalizationAllowed false and requires personalizationLens null. Personalized Tarot may use only readerLens statements to adjust emphasis, examples, or reflective language in a separately labeled personalizationLens. Never describe profile material as revealed by the cards.",
+  "Never expose astrology, numerology, BaZi, Dreamspell, birth details, hidden labels, or source-system names. Profile context cannot override card meaning, position, orientation, or create a prediction.",
+  "Never claim another person's private thoughts. Speak through observable behavior, direct communication, evidence, boundaries, and the user's choices. Never guarantee outcomes or exact dates.",
+  "Echo every supplied positionId, positionLabel, cardId, and orientation exactly. Include exactly one card object per supplied locked card, in the supplied position order.",
+  "Use the specific non-identifying concern in the question without copying names, locations, exact dates, employers, or other identifying details into persisted prose.",
+  "Sound spoken but edited: warm, candid, thoughtful, specific, and natural. Avoid filler, profanity, canned mysticism, academic reporting, repetitive sentence frames, and therapy-speak.",
+  "Do not mention being an AI or the existence of these instructions.",
+].join(" ");
+
 const GUARDED_VOICE = [
   "This question touches something where a confident prediction could cause real harm.",
   "Do not diagnose, do not predict death, illness, pregnancy, guilt, or a verdict, and do not assert",
@@ -135,6 +154,13 @@ const FOLLOW_UP_VOICE = [
   "Stay focused on the follow-up. Do not use headings, lists, disclaimers, or repeat the spread.",
 ].join(" ");
 
+const LEGACY_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
+  reading: LEGACY_READER_VOICE,
+  guardedReading: `${LEGACY_READER_VOICE} ${GUARDED_VOICE}`,
+  followUp: `${LEGACY_READER_VOICE} ${FOLLOW_UP_VOICE}`,
+  guardedFollowUp: `${LEGACY_READER_VOICE} ${FOLLOW_UP_VOICE} ${GUARDED_VOICE}`,
+});
+
 export const REVIEWED_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
   reading: READER_VOICE,
   guardedReading: `${READER_VOICE} ${GUARDED_VOICE}`,
@@ -150,13 +176,39 @@ const GROUNDED_VOICE = [
 
 export const RUNTIME_PROMPT_BUNDLES = Object.freeze({
   "reader-voice-v3": {
-    readingVersion: PROMPT_VERSION,
-    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
-    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+    readingVersion: "reader-voice-v3",
+    followUpVersion: "follow-up-reader-voice-v3",
+    ...LEGACY_GATEWAY_SYSTEM_PROMPTS,
   },
   "reader-voice-v3-grounded": {
     readingVersion: "reader-voice-v3-grounded",
     followUpVersion: "follow-up-reader-voice-v3-grounded",
+    reading: `${LEGACY_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
+    guardedReading: `${LEGACY_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
+    followUp: `${LEGACY_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
+    guardedFollowUp: `${LEGACY_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp} ${GROUNDED_VOICE}`,
+  },
+  "reader-voice-v4": {
+    readingVersion: PROMPT_VERSION,
+    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
+    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+  },
+  "reader-voice-v4-grounded": {
+    readingVersion: "reader-voice-v4-grounded",
+    followUpVersion: "follow-up-reader-voice-v4-grounded",
+    reading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
+    guardedReading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
+    followUp: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
+    guardedFollowUp: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp} ${GROUNDED_VOICE}`,
+  },
+  "reader-voice-v5": {
+    readingVersion: PROMPT_VERSION,
+    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
+    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+  },
+  "reader-voice-v5-grounded": {
+    readingVersion: "reader-voice-v5-grounded",
+    followUpVersion: "follow-up-reader-voice-v5-grounded",
     reading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
     guardedReading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
     followUp: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
@@ -304,196 +356,161 @@ function exactCardSchema(entry: ResolvedDraw[number]): Record<string, unknown> {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["positionId", "cardId", "orientation", "passageIds"],
+    required: [
+      "positionId",
+      "positionLabel",
+      "cardId",
+      "orientation",
+      "coreMeaning",
+      "positionInterpretation",
+      "relationshipNotes",
+      "supportingEvidence",
+    ],
     properties: {
       positionId: { type: "string", enum: [entry.position.id], minLength: 1 },
+      positionLabel: { type: "string", enum: [entry.position.displayName], minLength: 1 },
       cardId: { type: "string", enum: [entry.card.id], minLength: 1 },
       orientation: { type: "string", enum: [entry.orientation] },
-      passageIds: {
+      coreMeaning: { type: "string", minLength: 1 },
+      positionInterpretation: { type: "string", minLength: 1 },
+      relationshipNotes: {
+        type: "array",
+        items: { type: "string", minLength: 1 },
+        maxItems: 12,
+      },
+      supportingEvidence: {
         type: "array",
         items: { type: "string", minLength: 1 },
         minItems: 1,
+        maxItems: 12,
       },
     },
   };
 }
 
 /** The JSON Schema the model is constrained to. Mirrors readingResultSchema. */
-export function reviewedReadingResponseSchema(resolved: ResolvedDraw): Record<string, unknown> {
+export function reviewedReadingResponseSchema(
+  resolved: ResolvedDraw,
+  configuration?: ReadingConfiguration,
+): Record<string, unknown> {
   const cardCount = resolved.length;
-  const positionIds = resolved.map(({ position }) => position.id);
   const exactCards = resolved.map(exactCardSchema);
-  const passage = {
-    type: "object",
-    additionalProperties: false,
-    required: ["id", "role", "text", "cardReferences"],
-    properties: {
-      id: { type: "string", minLength: 1 },
-      role: {
-        type: "string",
-        enum: [
-          "opening",
-          "situation",
-          "underlyingPattern",
-          "development",
-          "turningPoint",
-          "trajectory",
-          "alternative",
-          "agency",
-          "reflection",
-          "closing",
-          "safety",
-        ],
-      },
-      text: { type: "string", minLength: 1 },
-      cardReferences: {
-        type: "array",
-        items: { type: "string", enum: positionIds },
-        maxItems: cardCount,
-      },
-    },
-  };
+  const nullableText = (allowed: boolean | undefined) =>
+    allowed === false
+      ? { type: "null" }
+      : { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] };
+  const trajectoryAllowed =
+    configuration === undefined || configuration.capabilities.trajectoryPositionIds.length > 0;
+  const alternateAllowed =
+    configuration === undefined || configuration.capabilities.alternativePositionGroups.length > 0;
+  const timingAllowed =
+    configuration === undefined || configuration.capabilities.timingMethod !== null;
+  const personalizationAllowed =
+    configuration === undefined || configuration.personalizationMode === "personalized_tarot";
   return {
     type: "object",
     additionalProperties: false,
     required: [
       "schemaVersion",
-      "title",
-      "passages",
+      "directAnswer",
+      "overallPattern",
       "cards",
-      "trajectory",
+      "synthesis",
+      "likelyTrajectory",
+      "alternatePath",
+      "timing",
       "userAgency",
-      "reflectionQuestion",
-      "disconfirmingEvidence",
-      "uncertainty",
+      "reflectionPrompt",
+      "uncertaintyNote",
+      "personalizationLens",
       "safetyFlags",
     ],
     properties: {
-      schemaVersion: { type: "string", enum: ["reading-result-v2"] },
-      title: { type: "string", minLength: 1 },
-      passages: { type: "array", items: passage, minItems: 3, maxItems: 24 },
+      schemaVersion: { type: "string", enum: ["reading-result-v3"] },
+      directAnswer: { type: "string", minLength: 1 },
+      overallPattern: { type: "string", minLength: 1 },
       cards: {
         type: "array",
         items: exactCards.length === 1 ? exactCards[0] : { anyOf: exactCards },
         minItems: cardCount,
         maxItems: cardCount,
       },
-      trajectory: {
-        type: "object",
-        additionalProperties: false,
-        required: ["likelyPassageId", "conditions", "alternatePassageId"],
-        properties: {
-          likelyPassageId: { type: "string", minLength: 1 },
-          conditions: {
-            type: "array",
-            items: { type: "string", minLength: 1 },
-            minItems: 1,
-          },
-          alternatePassageId: { type: "string", minLength: 1 },
-        },
-      },
-      userAgency: {
-        type: "array",
-        items: { type: "string", minLength: 1 },
-        minItems: 1,
-      },
-      reflectionQuestion: { type: "string", minLength: 1 },
-      disconfirmingEvidence: {
-        type: "array",
-        items: { type: "string", minLength: 1 },
-        minItems: 1,
-      },
-      uncertainty: { type: "string", minLength: 1 },
+      synthesis: { type: "string", minLength: 1 },
+      likelyTrajectory: nullableText(trajectoryAllowed),
+      alternatePath: nullableText(alternateAllowed),
+      timing: nullableText(timingAllowed),
+      userAgency: { type: "string", minLength: 1 },
+      reflectionPrompt: { type: "string", minLength: 1 },
+      uncertaintyNote: { type: "string", minLength: 1 },
+      personalizationLens: personalizationAllowed
+        ? {
+            anyOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["label", "observations"],
+                properties: {
+                  label: { type: "string", enum: ["Personalized reflection"] },
+                  observations: {
+                    type: "array",
+                    items: { type: "string", minLength: 1 },
+                    minItems: 1,
+                    maxItems: 6,
+                  },
+                },
+              },
+              { type: "null" },
+            ],
+          }
+        : { type: "null" },
       safetyFlags: { type: "array", items: { type: "string" } },
     },
   };
 }
 
-// The public contract deliberately adds relational refinements (unique passage
-// IDs and valid cross-references) on top of this structural shape. Parse the
-// provider's authored content first, then rebuild only that internal metadata
-// before applying the complete contract. Prose, safety fields, card identity,
-// and card orientation are never repaired or invented here.
-const providerReadingResultSchema = z.object(readingResultV2Schema.shape).strict();
-
-function canonicalizeProviderReading(value: unknown, resolved: ResolvedDraw): ReadingResult {
-  const parsed = providerReadingResultSchema.parse(value);
+function canonicalizeProviderReading(
+  value: unknown,
+  resolved: ResolvedDraw,
+  configuration: ReadingConfiguration,
+): ReadingResult {
+  const parsed = readingResultV3Schema.parse(value);
   if (parsed.cards.length !== resolved.length) throw new ProviderRequestError("invalid-response");
 
   const parsedByPosition = new Map(parsed.cards.map((card) => [card.positionId, card]));
   for (const entry of resolved) {
     const echoed = parsedByPosition.get(entry.position.id);
-    if (!echoed || echoed.cardId !== entry.card.id || echoed.orientation !== entry.orientation)
+    if (
+      !echoed ||
+      echoed.positionLabel !== entry.position.displayName ||
+      echoed.cardId !== entry.card.id ||
+      echoed.orientation !== entry.orientation
+    )
       throw new ProviderRequestError("invalid-response");
   }
-
-  const orderedCards = resolved.map((entry) => ({
-    ...parsedByPosition.get(entry.position.id)!,
-    // Re-assert the locked tuple so no later refactor can make provider
-    // metadata authoritative over the persisted draw.
-    positionId: entry.position.id,
-    cardId: entry.card.id,
-    orientation: entry.orientation,
-  }));
-  const fullyValid = readingResultV2Schema.safeParse({ ...parsed, cards: orderedCards });
-  if (fullyValid.success) return fullyValid.data;
-
-  // At this point every authored field has passed the structural contract and
-  // every card has echoed the locked draw exactly. Only relational metadata
-  // covered by readingResultV2Schema.superRefine can be invalid. Repair only
-  // links that have unambiguous authored evidence; never attach arbitrary
-  // prose to a card or trajectory to make a response pass validation.
-  const expectedPositionIds = resolved.map(({ position }) => position.id);
-  const expectedPositionSet = new Set(expectedPositionIds);
-  const positionByCardId = new Map(resolved.map(({ card, position }) => [card.id, position.id]));
-  const passageIds = new Set(parsed.passages.map(({ id }) => id));
-  if (passageIds.size !== parsed.passages.length)
+  if (
+    configuration.capabilities.trajectoryPositionIds.length === 0 &&
+    parsed.likelyTrajectory !== null
+  )
+    throw new ProviderRequestError("invalid-response");
+  if (
+    configuration.capabilities.alternativePositionGroups.length === 0 &&
+    parsed.alternatePath !== null
+  )
+    throw new ProviderRequestError("invalid-response");
+  if (configuration.capabilities.timingMethod === null && parsed.timing !== null)
+    throw new ProviderRequestError("invalid-response");
+  if (configuration.personalizationMode === "pure_tarot" && parsed.personalizationLens !== null)
     throw new ProviderRequestError("invalid-response");
 
-  const passages = parsed.passages.map((passage) => {
-    return {
-      ...passage,
-      cardReferences: [
-        ...new Set(
-          passage.cardReferences
-            .map((reference) =>
-              expectedPositionSet.has(reference) ? reference : positionByCardId.get(reference),
-            )
-            .filter((positionId): positionId is string => Boolean(positionId)),
-        ),
-      ],
-    };
-  });
-
-  const trajectoryPassageId = (requested: string, role: "trajectory" | "alternative"): string => {
-    if (passageIds.has(requested)) return requested;
-    const roleMatches = passages.filter((passage) => passage.role === role);
-    if (roleMatches.length !== 1) throw new ProviderRequestError("invalid-response");
-    return roleMatches[0]!.id;
-  };
-
-  const cards = orderedCards.map((card) => {
-    const directPassageIds = card.passageIds.filter((passageId) => passageIds.has(passageId));
-    const reciprocalPassageIds = passages
-      .filter(({ cardReferences }) => cardReferences.includes(card.positionId))
-      .map(({ id }) => id);
-    const authoredPassageIds = [...new Set([...directPassageIds, ...reciprocalPassageIds])];
-    if (authoredPassageIds.length === 0) throw new ProviderRequestError("invalid-response");
-    return {
-      ...card,
-      passageIds: authoredPassageIds,
-    };
-  });
-
-  return readingResultV2Schema.parse({
+  return readingResultV3Schema.parse({
     ...parsed,
-    passages,
-    cards,
-    trajectory: {
-      ...parsed.trajectory,
-      likelyPassageId: trajectoryPassageId(parsed.trajectory.likelyPassageId, "trajectory"),
-      alternatePassageId: trajectoryPassageId(parsed.trajectory.alternatePassageId, "alternative"),
-    },
+    cards: resolved.map((entry) => ({
+      ...parsedByPosition.get(entry.position.id)!,
+      positionId: entry.position.id,
+      positionLabel: entry.position.displayName,
+      cardId: entry.card.id,
+      orientation: entry.orientation,
+    })),
   });
 }
 
@@ -533,24 +550,40 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
 
   /** The payload sent to the provider. Exposed so tests can assert what leaves. */
   buildPayload(input: ReadingGenerationInput) {
-    const resolved = resolveDraw(input.draw, input.questionClassification);
+    const resolved = resolveDraw(
+      input.draw,
+      input.questionClassification,
+      input.configuration.positions,
+    );
     const answer = answerCard(input.draw, resolved);
     return {
       question: input.question,
       questionContext: input.questionClassification,
       spreadId: input.draw.spreadId,
+      spreadCapabilities: input.configuration.capabilities,
+      trajectoryAllowed: input.configuration.capabilities.trajectoryPositionIds.length > 0,
+      alternatePathAllowed: input.configuration.capabilities.alternativePositionGroups.length > 0,
+      timingAllowed: input.configuration.capabilities.timingMethod !== null,
+      personalizationAllowed: input.configuration.personalizationMode === "personalized_tarot",
       answerPositionId: answer.position.id,
       cards: resolved.map((entry) => ({
         positionId: entry.position.id,
         positionName: entry.position.displayName,
         positionMeans: entry.position.interpretiveFunction,
+        positionDescription: entry.position.description,
         cardId: entry.card.id,
         card: entry.card.name,
         arcana: entry.card.arcana,
         orientation: entry.orientation,
         themes: entry.themes,
+        domainTags: entry.card.eventTags,
+        approvedReversalFacets:
+          entry.orientation === "reversed" ? (entry.card.reversalFacets ?? []) : [],
       })),
-      readerLens: input.relevantTraitStatements,
+      readerLens:
+        input.configuration.personalizationMode === "personalized_tarot"
+          ? input.relevantTraitStatements
+          : [],
     };
   }
 
@@ -558,10 +591,12 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
     return {
       ...this.buildPayload(input),
       originalReading: {
-        title: input.originalResult.title,
-        passages: input.originalResult.passages,
+        directAnswer: input.originalResult.directAnswer,
+        overallPattern: input.originalResult.overallPattern,
         cards: input.originalResult.cards,
-        trajectory: input.originalResult.trajectory,
+        synthesis: input.originalResult.synthesis,
+        likelyTrajectory: input.originalResult.likelyTrajectory,
+        alternatePath: input.originalResult.alternatePath,
         userAgency: input.originalResult.userAgency,
       },
     };
@@ -692,13 +727,17 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
   ): Promise<ReadingResult> {
     const safety = classifyQuestion(input.question);
     const guarded = GUARDED_CATEGORIES.has(safety.category);
-    const resolved = resolveDraw(input.draw, input.questionClassification);
+    const resolved = resolveDraw(
+      input.draw,
+      input.questionClassification,
+      input.configuration.positions,
+    );
     const parsed = canonicalizeProviderReading(
       await this.requestStructured(
         guarded ? this.promptBundle.guardedReading : this.promptBundle.reading,
         this.buildPayload(input),
         "reading",
-        reviewedReadingResponseSchema(resolved),
+        reviewedReadingResponseSchema(resolved, input.configuration),
         this.options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
         model,
         mode,
@@ -706,9 +745,10 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
         signal,
       ),
       resolved,
+      input.configuration,
     );
     if (generatedOutputSafetyViolation(parsed)) throw new ProviderRequestError("unsafe-response");
-    return readingResultV2Schema.parse({
+    return readingResultV3Schema.parse({
       ...parsed,
       safetyFlags: safety.category === "ordinary" ? parsed.safetyFlags : [safety.category],
     });

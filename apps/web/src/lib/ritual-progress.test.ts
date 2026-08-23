@@ -14,11 +14,11 @@ describe("ritual progress", () => {
   it("round-trips the cut decision and deduplicated reveal indexes", () => {
     const storage = memoryStorage();
     writeRitualProgress(storage, "reading-1", {
-      cutTaken: true,
+      cutIndex: 39,
       revealedIndexes: [2, 0, 2],
     });
     expect(readRitualProgress(storage, "reading-1", 3)).toEqual({
-      cutTaken: true,
+      cutIndex: 39,
       revealedIndexes: [0, 2],
     });
   });
@@ -30,7 +30,7 @@ describe("ritual progress", () => {
       JSON.stringify({ cutTaken: false, revealedIndexes: [-1, 1, 8, "2"] }),
     );
     expect(readRitualProgress(storage, "reading-1", 3)).toEqual({
-      cutTaken: false,
+      cutIndex: 0,
       revealedIndexes: [1],
     });
     storage.setItem("sg:reading-progress:reading-2", "not-json");

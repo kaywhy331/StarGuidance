@@ -35,13 +35,15 @@ export default async function ReadingsPage() {
       sigilSeed={user.profile.snapshot.id}
       spreads={spreads
         .filter(({ id }) => enabledSpreads.has(id))
-        .map(({ id, name, purpose, estimatedMinutes, entitlementClass, positions }) => ({
+        .map(({ id, version, name, purpose, estimatedMinutes, entitlementClass, positions }) => ({
           id,
+          version,
           name,
           purpose,
           estimatedMinutes,
           entitlementClass,
           count: positions.length,
+          positions,
         }))}
     />
   );

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   classifyQuestion,
+  classifyFollowUpScope,
   createFollowUpStreamEvents,
   DeterministicFallbackProvider,
-  selectReadingLens,
 } from "@starguidance/ai";
 import { z } from "zod";
 
@@ -51,29 +51,44 @@ export async function POST(request: Request) {
         ),
       );
     if (input.action === "recover")
-      return noStore(NextResponse.json({ reading: guestReadingDisplay(receipt) }));
+      return noStore(
+        NextResponse.json({ reading: guestReadingDisplay(receipt, { includeResult: true }) }),
+      );
 
     const safety = classifyQuestion(input.question);
     if (safety.interrupt) return noStore(NextResponse.json({ safety }, { status: 422 }));
-    const snapshot = user.profile?.snapshot;
-    const lens = selectReadingLens(
-      input.question,
-      snapshot?.traits ?? [],
-      snapshot?.tensions ?? [],
-      receipt.questionClassification.topic,
-    );
+    const scope = classifyFollowUpScope({
+      originalQuestion: receipt.question,
+      originalClassification: receipt.questionClassification,
+      followUpQuestion: input.question,
+    });
+    if (!scope.sameReading)
+      return noStore(
+        NextResponse.json(
+          {
+            error:
+              "That is a new subject or time horizon. Begin a new reading instead of changing this locked guest draw.",
+            newReadingRequired: true,
+            reason: scope.reason,
+          },
+          { status: 409 },
+        ),
+      );
     const generated = await new DeterministicFallbackProvider().generateFollowUpWithProvenance({
       draw: receipt.draw,
+      configuration: receipt.configuration,
       question: input.question,
       questionClassification: receipt.questionClassification,
-      relevantTraitStatements: lens.statements,
+      relevantTraitStatements: receipt.readerLens,
       originalResult: receipt.result,
     });
     return noStore(
       NextResponse.json({
         followUp: generated.result,
         previewEvents: createFollowUpStreamEvents(generated.result),
-        personalizedByPrivateProfile: Boolean(snapshot && lens.statements.length > 0),
+        personalizedByPrivateProfile:
+          receipt.configuration.personalizationMode === "personalized_tarot" &&
+          receipt.readerLens.length > 0,
       }),
     );
   } catch (error) {

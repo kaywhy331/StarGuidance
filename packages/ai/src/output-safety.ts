@@ -2,7 +2,7 @@ const prohibitedClaims: readonly { code: string; pattern: RegExp }[] = [
   {
     code: "guaranteed-outcome",
     pattern:
-      /\b(?:(?:will|is going to)\s+(?:definitely|certainly)|guaranteed(?:\s+to|\s+that)?|without (?:a|any) doubt|inevitable(?:ly)?)\b/i,
+      /\b(?:(?:will|is going to)\s+(?:definitely|certainly)|(?:is|are|will be)\s+guaranteed(?:\s+to|\s+that)?|i guarantee(?:\s+that)?|without (?:a|any) doubt|inevitable(?:ly)?)\b/i,
   },
   {
     code: "physical-death",

@@ -5,6 +5,7 @@ import type {
   ReadingEntitlementDecision,
   ReadingOutputProvenance,
   ReadingResult,
+  ReadingConfiguration,
   StoredRitualProgress,
 } from "@starguidance/contracts";
 import type { LockedDraw, TarotArtwork } from "@starguidance/tarot-domain";
@@ -14,6 +15,7 @@ export interface DealtCardView {
   name: string;
   orientation: "upright" | "reversed";
   themes: readonly string[];
+  baselineMeaning: string;
   positionId: string;
   positionName: string;
   positionDescription: string;
@@ -55,6 +57,7 @@ export interface ReadingPayload {
   profileSnapshotId: string;
   personalization?: ReadingPersonalization;
   draw: LockedDraw;
+  configuration: ReadingConfiguration;
   cards: DealtCardView[];
   result?: ReadingResult;
   outputProvenance?: ReadingOutputProvenance;

@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMachine } from "@xstate/react";
 import type { SafetyCategory } from "@starguidance/ai";
-import type { OracleStreamEvent } from "@starguidance/contracts";
+import {
+  GENERAL_READING_QUESTION,
+  drawCeremonySchema,
+  type DrawCeremony,
+  type OracleStreamEvent,
+  type PersonalizationMode,
+  type ReversalMode,
+} from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
 import {
@@ -24,18 +31,43 @@ import {
 import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../session/[id]/question-composer";
-import { ShuffleShells } from "../session/[id]/shuffle-shells";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
+import { ShuffleShells } from "../session/[id]/shuffle-shells";
 import { TarotSpreadStage } from "../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
-type FreeSpread = {
+type CeremonyStage = "focusing" | "shuffling" | "optionalCut";
+
+type PendingGuestSession =
+  | { kind: "ceremony"; token: string; stage: CeremonyStage }
+  | {
+      kind: "receipt";
+      receipt: string;
+      revealedIndexes: number[];
+      resultUnlocked: boolean;
+    };
+
+interface QuestionReview {
+  encouragedForm: boolean;
+  reformulationReason?: "binary" | "deterministic" | "third_party_private";
+  suggestedQuestion?: string;
+}
+
+interface FreeSpread {
   id: "three-card" | "one-card";
+  version: string;
   name: string;
   purpose: string;
   estimatedMinutes: number;
   count: number;
-};
+  positions: readonly {
+    id: string;
+    displayName: string;
+    interpretiveFunction: string;
+    description: string;
+    order: number;
+  }[];
+}
 
 const continuationPath = "/free-reading?continue=1";
 const signupHref = `/sign-up?next=${encodeURIComponent(continuationPath)}`;
@@ -53,19 +85,49 @@ function storedDeviceId(): string {
   }
 }
 
-function phaseEvents(reading: GuestReadingDisplay): readonly PhaseEvent[] {
-  return reading.previewEvents.filter((event): event is PhaseEvent => event.type === "phase");
+function browserNonce(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-function restoreSessionReading(): GuestReadingDisplay | undefined {
+function readPendingSession(): PendingGuestSession | undefined {
   try {
-    const stored = sessionStorage.getItem(GUEST_READING_SESSION_KEY);
-    if (!stored) return undefined;
-    const parsed = guestReadingDisplaySchema.safeParse(JSON.parse(stored));
-    return parsed.success ? parsed.data : undefined;
+    const raw = sessionStorage.getItem(GUEST_READING_SESSION_KEY);
+    if (!raw) return undefined;
+    const value = JSON.parse(raw) as Partial<PendingGuestSession>;
+    if (
+      value.kind === "ceremony" &&
+      typeof value.token === "string" &&
+      ["focusing", "shuffling", "optionalCut"].includes(String(value.stage))
+    )
+      return value as PendingGuestSession;
+    if (
+      value.kind === "receipt" &&
+      typeof value.receipt === "string" &&
+      Array.isArray(value.revealedIndexes) &&
+      typeof value.resultUnlocked === "boolean"
+    )
+      return value as PendingGuestSession;
   } catch {
-    return undefined;
+    // Invalid local recovery state is ignored; the signed cookie still protects trial use.
   }
+  return undefined;
+}
+
+function savePendingSession(value: PendingGuestSession) {
+  try {
+    sessionStorage.setItem(GUEST_READING_SESSION_KEY, JSON.stringify(value));
+  } catch {
+    // The in-memory ritual remains usable when session storage is unavailable.
+  }
+}
+
+function phaseEvents(reading: GuestReadingDisplay): readonly PhaseEvent[] {
+  return (reading.previewEvents ?? []).filter(
+    (event): event is PhaseEvent => event.type === "phase",
+  );
 }
 
 export function GuestReadingExperience({
@@ -82,17 +144,24 @@ export function GuestReadingExperience({
   spreads: readonly FreeSpread[];
 }) {
   const [state, send] = useMachine(readingMachine);
-  const [selected, setSelected] = useState<FreeSpread["id"]>("three-card");
+  const defaultSpread = spreads.find(({ id }) => id === "three-card") ?? spreads[0];
+  const [selected, setSelected] = useState<FreeSpread["id"]>(defaultSpread?.id ?? "three-card");
   const [birthDate, setBirthDate] = useState("");
   const [question, setQuestion] = useState("");
+  const [confirmedQuestion, setConfirmedQuestion] = useState("");
+  const [questionReview, setQuestionReview] = useState<QuestionReview>();
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [reversalMode, setReversalMode] = useState<ReversalMode>("reversals_enabled");
+  const [personalizationMode, setPersonalizationMode] =
+    useState<PersonalizationMode>("personalized_tarot");
   const [deviceId, setDeviceId] = useState<string>();
+  const [ceremony, setCeremony] = useState<DrawCeremony>();
   const [reading, setReading] = useState<GuestReadingDisplay>();
   const [receipt, setReceipt] = useState<string>();
   const [trialUsed, setTrialUsed] = useState(false);
-  const [eligibilityLoading, setEligibilityLoading] = useState(true);
+  const [bootstrapLoading, setBootstrapLoading] = useState(!continueRequested);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [safetyInterrupt, setSafetyInterrupt] = useState<{
@@ -103,18 +172,24 @@ export function GuestReadingExperience({
   const [reducedMotion, setReducedMotion] = useState(false);
   const [dealtCount, setDealtCount] = useState(0);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  const [journeyComplete, setJourneyComplete] = useState(false);
+  const revealedRef = useRef<ReadonlySet<number>>(revealed);
+  const [activeReveal, setActiveReveal] = useState<number | null>(null);
   const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
+  const [journeyComplete, setJourneyComplete] = useState(false);
   const [continuationReading, setContinuationReading] = useState<GuestReadingDisplay>();
   const [continuationLoading, setContinuationLoading] = useState(continueRequested);
   const [followUp, setFollowUp] = useState("");
   const [followUpResult, setFollowUpResult] = useState<GuestFollowUpResponse>();
   const [followUpLoading, setFollowUpLoading] = useState(false);
+  const bootstrapped = useRef(false);
+  const resultUnlockStarted = useRef(false);
 
-  const selectedSpread = spreads.find(({ id }) => id === selected) ?? spreads[0];
+  const selectedSpread = useMemo(
+    () => spreads.find(({ id }) => id === selected) ?? spreads[0],
+    [selected, spreads],
+  );
   const consentsReady = termsAccepted && privacyAccepted && ageConfirmed;
-  const intakeReady = consentsReady && Boolean(birthDate);
-  const restoredQuestion = question || "The intention you brought to this private moment";
+  const intakeReady = consentsReady && Boolean(birthDate) && Boolean(question.trim());
   const continuationReadingRevealed = useMemo(
     () => new Set(continuationReading?.cards.map((_, index) => index) ?? []),
     [continuationReading],
@@ -123,241 +198,419 @@ export function GuestReadingExperience({
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReducedMotion(media.matches);
-    const timer = window.setTimeout(update, 0);
+    update();
     media.addEventListener("change", update);
-    return () => {
-      window.clearTimeout(timer);
-      media.removeEventListener("change", update);
-    };
+    return () => media.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      send({ type: "START" });
-      const device = storedDeviceId();
-      setDeviceId(device);
+    if (bootstrapped.current) return;
+    bootstrapped.current = true;
+    const device = storedDeviceId();
+    setDeviceId(device);
+    if (continueRequested) return;
+    const controller = new AbortController();
+    void (async () => {
+      const pending = readPendingSession();
+      let localReceipt: string | undefined;
       try {
-        setReceipt(localStorage.getItem(GUEST_READING_RECEIPT_KEY) ?? undefined);
-        const localTrialUsed = Boolean(localStorage.getItem(GUEST_TRIAL_LOCAL_MARKER_KEY));
-        setTrialUsed(localTrialUsed);
-        if (localTrialUsed) setEligibilityLoading(false);
+        localReceipt = localStorage.getItem(GUEST_READING_RECEIPT_KEY) ?? undefined;
       } catch {
-        // Cookie enforcement remains available when browser storage is blocked.
+        // The server marker remains authoritative when local storage is unavailable.
       }
-      if (continueRequested) return;
-      const restored = restoreSessionReading();
-      if (!restored) return;
-      setReading(restored);
-      setRevealed(new Set(restored.cards.map((_, index) => index)));
-      setDealtCount(restored.cards.length);
-      for (const event of [
-        { type: "SELECT" },
-        { type: "QUESTION_ACCEPTED" },
-        { type: "DECK_READY" },
-        { type: "SHUFFLE_COMPLETE" },
-        { type: "SKIP_CUT" },
-        { type: "DEALT" },
-        { type: "REVEAL" },
-        { type: "ALL_REVEALED" },
-        { type: "GENERATION_READY" },
-        { type: "RESULT_REVEALED" },
-      ] as const)
-        send(event);
-      setEligibilityLoading(false);
-    }, 0);
-    return () => window.clearTimeout(timer);
+      try {
+        if (pending?.kind === "ceremony") {
+          const response = await fetch("/api/guest-readings", {
+            method: "POST",
+            headers: { "content-type": "application/json", [GUEST_DEVICE_HEADER]: device },
+            body: JSON.stringify({ action: "restore", ceremonyToken: pending.token }),
+            signal: controller.signal,
+          });
+          const payload = (await response.json()) as { ceremony?: unknown; error?: string };
+          if (!response.ok || !payload.ceremony)
+            throw new Error(payload.error ?? "The pending guest ritual expired.");
+          const restored = drawCeremonySchema.parse(payload.ceremony);
+          setCeremony(restored);
+          setQuestion(restored.question);
+          setConfirmedQuestion(restored.question);
+          setSelected(restored.spread.id as FreeSpread["id"]);
+          setReversalMode(restored.configuration.reversalMode);
+          setPersonalizationMode(restored.configuration.personalizationMode);
+          send({ type: "START" });
+          send({ type: "DRAFT_QUESTION" });
+          send({ type: "CONFIRM_QUESTION" });
+          send({ type: "CONFIRM_SPREAD" });
+          send({ type: "SAFETY_APPROVED" });
+          if (pending.stage === "shuffling" || pending.stage === "optionalCut")
+            send({ type: "FOCUS_COMPLETE" });
+          if (pending.stage === "optionalCut") send({ type: "SHUFFLE_COMPLETE" });
+          return;
+        }
+
+        const recoveryReceipt = pending?.kind === "receipt" ? pending.receipt : localReceipt;
+        if (recoveryReceipt) {
+          const resultUnlocked = pending?.kind === "receipt" && pending.resultUnlocked;
+          const response = await fetch("/api/guest-readings", {
+            method: "POST",
+            headers: { "content-type": "application/json", [GUEST_DEVICE_HEADER]: device },
+            body: JSON.stringify({
+              action: resultUnlocked ? "reveal" : "recover",
+              receipt: recoveryReceipt,
+            }),
+            signal: controller.signal,
+          });
+          const payload = guestReadingResponseSchema.safeParse(await response.json());
+          if (response.ok && payload.success) {
+            const restoredIndexes =
+              pending?.kind === "receipt"
+                ? pending.revealedIndexes.filter(
+                    (index) => index >= 0 && index < payload.data.reading.cards.length,
+                  )
+                : [];
+            const restoredSet = new Set(restoredIndexes);
+            revealedRef.current = restoredSet;
+            setRevealed(restoredSet);
+            setReceipt(recoveryReceipt);
+            setReading(payload.data.reading);
+            setTrialUsed(true);
+            send({ type: "START" });
+            send({ type: "RESTORE_LOCKED" });
+            return;
+          }
+        }
+
+        send({ type: "START" });
+        send({ type: "DRAFT_QUESTION" });
+        const response = await fetch("/api/guest-readings", {
+          cache: "no-store",
+          headers: { [GUEST_DEVICE_HEADER]: device },
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as {
+          eligible?: boolean;
+          signupRequired?: boolean;
+          error?: string;
+        };
+        if (!response.ok) throw new Error(payload.error ?? "Free-reading access is unavailable.");
+        setTrialUsed(payload.signupRequired === true || payload.eligible === false);
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          send({ type: "START" });
+          send({ type: "DRAFT_QUESTION" });
+          setError(
+            cause instanceof Error ? cause.message : "The guest ritual could not be restored.",
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) setBootstrapLoading(false);
+      }
+    })();
+    return () => controller.abort();
   }, [continueRequested, send]);
 
   useEffect(() => {
-    if (!deviceId || continueRequested || reading) return;
-    if (trialUsed) return;
+    if (!continueRequested || !authenticated || !deviceId) return;
     const controller = new AbortController();
-    void fetch("/api/guest-readings", {
-      cache: "no-store",
-      headers: { [GUEST_DEVICE_HEADER]: deviceId },
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const body = (await response.json()) as {
-          eligible?: boolean;
-          error?: string;
-          signupRequired?: boolean;
-        };
-        if (!response.ok) setError(body.error ?? "Free-reading access could not be checked.");
-        if (body.signupRequired || body.eligible === false) setTrialUsed(true);
-      })
-      .catch((cause: unknown) => {
+    void (async () => {
+      try {
+        const storedReceipt = localStorage.getItem(GUEST_READING_RECEIPT_KEY);
+        if (!storedReceipt)
+          throw new Error("This browser no longer has the encrypted guest-reading handoff.");
+        setReceipt(storedReceipt);
+        const response = await fetch("/api/guest-readings/continue", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "recover", receipt: storedReceipt }),
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as { reading?: unknown; error?: string };
+        if (!response.ok || !payload.reading)
+          throw new Error(payload.error ?? "The same draw could not be recovered.");
+        setContinuationReading(guestReadingDisplaySchema.parse(payload.reading));
+      } catch (cause) {
         if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "Free-reading access is unavailable.");
-      })
-      .finally(() => setEligibilityLoading(false));
+          setError(
+            cause instanceof Error ? cause.message : "The same draw could not be recovered.",
+          );
+      } finally {
+        if (!controller.signal.aborted) setContinuationLoading(false);
+      }
+    })();
     return () => controller.abort();
-  }, [continueRequested, deviceId, reading, trialUsed]);
+  }, [authenticated, continueRequested, deviceId]);
 
   useEffect(() => {
-    if (!state.matches("shuffling")) return;
-    const timer = window.setTimeout(
-      () => send({ type: "SHUFFLE_COMPLETE" }),
-      reducedMotion ? 80 : 6_000,
-    );
+    if (!state.matches("drawLocked") || !reading) return;
+    const timer = window.setTimeout(() => send({ type: "BEGIN_DEAL" }), reducedMotion ? 0 : 180);
     return () => window.clearTimeout(timer);
-  }, [reducedMotion, send, state]);
-
-  useEffect(() => {
-    if (!state.matches("cuttingDeck")) return;
-    const timer = window.setTimeout(() => send({ type: "SKIP_CUT" }), reducedMotion ? 0 : 900);
-    return () => window.clearTimeout(timer);
-  }, [reducedMotion, send, state]);
+  }, [reading, reducedMotion, send, state]);
 
   useEffect(() => {
     if (!state.matches("dealing") || !reading) return;
-    if (reducedMotion) {
-      const showTimer = window.setTimeout(() => setDealtCount(reading.cards.length), 0);
-      const completeTimer = window.setTimeout(() => send({ type: "DEALT" }), 60);
-      return () => {
-        window.clearTimeout(showTimer);
-        window.clearTimeout(completeTimer);
-      };
-    }
     const timers: number[] = [];
-    const deal = (index: number) => {
+    if (reducedMotion) {
+      timers.push(window.setTimeout(() => setDealtCount(reading.cards.length), 0));
+      timers.push(window.setTimeout(() => send({ type: "DEALT" }), 40));
+      return () => timers.forEach((timer) => window.clearTimeout(timer));
+    }
+    const dealNext = (index: number) => {
       setDealtCount(index + 1);
       if (index + 1 < reading.cards.length)
-        timers.push(window.setTimeout(() => deal(index + 1), 650));
-      else timers.push(window.setTimeout(() => send({ type: "DEALT" }), 500));
+        timers.push(window.setTimeout(() => dealNext(index + 1), 650));
+      else timers.push(window.setTimeout(() => send({ type: "DEALT" }), 450));
     };
-    timers.push(window.setTimeout(() => deal(0), 120));
+    timers.push(window.setTimeout(() => dealNext(0), 100));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [reading, reducedMotion, send, state]);
 
   useEffect(() => {
-    if (!continueRequested || !authenticated || !deviceId) return;
-    let controller: AbortController | undefined;
-    const timer = window.setTimeout(() => {
-      let storedReceipt: string | undefined;
-      try {
-        storedReceipt = localStorage.getItem(GUEST_READING_RECEIPT_KEY) ?? undefined;
-      } catch {
-        // The error below explains that this browser cannot recover the handoff.
-      }
-      if (!storedReceipt) {
-        setContinuationLoading(false);
-        setError("This browser no longer has the encrypted guest-reading handoff.");
-        return;
-      }
-      setReceipt(storedReceipt);
-      controller = new AbortController();
-      void fetch("/api/guest-readings/continue", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "recover", receipt: storedReceipt }),
-        signal: controller.signal,
-      })
-        .then(async (response) => {
-          const body = (await response.json()) as { reading?: unknown; error?: string };
-          if (!response.ok || !body.reading)
-            throw new Error(body.error ?? "The same draw could not be recovered.");
-          setContinuationReading(guestReadingDisplaySchema.parse(body.reading));
-        })
-        .catch((cause: unknown) => {
-          if (!controller?.signal.aborted)
-            setError(
-              cause instanceof Error ? cause.message : "The same draw could not be recovered.",
-            );
-        })
-        .finally(() => setContinuationLoading(false));
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      controller?.abort();
-    };
-  }, [authenticated, continueRequested, deviceId]);
+    if (!state.matches("awaitingReveal") || revealedRef.current.size === 0) return;
+    send({ type: "REVEAL" });
+  }, [send, state]);
 
-  const beginReading = async (continueAsReflection = false) => {
-    if (!deviceId || !selectedSpread) return;
+  const reviewQuestion = async () => {
+    if (!deviceId || !intakeReady) return;
     setLoading(true);
     setError(undefined);
-    setSafetyInterrupt(undefined);
-    if (!continueAsReflection) setGuardedPrompt(undefined);
     try {
       const response = await fetch("/api/guest-readings", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          [GUEST_DEVICE_HEADER]: deviceId,
-        },
+        headers: { "content-type": "application/json", [GUEST_DEVICE_HEADER]: deviceId },
+        body: JSON.stringify({ action: "review", question: question.trim() }),
+      });
+      const payload = (await response.json()) as {
+        review?: QuestionReview;
+        error?: string;
+        safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
+      };
+      if (payload.safety?.interrupt) {
+        setSafetyInterrupt({
+          category: payload.safety.category,
+          guidance: payload.safety.guidance,
+        });
+        return;
+      }
+      if (!response.ok || !payload.review)
+        throw new Error(payload.error ?? "The question could not be reviewed.");
+      setQuestionReview(payload.review);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The question could not be reviewed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmQuestion = () => {
+    const finalQuestion = question.trim();
+    if (!finalQuestion || !questionReview) return;
+    setConfirmedQuestion(finalQuestion);
+    setQuestionReview(undefined);
+    send({ type: "CONFIRM_QUESTION" });
+  };
+
+  const prepareRitual = async (continueAsReflection = false) => {
+    if (!deviceId || !selectedSpread || !confirmedQuestion) return;
+    setLoading(true);
+    setError(undefined);
+    if (!continueAsReflection) {
+      setGuardedPrompt(undefined);
+      send({ type: "CONFIRM_SPREAD" });
+    }
+    try {
+      const response = await fetch("/api/guest-readings", {
+        method: "POST",
+        headers: { "content-type": "application/json", [GUEST_DEVICE_HEADER]: deviceId },
         body: JSON.stringify({
+          action: "prepare",
           spreadId: selectedSpread.id,
           birthDate,
-          question,
+          question: confirmedQuestion,
+          questionConfirmed: true,
+          reversalMode,
+          personalizationMode,
           continueAsReflection,
           termsAccepted,
           privacyAccepted,
           ageConfirmed,
         }),
       });
-      const raw = (await response.json()) as {
+      const payload = (await response.json()) as {
+        ceremony?: unknown;
         error?: string;
+        signupRequired?: boolean;
         reflectionAcknowledgementRequired?: boolean;
         safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
-        signupRequired?: boolean;
       };
-      if (raw.safety?.interrupt) {
-        setSafetyInterrupt({ category: raw.safety.category, guidance: raw.safety.guidance });
+      if (payload.safety?.interrupt) {
+        setSafetyInterrupt({
+          category: payload.safety.category,
+          guidance: payload.safety.guidance,
+        });
         return;
       }
-      if (raw.reflectionAcknowledgementRequired && raw.safety) {
+      if (payload.reflectionAcknowledgementRequired && payload.safety) {
+        setGuardedPrompt({ category: payload.safety.category });
         send({ type: "HIGH_STAKES" });
-        setGuardedPrompt({ category: raw.safety.category });
         return;
       }
-      if (raw.signupRequired) {
-        setTrialUsed(true);
-        setError(raw.error ?? "Create an account to continue.");
-        return;
-      }
-      if (!response.ok) {
-        setError(raw.error ?? "The free reading could not begin.");
-        return;
-      }
-      const payload = guestReadingResponseSchema.parse(raw);
-      setReading(payload.reading);
-      setReceipt(payload.receipt);
-      try {
-        sessionStorage.setItem(GUEST_READING_SESSION_KEY, JSON.stringify(payload.reading));
-        localStorage.setItem(GUEST_READING_RECEIPT_KEY, payload.receipt);
-        localStorage.setItem(GUEST_TRIAL_LOCAL_MARKER_KEY, new Date().toISOString());
-      } catch {
-        // The current in-memory ritual still works when browser storage is disabled.
-      }
+      if (payload.signupRequired) setTrialUsed(true);
+      if (!response.ok || !payload.ceremony)
+        throw new Error(payload.error ?? "The free reading could not be prepared.");
+      const prepared = drawCeremonySchema.parse(payload.ceremony);
+      setCeremony(prepared);
+      savePendingSession({ kind: "ceremony", token: prepared.token, stage: "focusing" });
       if (continueAsReflection) send({ type: "CONTINUE_AS_REFLECTION" });
-      else send({ type: "QUESTION_ACCEPTED" });
-      send({ type: "DECK_READY" });
+      else send({ type: "SAFETY_APPROVED" });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The free reading could not be prepared.");
     } finally {
       setLoading(false);
     }
   };
 
+  const finalizeDraw = useCallback(
+    async (cutIndex: number) => {
+      if (!deviceId || !ceremony || loading) return;
+      setLoading(true);
+      setError(undefined);
+      send({ type: cutIndex === 0 ? "SKIP_CUT" : "CUT" });
+      try {
+        const response = await fetch("/api/guest-readings", {
+          method: "POST",
+          headers: { "content-type": "application/json", [GUEST_DEVICE_HEADER]: deviceId },
+          body: JSON.stringify({
+            action: "finalize",
+            ceremonyToken: ceremony.token,
+            clientNonce: browserNonce(),
+            cutIndex,
+          }),
+        });
+        const payload = guestReadingResponseSchema.safeParse(await response.json());
+        if (!response.ok || !payload.success)
+          throw new Error("The committed draw could not be finalized.");
+        setReading(payload.data.reading);
+        setReceipt(payload.data.receipt);
+        setTrialUsed(true);
+        savePendingSession({
+          kind: "receipt",
+          receipt: payload.data.receipt,
+          revealedIndexes: [],
+          resultUnlocked: false,
+        });
+        try {
+          localStorage.setItem(GUEST_READING_RECEIPT_KEY, payload.data.receipt);
+          localStorage.setItem(GUEST_TRIAL_LOCAL_MARKER_KEY, new Date().toISOString());
+        } catch {
+          // The signed cookie still enforces trial use.
+        }
+        send({ type: "DRAW_LOCKED" });
+      } catch (cause) {
+        send({ type: "FINALIZATION_FAILED" });
+        setError(cause instanceof Error ? cause.message : "The draw could not be finalized.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [ceremony, deviceId, loading, send],
+  );
+
   const revealCard = useCallback(
     (index: number) => {
-      if (!reading) return;
-      setRevealed((current) => {
-        if (current.has(index)) return current;
-        const next = new Set(current).add(index);
-        if (next.size === reading.cards.length)
-          window.setTimeout(
-            () => {
-              send({ type: "ALL_REVEALED" });
-              send({ type: "GENERATION_READY" });
-              send({ type: "RESULT_REVEALED" });
-            },
-            reducedMotion ? 30 : 500,
-          );
-        return next;
-      });
+      if (!reading || !state.matches("revealing") || revealedRef.current.has(index)) return;
+      const nextExpected = reading.cards.findIndex(
+        (_, candidate) => !revealedRef.current.has(candidate),
+      );
+      if (index !== nextExpected) {
+        setError(
+          `Reveal position ${nextExpected + 1} next so the spread keeps its intended order.`,
+        );
+        return;
+      }
+      const next = new Set(revealedRef.current).add(index);
+      revealedRef.current = next;
+      setRevealed(next);
+      setActiveReveal(index);
+      setError(undefined);
+      if (receipt)
+        savePendingSession({
+          kind: "receipt",
+          receipt,
+          revealedIndexes: [...next],
+          resultUnlocked: false,
+        });
     },
-    [reading, reducedMotion, send],
+    [reading, receipt, state],
   );
+
+  const revealAll = useCallback(() => {
+    if (!reading || !state.matches("revealing")) return;
+    const all = new Set(reading.cards.map((_, index) => index));
+    revealedRef.current = all;
+    setRevealed(all);
+    setActiveReveal(null);
+    if (receipt)
+      savePendingSession({
+        kind: "receipt",
+        receipt,
+        revealedIndexes: [...all],
+        resultUnlocked: false,
+      });
+  }, [reading, receipt, state]);
+
+  const unlockCompleteReading = useCallback(async () => {
+    if (!deviceId || !reading || !receipt || resultUnlockStarted.current) return;
+    resultUnlockStarted.current = true;
+    setLoading(true);
+    setError(undefined);
+    try {
+      if (reading.result) {
+        send({ type: "ALL_REVEALED" });
+        return;
+      }
+      const response = await fetch("/api/guest-readings", {
+        method: "POST",
+        headers: { "content-type": "application/json", [GUEST_DEVICE_HEADER]: deviceId },
+        body: JSON.stringify({ action: "reveal", receipt }),
+      });
+      const payload = guestReadingResponseSchema.safeParse(await response.json());
+      if (!response.ok || !payload.success || !payload.data.reading.result)
+        throw new Error("The complete interpretation could not be opened.");
+      setReading(payload.data.reading);
+      savePendingSession({
+        kind: "receipt",
+        receipt,
+        revealedIndexes: payload.data.reading.cards.map((_, index) => index),
+        resultUnlocked: true,
+      });
+      send({ type: "ALL_REVEALED" });
+    } catch (cause) {
+      resultUnlockStarted.current = false;
+      setError(cause instanceof Error ? cause.message : "The interpretation could not be opened.");
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId, reading, receipt, send]);
+
+  useEffect(() => {
+    if (
+      !state.matches("revealing") ||
+      activeReveal !== null ||
+      !reading ||
+      revealed.size !== reading.cards.length
+    )
+      return;
+    const timer = window.setTimeout(() => void unlockCompleteReading(), 0);
+    return () => window.clearTimeout(timer);
+  }, [activeReveal, reading, revealed, state, unlockCompleteReading]);
+
+  useEffect(() => {
+    if (!state.matches("fullSpreadReady") || !reading?.result) return;
+    const timer = window.setTimeout(
+      () => send({ type: "BEGIN_INTERPRETATION" }),
+      reducedMotion ? 0 : 300,
+    );
+    return () => window.clearTimeout(timer);
+  }, [reading, reducedMotion, send, state]);
 
   const submitFollowUp = async () => {
     if (!receipt || !followUp.trim()) return;
@@ -371,22 +624,22 @@ export function GuestReadingExperience({
       });
       const raw = (await response.json()) as {
         error?: string;
+        newReadingRequired?: boolean;
         safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
       };
       if (raw.safety?.interrupt) {
         setSafetyInterrupt({ category: raw.safety.category, guidance: raw.safety.guidance });
         return;
       }
-      if (!response.ok) {
-        setError(raw.error ?? "The same-draw follow-up could not be prepared.");
-        return;
-      }
+      if (!response.ok)
+        throw new Error(
+          raw.newReadingRequired
+            ? (raw.error ?? "That subject needs a new reading and a newly confirmed spread.")
+            : (raw.error ?? "The same-draw follow-up could not be prepared."),
+        );
       setFollowUpResult(guestFollowUpResponseSchema.parse(raw));
-      try {
-        localStorage.removeItem(GUEST_READING_RECEIPT_KEY);
-      } catch {
-        // The current response remains available in memory.
-      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The same-draw follow-up failed.");
     } finally {
       setFollowUpLoading(false);
     }
@@ -417,7 +670,7 @@ export function GuestReadingExperience({
               <h1>Create your private account to continue the same draw.</h1>
               <p>
                 The encrypted handoff stays in this browser. Signing up does not redraw or alter a
-                single card.
+                card.
               </p>
               <div className="guest-conversion-actions">
                 <Link className="sg-button sg-button--primary" href={signupHref}>
@@ -432,7 +685,6 @@ export function GuestReadingExperience({
             <div className="guest-conversion-card">
               <p className="page-eyebrow">One current permission</p>
               <h1>Review the current policies before continuing.</h1>
-              <p>Your encrypted guest draw will remain in this browser while you do.</p>
               <Link
                 className="sg-button sg-button--primary"
                 href={`/consent?next=${encodeURIComponent(continuationPath)}`}
@@ -444,14 +696,12 @@ export function GuestReadingExperience({
             <div className="sanctuary-loading" role="status">
               <span aria-hidden="true">✦</span> Recovering the exact locked draw…
             </div>
-          ) : continuationReading ? (
+          ) : continuationReading?.result ? (
             <div className="guest-continuation-reading">
               <header>
                 <p className="page-eyebrow">Same cards · account unlocked</p>
-                <h1>{continuationReading.result.title}</h1>
-                <p>
-                  No card was redrawn. Ask one clarification and the original result stays fixed.
-                </p>
+                <h1>Your saved guest reading</h1>
+                <p>{continuationReading.result.directAnswer}</p>
               </header>
               <TarotSpreadStage
                 activeIndex={null}
@@ -466,12 +716,12 @@ export function GuestReadingExperience({
                   aria-labelledby="guest-follow-up-heading"
                 >
                   <p className="reading-section-eyebrow">The same cards answer</p>
-                  <h2 id="guest-follow-up-heading">One more edge comes into view.</h2>
+                  <h2 id="guest-follow-up-heading">A clarification from the original spread</h2>
                   <p>{followUpResult.followUp.response}</p>
                   <small>
                     {followUpResult.personalizedByPrivateProfile
-                      ? "Your private profile shaped this follow-up; it did not alter the cards."
-                      : "This follow-up used no account profile and did not alter the cards."}
+                      ? "The original minimized lens shaped this clarification; it did not alter the cards."
+                      : "This clarification used pure tarot and did not alter the cards."}
                   </small>
                   <div className="guest-conversion-actions">
                     <Link
@@ -480,15 +730,12 @@ export function GuestReadingExperience({
                     >
                       {hasProfile ? "Begin a saved reading" : "Create my private profile"}
                     </Link>
-                    <Link className="sg-button sg-button--secondary" href="/">
-                      Return home
-                    </Link>
                   </div>
                 </section>
               ) : (
                 <div className="guest-follow-up-composer">
                   <QuestionComposer
-                    hint="One follow-up · the draw remains exactly the same"
+                    hint="Clarify the original subject and horizon; a different question starts a new reading."
                     label="Ask these same cards one follow-up"
                     loading={followUpLoading}
                     onChange={setFollowUp}
@@ -525,13 +772,13 @@ export function GuestReadingExperience({
 
   if (authenticated && !reading)
     return (
-      <MysticSanctuaryScene phase="selectingReading" reducedMotion={reducedMotion}>
+      <MysticSanctuaryScene phase="readingCreated" reducedMotion={reducedMotion}>
         <section className="guest-conversion-card guest-account-return">
           <p className="page-eyebrow">Your private space is open</p>
           <h1>Your account reading offers the fuller experience.</h1>
           <p>
-            Use your saved profile, durable history, all spreads, and same-draw follow-ups instead
-            of consuming the browser guest trial.
+            Use your saved profile, durable history, every available spread, and same-draw
+            follow-ups.
           </p>
           <div className="guest-conversion-actions">
             <Link
@@ -548,7 +795,7 @@ export function GuestReadingExperience({
       </MysticSanctuaryScene>
     );
 
-  if (eligibilityLoading)
+  if (bootstrapLoading)
     return (
       <MysticSanctuaryScene phase="idle" reducedMotion={reducedMotion}>
         <div className="sanctuary-loading" role="status">
@@ -557,15 +804,15 @@ export function GuestReadingExperience({
       </MysticSanctuaryScene>
     );
 
-  if (trialUsed && !reading)
+  if (trialUsed && !reading && !ceremony)
     return (
       <MysticSanctuaryScene phase="complete" reducedMotion={reducedMotion}>
         <section className="guest-conversion-card guest-account-return">
           <p className="page-eyebrow">Your free reading has been experienced</p>
           <h1>Keep going inside a private account.</h1>
           <p>
-            This browser has used its free draw. Sign up for saved readings, a private profile, and
-            follow-ups that keep the same cards.
+            This browser has used its free draw. Sign up for saved readings and same-draw
+            follow-ups.
           </p>
           <div className="guest-conversion-actions">
             <Link className="sg-button sg-button--primary" href={signupHref}>
@@ -580,13 +827,21 @@ export function GuestReadingExperience({
       </MysticSanctuaryScene>
     );
 
-  const selecting = state.matches("selectingReading");
-  const enteringQuestion = state.matches("enteringQuestion") || state.matches("highStakesQuestion");
+  const showQuestion = state.matches("questionDrafting");
+  const showSpread = state.matches("questionConfirmed") || state.matches("spreadConfirmed");
   const cardsVisible =
-    state.matches("dealing") ||
     state.matches("awaitingReveal") ||
-    state.matches("revealingCards") ||
+    state.matches("revealing") ||
+    state.matches("fullSpreadReady") ||
+    state.matches("interpretationStreaming") ||
+    state.matches("followUpAvailable") ||
     state.matches("complete");
+  const transcriptVisible =
+    state.matches("interpretationStreaming") ||
+    state.matches("followUpAvailable") ||
+    state.matches("complete");
+  const activeRevealCard = activeReveal === null ? undefined : reading?.cards[activeReveal];
+  const focusedCard = activeReveal ?? activeReadingCard;
 
   return (
     <MysticSanctuaryScene
@@ -603,103 +858,101 @@ export function GuestReadingExperience({
         </button>
       </header>
 
-      {selecting ? (
-        <section className="reading-entry-stage reading-selection-stage guest-reading-entry">
-          <p>One reading · no account</p>
-          <h1>Meet the cards before you decide to stay.</h1>
-          <p className="guest-reading-intro">
-            Choose a birthday-personalized ritual. Your date shapes the interpretation only; the
-            draw stays genuinely random and no AI-provider request is made.
-          </p>
-          <div aria-label="Free reading type" className="ritual-spread-options" role="radiogroup">
-            {spreads.map((spread) => (
-              <label key={spread.id}>
-                <input
-                  checked={selected === spread.id}
-                  className="sr-only"
-                  name="guest-spread"
-                  onChange={() => setSelected(spread.id)}
-                  type="radio"
-                  value={spread.id}
-                />
-                <span>
-                  <small>
-                    {spread.count} {spread.count === 1 ? "card" : "cards"} · about{" "}
-                    {spread.estimatedMinutes} min
-                  </small>
-                  <strong>{spread.name}</strong>
-                  <span className="ritual-spread-purpose">{spread.purpose}</span>
-                  <small>Included in your free guest reading</small>
-                </span>
-              </label>
-            ))}
-          </div>
-          <button
-            className="reading-entry-continue"
-            onClick={() => send({ type: "SELECT" })}
-            type="button"
-          >
-            Continue with {selectedSpread?.name ?? "this reading"}
-          </button>
-        </section>
-      ) : null}
-
-      {enteringQuestion ? (
+      {showQuestion && (
         <>
           <section className="reading-entry-stage reading-question-stage guest-reading-entry">
             <div>
               <p>Set your intention</p>
               <h1>What would you like the cards to illuminate?</h1>
-              <button
-                className="selected-ritual-summary"
-                onClick={() => {
-                  setGuardedPrompt(undefined);
-                  send({ type: "CHANGE_READING" });
-                }}
-                type="button"
-              >
-                <span>{selectedSpread?.name}</span>
-                <small>Birthday-personalized · change reading</small>
-              </button>
+              <p>
+                What, How, and “What should I understand” questions leave room for insight and
+                choice.
+              </p>
             </div>
           </section>
           <div className="oracle-console-stack reading-entry-console reading-question-console guest-question-console">
             <p className="entry-privacy-note">
-              Your birthday is used by our private calculation service, then discarded from the
-              guest handoff. Your raw date and question never enter a URL, analytics, or an AI
-              provider.
+              Your birthday can shape a minimized reflection lens. Neither it nor your question
+              selects cards.
             </p>
-            {!guardedPrompt ? (
+            {questionReview ? (
+              <div className="ritual-moment" data-testid="guest-question-confirmation">
+                <p className="ritual-status">Confirm the exact question this reading will use</p>
+                <blockquote>{question}</blockquote>
+                {questionReview.suggestedQuestion && (
+                  <div>
+                    <p>A more open, user-centered question may serve the spread better:</p>
+                    <blockquote>{questionReview.suggestedQuestion}</blockquote>
+                    <button
+                      className="ritual-action"
+                      onClick={() => {
+                        setQuestion(questionReview.suggestedQuestion ?? question);
+                        setQuestionReview({ encouragedForm: true });
+                      }}
+                      type="button"
+                    >
+                      Use this reformulation
+                    </button>
+                  </div>
+                )}
+                <div className="ritual-action-group">
+                  <button
+                    className="ritual-action is-primary"
+                    onClick={confirmQuestion}
+                    type="button"
+                  >
+                    Confirm this question
+                  </button>
+                  <button
+                    className="ritual-action"
+                    onClick={() => setQuestionReview(undefined)}
+                    type="button"
+                  >
+                    Revise it
+                  </button>
+                </div>
+              </div>
+            ) : (
               <>
                 <label className="guest-birth-date-field">
-                  <span>Your birthday</span>
+                  <span>
+                    Your birthday <strong aria-hidden="true">*</strong>
+                  </span>
                   <input
-                    aria-describedby="guest-birth-date-help"
                     autoComplete="bday"
                     onChange={(event) => setBirthDate(event.target.value)}
                     required
                     type="date"
                     value={birthDate}
                   />
-                  <small id="guest-birth-date-help">
-                    Used once to derive a stable date-based lens. It does not choose your cards or
-                    become part of the saved guest receipt.
+                  <small>
+                    Used to personalize interpretation only. It does not choose or orient cards.
                   </small>
                 </label>
                 <QuestionComposer
-                  disabled={!intakeReady}
-                  hint="Write the question in your own words. Shift+Enter adds a line."
+                  disabled={!consentsReady || !birthDate}
+                  hint="You will confirm the exact wording before choosing a spread."
                   label="Your private guest question"
                   loading={loading}
                   onChange={setQuestion}
-                  onSubmit={() => beginReading()}
-                  placeholder="What can I understand or do about…"
-                  submitLabel="Begin my free reading"
+                  onSubmit={reviewQuestion}
+                  placeholder="What should I understand about…"
+                  submitLabel="Review my question"
                   testId="guest-question-composer"
                   value={question}
                 />
+                <button
+                  className="reading-entry-continue"
+                  onClick={() => {
+                    setQuestion(GENERAL_READING_QUESTION);
+                    setQuestionReview({ encouragedForm: true });
+                  }}
+                  type="button"
+                >
+                  Use a general intention
+                </button>
                 <fieldset className="guest-policy-consents">
-                  <legend>Before the cards are drawn</legend>
+                  <legend>Before the cards are prepared</legend>
                   <label>
                     <input
                       checked={termsAccepted}
@@ -729,162 +982,399 @@ export function GuestReadingExperience({
                     <span>I confirm that I am at least 18 years old.</span>
                   </label>
                 </fieldset>
+                {!intakeReady ? (
+                  <p className="guest-consent-hint">
+                    Enter your birthday and question, then accept all three commitments.
+                  </p>
+                ) : null}
               </>
-            ) : (
-              <div className="ritual-moment" data-safety-category={guardedPrompt.category}>
-                <p className="ritual-status" role="status">
-                  The cards cannot establish this as fact. They can reflect on evidence,
-                  preparation, boundaries, and choices without replacing professional advice.
-                </p>
-                <div className="ritual-action-group">
-                  <button
-                    className="ritual-action"
-                    disabled={loading}
-                    onClick={() => beginReading(true)}
-                    type="button"
-                  >
-                    {loading ? "Preparing reflection…" : "Continue as reflection"}
-                  </button>
-                  <button
-                    className="ritual-action"
-                    onClick={() => {
-                      setGuardedPrompt(undefined);
-                      send({ type: "RESTART" });
-                    }}
-                    type="button"
-                  >
-                    Revise the question
-                  </button>
-                </div>
-              </div>
             )}
-            {!intakeReady && !guardedPrompt ? (
-              <p className="guest-consent-hint">
-                {!birthDate
-                  ? "Enter your birthday, then accept all three guest commitments to begin."
-                  : "Accept all three guest commitments to begin."}
-              </p>
-            ) : null}
-            {error ? (
-              <p className="sanctuary-error" role="alert">
-                {error}
-              </p>
-            ) : null}
           </div>
         </>
-      ) : null}
+      )}
 
-      <section
-        className={`sanctuary-stage ${state.matches("shuffling") ? "is-shuffling" : ""} ${
-          state.matches("cuttingDeck") ? "is-gathering" : ""
-        } ${state.matches("dealing") ? "is-dealing" : ""}`}
-      >
-        {state.matches("shuffling") ? (
-          <div className="ritual-moment sanctuary-shuffle-ritual">
-            <ShuffleShells phase="mixing" />
-            <div className="sanctuary-shuffle-copy">
-              <p className="ritual-status" role="status">
-                Your free draw is locked
-              </p>
-              <span>
-                Move through the visual shuffle. Your question did not choose these cards.
-              </span>
+      {showSpread && selectedSpread && (
+        <section className="reading-entry-stage reading-selection-stage guest-reading-entry">
+          <p>Choose the structure</p>
+          <h1>Select a spread for your confirmed question</h1>
+          <blockquote>{confirmedQuestion}</blockquote>
+          <div aria-label="Free reading type" className="ritual-spread-options" role="radiogroup">
+            {spreads.map((spread) => (
+              <label
+                data-recommended={spread.id === "three-card"}
+                key={`${spread.id}:${spread.version}`}
+              >
+                <input
+                  checked={selected === spread.id}
+                  className="sr-only"
+                  name="guest-spread"
+                  onChange={() => setSelected(spread.id)}
+                  type="radio"
+                  value={spread.id}
+                />
+                <span>
+                  <small>
+                    {spread.count} {spread.count === 1 ? "card" : "cards"} · about{" "}
+                    {spread.estimatedMinutes} min
+                  </small>
+                  <strong>{spread.name}</strong>
+                  <span className="ritual-spread-purpose">{spread.purpose}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="ritual-moment" data-testid="guest-spread-position-preview">
+            <p className="ritual-status">These positions are fixed before any card is known</p>
+            <ol>
+              {[...selectedSpread.positions]
+                .sort((a, b) => a.order - b.order)
+                .map((position) => (
+                  <li key={position.id}>
+                    <strong>
+                      {position.order + 1}. {position.displayName}
+                    </strong>
+                    <span>{position.interpretiveFunction}</span>
+                    <small>{position.description}</small>
+                  </li>
+                ))}
+            </ol>
+          </div>
+          <div className="ritual-moment">
+            <p className="ritual-status">Reading method</p>
+            <div className="ritual-action-group" role="group" aria-label="Reversal preference">
+              <button
+                aria-pressed={reversalMode === "reversals_enabled"}
+                onClick={() => setReversalMode("reversals_enabled")}
+                type="button"
+              >
+                Use reversals
+              </button>
+              <button
+                aria-pressed={reversalMode === "upright_only"}
+                onClick={() => setReversalMode("upright_only")}
+                type="button"
+              >
+                Upright only
+              </button>
             </div>
-            <button
-              className="shuffle-skip-action"
-              onClick={() => send({ type: "SHUFFLE_COMPLETE" })}
-              type="button"
+            <div
+              className="ritual-action-group"
+              role="group"
+              aria-label="Personalization preference"
             >
-              Gather now
-            </button>
-          </div>
-        ) : null}
-        {state.matches("cuttingDeck") ? (
-          <div className="ritual-moment sanctuary-shuffle-ritual sanctuary-gather-ritual">
-            <ShuffleShells phase="gathering" />
-            <div className="sanctuary-shuffle-copy">
-              <p className="ritual-status" role="status">
-                Gathering the locked deck
-              </p>
-              <span>The cards move directly into the spread without changing order.</span>
+              <button
+                aria-pressed={personalizationMode === "personalized_tarot"}
+                onClick={() => setPersonalizationMode("personalized_tarot")}
+                type="button"
+              >
+                Personalized Tarot
+              </button>
+              <button
+                aria-pressed={personalizationMode === "pure_tarot"}
+                onClick={() => setPersonalizationMode("pure_tarot")}
+                type="button"
+              >
+                Pure Tarot
+              </button>
             </div>
-          </div>
-        ) : null}
-        {state.matches("dealing") && reading ? (
-          <div className="sanctuary-deal-ritual" data-testid="guest-deal">
-            <TarotSpreadStage
-              activeIndex={null}
-              cards={reading.cards}
-              dealing
-              focusMode={null}
-              reducedMotion={reducedMotion}
-              revealed={revealed}
-              visibleCount={dealtCount}
-            />
-            <p className="ritual-deal-status" role="status">
-              Dealing {dealtCount} of {reading.cards.length}…
+            <p className="entry-privacy-note">
+              Pure Tarot uses no profile lens. Personalized Tarot uses a minimized birthday lens
+              that cannot change card meanings.
             </p>
           </div>
-        ) : null}
-        {cardsVisible && reading ? (
-          <div className="ritual-card-layout">
-            <TarotSpreadStage
-              activeIndex={activeReadingCard}
-              cards={reading.cards}
-              focusMode={activeReadingCard === null ? null : "reading"}
-              reducedMotion={reducedMotion}
-              revealed={revealed}
-              onReveal={state.matches("revealingCards") ? revealCard : undefined}
-            />
-            {state.matches("awaitingReveal") ? (
-              <div className="ritual-question-reflection" data-testid="guest-question-reflection">
-                <span>Hold your intention at the center</span>
-                <blockquote>{restoredQuestion}</blockquote>
-                <p>Notice what rises before any card is turned.</p>
-                <button
-                  className="ritual-action ritual-ready-action"
-                  onClick={() => send({ type: "REVEAL" })}
-                  type="button"
-                >
-                  I’m ready
-                </button>
-              </div>
-            ) : null}
-            {state.matches("revealingCards") && revealed.size < reading.cards.length ? (
-              <div className="reveal-choice-prompt" role="status">
-                <span aria-hidden="true">✦</span>
-                <p>
-                  <strong>Choose a face-down card to turn</strong>
-                  <small>Tap, or use Tab and Enter.</small>
-                </p>
-                <span>
-                  {revealed.size} of {reading.cards.length}
-                </span>
-              </div>
-            ) : null}
+          <div className="ritual-action-group">
+            <button
+              className="reading-entry-continue"
+              disabled={loading}
+              onClick={() => void prepareRitual()}
+              type="button"
+            >
+              {loading ? "Preparing…" : `Confirm ${selectedSpread.name}`}
+            </button>
+            <button
+              className="ritual-action"
+              onClick={() => send({ type: "REVISE_QUESTION" })}
+              type="button"
+            >
+              Revise question
+            </button>
           </div>
-        ) : null}
-      </section>
+        </section>
+      )}
 
-      <div className={`oracle-console-stack ${state.matches("complete") ? "" : "is-inactive"}`}>
-        {state.matches("complete") && reading ? (
+      {state.matches("highStakesQuestion") && guardedPrompt && (
+        <section className="reading-entry-stage reading-question-stage">
+          <div className="ritual-moment" data-safety-category={guardedPrompt.category}>
+            <p className="ritual-status">
+              The cards cannot establish this as fact. They can reflect on evidence, preparation,
+              boundaries, and your choices.
+            </p>
+            <div className="ritual-action-group">
+              <button
+                className="ritual-action"
+                disabled={loading}
+                onClick={() => void prepareRitual(true)}
+                type="button"
+              >
+                {loading ? "Preparing reflection…" : "Continue as reflection"}
+              </button>
+              <button
+                className="ritual-action"
+                onClick={() => {
+                  setGuardedPrompt(undefined);
+                  send({ type: "REVISE_QUESTION" });
+                }}
+                type="button"
+              >
+                Revise the question
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {state.matches("focusing") && ceremony && (
+        <section className="reading-entry-stage reading-question-stage">
+          <div className="ritual-moment">
+            <p>Focus</p>
+            <h1>Hold the confirmed question</h1>
+            <blockquote>{ceremony.question}</blockquote>
+            <ol>
+              {ceremony.spread.positions.map((position) => (
+                <li key={position.id}>
+                  <strong>
+                    {position.order + 1}. {position.displayName}
+                  </strong>{" "}
+                  — {position.interpretiveFunction}
+                </li>
+              ))}
+            </ol>
+            <small>Fair-draw commitment: {ceremony.serverSeedCommitment.slice(0, 12)}…</small>
+            <button
+              className="reading-entry-continue"
+              onClick={() => {
+                savePendingSession({ kind: "ceremony", token: ceremony.token, stage: "shuffling" });
+                send({ type: "FOCUS_COMPLETE" });
+              }}
+              type="button"
+            >
+              Begin the shuffle
+            </button>
+          </div>
+        </section>
+      )}
+
+      {state.matches("shuffling") && ceremony && (
+        <section className="reading-entry-stage reading-question-stage sanctuary-shuffle-ritual is-shuffling">
+          <ShuffleShells phase="mixing" />
+          <div className="sanctuary-shuffle-copy">
+            <p className="ritual-status">Shuffling the committed deck</p>
+            <span>
+              No final cards exist yet. Skipping the animation preserves the same strength of
+              randomness.
+            </span>
+          </div>
+          <button className="tactile-shuffle-control" type="button">
+            <span aria-hidden="true" className="tactile-shuffle-control__deck">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span>
+              <strong>Stir the deck</strong>
+              <small>Tap, click, or press Space</small>
+            </span>
+          </button>
+          <button
+            className="shuffle-skip-action"
+            onClick={() => {
+              savePendingSession({ kind: "ceremony", token: ceremony.token, stage: "optionalCut" });
+              send({ type: "SHUFFLE_COMPLETE" });
+            }}
+            type="button"
+          >
+            Finish shuffling
+          </button>
+        </section>
+      )}
+
+      {state.matches("optionalCut") && ceremony && (
+        <section className="reading-entry-stage reading-question-stage sanctuary-gather-ritual">
+          <ShuffleShells phase="gathering" />
+          <div className="sanctuary-shuffle-copy">
+            <p className="ritual-status">Cut the deck, if you wish</p>
+            <span>Your cut rotates the shuffled permutation before positions are assigned.</span>
+          </div>
+          <div className="ritual-cut-actions">
+            <button
+              className="ritual-cut-action"
+              onClick={() => void finalizeDraw(20)}
+              type="button"
+            >
+              <strong>Cut near the top</strong>
+              <small>After card 20</small>
+            </button>
+            <button
+              className="ritual-cut-action is-primary"
+              onClick={() => void finalizeDraw(39)}
+              type="button"
+            >
+              <strong>Cut at the center</strong>
+              <small>After card 39</small>
+            </button>
+            <button
+              className="ritual-cut-action"
+              onClick={() => void finalizeDraw(58)}
+              type="button"
+            >
+              <strong>Cut deeper</strong>
+              <small>After card 58</small>
+            </button>
+            <button
+              className="ritual-cut-action"
+              onClick={() => void finalizeDraw(0)}
+              type="button"
+            >
+              <strong>No cut</strong>
+              <small>Finalize the shuffled order</small>
+            </button>
+          </div>
+        </section>
+      )}
+
+      {state.matches("drawFinalizing") && (
+        <div className="sanctuary-loading" role="status">
+          <span aria-hidden="true">✦</span> Finalizing and locking every card, position, and
+          orientation…
+        </div>
+      )}
+
+      {(state.matches("dealing") || cardsVisible) && (
+        <section
+          className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""}`}
+        >
+          {state.matches("dealing") && reading && (
+            <div className="sanctuary-deal-ritual" data-testid="guest-deal">
+              <TarotSpreadStage
+                activeIndex={null}
+                cards={reading.cards}
+                dealing
+                focusMode={null}
+                reducedMotion={reducedMotion}
+                revealed={revealed}
+                visibleCount={dealtCount}
+              />
+              <p className="ritual-deal-status" role="status">
+                {dealtCount === 0
+                  ? "The locked deck is centered."
+                  : `Dealing card ${dealtCount} of ${reading.cards.length} into its fixed position…`}
+              </p>
+            </div>
+          )}
+          {cardsVisible && reading && (
+            <div className="ritual-card-layout">
+              <TarotSpreadStage
+                activeIndex={focusedCard}
+                cards={reading.cards}
+                focusMode={
+                  activeReveal !== null ? "reveal" : activeReadingCard !== null ? "reading" : null
+                }
+                reducedMotion={reducedMotion}
+                revealed={revealed}
+                onReveal={
+                  state.matches("revealing") && activeReveal === null ? revealCard : undefined
+                }
+              />
+              {state.matches("awaitingReveal") && (
+                <div className="ritual-question-reflection" data-testid="guest-question-reflection">
+                  <span>Hold your question at the center</span>
+                  <blockquote>{reading.question}</blockquote>
+                  <p>
+                    Every card is face down. The whole-reading answer remains private until all are
+                    revealed.
+                  </p>
+                  <button
+                    className="ritual-action ritual-ready-action"
+                    onClick={() => send({ type: "REVEAL" })}
+                    type="button"
+                  >
+                    I’m ready
+                  </button>
+                </div>
+              )}
+              {state.matches("revealing") &&
+                activeReveal === null &&
+                revealed.size < reading.cards.length && (
+                  <div className="reveal-choice-prompt" role="status">
+                    <span aria-hidden="true">✦</span>
+                    <p>
+                      <strong>Reveal position {revealed.size + 1} next</strong>
+                      <small>Tap, click, press Enter or Space, or reveal all.</small>
+                    </p>
+                    <span>
+                      {revealed.size} of {reading.cards.length}
+                    </span>
+                    <button className="ritual-action" onClick={revealAll} type="button">
+                      Reveal All
+                    </button>
+                  </div>
+                )}
+            </div>
+          )}
+          {state.matches("revealing") && activeRevealCard && activeReveal !== null && (
+            <div className="guided-reveal-panel" data-testid="guest-guided-reveal-panel">
+              <p className="guided-reveal-description">{activeRevealCard.positionName}</p>
+              <h2>
+                {activeRevealCard.name}
+                {activeRevealCard.orientation === "reversed" ? " · Reversed" : ""}
+              </h2>
+              <p className="guided-reveal-themes">{activeRevealCard.baselineMeaning}</p>
+              <button
+                className="ritual-action guided-next-action"
+                onClick={() => setActiveReveal(null)}
+                type="button"
+              >
+                {revealed.size < (reading?.cards.length ?? revealed.size)
+                  ? "Return to the spread"
+                  : "Open the complete reading"}
+                <span>
+                  {revealed.size} of {reading?.cards.length ?? revealed.size}
+                </span>
+              </button>
+            </div>
+          )}
+          {state.matches("fullSpreadReady") && (
+            <p className="stage-whisper" role="status">
+              The full spread is ready. Now the cards can be read together…
+            </p>
+          )}
+        </section>
+      )}
+
+      <div className={`oracle-console-stack ${transcriptVisible ? "" : "is-inactive"}`}>
+        {transcriptVisible && reading?.result ? (
           <OracleTranscript
             active
             cards={reading.cards}
             onActiveCardChange={setActiveReadingCard}
             onJourneyCompleteChange={setJourneyComplete}
             onRetry={() => undefined}
+            onStateChange={(streamState) => {
+              if (streamState === "complete" && state.matches("interpretationStreaming"))
+                send({ type: "INTERPRETATION_COMPLETE" });
+            }}
             previewEvents={phaseEvents(reading)}
             readingId={reading.id}
             reducedMotion={reducedMotion}
             result={reading.result}
             retryToken={0}
-            sigilSeed={reading.id}
             soundEnabled={false}
             target="guest-primary"
           />
         ) : null}
-        {state.matches("complete") && journeyComplete && reading ? (
+        {(state.matches("followUpAvailable") || state.matches("complete")) &&
+        journeyComplete &&
+        reading ? (
           <section className="guest-conversion-card" data-testid="guest-signup-gate">
             <p className="page-eyebrow">Your reading is complete</p>
             <h2>Want to ask these same cards one follow-up?</h2>
@@ -903,13 +1393,15 @@ export function GuestReadingExperience({
                 Let the reading settle
               </Link>
             </div>
-            <small>
-              No account was required for this reading. Account history begins only after you choose
-              to sign up.
-            </small>
           </section>
         ) : null}
       </div>
+
+      {error ? (
+        <p className="sanctuary-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </MysticSanctuaryScene>
   );
 }

@@ -25,6 +25,13 @@ const questionContext = {
   generalReading: false,
 };
 const positions = resolveSpreadPositions(spread, questionContext);
+const configuration = {
+  version: "reading-configuration-v1",
+  reversalMode: "reversals_enabled",
+  personalizationMode: "personalized_tarot",
+  positions,
+  capabilities: spread.capabilities,
+};
 const cards = positions.map((position, index) => {
   const card = tarotCards[index + 10];
   const orientation = index === 1 ? "reversed" : "upright";
@@ -32,21 +39,25 @@ const cards = positions.map((position, index) => {
     positionId: position.id,
     positionName: position.displayName,
     positionMeans: position.interpretiveFunction,
+    positionDescription: position.description,
     cardId: card.id,
     card: card.name,
     arcana: card.arcana,
     orientation,
     themes: orientation === "upright" ? card.uprightThemes : card.reversedThemes,
+    domainTags: card.eventTags,
+    approvedReversalFacets: orientation === "reversed" ? card.reversalFacets : [],
   };
 });
 
 function inferencePayload(overrides = {}) {
   const schema = reviewedReadingResponseSchema(
     cards.map((entry) => ({
-      position: { id: entry.positionId },
+      position: { id: entry.positionId, displayName: entry.positionName },
       card: { id: entry.cardId },
       orientation: entry.orientation,
     })),
+    configuration,
   );
   return {
     model: "openai/gpt-oss-120b",
@@ -62,6 +73,11 @@ function inferencePayload(overrides = {}) {
           question: "Should I take the new role at work?",
           questionContext,
           spreadId: spread.id,
+          spreadCapabilities: configuration.capabilities,
+          trajectoryAllowed: configuration.capabilities.trajectoryPositionIds.length > 0,
+          alternatePathAllowed: configuration.capabilities.alternativePositionGroups.length > 0,
+          timingAllowed: configuration.capabilities.timingMethod !== null,
+          personalizationAllowed: true,
           answerPositionId: cards[2].positionId,
           cards,
           readerLens: ["You commit quickly once a direction feels right."],

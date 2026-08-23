@@ -3,6 +3,7 @@ import type {
   SpreadContextPosition,
   SpreadContextTemplate,
   SpreadPosition,
+  ReversalFacet,
   Suit,
   TarotCard,
 } from "@starguidance/tarot-domain";
@@ -12,7 +13,7 @@ export { renderTarotFaceSvg, renderTarotFaceSvgV3 } from "./artwork";
 export const TAROT_CONTENT_VERSION = "starguidance-original-v1" as const;
 export const TAROT_ARTWORK_VERSION = "starguidance-celestial-gothic-v3" as const;
 export const DECK_VERSION = "starguidance-illustrated-v3" as const;
-export const SPREAD_CATALOG_VERSION = "starguidance-spreads-v2" as const;
+export const SPREAD_CATALOG_VERSION = "starguidance-spreads-v3" as const;
 
 const BACK_ASSET = "/art/tarot/v2/celestial-gothic-back-v1.webp";
 const BACK_ASSET_AVIF = "/art/tarot/v2/celestial-gothic-back-v1.avif";
@@ -143,6 +144,48 @@ const rankThemes = [
   "responsible direction",
 ] as const;
 
+const majorReversalFacets: readonly (readonly ReversalFacet[])[] = [
+  ["blocked", "avoided"],
+  ["imbalanced", "excessive"],
+  ["internalized", "avoided"],
+  ["deficient", "imbalanced"],
+  ["excessive", "imbalanced"],
+  ["blocked", "internalized"],
+  ["avoided", "imbalanced"],
+  ["blocked", "excessive"],
+  ["internalized", "recovering"],
+  ["internalized", "avoided"],
+  ["delayed", "releasing"],
+  ["imbalanced", "avoided"],
+  ["delayed", "internalized"],
+  ["blocked", "releasing"],
+  ["imbalanced", "recovering"],
+  ["excessive", "releasing"],
+  ["delayed", "recovering"],
+  ["deficient", "recovering"],
+  ["internalized", "imbalanced"],
+  ["blocked", "recovering"],
+  ["avoided", "releasing"],
+  ["delayed", "recovering"],
+];
+
+const rankReversalFacets: readonly (readonly ReversalFacet[])[] = [
+  ["blocked", "delayed"],
+  ["imbalanced", "avoided"],
+  ["blocked", "deficient"],
+  ["excessive", "imbalanced"],
+  ["recovering", "releasing"],
+  ["imbalanced", "deficient"],
+  ["delayed", "internalized"],
+  ["blocked", "excessive"],
+  ["internalized", "recovering"],
+  ["delayed", "releasing"],
+  ["internalized", "deficient"],
+  ["excessive", "delayed"],
+  ["imbalanced", "internalized"],
+  ["excessive", "blocked"],
+];
+
 const majors: TarotCard[] = majorNames.map((name, index) => ({
   id: `major-${String(index).padStart(2, "0")}`,
   name,
@@ -151,6 +194,7 @@ const majors: TarotCard[] = majorNames.map((name, index) => ({
   rank: String(index),
   uprightThemes: [majorThemes[index] as string, "conscious participation"],
   reversedThemes: [`a blocked or internalized form of ${majorThemes[index]}`, "a need to reassess"],
+  reversalFacets: majorReversalFacets[index] ?? ["blocked"],
   eventTags: index === 0 ? ["initiation"] : index === 21 ? ["completion"] : ["decision"],
   reflectivePrompt: `Where is ${majorThemes[index]} asking for your conscious participation?`,
   contentVersion: TAROT_CONTENT_VERSION,
@@ -167,6 +211,7 @@ const minors: TarotCard[] = suits.flatMap(({ suit, noun, domain, shadow }) =>
     rank,
     uprightThemes: [rankThemes[index] as string, domain],
     reversedThemes: [`${rankThemes[index]}, delayed or turned inward`, shadow],
+    reversalFacets: rankReversalFacets[index] ?? ["blocked"],
     eventTags:
       index === 0
         ? ["initiation"]
@@ -567,8 +612,327 @@ const threeCardContexts: readonly SpreadContextTemplate[] = [
   ]),
 ];
 
-/** The six rituals available for new readings. */
+const oneCardSpread: Spread = {
+  id: "one-card",
+  name: "Single Card — Focus",
+  purpose: "A concise reflection on the central theme, what to notice, and practical guidance.",
+  estimatedMinutes: 3,
+  entitlementClass: "standard",
+  version: "one-card-v3",
+  allowReversals: true,
+  optionalCut: true,
+  layout: { columns: 1, rows: 1, kind: "centered" },
+  capabilities: {
+    trajectoryPositionIds: [],
+    alternativePositionGroups: [],
+    timingMethod: null,
+    linkedPositions: [],
+  },
+  positions: [position("card-1", "Focus", 0, 0, 0)],
+};
+
+const threeCardSpread: Spread = {
+  id: "three-card",
+  name: "Three Cards — Situation, Challenge, Direction",
+  purpose: "See what is present, what complicates it, and the direction available from here.",
+  estimatedMinutes: 7,
+  entitlementClass: "standard",
+  version: "three-card-v3",
+  allowReversals: true,
+  optionalCut: true,
+  layout: { columns: 3, rows: 1, kind: "horizontal" },
+  capabilities: {
+    trajectoryPositionIds: ["card-3"],
+    alternativePositionGroups: [],
+    timingMethod: null,
+    linkedPositions: [
+      {
+        id: "situation-challenge-direction",
+        positionIds: ["card-1", "card-2", "card-3"],
+        relationship: "sequence",
+      },
+    ],
+  },
+  positions: [
+    position("card-1", "Situation", 0, 0, 0),
+    position("card-2", "Challenge", 1, 1, 0),
+    position("card-3", "Direction", 2, 2, 0),
+  ],
+};
+
+const crossroadsSpread: Spread = {
+  id: "crossroads",
+  name: "Five Cards — Crossroads",
+  purpose: "Compare two paths, the influences around them, and the leverage you retain.",
+  estimatedMinutes: 12,
+  entitlementClass: "standard",
+  version: "crossroads-v1",
+  allowReversals: true,
+  optionalCut: true,
+  layout: { columns: 3, rows: 3, kind: "legacy" },
+  capabilities: {
+    trajectoryPositionIds: [],
+    alternativePositionGroups: [["path-a", "path-b"]],
+    timingMethod: null,
+    linkedPositions: [
+      {
+        id: "path-comparison",
+        positionIds: ["path-a", "path-b"],
+        relationship: "compare",
+      },
+      {
+        id: "choice-leverage",
+        positionIds: ["current-path", "hidden-influence", "leverage"],
+        relationship: "integration",
+      },
+    ],
+  },
+  positions: [
+    position("current-path", "Current Path", 0, 1, 2),
+    position("hidden-influence", "Hidden Influence", 1, 1, 0),
+    position("path-a", "Path A", 2, 0, 1),
+    position("path-b", "Path B", 3, 2, 1),
+    position("leverage", "Leverage", 4, 1, 1),
+  ],
+};
+
+const outlookSpread: Spread = {
+  id: "outlook",
+  name: "Seven Cards — Deeper Outlook",
+  purpose: "Explore a layered situation, its pressures, and a conditional longer view.",
+  estimatedMinutes: 18,
+  entitlementClass: "standard",
+  version: "outlook-v1",
+  allowReversals: true,
+  optionalCut: true,
+  layout: { columns: 3, rows: 3, kind: "legacy" },
+  capabilities: {
+    trajectoryPositionIds: ["incoming", "outcome"],
+    alternativePositionGroups: [],
+    timingMethod: null,
+    linkedPositions: [
+      {
+        id: "outlook-development",
+        positionIds: ["foundation", "present", "incoming", "outcome"],
+        relationship: "sequence",
+      },
+      {
+        id: "pressure-and-leverage",
+        positionIds: ["obstacle", "external", "leverage"],
+        relationship: "integration",
+      },
+    ],
+  },
+  positions: [
+    position("foundation", "Foundation", 0, 0, 2),
+    position("present", "Present", 1, 1, 2),
+    position("incoming", "Incoming Influence", 2, 2, 2),
+    position("obstacle", "Obstacle", 3, 0, 1),
+    position("external", "External Factor", 4, 2, 1),
+    position("leverage", "Leverage", 5, 0, 0),
+    position("outcome", "Likely Outcome", 6, 2, 0),
+  ],
+};
+
+/** The governed rituals available for new readings. */
 export const spreads: readonly Spread[] = [
+  oneCardSpread,
+  threeCardSpread,
+  crossroadsSpread,
+  outlookSpread,
+  {
+    id: "celtic-cross",
+    name: "Celtic Cross",
+    purpose:
+      "An in-depth view of a complex situation, its inner blocks, outside influences, and conditional outcome.",
+    estimatedMinutes: 25,
+    entitlementClass: "standard",
+    version: "celtic-cross-v2",
+    allowReversals: true,
+    optionalCut: true,
+    layout: { columns: 5, rows: 4, kind: "celtic-cross" },
+    capabilities: {
+      trajectoryPositionIds: ["celtic-near-future", "celtic-outcome"],
+      alternativePositionGroups: [],
+      timingMethod: null,
+      linkedPositions: [
+        {
+          id: "present-crossing",
+          positionIds: ["celtic-present", "celtic-challenge"],
+          relationship: "tension",
+        },
+        {
+          id: "root-and-crown",
+          positionIds: ["celtic-root", "celtic-crown"],
+          relationship: "tension",
+        },
+        {
+          id: "development-line",
+          positionIds: ["celtic-past", "celtic-present", "celtic-near-future", "celtic-outcome"],
+          relationship: "sequence",
+        },
+        {
+          id: "self-and-environment",
+          positionIds: ["celtic-self", "celtic-environment"],
+          relationship: "compare",
+        },
+      ],
+    },
+    positions: [
+      position("celtic-present", "The Present", 0, 2, 1, 0, 0),
+      position("celtic-challenge", "The Challenge", 1, 2, 1, 90, 1),
+      position("celtic-crown", "The Crown", 2, 2, 0),
+      position("celtic-root", "The Root", 3, 2, 2),
+      position("celtic-past", "The Recent Past", 4, 1, 1),
+      position("celtic-near-future", "The Near Future", 5, 3, 1),
+      position("celtic-self", "The Self", 6, 4, 3),
+      position("celtic-environment", "The Environment", 7, 4, 2),
+      position("celtic-hopes-fears", "Hopes and Fears", 8, 4, 1),
+      position("celtic-outcome", "The Outcome", 9, 4, 0),
+    ],
+  },
+  {
+    id: "horseshoe",
+    name: "Horseshoe Spread",
+    purpose:
+      "Trace hidden influences, obstacles, outside conditions, useful action, and the likely trajectory of an event.",
+    estimatedMinutes: 18,
+    entitlementClass: "standard",
+    version: "horseshoe-v2",
+    allowReversals: true,
+    optionalCut: true,
+    layout: { columns: 5, rows: 5, kind: "horseshoe" },
+    capabilities: {
+      trajectoryPositionIds: ["horseshoe-outcome"],
+      alternativePositionGroups: [],
+      timingMethod: null,
+      linkedPositions: [
+        {
+          id: "horseshoe-development",
+          positionIds: ["horseshoe-past", "horseshoe-present", "horseshoe-outcome"],
+          relationship: "sequence",
+        },
+        {
+          id: "obstacle-and-action",
+          positionIds: ["horseshoe-obstacle", "horseshoe-action"],
+          relationship: "tension",
+        },
+      ],
+    },
+    positions: [
+      position("horseshoe-past", "The Past", 0, 0, 0),
+      position("horseshoe-present", "The Present", 1, 1, 1),
+      position("horseshoe-hidden", "Hidden Influences", 2, 2, 2),
+      position("horseshoe-obstacle", "The Obstacle", 3, 2, 3),
+      position("horseshoe-environment", "External Environment", 4, 2, 4),
+      position("horseshoe-action", "Best Course of Action", 5, 3, 1),
+      position("horseshoe-outcome", "Final Outcome", 6, 4, 0),
+    ],
+  },
+  {
+    id: "relationship",
+    name: "Relationship / Two-Party Spread",
+    purpose:
+      "Explore two people's observable dynamic, individual patterns, shared energy, and the connection's possible direction.",
+    estimatedMinutes: 18,
+    entitlementClass: "standard",
+    version: "relationship-v2",
+    allowReversals: true,
+    optionalCut: true,
+    layout: { columns: 3, rows: 3, kind: "relationship" },
+    capabilities: {
+      trajectoryPositionIds: ["relationship-direction"],
+      alternativePositionGroups: [],
+      timingMethod: null,
+      linkedPositions: [
+        {
+          id: "visible-stances",
+          positionIds: ["relationship-a-conscious", "relationship-b-conscious"],
+          relationship: "compare",
+        },
+        {
+          id: "deeper-patterns",
+          positionIds: ["relationship-a-deeper", "relationship-b-deeper"],
+          relationship: "compare",
+        },
+        {
+          id: "shared-direction",
+          positionIds: ["relationship-present", "relationship-shared", "relationship-direction"],
+          relationship: "sequence",
+        },
+      ],
+    },
+    positions: [
+      position("relationship-a-conscious", "Your Conscious Stance", 0, 0, 0),
+      position("relationship-b-conscious", "Their Visible Stance", 1, 2, 0),
+      position("relationship-a-deeper", "Your Deeper Pattern", 2, 0, 1),
+      position("relationship-b-deeper", "What Their Signals May Suggest", 3, 2, 1),
+      position("relationship-present", "The Connection Now", 4, 1, 0),
+      position("relationship-shared", "The Shared Dynamic", 5, 1, 1),
+      position("relationship-direction", "The Possible Direction", 6, 1, 2),
+    ],
+  },
+  {
+    id: "nine-card-matrix",
+    name: "Nine-Card Matrix Spread",
+    purpose:
+      "Map past, present, and future across inner reality, external circumstances, and integration.",
+    estimatedMinutes: 22,
+    entitlementClass: "standard",
+    version: "nine-card-matrix-v2",
+    allowReversals: true,
+    optionalCut: true,
+    layout: { columns: 3, rows: 3, kind: "matrix" },
+    capabilities: {
+      trajectoryPositionIds: [
+        "matrix-future-internal",
+        "matrix-future-external",
+        "matrix-future-integration",
+      ],
+      alternativePositionGroups: [],
+      timingMethod: null,
+      linkedPositions: [
+        {
+          id: "past-row",
+          positionIds: ["matrix-past-internal", "matrix-past-external", "matrix-past-integration"],
+          relationship: "integration",
+        },
+        {
+          id: "present-row",
+          positionIds: [
+            "matrix-present-internal",
+            "matrix-present-external",
+            "matrix-present-integration",
+          ],
+          relationship: "integration",
+        },
+        {
+          id: "future-row",
+          positionIds: [
+            "matrix-future-internal",
+            "matrix-future-external",
+            "matrix-future-integration",
+          ],
+          relationship: "integration",
+        },
+      ],
+    },
+    positions: [
+      position("matrix-past-internal", "Past · Internal", 0, 0, 0),
+      position("matrix-past-external", "Past · External", 1, 1, 0),
+      position("matrix-past-integration", "Past · Integration", 2, 2, 0),
+      position("matrix-present-internal", "Present · Internal", 3, 0, 1),
+      position("matrix-present-external", "Present · External", 4, 1, 1),
+      position("matrix-present-integration", "Present · Integration", 5, 2, 1),
+      position("matrix-future-internal", "Future · Internal", 6, 0, 2),
+      position("matrix-future-external", "Future · External", 7, 1, 2),
+      position("matrix-future-integration", "Future · Integration", 8, 2, 2),
+    ],
+  },
+];
+
+/** Retired definitions retained only so historical locked draws remain resolvable. */
+export const legacySpreads: readonly Spread[] = [
   {
     id: "one-card",
     name: "One-Card Spread",
@@ -602,99 +966,6 @@ export const spreads: readonly Spread[] = [
     ],
   },
   {
-    id: "celtic-cross",
-    name: "Celtic Cross",
-    purpose:
-      "An in-depth view of a complex situation, its inner blocks, outside influences, and conditional outcome.",
-    estimatedMinutes: 25,
-    entitlementClass: "standard",
-    version: "celtic-cross-v2",
-    allowReversals: true,
-    optionalCut: true,
-    layout: { columns: 5, rows: 4, kind: "celtic-cross" },
-    positions: [
-      position("celtic-present", "The Present", 0, 2, 1, 0, 0),
-      position("celtic-challenge", "The Challenge", 1, 2, 1, 90, 1),
-      position("celtic-crown", "The Crown", 2, 2, 0),
-      position("celtic-root", "The Root", 3, 2, 2),
-      position("celtic-past", "The Recent Past", 4, 1, 1),
-      position("celtic-near-future", "The Near Future", 5, 3, 1),
-      position("celtic-self", "The Self", 6, 4, 3),
-      position("celtic-environment", "The Environment", 7, 4, 2),
-      position("celtic-hopes-fears", "Hopes and Fears", 8, 4, 1),
-      position("celtic-outcome", "The Outcome", 9, 4, 0),
-    ],
-  },
-  {
-    id: "horseshoe",
-    name: "Horseshoe Spread",
-    purpose:
-      "Trace hidden influences, obstacles, outside conditions, useful action, and the likely trajectory of an event.",
-    estimatedMinutes: 18,
-    entitlementClass: "standard",
-    version: "horseshoe-v2",
-    allowReversals: true,
-    optionalCut: true,
-    layout: { columns: 5, rows: 5, kind: "horseshoe" },
-    positions: [
-      position("horseshoe-past", "The Past", 0, 0, 0),
-      position("horseshoe-present", "The Present", 1, 1, 1),
-      position("horseshoe-hidden", "Hidden Influences", 2, 2, 2),
-      position("horseshoe-obstacle", "The Obstacle", 3, 2, 3),
-      position("horseshoe-environment", "External Environment", 4, 2, 4),
-      position("horseshoe-action", "Best Course of Action", 5, 3, 1),
-      position("horseshoe-outcome", "Final Outcome", 6, 4, 0),
-    ],
-  },
-  {
-    id: "relationship",
-    name: "Relationship / Two-Party Spread",
-    purpose:
-      "Explore two people's observable dynamic, individual patterns, shared energy, and the connection's possible direction.",
-    estimatedMinutes: 18,
-    entitlementClass: "standard",
-    version: "relationship-v2",
-    allowReversals: true,
-    optionalCut: true,
-    layout: { columns: 3, rows: 3, kind: "relationship" },
-    positions: [
-      position("relationship-a-conscious", "Your Conscious Stance", 0, 0, 0),
-      position("relationship-b-conscious", "Their Visible Stance", 1, 2, 0),
-      position("relationship-a-deeper", "Your Deeper Pattern", 2, 0, 1),
-      position("relationship-b-deeper", "What Their Signals May Suggest", 3, 2, 1),
-      position("relationship-present", "The Connection Now", 4, 1, 0),
-      position("relationship-shared", "The Shared Dynamic", 5, 1, 1),
-      position("relationship-direction", "The Possible Direction", 6, 1, 2),
-    ],
-  },
-  {
-    id: "nine-card-matrix",
-    name: "Nine-Card Matrix Spread",
-    purpose:
-      "Map past, present, and future across inner reality, external circumstances, and integration.",
-    estimatedMinutes: 22,
-    entitlementClass: "standard",
-    version: "nine-card-matrix-v2",
-    allowReversals: true,
-    optionalCut: true,
-    layout: { columns: 3, rows: 3, kind: "matrix" },
-    positions: [
-      position("matrix-past-internal", "Past · Internal", 0, 0, 0),
-      position("matrix-past-external", "Past · External", 1, 1, 0),
-      position("matrix-past-integration", "Past · Integration", 2, 2, 0),
-      position("matrix-present-internal", "Present · Internal", 3, 0, 1),
-      position("matrix-present-external", "Present · External", 4, 1, 1),
-      position("matrix-present-integration", "Present · Integration", 5, 2, 1),
-      position("matrix-future-internal", "Future · Internal", 6, 0, 2),
-      position("matrix-future-external", "Future · External", 7, 1, 2),
-      position("matrix-future-integration", "Future · Integration", 8, 2, 2),
-    ],
-  },
-];
-
-/** Retired definitions retained only so historical locked draws remain resolvable. */
-export const legacySpreads: readonly Spread[] = [
-  {
     id: "focus",
     name: "Single Card — Focus",
     purpose: "A concise reflection on what deserves your attention now.",
@@ -722,50 +993,14 @@ export const legacySpreads: readonly Spread[] = [
       position("direction", "Direction", 2, 2, 0),
     ],
   },
-  {
-    id: "crossroads",
-    name: "Five Cards — Crossroads",
-    purpose: "Compare two paths, the influences around them, and the leverage you retain.",
-    estimatedMinutes: 12,
-    entitlementClass: "standard",
-    version: "crossroads-v1",
-    allowReversals: true,
-    optionalCut: true,
-    layout: { columns: 3, rows: 3, kind: "legacy" },
-    positions: [
-      position("current-path", "Current Path", 0, 1, 2),
-      position("hidden-influence", "Hidden Influence", 1, 1, 0),
-      position("path-a", "Path A", 2, 0, 1),
-      position("path-b", "Path B", 3, 2, 1),
-      position("leverage", "Leverage", 4, 1, 1),
-    ],
-  },
-  {
-    id: "outlook",
-    name: "Seven Cards — Deeper Outlook",
-    purpose: "Explore a layered situation, its pressures, and a conditional longer view.",
-    estimatedMinutes: 18,
-    entitlementClass: "standard",
-    version: "outlook-v1",
-    allowReversals: true,
-    optionalCut: true,
-    layout: { columns: 3, rows: 3, kind: "legacy" },
-    positions: [
-      position("foundation", "Foundation", 0, 0, 2),
-      position("present", "Present", 1, 1, 2),
-      position("incoming", "Incoming Influence", 2, 2, 2),
-      position("obstacle", "Obstacle", 3, 0, 1),
-      position("external", "External Factor", 4, 2, 1),
-      position("leverage", "Leverage", 5, 0, 0),
-      position("outcome", "Likely Outcome", 6, 2, 0),
-    ],
-  },
 ];
 
 export const allSpreads: readonly Spread[] = [...spreads, ...legacySpreads];
 
-export function findSpread(id: string): Spread | undefined {
-  return allSpreads.find((spread) => spread.id === id);
+export function findSpread(id: string, version?: string): Spread | undefined {
+  return version
+    ? allSpreads.find((spread) => spread.id === id && spread.version === version)
+    : (spreads.find((spread) => spread.id === id) ?? allSpreads.find((spread) => spread.id === id));
 }
 
 export interface SpreadReadingContext {

@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMachine } from "@xstate/react";
 import { GUARDED_CATEGORIES, type SafetyCategory } from "@starguidance/ai";
@@ -30,161 +23,7 @@ import type { ReadingPayload } from "./reading-types";
 import { playRitualSound, useRitualAmbience } from "./ritual-audio";
 import { RitualControls } from "./ritual-controls";
 import { SafetyInterruptContent } from "./safety-interrupt-panel";
-import { ShuffleShells } from "./shuffle-shells";
 import { TarotSpreadStage } from "./tarot-spread-stage";
-
-function ShuffleGesture({ onEnergy }: { onEnergy: () => void }) {
-  const surfaceRef = useRef<HTMLButtonElement>(null);
-  const pointer = useRef<
-    | {
-        id: number;
-        x: number;
-        y: number;
-        lastX: number;
-        lastY: number;
-        lastAt: number;
-        velocityX: number;
-        velocityY: number;
-        distance: number;
-      }
-    | undefined
-  >(undefined);
-  const keyboardNudge = useRef(0);
-  const lastSoundAt = useRef(0);
-  const lastHapticAt = useRef(0);
-
-  const setVector = (x: number, y: number, energy: number, velocityX = 0, velocityY = 0) => {
-    const ritual = surfaceRef.current?.closest<HTMLElement>(".sanctuary-shuffle-ritual");
-    if (!ritual) return;
-    ritual.style.setProperty("--ritual-drift-x", `${Math.max(-68, Math.min(68, x))}px`);
-    ritual.style.setProperty("--ritual-drift-y", `${Math.max(-45, Math.min(45, y))}px`);
-    ritual.style.setProperty("--ritual-energy", String(Math.max(0, Math.min(1, energy))));
-    ritual.style.setProperty(
-      "--ritual-tilt-x",
-      `${Math.max(-7, Math.min(7, -y / 12 + velocityY / 180))}deg`,
-    );
-    ritual.style.setProperty(
-      "--ritual-tilt-y",
-      `${Math.max(-9, Math.min(9, x / 10 + velocityX / 150))}deg`,
-    );
-    ritual.style.setProperty(
-      "--ritual-velocity",
-      String(Math.max(0, Math.min(1, Math.hypot(velocityX, velocityY) / 1_200))),
-    );
-  };
-
-  const soundAtMostEvery = (milliseconds: number) => {
-    const now = performance.now();
-    if (now - lastSoundAt.current < milliseconds) return;
-    lastSoundAt.current = now;
-    onEnergy();
-  };
-
-  const hapticAtMostEvery = (milliseconds: number, duration = 7) => {
-    const now = performance.now();
-    if (now - lastHapticAt.current < milliseconds || !("vibrate" in navigator)) return;
-    lastHapticAt.current = now;
-    navigator.vibrate(duration);
-  };
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    pointer.current = {
-      id: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      lastX: event.clientX,
-      lastY: event.clientY,
-      lastAt: performance.now(),
-      velocityX: 0,
-      velocityY: 0,
-      distance: 0,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    event.currentTarget.dataset.active = "true";
-    event.currentTarget.dataset.settling = "false";
-    setVector(0, 0, 0.35);
-    soundAtMostEvery(0);
-    hapticAtMostEvery(0, 5);
-  };
-
-  const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const origin = pointer.current;
-    if (!origin || origin.id !== event.pointerId) return;
-    const x = event.clientX - origin.x;
-    const y = event.clientY - origin.y;
-    const now = performance.now();
-    const elapsed = Math.max(8, now - origin.lastAt);
-    origin.velocityX = ((event.clientX - origin.lastX) / elapsed) * 1_000;
-    origin.velocityY = ((event.clientY - origin.lastY) / elapsed) * 1_000;
-    origin.lastX = event.clientX;
-    origin.lastY = event.clientY;
-    origin.lastAt = now;
-    origin.distance = Math.max(origin.distance, Math.hypot(x, y));
-    setVector(x, y, Math.min(1, 0.35 + origin.distance / 150), origin.velocityX, origin.velocityY);
-    if (origin.distance > 24) {
-      soundAtMostEvery(240);
-      hapticAtMostEvery(180);
-    }
-  };
-
-  const handlePointerEnd = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const release = pointer.current;
-    if (release?.id !== event.pointerId) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    event.currentTarget.dataset.active = "false";
-    event.currentTarget.dataset.settling = "true";
-    pointer.current = undefined;
-    setVector(
-      release.velocityX / 28,
-      release.velocityY / 28,
-      0.4,
-      release.velocityX,
-      release.velocityY,
-    );
-    requestAnimationFrame(() => setVector(0, 0, 0.15));
-    hapticAtMostEvery(0, 12);
-  };
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(event.key)) return;
-    event.preventDefault();
-    keyboardNudge.current += 1;
-    const magnitude = 24 + (keyboardNudge.current % 3) * 7;
-    const x = event.key === "ArrowLeft" ? -magnitude : event.key === "ArrowRight" ? magnitude : 0;
-    const y = event.key === "ArrowUp" ? -magnitude : event.key === "ArrowDown" ? magnitude : 0;
-    setVector(x, y, 0.72, x * 18, y * 18);
-    soundAtMostEvery(120);
-    hapticAtMostEvery(100, 6);
-  };
-
-  return (
-    <button
-      aria-label="Stir the deck. Drag or swipe, or use the arrow keys. The card order is already locked."
-      className="tactile-shuffle-control"
-      data-active="false"
-      data-settling="false"
-      onClick={() => soundAtMostEvery(100)}
-      onKeyDown={handleKeyDown}
-      onPointerCancel={handlePointerEnd}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
-      ref={surfaceRef}
-      type="button"
-    >
-      <span aria-hidden="true" className="tactile-shuffle-control__deck">
-        <i />
-        <i />
-        <i />
-      </span>
-      <span>
-        <strong>Stir the deck</strong>
-        <small>Drag, swipe, or use arrow keys</small>
-      </span>
-    </button>
-  );
-}
 
 export function ReadingScene({
   animationVariant = "immersive-v1",
@@ -201,7 +40,6 @@ export function ReadingScene({
   const revealedRef = useRef<ReadonlySet<number>>(revealed);
   const [dealtCount, setDealtCount] = useState(0);
   const [readyPromptVisible, setReadyPromptVisible] = useState(false);
-  const [cutTaken, setCutTaken] = useState<boolean>();
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
   const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
   const [error, setError] = useState<string>();
@@ -217,9 +55,7 @@ export function ReadingScene({
   const [continuationMode, setContinuationMode] = useState<ReadingContinuationMode>("choice");
   const bootstrapped = useRef(false);
   const recoveredRitual = useRef(false);
-  const cutResolved = useRef(false);
-  const shuffleMeasured = useRef(false);
-  const revealCompletionTimer = useRef<number | undefined>(undefined);
+  const completionStarted = useRef(false);
   const {
     ambience,
     displayName,
@@ -233,46 +69,40 @@ export function ReadingScene({
   } = useReadingPreferences(initialPreferences);
   const animationManaged = animationVariant !== "immersive-v1";
   const motionOff = preferenceMotionOff || animationManaged;
-  useRitualAmbience(ambience, String(state.value));
   const soundEnabled = useRef(sound);
+  useRitualAmbience(ambience, String(state.value));
 
   useEffect(() => {
     soundEnabled.current = sound;
   }, [sound]);
 
+  const cutIndex = reading?.draw.proof?.cutIndex ?? reading?.ritualProgress?.cutIndex ?? 0;
+
   const persistRitualProgress = useCallback(
-    (progress: RitualProgress, phase: "cuttingDeck" | "revealingCards" | "complete") => {
+    async (
+      progress: RitualProgress,
+      phase:
+        | "drawLocked"
+        | "dealing"
+        | "awaitingReveal"
+        | "revealing"
+        | "fullSpreadReady"
+        | "interpretationStreaming"
+        | "followUpAvailable"
+        | "complete",
+    ) => {
       writeRitualProgress(window.sessionStorage, readingId, progress);
-      void fetch(`/api/readings/${readingId}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "progress", phase, ...progress }),
-      }).catch(() => {
-        // The local receipt remains a recovery fallback; the locked draw is
-        // already durable and is never changed by a progress-write failure.
-      });
+      try {
+        await fetch(`/api/readings/${readingId}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "progress", phase, ...progress }),
+        });
+      } catch {
+        // The locked draw is already durable; local recovery remains available.
+      }
     },
     [readingId],
-  );
-
-  const completeShuffle = useCallback(() => {
-    if (soundEnabled.current) playRitualSound("gather");
-    send({ type: "SHUFFLE_COMPLETE" });
-  }, [send]);
-
-  const chooseCut = useCallback(
-    (taken: boolean) => {
-      if (cutResolved.current) return;
-      cutResolved.current = true;
-      setCutTaken(taken);
-      persistRitualProgress(
-        { cutTaken: taken, revealedIndexes: [...revealedRef.current] },
-        "cuttingDeck",
-      );
-      if (taken && soundEnabled.current) playRitualSound("cut");
-      send({ type: taken ? "CUT" : "SKIP_CUT" });
-    },
-    [persistRitualProgress, send],
   );
 
   useEffect(() => {
@@ -284,11 +114,10 @@ export function ReadingScene({
           payload.reading.ritualProgress ??
           readRitualProgress(window.sessionStorage, readingId, payload.reading.cards.length);
         if (progress) {
-          recoveredRitual.current = true;
-          const recoveredRevealed = new Set(progress.revealedIndexes);
-          revealedRef.current = recoveredRevealed;
-          setRevealed(recoveredRevealed);
-          setCutTaken(progress.cutTaken);
+          recoveredRitual.current = progress.revealedIndexes.length > 0;
+          const restored = new Set(progress.revealedIndexes);
+          revealedRef.current = restored;
+          setRevealed(restored);
         }
         setReading(payload.reading);
       })
@@ -301,16 +130,11 @@ export function ReadingScene({
     if (!reading || bootstrapped.current) return;
     bootstrapped.current = true;
     send({ type: "START" });
-    send({ type: "SELECT" });
     if (reading.sessionExpired) {
       send({ type: "EXPIRE" });
       return;
     }
-    // Guarded questions are acknowledged on the intake page before this
-    // reading, its locked draw, or its generation job exists. Interrupt
-    // categories never reach this component at all.
-    send({ type: "QUESTION_ACCEPTED" });
-    send({ type: "DECK_READY" });
+    send({ type: "RESTORE_LOCKED" });
     if (recoveredRitual.current)
       emitBrowserProductEvent("reading_reopened", {
         routeClass: "ritual",
@@ -320,117 +144,72 @@ export function ReadingScene({
   }, [reading, send]);
 
   useEffect(() => {
-    if (!state.matches("shuffling")) return;
-    if (!recoveredRitual.current && !shuffleMeasured.current) {
-      shuffleMeasured.current = true;
-      emitBrowserProductEvent("shuffle_started", {
-        routeClass: "ritual",
-        ...(reading ? { cardCount: reading.cards.length } : {}),
-        statusClass: "started",
-      });
-    }
-    const timer = window.setTimeout(
-      completeShuffle,
-      recoveredRitual.current ? 0 : motionOff ? 120 : 12_000,
+    if (!state.matches("drawLocked") || !reading) return;
+    void persistRitualProgress(
+      { cutIndex, revealedIndexes: [...revealedRef.current] },
+      "drawLocked",
     );
+    const timer = window.setTimeout(() => send({ type: "BEGIN_DEAL" }), motionOff ? 0 : 180);
     return () => window.clearTimeout(timer);
-  }, [completeShuffle, motionOff, reading, state]);
-
-  useEffect(() => {
-    if (!state.matches("cuttingDeck")) return;
-    if (recoveredRitual.current && cutTaken !== undefined) {
-      cutResolved.current = true;
-      send({ type: cutTaken ? "CUT" : "SKIP_CUT" });
-      return;
-    }
-
-    // UX-004: cuttingDeck is a brief compatibility/gather phase, never a
-    // decision stop. Keep the affordance present through the two-second deck
-    // gather so readers using touch, keyboard, or slower engines still have a
-    // calm opportunity to mark it before the deck proceeds on its own.
-    const timer = window.setTimeout(() => chooseCut(false), motionOff ? 0 : 4_000);
-    return () => window.clearTimeout(timer);
-  }, [chooseCut, cutTaken, motionOff, send, state]);
+  }, [cutIndex, motionOff, persistRitualProgress, reading, send, state]);
 
   useEffect(() => {
     if (!state.matches("dealing") || !reading) return;
+    void persistRitualProgress({ cutIndex, revealedIndexes: [...revealedRef.current] }, "dealing");
     const timers: number[] = [];
     if (recoveredRitual.current || motionOff) {
       setDealtCount(reading.cards.length);
-      if (!recoveredRitual.current && soundEnabled.current)
-        playRitualSound("deal", reading.cards.length - 1);
-      timers.push(window.setTimeout(() => send({ type: "DEALT" }), motionOff ? 80 : 0));
+      timers.push(window.setTimeout(() => send({ type: "DEALT" }), motionOff ? 40 : 0));
       return () => timers.forEach((timer) => window.clearTimeout(timer));
     }
-
-    setDealtCount(0);
-    if (reading.cards.length === 0) {
-      timers.push(window.setTimeout(() => send({ type: "DEALT" }), 850));
-      return () => timers.forEach((timer) => window.clearTimeout(timer));
-    }
-
-    // Schedule each card only after the previous callback has run. If a slow
-    // browser resumes several overdue timers together, pre-scheduling every
-    // card lets React batch intermediate counts and visually skip a deal.
-    const dealNextCard = (index: number) => {
+    const dealNext = (index: number) => {
       setDealtCount(index + 1);
       if (soundEnabled.current) playRitualSound("deal", index);
-      if (index + 1 < reading.cards.length) {
-        timers.push(window.setTimeout(() => dealNextCard(index + 1), 1_000));
-        return;
-      }
-      timers.push(window.setTimeout(() => send({ type: "DEALT" }), 850));
+      if (index + 1 < reading.cards.length)
+        timers.push(window.setTimeout(() => dealNext(index + 1), 850));
+      else timers.push(window.setTimeout(() => send({ type: "DEALT" }), 650));
     };
-    timers.push(window.setTimeout(() => dealNextCard(0), 0));
+    timers.push(window.setTimeout(() => dealNext(0), 0));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [motionOff, reading, send, state]);
+  }, [cutIndex, motionOff, persistRitualProgress, reading, send, state]);
 
   useEffect(() => {
-    if (!state.matches("awaitingReveal")) return;
-    setReadyPromptVisible(recoveredRitual.current || motionOff);
-    if (recoveredRitual.current || motionOff) return;
-    const timer = window.setTimeout(() => setReadyPromptVisible(true), 5_000);
+    if (!state.matches("awaitingReveal") || !reading) return;
+    void persistRitualProgress(
+      { cutIndex, revealedIndexes: [...revealedRef.current] },
+      "awaitingReveal",
+    );
+    if (revealedRef.current.size > 0) {
+      setReadyPromptVisible(true);
+      send({ type: "REVEAL" });
+      return;
+    }
+    if (motionOff) {
+      const timer = window.setTimeout(() => setReadyPromptVisible(true), 0);
+      return () => window.clearTimeout(timer);
+    }
+    const timer = window.setTimeout(() => setReadyPromptVisible(true), 2_500);
     return () => window.clearTimeout(timer);
-  }, [motionOff, state]);
-
-  // PRD UX-006: the reader intentionally begins and advances the reveal. The
-  // ref reserves each card synchronously so rapid input cannot lose progress
-  // before React commits the corresponding state update.
-
-  const settleDuration = motionOff ? 40 : 650;
-
-  const scheduleRevealCompletion = useCallback(
-    (delay = settleDuration) => {
-      if (revealCompletionTimer.current !== undefined) return;
-      revealCompletionTimer.current = window.setTimeout(() => {
-        revealCompletionTimer.current = undefined;
-        send({ type: "ALL_REVEALED" });
-      }, delay);
-    },
-    [send, settleDuration],
-  );
-
-  useEffect(
-    () => () => {
-      if (revealCompletionTimer.current !== undefined)
-        window.clearTimeout(revealCompletionTimer.current);
-    },
-    [],
-  );
+  }, [cutIndex, motionOff, persistRitualProgress, reading, send, state]);
 
   const revealCard = useCallback(
     (index: number) => {
-      if (!reading || !state.matches("revealingCards") || revealedRef.current.has(index)) return;
-      setActiveReveal(index);
+      if (!reading || !state.matches("revealing") || revealedRef.current.has(index)) return;
+      const nextExpected = reading.cards.findIndex(
+        (_, candidate) => !revealedRef.current.has(candidate),
+      );
+      if (index !== nextExpected) {
+        setError(
+          `Reveal position ${nextExpected + 1} next; the numbered order preserves the spread's structure.`,
+        );
+        return;
+      }
+      setError(undefined);
       const next = new Set(revealedRef.current).add(index);
       revealedRef.current = next;
       setRevealed(next);
-      const complete = next.size === reading.draw.assignments.length;
-      if (cutTaken !== undefined)
-        persistRitualProgress(
-          { cutTaken, revealedIndexes: [...next] },
-          complete ? "complete" : "revealingCards",
-        );
+      setActiveReveal(index);
+      void persistRitualProgress({ cutIndex, revealedIndexes: [...next] }, "revealing");
       if (soundEnabled.current) playRitualSound("reveal", index);
       emitBrowserProductEvent("card_revealed", {
         routeClass: "ritual",
@@ -438,48 +217,61 @@ export function ReadingScene({
         statusClass: "completed",
       });
     },
-    [cutTaken, persistRitualProgress, reading, state],
+    [cutIndex, persistRitualProgress, reading, state],
   );
+
+  const revealAll = useCallback(() => {
+    if (!reading || !state.matches("revealing")) return;
+    const all = new Set(reading.cards.map((_, index) => index));
+    revealedRef.current = all;
+    setRevealed(all);
+    setActiveReveal(null);
+    void persistRitualProgress({ cutIndex, revealedIndexes: [...all] }, "revealing");
+    if (soundEnabled.current) playRitualSound("reveal", reading.cards.length - 1);
+  }, [cutIndex, persistRitualProgress, reading, state]);
+
+  const enterFullSpread = useCallback(() => {
+    if (!reading || completionStarted.current) return;
+    completionStarted.current = true;
+    void persistRitualProgress(
+      { cutIndex, revealedIndexes: [...revealedRef.current] },
+      "fullSpreadReady",
+    ).finally(() => send({ type: "ALL_REVEALED" }));
+  }, [cutIndex, persistRitualProgress, reading, send]);
 
   useEffect(() => {
     if (
       reading &&
-      state.matches("revealingCards") &&
+      state.matches("revealing") &&
       activeReveal === null &&
-      revealedRef.current.size === reading.cards.length
+      revealed.size === reading.cards.length
     )
-      scheduleRevealCompletion();
-  }, [activeReveal, reading, scheduleRevealCompletion, state]);
+      enterFullSpread();
+  }, [activeReveal, enterFullSpread, reading, revealed, state]);
 
-  const advanceReveal = useCallback(() => {
-    if (!reading || activeReveal === null || !state.matches("revealingCards")) return;
-    setActiveReveal(null);
-    if (revealedRef.current.size === reading.cards.length) scheduleRevealCompletion();
-  }, [activeReveal, reading, scheduleRevealCompletion, state]);
-
-  // Interpretation generation now happens through a durable job (see
-  // docs/KNOWN-GAPS.md): the reading fetched on mount may still say
-  // "pending" here even after the ritual's own animation delays. Poll until
-  // it settles instead of assuming the one-time fetch above is still
-  // current — recovering from a Netlify-scheduled backstop run, not just a
-  // synchronous response, is the whole point of the job queue.
   useEffect(() => {
-    if (!state.matches("generatingSynthesis") || !reading) return;
-    if (reading.generationStatus === "ready") {
-      send({ type: "GENERATION_READY" });
-      return;
-    }
+    if (!state.matches("fullSpreadReady") || !reading) return;
+    const timer = window.setTimeout(
+      () => send({ type: "BEGIN_INTERPRETATION" }),
+      motionOff ? 0 : 350,
+    );
+    return () => window.clearTimeout(timer);
+  }, [motionOff, reading, send, state]);
+
+  useEffect(() => {
+    if (!state.matches("interpretationStreaming") || !reading) return;
+    void persistRitualProgress(
+      { cutIndex, revealedIndexes: [...revealedRef.current] },
+      "interpretationStreaming",
+    );
+    if (reading.generationStatus === "ready" && reading.result) return;
     if (reading.generationStatus === "failed") {
       send({ type: "GENERATION_FAILED" });
       return;
     }
     let cancelled = false;
     let attempts = 0;
-    const POLL_INTERVAL_MS = 2_000;
-    // ~80s: past AI_PROVIDER_TIMEOUT_MS (20s) plus one exponential-backoff
-    // retry. Timing out here doesn't mean the job failed — it may still
-    // complete via the scheduled backstop; a fresh page load will show it.
-    const MAX_ATTEMPTS = 40;
+    let timer = 0;
     const poll = async () => {
       attempts += 1;
       try {
@@ -493,37 +285,31 @@ export function ReadingScene({
           }
         }
       } catch {
-        // Transient — retry on the next tick.
+        // Retry the durable generation status.
       }
-      if (cancelled) return;
-      if (attempts >= MAX_ATTEMPTS) {
-        setReading({ ...reading, generationStatus: "failed" });
-        return;
-      }
-      timer = window.setTimeout(poll, POLL_INTERVAL_MS);
+      if (!cancelled && attempts < 40) timer = window.setTimeout(poll, 2_000);
+      else if (!cancelled) setReading({ ...reading, generationStatus: "failed" });
     };
-    let timer = window.setTimeout(poll, POLL_INTERVAL_MS);
+    timer = window.setTimeout(poll, 250);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [reading, readingId, send, state]);
-
-  useEffect(() => {
-    if (!state.matches("revealingResult")) return;
-    if (soundEnabled.current) playRitualSound("complete");
-    const timer = window.setTimeout(() => send({ type: "RESULT_REVEALED" }), motionOff ? 0 : 420);
-    return () => window.clearTimeout(timer);
-  }, [motionOff, send, state]);
+  }, [cutIndex, persistRitualProgress, reading, readingId, send, state]);
 
   const handleStreamState = useCallback(
     (streamState: "idle" | "streaming" | "complete" | "failed") => {
       if (streamState === "streaming") setJourneyComplete(false);
       if (streamTarget !== "primary") return;
-      if (streamState === "complete" && reading?.followUps.at(-1))
-        setStreamTarget(reading.followUps.at(-1)!.id);
+      if (streamState === "complete" && state.matches("interpretationStreaming")) {
+        void persistRitualProgress(
+          { cutIndex, revealedIndexes: [...revealedRef.current] },
+          "followUpAvailable",
+        );
+        send({ type: "INTERPRETATION_COMPLETE" });
+      }
     },
-    [reading, streamTarget],
+    [cutIndex, persistRitualProgress, send, state, streamTarget],
   );
 
   const submitFollowUp = async () => {
@@ -540,6 +326,7 @@ export function ReadingScene({
       const payload = (await response.json()) as {
         followUp?: { id: string; result: FollowUpResult };
         error?: string;
+        newReadingRequired?: boolean;
         safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
       };
       if (payload.safety?.interrupt) {
@@ -550,7 +337,11 @@ export function ReadingScene({
         return;
       }
       if (!response.ok || !payload.followUp)
-        throw new Error(payload.safety?.guidance ?? payload.error ?? "Unable to answer follow-up.");
+        throw new Error(
+          payload.newReadingRequired
+            ? (payload.error ?? "That question needs a new reading and a new spread.")
+            : (payload.safety?.guidance ?? payload.error ?? "Unable to answer follow-up."),
+        );
       setReading({
         ...reading,
         followUps: [...reading.followUps, payload.followUp],
@@ -568,12 +359,12 @@ export function ReadingScene({
     }
   };
 
-  if (error && !reading) {
+  if (error && !reading)
     return (
       <MysticSanctuaryScene
         animationVariant={animationVariant}
         phase="generationFailed"
-        reducedMotion={true}
+        reducedMotion
         testId="mystic-sanctuary-scene"
       >
         <div className="sanctuary-loading" role="alert">
@@ -583,35 +374,40 @@ export function ReadingScene({
         </div>
       </MysticSanctuaryScene>
     );
-  }
 
-  if (!reading || state.matches("idle") || state.matches("preparingDeck")) {
+  if (!reading || state.matches("idle") || state.matches("readingCreated"))
     return (
       <MysticSanctuaryScene
         animationVariant={animationVariant}
-        phase="preparingDeck"
-        reducedMotion={true}
+        phase="drawLocked"
+        reducedMotion
         testId="mystic-sanctuary-scene"
       >
         <div className="sanctuary-loading" role="status">
-          <span aria-hidden="true">✦</span>
-          Recovering your locked draw…
+          <span aria-hidden="true">✦</span>Recovering your locked draw…
         </div>
       </MysticSanctuaryScene>
     );
-  }
 
   const cardsVisible =
+    state.matches("dealing") ||
     state.matches("awaitingReveal") ||
-    state.matches("revealingCards") ||
-    state.matches("generatingSynthesis") ||
+    state.matches("revealing") ||
+    state.matches("fullSpreadReady") ||
+    state.matches("interpretationStreaming") ||
     state.matches("generationFailed") ||
-    state.matches("revealingResult") ||
+    state.matches("followUpAvailable") ||
     state.matches("complete");
   const focusedCardIndex = activeReveal ?? activeReadingCard;
   const focusMode =
     activeReveal !== null ? "reveal" : activeReadingCard !== null ? "reading" : null;
   const activeRevealCard = activeReveal === null ? undefined : reading.cards[activeReveal];
+  const nextRevealIndex = reading.cards.findIndex((_, index) => !revealed.has(index));
+  const transcriptVisible =
+    (state.matches("interpretationStreaming") ||
+      state.matches("followUpAvailable") ||
+      state.matches("complete")) &&
+    Boolean(reading.result);
 
   return (
     <MysticSanctuaryScene
@@ -629,7 +425,6 @@ export function ReadingScene({
           aria-hidden="true"
           className="cinematic-reveal-title"
           data-testid="cinematic-reveal-title"
-          key={`${activeRevealCard.positionId}-${activeRevealCard.cardId}`}
         >
           <span>{activeRevealCard.positionName}</span>
           <strong>
@@ -645,88 +440,32 @@ export function ReadingScene({
         exitHref="/readings"
         narration={narration}
         reducedMotion={motionOff}
-        {...(reading?.profileSnapshotId ? { sigilSeed: reading.profileSnapshotId } : {})}
+        sigilSeed={reading.profileSnapshotId}
         sound={sound}
         toggleAmbience={toggleAmbience}
         toggleNarration={toggleNarration}
         toggleReducedMotion={toggleReducedMotion}
         toggleSound={toggleSound}
-        {...((state.matches("shuffling") || state.matches("dealing")) && !motionOff
-          ? { onSkip: toggleReducedMotion }
-          : {})}
+        {...(state.matches("dealing") && !motionOff ? { onSkip: toggleReducedMotion } : {})}
       />
 
       <section
-        className={`sanctuary-stage ${state.matches("shuffling") ? "is-shuffling" : ""} ${
-          state.matches("cuttingDeck") ? "is-gathering" : ""
-        } ${state.matches("dealing") ? "is-dealing" : ""} ${
-          state.matches("awaitingReveal") ? "is-reflecting" : ""
-        } ${state.matches("revealingCards") ? "is-guided-reveal" : ""} ${
-          activeReveal === null ? "" : "has-cinematic-review"
-        } ${state.matches("complete") ? "has-reading-journey" : ""}`}
         aria-live="polite"
+        className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${activeReveal === null ? "" : "has-cinematic-review"} ${transcriptVisible ? "has-reading-journey" : ""}`}
       >
         {state.matches("sessionExpired") && (
           <div className="ritual-moment">
             <p className="ritual-status" role="alert">
-              This ritual session has expired. Its locked cards and completed interpretation remain
+              This ritual session expired. Its locked cards and any completed interpretation remain
               unchanged in your private history.
             </p>
             <div className="ritual-action-group">
-              {reading?.result && (
-                <Link className="ritual-action" href={`/reading/${readingId}`}>
-                  Open the preserved reading
-                </Link>
-              )}
+              <Link className="ritual-action" href="/history">
+                Return to history
+              </Link>
               <Link className="ritual-action" href="/readings">
                 Start a new reading
               </Link>
-            </div>
-          </div>
-        )}
-
-        {state.matches("shuffling") && (
-          <div className="ritual-moment sanctuary-shuffle-ritual">
-            <ShuffleShells phase="mixing" />
-            <div className="sanctuary-shuffle-copy">
-              <p className="ritual-status" role="status">
-                Shuffling your cards
-              </p>
-              <span>The draw is locked. Move the visual deck until the moment feels settled.</span>
-            </div>
-            <ShuffleGesture
-              onEnergy={() => {
-                if (soundEnabled.current) playRitualSound("shuffle");
-              }}
-            />
-            <button className="shuffle-skip-action" onClick={completeShuffle} type="button">
-              Gather now
-            </button>
-          </div>
-        )}
-
-        {state.matches("cuttingDeck") && (
-          <div className="ritual-moment sanctuary-shuffle-ritual sanctuary-gather-ritual">
-            <ShuffleShells phase="gathering" />
-            <div className="sanctuary-shuffle-copy">
-              <p className="ritual-status" role="status">
-                Gathering the deck
-              </p>
-              <span>
-                The cards move directly into the spread. You may mark a symbolic cut while they
-                settle; the locked order never changes.
-              </span>
-            </div>
-            <div className="ritual-cut-actions">
-              <button
-                className="ritual-cut-action is-primary"
-                onClick={() => chooseCut(true)}
-                type="button"
-              >
-                <span aria-hidden="true">⋮</span>
-                <strong>Mark a symbolic cut</strong>
-                <small>Optional · dealing begins automatically</small>
-              </button>
             </div>
           </div>
         )}
@@ -749,13 +488,13 @@ export function ReadingScene({
             />
             <p className="ritual-deal-status" role="status">
               {dealtCount === 0
-                ? "The deck is centered."
-                : `Dealing card ${dealtCount} of ${reading.cards.length}…`}
+                ? "The locked deck is centered."
+                : `Dealing card ${dealtCount} of ${reading.cards.length} into its fixed position…`}
             </p>
           </div>
         )}
 
-        {cardsVisible && (
+        {cardsVisible && !state.matches("dealing") && (
           <div className="ritual-card-layout">
             <TarotSpreadStage
               activeIndex={focusedCardIndex}
@@ -764,14 +503,17 @@ export function ReadingScene({
               reducedMotion={motionOff}
               revealed={revealed}
               onReveal={
-                state.matches("revealingCards") && activeReveal === null ? revealCard : undefined
+                state.matches("revealing") && activeReveal === null ? revealCard : undefined
               }
             />
             {state.matches("awaitingReveal") && (
               <div className="ritual-question-reflection" data-testid="question-reflection">
                 <span>Hold your question at the center</span>
                 <blockquote>{reading.question}</blockquote>
-                <p>Notice what rises before any card is turned.</p>
+                <p>
+                  Every card is face down in its numbered position. Nothing from the whole reading
+                  is shown yet.
+                </p>
                 {readyPromptVisible && (
                   <button
                     className="ritual-action ritual-ready-action"
@@ -783,42 +525,40 @@ export function ReadingScene({
                 )}
               </div>
             )}
-            {state.matches("revealingCards") &&
+            {state.matches("revealing") &&
               activeReveal === null &&
               revealed.size < reading.cards.length && (
                 <div className="reveal-choice-prompt" role="status">
                   <span aria-hidden="true">✦</span>
                   <p>
-                    <strong>Choose a face-down card to turn</strong>
-                    <small>Tap a card, or reach it with Tab and press Enter.</small>
+                    <strong>Reveal position {nextRevealIndex + 1} next</strong>
+                    <small>
+                      Tap that card, reach it with Tab and press Enter or Space, or reveal all.
+                    </small>
                   </p>
                   <span>
                     {revealed.size} of {reading.cards.length}
                   </span>
+                  <button className="ritual-action" onClick={revealAll} type="button">
+                    Reveal All
+                  </button>
                 </div>
               )}
           </div>
         )}
 
-        {state.matches("revealingCards") && activeRevealCard && activeReveal !== null && (
-          <div
-            className="guided-reveal-panel"
-            data-testid="guided-reveal-panel"
-            key={`guided-${activeRevealCard.positionId}-${activeReveal}`}
-          >
-            <p className="guided-reveal-description">{activeRevealCard.positionDescription}</p>
-            <p className="guided-reveal-themes">
-              {activeRevealCard.orientation === "reversed" ? "Reversed themes" : "Themes"}:{" "}
-              {activeRevealCard.themes.slice(0, 3).join(" · ")}
-            </p>
+        {state.matches("revealing") && activeRevealCard && activeReveal !== null && (
+          <div className="guided-reveal-panel" data-testid="guided-reveal-panel">
+            <p className="guided-reveal-description">{activeRevealCard.positionName}</p>
+            <p className="guided-reveal-themes">{activeRevealCard.baselineMeaning}</p>
             <button
               className="ritual-action guided-next-action"
-              onClick={advanceReveal}
+              onClick={() => setActiveReveal(null)}
               type="button"
             >
               {revealed.size < reading.cards.length
                 ? "Return to the spread"
-                : "Continue to your reading"}
+                : "Open the complete reading"}
               <span>
                 {revealed.size} of {reading.cards.length}
               </span>
@@ -826,15 +566,20 @@ export function ReadingScene({
           </div>
         )}
 
-        {state.matches("generatingSynthesis") && (
+        {state.matches("fullSpreadReady") && (
           <p className="stage-whisper" role="status">
-            The cards are gathering into a reflection…
+            The full spread is ready. Now the cards can be read together…
+          </p>
+        )}
+        {state.matches("interpretationStreaming") && !reading.result && (
+          <p className="stage-whisper" role="status">
+            The complete spread is gathering into one coherent interpretation…
           </p>
         )}
 
         {state.matches("generationFailed") && (
           <div className="generation-recovery" role="alert">
-            <p>The cards are safe. Interpretation generation paused.</p>
+            <p>The locked cards are safe. Interpretation generation paused.</p>
             <button
               onClick={async () => {
                 const response = await fetch(`/api/readings/${readingId}`, {
@@ -847,10 +592,6 @@ export function ReadingScene({
                   generationStatus: ReadingPayload["generationStatus"];
                   result?: ReadingResult;
                 };
-                // A retry now re-enqueues a durable job rather than always
-                // generating synchronously (docs/KNOWN-GAPS.md), so this may
-                // report "pending" — the generatingSynthesis effect's poll
-                // loop picks it up from there, same as initial generation.
                 setReading({
                   ...reading,
                   ...(payload.result ? { result: payload.result } : {}),
@@ -866,8 +607,8 @@ export function ReadingScene({
         )}
       </section>
 
-      <div className={`oracle-console-stack ${state.matches("complete") ? "" : "is-inactive"}`}>
-        {state.matches("complete") && reading.result && (
+      <div className={`oracle-console-stack ${transcriptVisible ? "" : "is-inactive"}`}>
+        {transcriptVisible && reading.result && (
           <OracleTranscript
             active
             cards={reading.cards}
@@ -885,26 +626,33 @@ export function ReadingScene({
             target={streamTarget}
           />
         )}
-        {state.matches("complete") && safetyInterrupt && (
+        {(state.matches("followUpAvailable") || state.matches("complete")) && safetyInterrupt && (
           <SafetyInterruptContent
             category={safetyInterrupt.category}
             guidance={safetyInterrupt.guidance}
           />
         )}
-        {state.matches("complete") &&
+        {state.matches("followUpAvailable") &&
           journeyComplete &&
           !safetyInterrupt &&
           continuationMode === "choice" && (
             <ReadingClosure
               followUpsRemaining={reading.followUpsRemaining}
               onAskFollowUp={() => setContinuationMode("follow-up")}
-              onClose={() => setContinuationMode("closed")}
+              onClose={() => {
+                setContinuationMode("closed");
+                void persistRitualProgress(
+                  { cutIndex, revealedIndexes: [...revealedRef.current] },
+                  "complete",
+                );
+                send({ type: "COMPLETE" });
+              }}
               reflectionQuestion={
-                reading.result?.reflectionQuestion ?? "What will you choose to carry forward?"
+                reading.result?.reflectionPrompt ?? "What will you choose to carry forward?"
               }
             />
           )}
-        {state.matches("complete") &&
+        {state.matches("followUpAvailable") &&
           journeyComplete &&
           !safetyInterrupt &&
           continuationMode === "follow-up" && (
@@ -916,34 +664,30 @@ export function ReadingScene({
                 disabled={reading.followUpsRemaining <= 0}
                 hint={
                   reading.followUpsRemaining <= 0
-                    ? `This reading’s ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? " is" : "s are"} preserved with the same locked cards.`
-                    : `${reading.followUpsRemaining} follow-up${reading.followUpsRemaining === 1 ? "" : "s"} remaining. Shift+Enter adds a line.`
+                    ? "The included same-draw follow-up is complete."
+                    : `${reading.followUpsRemaining} clarification${reading.followUpsRemaining === 1 ? "" : "s"} remaining. A new subject starts a new reading.`
                 }
-                label="Keep the same cards and ask what they add"
+                label="Clarify the original question with these same cards"
                 loading={followUpLoading}
                 onChange={setFollowUp}
                 onSubmit={submitFollowUp}
                 placeholder={
                   reading.followUpsRemaining <= 0
                     ? "Follow-up complete"
-                    : "Ask a follow-up about the same cards…"
+                    : "Ask about the same subject and horizon…"
                 }
-                submitLabel="Reflect on the same cards"
+                submitLabel="Ask these same cards"
                 testId="follow-up-composer"
                 value={followUp}
               />
             </div>
           )}
-        {state.matches("complete") &&
-          journeyComplete &&
-          !safetyInterrupt &&
-          continuationMode === "closed" && <ReadingSealed readingId={readingId} />}
-        {state.matches("complete") &&
+        {state.matches("complete") && <ReadingSealed readingId={readingId} />}
+        {(state.matches("followUpAvailable") || state.matches("complete")) &&
           reading.safetyClassification &&
           GUARDED_CATEGORIES.has(reading.safetyClassification) && (
             <p className="safety-flags-banner" role="note">
-              This reading offers reflection rather than a factual answer, given the kind of
-              question it was.
+              This reading offers user-centered reflection rather than a factual claim.
             </p>
           )}
         {error && (

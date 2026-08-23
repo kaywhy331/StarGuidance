@@ -65,6 +65,53 @@ const lockedDraw = {
   lockedAt: "2026-08-20T00:00:00.000Z",
   assignments: [{ positionId: "focus", cardId: "major-00", orientation: "upright", order: 0 }],
 };
+const configuration = {
+  version: "reading-configuration-v1" as const,
+  reversalMode: "reversals_enabled" as const,
+  personalizationMode: "pure_tarot" as const,
+  positions: [
+    {
+      id: "focus",
+      displayName: "Focus",
+      interpretiveFunction: "the concentrated center of the reading",
+      description: "The central focus.",
+      order: 0,
+      placement: { column: 0, row: 0, rotation: 0, layer: 0 },
+    },
+  ],
+  capabilities: {
+    trajectoryPositionIds: [],
+    alternativePositionGroups: [],
+    timingMethod: null,
+    linkedPositions: [],
+  },
+};
+const originalResult = {
+  schemaVersion: "reading-result-v3" as const,
+  directAnswer: "The current pattern suggests one grounded step.",
+  overallPattern: "Focus stays with observable action.",
+  cards: [
+    {
+      positionId: "focus",
+      positionLabel: "Focus",
+      cardId: "major-00",
+      orientation: "upright" as const,
+      coreMeaning: "A willing beginning.",
+      positionInterpretation: "The Focus position holds a willing beginning.",
+      relationshipNotes: [],
+      supportingEvidence: ["The Fool upright in Focus."],
+    },
+  ],
+  synthesis: "The beginning becomes useful through one reversible action.",
+  likelyTrajectory: null,
+  alternatePath: null,
+  timing: null,
+  userAgency: "Choose one observable next step.",
+  reflectionPrompt: "What can begin without certainty?",
+  uncertaintyNote: "This reading is conditional and does not guarantee an outcome.",
+  personalizationLens: null,
+  safetyFlags: [],
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -91,8 +138,17 @@ beforeEach(() => {
       generalReading: false,
     },
     readingLens: { version: "reading-lens-v1", traitIndexes: [], tensionIndexes: [] },
+    configuration,
+    encryptedQuestion: "encrypted-question",
     draw: lockedDraw,
-    result: { title: "Preserved original result" },
+    result: originalResult,
+    ritualProgress: {
+      version: "ritual-progress-v2",
+      phase: "followUpAvailable",
+      cutIndex: 0,
+      revealedIndexes: [0],
+      updatedAt: "2026-08-20T00:05:00.000Z",
+    },
     followUps: [],
   });
   mocks.getSnapshot.mockResolvedValue({ snapshot: { traits: [], tensions: [] } });

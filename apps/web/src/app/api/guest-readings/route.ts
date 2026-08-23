@@ -5,15 +5,17 @@ import {
   classifyQuestionContext,
   DeterministicFallbackProvider,
   GUARDED_CATEGORIES,
+  reviewTarotQuestion,
 } from "@starguidance/ai";
-import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
-import { createLockedDraw } from "@starguidance/tarot-domain";
+import { DECK_VERSION, findSpread, spreads, tarotCards } from "@starguidance/tarot-content";
+import { finalizeCommittedDraw } from "@starguidance/tarot-domain";
 import { z } from "zod";
 
+import { readingConfiguration } from "@/lib/draw-ceremony";
 import {
   GUEST_DEVICE_HEADER,
   guestDeviceIdSchema,
-  guestReadingInputSchema,
+  guestReadingActionSchema,
   guestReceiptPayloadSchema,
 } from "@/lib/guest-reading-contract";
 import {
@@ -22,8 +24,12 @@ import {
   GUEST_TRIAL_COOKIE_TTL_SECONDS,
   GuestTrialConfigurationError,
   guestTrialNetworkRateLimitKey,
+  issueGuestDrawCeremony,
   issueGuestReadingReceipt,
   issueGuestTrialMarker,
+  publicGuestDrawCeremony,
+  verifyGuestDrawCeremony,
+  verifyGuestReadingReceipt,
   verifyGuestTrialMarker,
 } from "@/lib/guest-reading-security";
 import { guestDateLensStatements } from "@/lib/guest-date-lens";
@@ -46,16 +52,12 @@ function guestDevice(request: Request): string {
   return guestDeviceIdSchema.parse(request.headers.get(GUEST_DEVICE_HEADER));
 }
 
-async function markerState(request: Request): Promise<{
-  deviceId: string;
-  marker?: string;
-  valid: boolean;
-}> {
+async function markerState(request: Request) {
   const deviceId = guestDevice(request);
   const marker = (await cookies()).get(GUEST_TRIAL_COOKIE)?.value;
   return {
     deviceId,
-    ...(marker ? { marker } : {}),
+    marker,
     valid: verifyGuestTrialMarker(marker, deviceId),
   };
 }
@@ -100,8 +102,41 @@ export async function POST(request: Request) {
       if (crisisSafety.category === "selfHarmCrisis")
         return noStore(NextResponse.json({ safety: crisisSafety }, { status: 422 }));
     }
-    const input = guestReadingInputSchema.parse(body);
+    const input = guestReadingActionSchema.parse(body);
     const marker = await markerState(request);
+
+    if (input.action === "review") {
+      if (marker.marker)
+        return noStore(
+          NextResponse.json(
+            { error: "This browser's free reading has already been used.", signupRequired: true },
+            { status: 409 },
+          ),
+        );
+      return noStore(NextResponse.json({ review: reviewTarotQuestion(input.question) }));
+    }
+
+    if (input.action === "recover" || input.action === "reveal") {
+      if (!marker.marker || !marker.valid)
+        return noStore(
+          NextResponse.json({ error: "The guest-reading marker is unavailable." }, { status: 410 }),
+        );
+      const receipt = verifyGuestReadingReceipt(input.receipt);
+      if (!receipt)
+        return noStore(
+          NextResponse.json(
+            { error: "This guest reading has expired or changed." },
+            { status: 410 },
+          ),
+        );
+      return noStore(
+        NextResponse.json({
+          reading: guestReadingDisplay(receipt, { includeResult: input.action === "reveal" }),
+          receipt: input.receipt,
+        }),
+      );
+    }
+
     if (marker.marker)
       return noStore(
         NextResponse.json(
@@ -117,42 +152,105 @@ export async function POST(request: Request) {
     const networkRateLimitKey = guestTrialNetworkRateLimitKey(clientRateLimitKey(request));
     if (networkRateLimitKey) await assertRateLimit(networkRateLimitKey, 30, 60 * 60 * 1_000);
 
-    const question = input.question;
-    const questionClassification = classifyQuestionContext(question, {
-      topic: "general",
-      horizon: "open",
-      generalReading: false,
-    });
-    const safety = classifyQuestion(question);
-    if (safety.interrupt) return noStore(NextResponse.json({ safety }, { status: 422 }));
-    if (GUARDED_CATEGORIES.has(safety.category) && !input.continueAsReflection)
+    if (input.action === "restore") {
+      const ceremony = verifyGuestDrawCeremony(input.ceremonyToken, marker.deviceId);
+      if (!ceremony)
+        return noStore(
+          NextResponse.json(
+            { error: "The pending guest ritual expired or changed." },
+            { status: 410 },
+          ),
+        );
       return noStore(
-        NextResponse.json({ safety, reflectionAcknowledgementRequired: true }, { status: 409 }),
+        NextResponse.json({ ceremony: publicGuestDrawCeremony(ceremony, input.ceremonyToken) }),
       );
+    }
 
-    const spread = spreads.find(({ id }) => id === input.spreadId);
-    if (!spread)
+    if (input.action === "prepare") {
+      const questionClassification = classifyQuestionContext(input.question);
+      const safety = classifyQuestion(input.question);
+      if (safety.interrupt) return noStore(NextResponse.json({ safety }, { status: 422 }));
+      if (GUARDED_CATEGORIES.has(safety.category) && !input.continueAsReflection)
+        return noStore(
+          NextResponse.json({ safety, reflectionAcknowledgementRequired: true }, { status: 409 }),
+        );
+      const spread = spreads.find(({ id }) => id === input.spreadId);
+      if (!spread)
+        return noStore(
+          NextResponse.json({ error: "That free spread is unavailable." }, { status: 404 }),
+        );
+      const configuration = readingConfiguration({
+        spread,
+        reversalMode: input.reversalMode,
+        personalizationMode: input.personalizationMode,
+      });
+      const { ceremony } = issueGuestDrawCeremony({
+        deviceId: marker.deviceId,
+        deckVersion: DECK_VERSION,
+        birthDate: input.birthDate,
+        question: input.question,
+        questionClassification,
+        configuration,
+        spread,
+      });
+      return noStore(NextResponse.json({ ceremony, safety }, { status: 201 }));
+    }
+
+    const ceremony = verifyGuestDrawCeremony(input.ceremonyToken, marker.deviceId);
+    if (!ceremony)
       return noStore(
-        NextResponse.json({ error: "That free spread is unavailable." }, { status: 404 }),
+        NextResponse.json(
+          { error: "The pending guest ritual expired or changed." },
+          { status: 410 },
+        ),
       );
-    const relevantTraitStatements = await guestDateLensStatements(
-      input.birthDate,
-      question,
-      questionClassification,
-    );
-    const draw = createLockedDraw({ cards: tarotCards, deckVersion: DECK_VERSION, spread });
+    const spread = findSpread(ceremony.spread.id, ceremony.spread.version);
+    if (!spread || ceremony.deckVersion !== DECK_VERSION)
+      return noStore(
+        NextResponse.json(
+          { error: "The prepared free spread is no longer available." },
+          { status: 409 },
+        ),
+      );
+    const lockedSpread = {
+      ...spread,
+      positions: ceremony.configuration.positions,
+      capabilities: ceremony.configuration.capabilities,
+    };
+    const draw = finalizeCommittedDraw({
+      cards: tarotCards,
+      deckVersion: ceremony.deckVersion,
+      spread: lockedSpread,
+      sessionId: ceremony.readingId,
+      serverSeed: ceremony.serverSeed,
+      serverSeedCommitment: ceremony.serverSeedCommitment,
+      clientNonce: input.clientNonce,
+      cutIndex: input.cutIndex,
+      reversalMode: ceremony.configuration.reversalMode,
+    });
+    const relevantTraitStatements =
+      ceremony.configuration.personalizationMode === "personalized_tarot"
+        ? await guestDateLensStatements(
+            ceremony.birthDate,
+            ceremony.question,
+            ceremony.questionClassification,
+          )
+        : [];
     const generated = await new DeterministicFallbackProvider().generateWithProvenance({
       draw,
-      question,
-      questionClassification,
+      configuration: ceremony.configuration,
+      question: ceremony.question,
+      questionClassification: ceremony.questionClassification,
       relevantTraitStatements,
     });
     const createdAt = new Date().toISOString();
     const issued = issueGuestReadingReceipt(
       {
         readingId: draw.id,
-        question,
-        questionClassification,
+        question: ceremony.question,
+        questionClassification: ceremony.questionClassification,
+        configuration: ceremony.configuration,
+        readerLens: relevantTraitStatements,
         draw,
         result: generated.result,
         createdAt,
@@ -160,10 +258,12 @@ export async function POST(request: Request) {
       Date.parse(createdAt),
     );
     const receiptPayload = guestReceiptPayloadSchema.parse({
-      version: "guest-reading-receipt-v1",
+      version: "guest-reading-receipt-v2",
       readingId: draw.id,
-      question,
-      questionClassification,
+      question: ceremony.question,
+      questionClassification: ceremony.questionClassification,
+      configuration: ceremony.configuration,
+      readerLens: relevantTraitStatements,
       draw,
       result: generated.result,
       createdAt,
@@ -200,19 +300,13 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === "GUEST_DATE_LENS_UNAVAILABLE")
       return noStore(
         NextResponse.json(
-          { error: "Birthday personalization is temporarily unavailable. Try again shortly." },
+          { error: "Birthday personalization is temporarily unavailable." },
           { status: 503 },
         ),
       );
     if (error instanceof z.ZodError)
       return noStore(
-        NextResponse.json(
-          {
-            error:
-              "Choose a free spread, enter your birthday and question, and accept the guest terms.",
-          },
-          { status: 422 },
-        ),
+        NextResponse.json({ error: "The free-reading request is invalid." }, { status: 422 }),
       );
     return noStore(
       NextResponse.json({ error: "The free reading could not be prepared." }, { status: 500 }),
