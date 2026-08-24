@@ -119,14 +119,12 @@ jobs:
             name="$1"
             netlify env:set "$name" "${!name}" \
               --context deploy-preview \
-              --scope builds functions runtime \
               --secret --force --site "$NETLIFY_SITE_ID" >/dev/null
           }
           set_public() {
             name="$1"
             netlify env:set "$name" "${!name}" \
               --context deploy-preview \
-              --scope builds functions post-processing runtime \
               --force --site "$NETLIFY_SITE_ID" >/dev/null
           }
 
@@ -141,7 +139,6 @@ jobs:
           done
           netlify env:set NEXT_PUBLIC_APP_URL "$PREVIEW_APP_URL" \
             --context deploy-preview \
-            --scope builds functions post-processing runtime \
             --force --site "$NETLIFY_SITE_ID" >/dev/null
           netlify env:set APP_ENV staging --context deploy-preview --force \
             --site "$NETLIFY_SITE_ID" >/dev/null
