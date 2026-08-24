@@ -5703,12 +5703,24 @@ body {
   translate: -50% -50%;
 }
 
-.oracle-console-stack > .guest-conversion-card {
-  position: absolute;
-  z-index: 30;
-  inset: 0;
+.oracle-console-stack > .guest-reading-result-gate {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  max-height: none;
+  max-height: min(17rem, 34dvh);
+  gap: 0.65rem;
+  padding: clamp(0.9rem, 2vw, 1.35rem);
+  border-radius: 1rem;
+}
+
+.oracle-console-stack > .guest-reading-result-gate h2 {
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  line-height: 1.08;
+}
+
+.oracle-console-stack > .guest-reading-result-gate > p:not(.page-eyebrow) {
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .guest-continuation-shell {

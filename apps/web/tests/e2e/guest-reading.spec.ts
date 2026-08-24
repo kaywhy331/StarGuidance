@@ -84,8 +84,17 @@ test("a visitor completes a causal free reading before signup and continues with
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
 
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
+  const completeStory = page.getByTestId("reading-complete-story");
+  const readingJourney = page.getByTestId("reading-journey");
+  const signupGate = page.getByTestId("guest-signup-gate");
+  await expect(completeStory).toBeVisible({ timeout: 20_000 });
+  await expect(completeStory.locator("header > p:last-child")).toHaveText(/\S/);
+  await expect(signupGate).toBeVisible();
+  const readingBox = await readingJourney.boundingBox();
+  const signupBox = await signupGate.boundingBox();
+  if (!readingBox || !signupBox)
+    throw new Error("The completed reading and signup prompt must both be measurable.");
+  expect(signupBox.y).toBeGreaterThanOrEqual(readingBox.y + readingBox.height - 1);
   const originalCards = await page
     .getByTestId("tarot-spread-stage")
     .locator(".physical-tarot-card")
