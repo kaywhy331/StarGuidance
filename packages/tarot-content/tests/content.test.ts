@@ -46,7 +46,7 @@ describe("tarot content integrity", () => {
     }
   });
 
-  it("defines eight selectable spreads and preserves four retired definitions", () => {
+  it("defines eight selectable spreads and preserves every retired definition", () => {
     expect(spreads.map(({ positions }) => positions.length)).toEqual([1, 3, 5, 7, 10, 7, 7, 9]);
     expect(spreads.map(({ id }) => id)).toEqual([
       "one-card",
@@ -63,11 +63,28 @@ describe("tarot content integrity", () => {
       "three-card",
       "focus",
       "direction",
+      "crossroads",
+      "outlook",
+      "celtic-cross",
+      "horseshoe",
+      "relationship",
+      "nine-card-matrix",
     ]);
-    expect(allSpreads).toHaveLength(12);
+    expect(allSpreads).toHaveLength(18);
     expect(findSpread("outlook")?.positions).toHaveLength(7);
     expect(findSpread("one-card")?.version).toBe("one-card-v3");
     expect(findSpread("one-card", "one-card-v2")?.version).toBe("one-card-v2");
+    expect(spreads.map(({ version }) => version)).toEqual([
+      "one-card-v3",
+      "three-card-v3",
+      "crossroads-v2",
+      "outlook-v2",
+      "celtic-cross-v3",
+      "horseshoe-v3",
+      "relationship-v3",
+      "nine-card-matrix-v3",
+    ]);
+    expect(findSpread("crossroads", "crossroads-v1")?.capabilities).toBeUndefined();
     for (const spread of spreads) {
       expect(spread.capabilities).toBeDefined();
       const positionIds = new Set(spread.positions.map(({ id }) => id));

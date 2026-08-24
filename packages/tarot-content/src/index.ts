@@ -666,7 +666,7 @@ const crossroadsSpread: Spread = {
   purpose: "Compare two paths, the influences around them, and the leverage you retain.",
   estimatedMinutes: 12,
   entitlementClass: "standard",
-  version: "crossroads-v1",
+  version: "crossroads-v2",
   allowReversals: true,
   optionalCut: true,
   layout: { columns: 3, rows: 3, kind: "legacy" },
@@ -702,7 +702,7 @@ const outlookSpread: Spread = {
   purpose: "Explore a layered situation, its pressures, and a conditional longer view.",
   estimatedMinutes: 18,
   entitlementClass: "standard",
-  version: "outlook-v1",
+  version: "outlook-v2",
   allowReversals: true,
   optionalCut: true,
   layout: { columns: 3, rows: 3, kind: "legacy" },
@@ -747,7 +747,7 @@ export const spreads: readonly Spread[] = [
       "An in-depth view of a complex situation, its inner blocks, outside influences, and conditional outcome.",
     estimatedMinutes: 25,
     entitlementClass: "standard",
-    version: "celtic-cross-v2",
+    version: "celtic-cross-v3",
     allowReversals: true,
     optionalCut: true,
     layout: { columns: 5, rows: 4, kind: "celtic-cross" },
@@ -798,7 +798,7 @@ export const spreads: readonly Spread[] = [
       "Trace hidden influences, obstacles, outside conditions, useful action, and the likely trajectory of an event.",
     estimatedMinutes: 18,
     entitlementClass: "standard",
-    version: "horseshoe-v2",
+    version: "horseshoe-v3",
     allowReversals: true,
     optionalCut: true,
     layout: { columns: 5, rows: 5, kind: "horseshoe" },
@@ -836,7 +836,7 @@ export const spreads: readonly Spread[] = [
       "Explore two people's observable dynamic, individual patterns, shared energy, and the connection's possible direction.",
     estimatedMinutes: 18,
     entitlementClass: "standard",
-    version: "relationship-v2",
+    version: "relationship-v3",
     allowReversals: true,
     optionalCut: true,
     layout: { columns: 3, rows: 3, kind: "relationship" },
@@ -879,7 +879,7 @@ export const spreads: readonly Spread[] = [
       "Map past, present, and future across inner reality, external circumstances, and integration.",
     estimatedMinutes: 22,
     entitlementClass: "standard",
-    version: "nine-card-matrix-v2",
+    version: "nine-card-matrix-v3",
     allowReversals: true,
     optionalCut: true,
     layout: { columns: 3, rows: 3, kind: "matrix" },
@@ -930,6 +930,23 @@ export const spreads: readonly Spread[] = [
     ],
   },
 ];
+
+const capabilityLegacyVersions: Readonly<Record<string, string>> = Object.freeze({
+  crossroads: "crossroads-v1",
+  outlook: "outlook-v1",
+  "celtic-cross": "celtic-cross-v2",
+  horseshoe: "horseshoe-v2",
+  relationship: "relationship-v2",
+  "nine-card-matrix": "nine-card-matrix-v2",
+});
+
+const capabilityLegacySpreads: readonly Spread[] = spreads.flatMap((spread) => {
+  const legacyVersion = capabilityLegacyVersions[spread.id];
+  if (!legacyVersion) return [];
+  const historical = { ...spread, version: legacyVersion };
+  delete historical.capabilities;
+  return [historical];
+});
 
 /** Retired definitions retained only so historical locked draws remain resolvable. */
 export const legacySpreads: readonly Spread[] = [
@@ -993,6 +1010,7 @@ export const legacySpreads: readonly Spread[] = [
       position("direction", "Direction", 2, 2, 0),
     ],
   },
+  ...capabilityLegacySpreads,
 ];
 
 export const allSpreads: readonly Spread[] = [...spreads, ...legacySpreads];

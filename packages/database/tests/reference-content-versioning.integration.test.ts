@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   DECK_VERSION,
+  legacySpreads,
   spreads,
   TAROT_CONTENT_VERSION,
   tarotCards,
@@ -96,6 +97,42 @@ describeDatabase("immutable reference-content releases", () => {
         and content_version = ${TAROT_CONTENT_VERSION}`;
 
     expect(storedMeaning?.payload.reversalFacets).toEqual(expectedCard?.reversalFacets);
+  });
+
+  it("activates only current deck and spread releases with matching runtime controls", async () => {
+    if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const [activeDeck] = await sql<{ count: number; version: string | null }[]>`
+      select count(*)::integer as count, min(version) as version from decks where active`;
+    expect(activeDeck).toEqual({ count: 1, version: DECK_VERSION });
+
+    for (const spread of spreads) {
+      const [release] = await sql<{ active: boolean }[]>`
+        select active from spreads where id = ${spread.id} and version = ${spread.version}`;
+      expect(release?.active).toBe(true);
+    }
+    for (const spread of legacySpreads) {
+      const [release] = await sql<{ active: boolean }[]>`
+        select active from spreads where id = ${spread.id} and version = ${spread.version}`;
+      expect(release?.active).toBe(false);
+    }
+
+    const published = await sql<
+      { domain: string; version: number; payload: Record<string, unknown> }[]
+    >`
+      select domain, version, payload from runtime_configuration_versions
+      where status = 'published' and domain in ('content', 'prompts') order by domain`;
+    expect(published).toEqual([
+      expect.objectContaining({
+        domain: "content",
+        version: 2,
+        payload: expect.objectContaining({ deckVersion: DECK_VERSION }),
+      }),
+      expect.objectContaining({
+        domain: "prompts",
+        version: 2,
+        payload: expect.objectContaining({ bundleId: "reader-voice-v5" }),
+      }),
+    ]);
   });
 
   it("reruns the real seed without overwriting or colliding with the historical release", async () => {

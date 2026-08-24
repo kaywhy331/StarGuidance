@@ -241,7 +241,7 @@ export async function getRuntimeConfiguration(): Promise<RuntimeConfiguration> {
     client<ActiveControlRow[]>`
       select 'deck'::text as target_type, version as target_id from decks where active
       union all
-      select 'spread'::text, id from spreads group by id having bool_and(active)
+      select 'spread'::text, id from spreads where active group by id
       union all
       select 'product'::text, id from products where active
     `,
