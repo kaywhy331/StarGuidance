@@ -30,10 +30,20 @@ test("a visitor completes a causal free reading before signup and continues with
 
   const spreadOptions = page.getByRole("radiogroup", { name: "Free reading type" });
   await expect(spreadOptions).toBeVisible();
-  const spreadBox = await spreadOptions.boundingBox();
-  const viewport = page.viewportSize();
-  if (!spreadBox || !viewport) throw new Error("The centered spread selector must be measurable.");
-  expect(Math.abs(spreadBox.x + spreadBox.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(3);
+  await expect
+    .poll(
+      async () => {
+        const spreadBox = await spreadOptions.boundingBox();
+        const viewport = page.viewportSize();
+        if (!spreadBox || !viewport) return Number.POSITIVE_INFINITY;
+        return Math.abs(spreadBox.x + spreadBox.width / 2 - viewport.width / 2);
+      },
+      {
+        message: "the spread selector settles on the horizontal viewport center",
+        timeout: 5_000,
+      },
+    )
+    .toBeLessThanOrEqual(3);
   await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Situation");
   await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Challenge");
   await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Direction");
