@@ -220,7 +220,9 @@ async function probeDatabase(): Promise<DatabaseStatus> {
       rlsReady: false,
       actorTransactionReady: false,
     };
-  const client = createDatabaseClient(databaseUrl);
+  // Readiness must not reserve a multi-connection pool of its own in a
+  // serverless function; it performs one query and one actor transaction.
+  const client = createDatabaseClient(databaseUrl, { max: 1, idleTimeoutSeconds: 2 });
   try {
     const [readiness] = await client.unsafe<{ schema_ready: boolean; rls_ready: boolean }[]>(`
       select

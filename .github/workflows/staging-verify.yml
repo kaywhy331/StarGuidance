@@ -20,7 +20,7 @@ on:
         required: true
         default: "https://deploy-preview-30--starguidance.netlify.app"
       confirm_staging:
-        description: "Type STAGING to confirm the target is non-production and this migration/test run is authorized"
+        description: "Type STAGING to verify, or CONFIGURE_PREVIEW for the temporary protected setup bridge"
         required: true
         default: ""
 
@@ -51,14 +51,190 @@ jobs:
 
       - name: Require explicit non-production staging confirmation
         run: |
-          if [ "${{ inputs.confirm_staging }}" != "STAGING" ]; then
-            echo "::error::confirm_staging must be the literal word STAGING."
+          case "${{ inputs.confirm_staging }}" in
+            STAGING|CONFIGURE_PREVIEW)
+              echo "Authorized non-production staging target confirmed by the operator."
+              ;;
+            *)
+              echo "::error::confirm_staging must be STAGING or CONFIGURE_PREVIEW."
+              exit 1
+              ;;
+          esac
+
+  # Temporary protected bridge. It converts the operator connection to the
+  # transaction-pooler port in memory, updates only Netlify's deploy-preview
+  # context, and provisions one confirmed non-production tester without mail.
+  # This job and both temporary bridge secrets are removed immediately after a
+  # successful run.
+  configure-preview:
+    needs: guard
+    if: inputs.confirm_staging == 'CONFIGURE_PREVIEW'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: starguidance-staging
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+      INTERPRETATION_WORKER_SECRET: ${{ secrets.INTERPRETATION_WORKER_SECRET }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: 79c8fce9-0a4b-4dee-b3f0-965c31478547
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      PREVIEW_APP_URL: ${{ inputs.preview_url }}
+      PROFILE_ENGINE_SHARED_SECRET: ${{ secrets.PROFILE_ENGINE_SHARED_SECRET }}
+      PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
+      READINESS_PROBE_SECRET: ${{ secrets.READINESS_PROBE_SECRET }}
+      STAGING_TEST_PASSWORD: ${{ secrets.STAGING_TEST_PASSWORD }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Validate protected values and derive preview connection
+        run: |
+          missing=""
+          for name in DATABASE_URL DATA_ENCRYPTION_KEY INTERPRETATION_WORKER_SECRET \
+                      NETLIFY_AUTH_TOKEN NEXT_PUBLIC_SUPABASE_ANON_KEY \
+                      NEXT_PUBLIC_SUPABASE_URL PROFILE_ENGINE_SHARED_SECRET \
+                      PROFILE_ENGINE_URL READINESS_PROBE_SECRET STAGING_TEST_PASSWORD \
+                      SUPABASE_SERVICE_ROLE_KEY; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing protected staging values by name:$missing"
             exit 1
           fi
-          echo "Authorized non-production staging target confirmed by the operator."
+          node <<'NODE'
+          const { appendFileSync } = require('node:fs');
+          const connection = new URL(process.env.DATABASE_URL);
+          if (!connection.hostname.endsWith('.pooler.supabase.com')) {
+            throw new Error('DATABASE_URL must use the Supabase pooler host');
+          }
+          if (connection.port !== '5432' && connection.port !== '6543') {
+            throw new Error('DATABASE_URL has an unsupported pooler port');
+          }
+          connection.port = '6543';
+          const value = connection.toString();
+          process.stdout.write(`::add-mask::${value}\n`);
+          appendFileSync(process.env.GITHUB_ENV, `PREVIEW_DATABASE_URL=${value}\n`);
+          NODE
+          echo "Protected values validated; transaction-pooler preview connection derived."
+
+      - name: Install the pinned Netlify CLI
+        run: npm install --global netlify-cli@27.0.2
+
+      - name: Configure only the deploy-preview context
+        run: |
+          set_secret() {
+            name="$1"
+            value="$2"
+            netlify env:set "$name" "$value" \
+              --context deploy-preview \
+              --secret --force --site "$NETLIFY_SITE_ID" >/dev/null
+          }
+          set_public() {
+            name="$1"
+            netlify env:set "$name" "${!name}" \
+              --context deploy-preview \
+              --force --site "$NETLIFY_SITE_ID" >/dev/null
+          }
+
+          set_secret DATABASE_URL "$PREVIEW_DATABASE_URL"
+          for name in DATA_ENCRYPTION_KEY INTERPRETATION_WORKER_SECRET \
+                      PROFILE_ENGINE_SHARED_SECRET READINESS_PROBE_SECRET \
+                      SUPABASE_SERVICE_ROLE_KEY; do
+            set_secret "$name" "${!name}"
+          done
+          for name in NEXT_PUBLIC_SUPABASE_ANON_KEY NEXT_PUBLIC_SUPABASE_URL \
+                      PROFILE_ENGINE_URL; do
+            set_public "$name"
+          done
+          netlify env:set NEXT_PUBLIC_APP_URL "$PREVIEW_APP_URL" \
+            --context deploy-preview \
+            --force --site "$NETLIFY_SITE_ID" >/dev/null
+          netlify env:set APP_ENV staging --context deploy-preview --force \
+            --site "$NETLIFY_SITE_ID" >/dev/null
+          netlify env:set RUNTIME_ADAPTER supabase --context deploy-preview --force \
+            --site "$NETLIFY_SITE_ID" >/dev/null
+          netlify env:set ALLOW_LOCAL_RUNTIME_ADAPTER false --context deploy-preview --force \
+            --site "$NETLIFY_SITE_ID" >/dev/null
+          echo "Protected values synchronized to the deploy-preview context by name only."
+
+      - name: Provision and verify the temporary staging tester
+        run: |
+          node <<'NODE'
+          const email = 'sg-tester-preview30@starguidance.test';
+          const password = process.env.STAGING_TEST_PASSWORD;
+          const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, '');
+          const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+          process.stdout.write(`::add-mask::${email}\n::add-mask::${password}\n`);
+          if (password.length < 12 || password.length > 72) {
+            throw new Error('STAGING_TEST_PASSWORD must contain 12 to 72 characters');
+          }
+          const adminHeaders = {
+            apikey: serviceKey,
+            authorization: `Bearer ${serviceKey}`,
+            'content-type': 'application/json',
+          };
+          const acceptedAt = new Date().toISOString();
+          const appMetadata = {
+            starguidance_display_name: 'Staging Tester',
+            starguidance_policy_consents: [
+              { policy: 'terms', version: 'terms-beta-2026-08-21', acceptedAt },
+              { policy: 'privacy', version: 'privacy-beta-2026-08-21', acceptedAt },
+              { policy: 'age-eligibility', version: 'age-18-beta-2026-08-05', acceptedAt },
+            ],
+          };
+
+          async function request(path, init = {}) {
+            const response = await fetch(`${baseUrl}${path}`, init);
+            if (!response.ok) throw new Error(`Supabase staging request failed with status ${response.status}`);
+            return response;
+          }
+
+          async function findExisting() {
+            for (let page = 1; page <= 20; page += 1) {
+              const response = await request(`/auth/v1/admin/users?page=${page}&per_page=200`, {
+                headers: adminHeaders,
+              });
+              const users = (await response.json()).users ?? [];
+              const existing = users.find((user) => user.email?.toLowerCase() === email);
+              if (existing) return existing;
+              if (users.length < 200) return undefined;
+            }
+            return undefined;
+          }
+
+          const existing = await findExisting();
+          const payload = {
+            email,
+            password,
+            email_confirm: true,
+            app_metadata: { ...(existing?.app_metadata ?? {}), ...appMetadata },
+          };
+          await request(existing ? `/auth/v1/admin/users/${existing.id}` : '/auth/v1/admin/users', {
+            method: existing ? 'PUT' : 'POST',
+            headers: adminHeaders,
+            body: JSON.stringify(payload),
+          });
+          const tokenResponse = await request('/auth/v1/token?grant_type=password', {
+            method: 'POST',
+            headers: { apikey: anonKey, 'content-type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+          const session = await tokenResponse.json();
+          if (!session.access_token || !session.refresh_token) {
+            throw new Error('Password grant returned an incomplete staging session');
+          }
+          console.log('Confirmed staging tester provisioned and password grant verified.');
+          NODE
 
   verify:
     needs: guard
+    if: inputs.confirm_staging == 'STAGING'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: starguidance-staging
