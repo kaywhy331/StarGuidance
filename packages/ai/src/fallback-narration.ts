@@ -27,6 +27,8 @@ function focusFor(question: string, subject: QuestionSubject): string {
     if (matches(/\b(salary|pay|income)\b/i)) return "your compensation";
     if (matches(/\bbusiness\b/i)) return "the business decision";
     if (matches(/\bproject\b/i)) return "the project";
+    if (matches(/\b(next step|first step|direction|what comes next|move forward)\b/i))
+      return "the next step in your work";
     return "your work situation";
   }
   if (subject === "relationship") {
@@ -142,28 +144,55 @@ export function openingNarration(
   );
   const support =
     otherCurrent ?? resolved.find((entry) => entry.position.id !== answer.position.id);
-  const lean =
-    answer.orientation === "upright"
-      ? "leans toward movement, but only where the opportunity is met with real participation"
-      : "leans toward delay or revision rather than a clean, final no";
-
   const lead =
     frame.mode === "decision"
-      ? `The short answer about ${frame.focus} is that this is not a simple yes or no. The spread ${lean}.`
+      ? `The short answer about ${frame.focus} is that this is not a simple yes or no. ${card} makes ${cardMeaning} the condition that decides whether the choice is workable.`
       : frame.mode === "forecast"
-        ? `The short answer about ${frame.focus} is that the outcome is not fully settled yet. The spread ${lean}.`
+        ? `The short answer about ${frame.focus} is that the outcome is not fully settled. ${card} suggests the next development depends on ${cardMeaning}.`
         : frame.mode === "process"
-          ? `The heart of ${frame.focus} is not a lack of effort. It is knowing what deserves more of you and what has reached its limit.`
+          ? `For ${frame.focus}, the spread points away from trying to solve the whole future at once. The next useful move begins with ${cardMeaning}, which is why ${card} matters so much here.`
           : frame.mode === "general"
-            ? `The first thing I notice is a shift between what has been held in place and what is ready to move.`
-            : `What the spread says most clearly about ${frame.focus} is that the real issue sits underneath the obvious one.`;
+            ? `The first thing I notice is a shift between what has been held in place and what is ready to move. ${card} puts that shift in the language of ${cardMeaning}.`
+            : `What the spread says most clearly about ${frame.focus} is that ${cardMeaning} is the part not to overlook. ${card} puts that issue at the center of the answer.`;
 
   const supportingLine = support
     ? `And because ${namedCard(support)} brings in ${meaning(support)}, the answer depends as much on what is happening now as on what you hope happens next.`
     : "";
-  return `${lead} ${card} carries the answer, and it points to ${cardMeaning}. ${supportingLine} ${directEvidence(frame, answer.orientation)}`
+  return `${lead} ${supportingLine} ${directEvidence(frame, answer.orientation)}`
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Reads the spread as one movement before the card-by-card support begins.
+ * This deliberately talks about the question and the relationship between
+ * positions; card glossary language belongs in the evidence drawer.
+ */
+export function overallPatternNarration(
+  resolved: readonly ResolvedCard[],
+  frame: QuestionFrame,
+): string {
+  const [first, second, third] = resolved;
+  if (!first) return `The spread keeps ${frame.focus} open rather than forcing a conclusion.`;
+  if (resolved.length === 1)
+    return `${namedCard(first, true)} keeps the reading concentrated on ${meaning(first)}. For ${frame.focus}, that makes one issue more important than collecting more possibilities: whether this pattern is visible in what is actually happening now.`;
+
+  const situation = resolved.find(({ position }) =>
+    /situation|present|current|foundation/i.test(`${position.id} ${position.displayName}`),
+  );
+  const challenge = resolved.find(({ position }) =>
+    /challenge|obstacle|cross|pressure/i.test(`${position.id} ${position.displayName}`),
+  );
+  const direction = resolved.find(({ position }) =>
+    /direction|outcome|leverage|resolution|action/i.test(`${position.id} ${position.displayName}`),
+  );
+  if (situation && challenge && direction)
+    return `There is a clear turn in this spread. ${namedCard(situation, true)} describes what is already active around ${frame.focus}; ${namedCard(challenge)} shows why it has not moved cleanly; and ${namedCard(direction)} changes the question from “what will happen?” to “what response gives this somewhere honest to go?”`;
+
+  if (first && second && third)
+    return `The spread moves from ${meaning(first)}, through ${meaning(second)}, and toward ${meaning(third)}. The important thing about ${frame.focus} is the change between those states, not any one card read in isolation.`;
+
+  return `${namedCard(first, true)} establishes ${meaning(first)}, while the rest of the spread tests what supports it, what resists it, and what remains within your influence around ${frame.focus}.`;
 }
 
 const matrixPositionOpeners: Readonly<Record<string, string>> = {
@@ -225,7 +254,7 @@ function positionConnection(entry: ResolvedCard, frame: QuestionFrame): string {
   if (/challenge|obstacle|cross|block/.test(position))
     return "This is the difficulty to work with directly rather than the part to explain away.";
   if (/future|incoming|outcome|direction|ahead/.test(position))
-    return `This is a conditional next step for ${frame.focus}, and it changes if the present pattern changes.`;
+    return `This is conditional guidance for ${frame.focus}, and it changes if the present pattern changes.`;
   if (/external|environment|surround/.test(position))
     return "Because this sits outside your control, let visible behavior carry more weight than speculation.";
   if (/strength|leverage|support|advice|resolution|action/.test(position))
@@ -246,8 +275,14 @@ function observableSignal(entry: ResolvedCard, frame: QuestionFrame, guarded: bo
     return "In the relationship, look for this in practical support, consistency, and effort that can actually be felt.";
   if (frame.subject === "relationship" && entry.card.suit === "wands")
     return "In the relationship, look for this in initiative, attraction, and whether enthusiasm becomes follow-through.";
-  if (entry.card.arcana === "major")
-    return "You are likely to recognize it through a larger change in priorities, authority, or direction.";
+  if (entry.card.arcana === "major") {
+    const position = `${entry.position.id} ${entry.position.displayName}`.toLowerCase();
+    if (/challenge|obstacle|cross|pressure/.test(position))
+      return "Here, notice what remains unspoken, repeatedly delayed, or difficult to verify; that is where the larger pattern is exerting pressure.";
+    if (/future|incoming|outcome|direction|ahead|leverage/.test(position))
+      return "You will know this is becoming real when it changes a priority, boundary, or explicit decision—not only how the situation feels.";
+    return "Look for evidence in the decisions already being made, the boundaries being enforced, and the direction receiving real support.";
+  }
   return {
     pentacles: "Look for it in money, workload, resources, or consistent follow-through.",
     swords:
@@ -306,8 +341,16 @@ export function turningPointNarration(
 ): string {
   const pressure =
     resolved.find(
+      (entry) =>
+        entry.position.id !== answer.position.id &&
+        /challenge|obstacle|cross|pressure/i.test(
+          `${entry.position.id} ${entry.position.displayName}`,
+        ),
+    ) ??
+    resolved.find(
       (entry) => entry.position.id !== answer.position.id && entry.orientation === "reversed",
-    ) ?? resolved.find((entry) => entry.position.id !== answer.position.id);
+    ) ??
+    resolved.find((entry) => entry.position.id !== answer.position.id);
   const personal = naturalTrait(trait);
   if (!pressure) {
     return `The turning point is quieter than a dramatic event. It comes when ${turningAction(frame.subject)}. ${directEvidence(frame, answer.orientation)}`;
@@ -361,7 +404,8 @@ export function likelyNarration(
     wellbeing: "your energy responding to a boundary or routine that actually changes",
     general: "one observable action making the direction easier to read",
   }[frame.subject];
-  return `${frame.horizonLead}, I think you're going to notice ${firstSign}. If the current pattern continues, the clearest trajectory for ${frame.focus} is ${subjectTrajectory(frame, answer.orientation === "upright")}. ${supportLine} This is the strongest line in the spread, but it remains conditional on what happens next.`;
+  const horizon = frame.horizonLead.replace(/^[A-Z]/, (letter) => letter.toLowerCase());
+  return `Under present conditions, ${horizon}, I think you're going to notice ${firstSign}. If the current pattern continues, the clearest trajectory for ${frame.focus} is ${subjectTrajectory(frame, answer.orientation === "upright")}. ${supportLine} This is the strongest line in the spread, but it remains conditional on what happens next.`;
 }
 
 function alternateAction(subject: QuestionSubject): string {

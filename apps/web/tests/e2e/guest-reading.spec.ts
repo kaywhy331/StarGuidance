@@ -99,6 +99,11 @@ test("a visitor completes a causal free reading before signup and continues with
   const signupGate = page.getByTestId("guest-signup-gate");
   await expect(completeStory).toBeVisible({ timeout: 20_000 });
   await expect(completeStory.locator("header > p:last-child")).toHaveText(/\S/);
+  await expect(completeStory.locator("header > p:last-child")).toContainText(
+    "the next step in your work",
+  );
+  await expect(completeStory).not.toContainText("whose function is");
+  await expect(completeStory).not.toContainText("current pattern begins with");
   await expect(signupGate).toBeVisible();
   const readingBox = await readingJourney.boundingBox();
   const signupBox = await signupGate.boundingBox();

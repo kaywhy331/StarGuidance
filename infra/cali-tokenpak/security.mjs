@@ -48,6 +48,11 @@ const REVIEWED_PROMPT_HASHES = new Map([
   ["8a51d144fbadc1bce8ed7a7dc4f420e359f7e92d6ae16ea42191299be1755db6", READING_SCHEMA_NAME],
   ["aa564249169f94d34e3b0d98eea1c497d9f5933e73c6ae81a64cf3a26bd8ce02", FOLLOW_UP_SCHEMA_NAME],
   ["6f8de98b9f3294356e39b49497e54c7d47b883000d5544d5e47c26047d04401b", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v6 question-led reading, guarded reading, follow-up, and guarded follow-up.
+  ["cfbb2ab1409739336db8581263069c14aed57cbc2935933a224824fc71db8c4f", READING_SCHEMA_NAME],
+  ["f03c5ffe9e3ac2f0bac84c430b38f4c073ce2c11fa31dd7726713ef1fdee1aee", READING_SCHEMA_NAME],
+  ["de963a0e4bda0467f071eef984fe93fb99dbc7832e490a3051b18763cf9d00a1", FOLLOW_UP_SCHEMA_NAME],
+  ["705626fccb0e264a58cb730aa50ce5838481ad56604abee4c8f0e49b2595d709", FOLLOW_UP_SCHEMA_NAME],
 ]);
 const SPREAD_POSITIONS = new Map([
   ["one-card", ["card-1"]],
