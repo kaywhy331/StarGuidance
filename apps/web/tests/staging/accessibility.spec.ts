@@ -328,7 +328,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
       .click();
     const action = page.locator(".guided-next-action");
     await expect(action).toBeVisible();
-    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    const finalCard = (await action.textContent())?.includes("Open the complete reading") === true;
     await action.click();
     if (finalCard) break;
   }
