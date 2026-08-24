@@ -6,7 +6,11 @@ import { expect, test } from "@playwright/test";
 
 import { calculationSchema } from "../../src/lib/profile-engine-contract";
 import { assertServiceBaseUrl } from "../../src/lib/service-url";
-import { SYNTHETIC_EMAIL_DOMAIN, SYNTHETIC_EMAIL_PREFIX } from "./synthetic-auth";
+import {
+  signupActionPreservesRedirect,
+  SYNTHETIC_EMAIL_DOMAIN,
+  SYNTHETIC_EMAIL_PREFIX,
+} from "./synthetic-auth";
 
 /**
  * Probes the deployed dependencies of the staging preview. Only hostnames-free
@@ -244,6 +248,26 @@ test("password authentication and account callbacks fail closed", async ({ reque
   expect(rejectedCleanly, "invalid credentials fail closed without disclosure").toBe(true);
   expect(failsClosed, "invalid code fails closed").toBe(true);
   expect(missingClosed, "absent code fails closed").toBe(true);
+});
+
+test("Supabase preserves the deployed signup callback", async () => {
+  const callback = new URL(
+    "/auth/callback?next=%2Fonboarding",
+    String(test.info().project.use.baseURL),
+  ).toString();
+  const callbackPreserved = await signupActionPreservesRedirect(callback);
+
+  record({
+    section: "Auth callback",
+    check: "Supabase accepts the deployed signup callback",
+    status: callbackPreserved ? "pass" : "fail",
+    detail: callbackPreserved
+      ? "the generated action retained the requested same-site callback"
+      : "the provider substituted a different callback; review Auth URL Configuration",
+  });
+  expect(callbackPreserved, "Supabase Auth redirect allowlist accepts the deployed callback").toBe(
+    true,
+  );
 });
 
 test("the background-jobs drain route rejects bad tokens and reports both queue depths for a good one", async ({
