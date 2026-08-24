@@ -1375,7 +1375,10 @@ export function GuestReadingExperience({
         {(state.matches("followUpAvailable") || state.matches("complete")) &&
         journeyComplete &&
         reading ? (
-          <section className="guest-conversion-card" data-testid="guest-signup-gate">
+          <section
+            className="guest-conversion-card guest-reading-result-gate"
+            data-testid="guest-signup-gate"
+          >
             <p className="page-eyebrow">Your reading is complete</p>
             <h2>Want to ask these same cards one follow-up?</h2>
             <p>
