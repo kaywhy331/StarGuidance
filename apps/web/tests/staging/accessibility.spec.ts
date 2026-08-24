@@ -356,7 +356,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
   await expect(page.getByText(`${passageCount} of ${passageCount}`, { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
-  await expect(page.getByTestId("reading-integration")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Before you leave the cards" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Ask the same cards/ })).toBeEnabled();
   await page.getByRole("button", { name: /Ask the same cards/ }).click();
   await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();
