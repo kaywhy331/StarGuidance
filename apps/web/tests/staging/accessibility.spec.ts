@@ -309,11 +309,16 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   // Reveal remains an intentional action (UX-006). Shorten decorative timing
   // and drive the same centered ready/next sequence through accessible controls.
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
-  await page
-    .getByRole("button", { name: "Gather now", exact: true })
-    .dispatchEvent("click")
-    .catch(() => {});
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  const sanctuary = page.getByTestId("mystic-sanctuary-scene");
+  await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
+  // Reduced motion advances the deal without exposing the transient Gather now
+  // control. The ritual phase is the stable boundary for an actionable spread.
+  await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
+    timeout: 20_000,
+  });
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 12_000 });
   await page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ }).click();
   for (let index = 0; index < 10; index += 1) {

@@ -588,11 +588,14 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   // Use the same centered reader-controlled reveal path while shortening its
   // decorative timing for the staging integrity probe.
   const motionControl = pageA.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
-  await pageA
-    .getByRole("button", { name: "Gather now", exact: true })
-    .dispatchEvent("click")
-    .catch(() => {});
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  const sanctuary = pageA.getByTestId("mystic-sanctuary-scene");
+  await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
+  await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
+    timeout: 20_000,
+  });
   await expect(pageA.getByTestId("question-reflection")).toBeVisible({ timeout: 12_000 });
   await pageA.getByRole("button", { name: "I’m ready", exact: true }).click();
   for (let index = 0; index < 10; index += 1) {
