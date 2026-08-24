@@ -30,10 +30,17 @@ function fromRow(row: ReportJobRow): ClaimedReportJob {
   };
 }
 
+/**
+ * Production workers omit `scope` and drain the global queue. Credentialed
+ * integration tests supply their synthetic report ID so verification never
+ * leases retained beta work from another account.
+ */
 export async function claimReportJobs(
   client: DatabaseClient | DatabaseTransaction,
   limit: number,
+  scope?: { reportId: string },
 ): Promise<ClaimedReportJob[]> {
+  const scopedReportId = scope?.reportId ?? null;
   const rows = await client<ReportJobRow[]>`
     with claimed as (
       select id from report_jobs
@@ -42,6 +49,7 @@ export async function claimReportJobs(
           (status = 'pending' and available_at <= now())
           or (status = 'processing' and lock_expires_at < now())
         )
+        and (${scopedReportId}::uuid is null or report_id = ${scopedReportId}::uuid)
       order by available_at
       limit ${limit}
       for update skip locked

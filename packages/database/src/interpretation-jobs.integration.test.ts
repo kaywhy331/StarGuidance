@@ -69,20 +69,19 @@ async function createReading(): Promise<string> {
   return readingId;
 }
 
-async function claim(limit = 1): Promise<ClaimedInterpretationJob[]> {
-  return asWorker((tx) => claimInterpretationJobs(tx, limit));
+async function claim(limit = 1, readingId?: string): Promise<ClaimedInterpretationJob[]> {
+  return asWorker((tx) =>
+    claimInterpretationJobs(tx, limit, readingId ? { readingId } : undefined),
+  );
 }
 
 /**
- * Claims a large batch and picks out the one job this test cares about,
- * rather than assuming a claim returns exactly this test's job — every test
- * shares one interpretation_jobs table, so an earlier test's job can still be
- * sitting there pending/expired and would otherwise win the claim-query's
- * `order by available_at` ahead of a job created moments ago.
+ * Claims only the synthetic job this test owns. The integration target can
+ * contain retained beta jobs, so a test must never lease unrelated work just
+ * to find its own row in the global worker queue.
  */
 async function claimReading(readingId: string): Promise<ClaimedInterpretationJob> {
-  const claimed = await claim(50);
-  const job = claimed.find((candidate) => candidate.readingId === readingId);
+  const [job] = await claim(1, readingId);
   if (!job) throw new Error(`Expected a claimable job for reading ${readingId}`);
   return job;
 }
@@ -131,14 +130,14 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const claimed = await claimReading(readingId);
     expect(claimed.attemptCount).toBe(1);
-    const secondAttempt = await claim(50);
+    const secondAttempt = await claim(1, readingId);
     expect(secondAttempt.find((job) => job.readingId === readingId)).toBeUndefined();
   });
 
   it("serializes concurrent claims so exactly one caller gets a given job (FOR UPDATE SKIP LOCKED)", async () => {
     const readingId = await createReading();
     await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
-    const results = await Promise.all(Array.from({ length: 5 }, () => claim(1)));
+    const results = await Promise.all(Array.from({ length: 5 }, () => claim(1, readingId)));
     const winners = results.filter((jobs) => jobs.some((job) => job.readingId === readingId));
     expect(winners).toHaveLength(1);
   });
@@ -224,7 +223,9 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
       (tx) => tx`select status from interpretation_jobs where id = ${job.id}`,
     );
     expect(row?.status).toBe("failed");
-    expect((await claim(50)).find((candidate) => candidate.id === job.id)).toBeUndefined();
+    expect(
+      (await claim(1, readingId)).find((candidate) => candidate.id === job.id),
+    ).toBeUndefined();
   });
 
   it("writes the interpretation result and completes the job in one lifecycle", async () => {
@@ -380,14 +381,11 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
     await asUser((tx) => insertInterpretationJob(tx, { userId, readingId }));
     const before = await getInterpretationQueueStats(sql!);
     expect(before.depth).toBeGreaterThanOrEqual(1);
-    // claimReading claims up to 50 — everything currently claimable in the
-    // shared table, not just this test's row — and moves each into
-    // `processing` with a 2-minute lease. With well under 50 rows in play,
-    // that exhaustively drains the claimable set, so depth lands at exactly
-    // zero rather than merely one less than `before`.
+    // The targeted test claim leases only this synthetic row. Existing beta
+    // backlog remains untouched and therefore remains part of both depths.
     await claimReading(readingId);
     const after = await getInterpretationQueueStats(sql!);
-    expect(after.depth).toBe(0);
+    expect(after.depth).toBe(before.depth - 1);
   });
 
   it("reports how long the oldest claimable job has been waiting", async () => {
@@ -409,6 +407,17 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
 
   it("prunes expired buckets and stale completed jobs, never failed or fresh rows", async () => {
     if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const failedReading = await createReading();
+    await asUser((tx) => insertInterpretationJob(tx, { userId, readingId: failedReading }));
+    await asWorker(
+      (tx) =>
+        tx`update interpretation_jobs set max_attempts = 1 where reading_id = ${failedReading}`,
+    );
+    const failedJob = await claimReading(failedReading);
+    expect(
+      await asWorker((tx) => failInterpretationJob(tx, failedJob, "retained-failure")),
+    ).toEqual({ terminal: true, applied: true });
+
     const staleReading = await createReading();
     await asUser((tx) => insertInterpretationJob(tx, { userId, readingId: staleReading }));
     const staleJob = await claimReading(staleReading);
@@ -435,11 +444,12 @@ describeDatabase("Postgres-backed interpretation jobs", () => {
       const [fresh] = await sql`
         select count(*)::int as count from interpretation_jobs where id = ${freshJob.id}`;
       expect(fresh?.count).toBe(1);
-      // The terminal failure the backoff test left behind is the dead-letter
-      // record — pruning must never touch status='failed'.
+      // This test owns its dead-letter record and does not depend on a prior
+      // test leaving one behind.
       const [failed] = await sql`
-        select count(*)::int as count from interpretation_jobs where status = 'failed'`;
-      expect(failed?.count).toBeGreaterThanOrEqual(1);
+        select count(*)::int as count from interpretation_jobs
+        where id = ${failedJob.id} and status = 'failed'`;
+      expect(failed?.count).toBe(1);
       const buckets = await sql`
         select key_hash from rate_limit_buckets where key_hash like 'prune-test-%'`;
       expect(buckets.map((row) => row.key_hash)).toEqual(["prune-test-live"]);
