@@ -3,7 +3,7 @@ name: Staging verification
 # Credential-gated verification of the owner-managed Supabase staging project.
 #
 # This workflow never runs automatically. It is restricted to the current
-# release-candidate branch, runs only against the protected `starguidance-staging`
+# stacked staging branch, runs only against the protected `starguidance-staging`
 # environment, and publishes a single redacted Markdown summary. Secret values
 # are read into step environments and are never printed, echoed, or uploaded.
 #
@@ -18,9 +18,9 @@ on:
       preview_url:
         description: "Deploy preview to verify"
         required: true
-        default: "https://deploy-preview-19--starguidance.netlify.app"
+        default: "https://deploy-preview-30--starguidance.netlify.app"
       confirm_staging:
-        description: "Type STAGING to confirm the target is non-production and this migration/test run is authorized"
+        description: "Type STAGING to verify, or CONFIGURE_PREVIEW for the one-time credential bridge"
         required: true
         default: ""
 
@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ALLOWED_REF: agent/starguidance-immersive-ux
+  ALLOWED_REF: agent/starguidance-supabase-staging
 
 jobs:
   # Runs without the protected environment so an unapproved ref is rejected
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Refuse any ref other than the release-candidate branch
+      - name: Refuse any ref other than the stacked staging branch
         run: |
           if [ "${{ github.ref_name }}" != "$ALLOWED_REF" ]; then
             echo "::error::Refusing to run against '${{ github.ref_name }}'. Only $ALLOWED_REF is permitted."
@@ -51,14 +51,109 @@ jobs:
 
       - name: Require explicit non-production staging confirmation
         run: |
-          if [ "${{ inputs.confirm_staging }}" != "STAGING" ]; then
-            echo "::error::confirm_staging must be the literal word STAGING."
+          case "${{ inputs.confirm_staging }}" in
+            STAGING|CONFIGURE_PREVIEW)
+              echo "Authorized non-production staging target confirmed by the operator."
+              ;;
+            *)
+              echo "::error::confirm_staging must be STAGING or CONFIGURE_PREVIEW."
+              exit 1
+              ;;
+          esac
+
+  # Temporary, protected bridge used once to copy the owner-managed staging
+  # credentials into Netlify's deploy-preview context. Production is never
+  # selected or changed. This job and its temporary auth secret are removed
+  # immediately after a successful sync.
+  configure-preview:
+    needs: guard
+    if: inputs.confirm_staging == 'CONFIGURE_PREVIEW'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: starguidance-staging
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+      INTERPRETATION_WORKER_SECRET: ${{ secrets.INTERPRETATION_WORKER_SECRET }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: 79c8fce9-0a4b-4dee-b3f0-965c31478547
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      PREVIEW_APP_URL: ${{ inputs.preview_url }}
+      PROFILE_ENGINE_SHARED_SECRET: ${{ secrets.PROFILE_ENGINE_SHARED_SECRET }}
+      PROFILE_ENGINE_URL: ${{ vars.PROFILE_ENGINE_URL }}
+      READINESS_PROBE_SECRET: ${{ secrets.READINESS_PROBE_SECRET }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Validate required values without displaying them
+        run: |
+          missing=""
+          for name in DATABASE_URL DATA_ENCRYPTION_KEY INTERPRETATION_WORKER_SECRET \
+                      NETLIFY_AUTH_TOKEN NEXT_PUBLIC_SUPABASE_ANON_KEY \
+                      NEXT_PUBLIC_SUPABASE_URL PROFILE_ENGINE_SHARED_SECRET \
+                      PROFILE_ENGINE_URL READINESS_PROBE_SECRET SUPABASE_SERVICE_ROLE_KEY; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing protected staging values by name:$missing"
             exit 1
           fi
-          echo "Authorized non-production staging target confirmed by the operator."
+          case "$NEXT_PUBLIC_SUPABASE_URL" in https://*) ;; *) exit 1 ;; esac
+          case "$PROFILE_ENGINE_URL" in https://*) ;; *) exit 1 ;; esac
+          case "$NEXT_PUBLIC_SUPABASE_ANON_KEY" in
+            eyJ*.*.*|sb_publishable_*) ;;
+            *) echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY has an unsupported shape."; exit 1 ;;
+          esac
+
+      - name: Install the pinned Netlify CLI
+        run: npm install --global netlify-cli@27.0.2
+
+      - name: Configure only the deploy-preview context
+        run: |
+          set_secret() {
+            name="$1"
+            netlify env:set "$name" "${!name}" \
+              --context deploy-preview \
+              --scope builds functions runtime \
+              --secret --force --site "$NETLIFY_SITE_ID" >/dev/null
+          }
+          set_public() {
+            name="$1"
+            netlify env:set "$name" "${!name}" \
+              --context deploy-preview \
+              --scope builds functions post-processing runtime \
+              --force --site "$NETLIFY_SITE_ID" >/dev/null
+          }
+
+          for name in DATABASE_URL DATA_ENCRYPTION_KEY INTERPRETATION_WORKER_SECRET \
+                      PROFILE_ENGINE_SHARED_SECRET READINESS_PROBE_SECRET \
+                      SUPABASE_SERVICE_ROLE_KEY; do
+            set_secret "$name"
+          done
+          for name in NEXT_PUBLIC_SUPABASE_ANON_KEY NEXT_PUBLIC_SUPABASE_URL \
+                      PROFILE_ENGINE_URL; do
+            set_public "$name"
+          done
+          netlify env:set NEXT_PUBLIC_APP_URL "$PREVIEW_APP_URL" \
+            --context deploy-preview \
+            --scope builds functions post-processing runtime \
+            --force --site "$NETLIFY_SITE_ID" >/dev/null
+          netlify env:set APP_ENV staging --context deploy-preview --force \
+            --site "$NETLIFY_SITE_ID" >/dev/null
+          netlify env:set RUNTIME_ADAPTER supabase --context deploy-preview --force \
+            --site "$NETLIFY_SITE_ID" >/dev/null
+          netlify env:set ALLOW_LOCAL_RUNTIME_ADAPTER false --context deploy-preview --force \
+            --site "$NETLIFY_SITE_ID" >/dev/null
+          echo "Protected staging values were synchronized to the deploy-preview context by name only."
 
   verify:
     needs: guard
+    if: inputs.confirm_staging == 'STAGING'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: starguidance-staging
