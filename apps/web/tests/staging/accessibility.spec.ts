@@ -335,9 +335,6 @@ test("critical deployed flows pass automated WCAG rules", async () => {
 
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 60_000 });
   await scan("revealed result");
-  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
-  await page.getByRole("button", { name: "Next reading passage" }).click();
-  await scan("card interpretation section");
   const journey = page.getByTestId("reading-journey");
   await expect(journey).toHaveAttribute("data-state", "complete", { timeout: 30_000 });
   const passageCount = Number(await journey.getAttribute("data-loaded-section-count"));
@@ -348,6 +345,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(guidedMode).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(journey).toHaveAttribute("data-reading-mode", "guided");
+  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
+  await page.getByRole("button", { name: "Next reading passage" }).click();
+  await scan("card interpretation section");
   const transcript = page.getByTestId("oracle-transcript");
   await transcript.focus();
   await expect(transcript).toBeFocused();
