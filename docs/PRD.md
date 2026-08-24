@@ -35,7 +35,7 @@ Prepared for Kevin
 ## Executive summary
 The product delivers immersive tarot readings personalized by a private birth profile assembled from Western astrology (Whole Sign and Placidus), Pythagorean numerology, BaZi Four Pillars, Dreamspell Galactic Signature, Nine Star Ki, and planetary-angularity mapping. The profile is not displayed in the standard tarot experience; it is converted into a compact plain-language personality lens used to emphasize relevant card meanings. Users may later purchase a detailed profile report that reveals supported underlying systems and cross-system synthesis.
 
-The user experience remains simple on the surface: choose **Free Reading** to experience one profile-free deterministic ritual before signup, or choose **Sign up** to begin the private profile journey immediately. A guest who wants to ask the same cards a follow-up creates or enters an account without triggering a redraw. Behind that surface, guest entitlements, calculations, random card selection, AI interpretation, privacy controls, content versioning, and payment fulfillment are separated so each can be tested and audited.
+The user experience remains simple on the surface: choose **Free Reading** to experience one birthday-enhanced deterministic ritual before signup, or choose **Sign up** to begin the private profile journey immediately. The guest birthday is processed transiently into a minimized stable-date lens; no guest profile is created and the raw date is omitted from the encrypted reading receipt. A guest who wants to ask the same cards a follow-up creates or enters an account without triggering a redraw. Behind that surface, guest entitlements, calculations, random card selection, AI interpretation, privacy controls, content versioning, and payment fulfillment are separated so each can be tested and audited.
 
 > **Non-negotiable architecture rule**
 >
@@ -45,7 +45,7 @@ The user experience remains simple on the surface: choose **Free Reading** to ex
 - **Required profile inputs:** full birth name and date of birth.
 - **Optional enhancement inputs:** a free-text birth city/country and a single birth-time field.
 - **Private personalization:** the base reading uses plain-language traits without showing placements, numbers, pillars, or signature labels.
-- **Try-before-account entry:** one profile-free deterministic reading is available before signup; follow-up and saved/personalized experiences require an account.
+- **Try-before-account entry:** one birthday-enhanced deterministic reading is available before signup; the birthday supplies only a transient minimized lens, while follow-up and saved full-profile experiences require an account.
 - **Tarot integrity:** the profile affects interpretation, never card selection.
 - **MVP readings:** 1-card Focus, 3-card Direction, 5-card Crossroads, and 7-card Deeper Outlook.
 - **Immersive experience:** full-screen shuffle, automatic deal, user-controlled flips, progressive spoken-paced passages, and final integration.
@@ -159,12 +159,12 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | DEC-012 | Dreamspell terminology and artwork will be original or properly licensed. | Required |
 | DEC-013 | Paid readings may use public-domain/historical calculation methods with original interpretation, but proprietary modern chart systems, branding, tables, and teaching content require written commercial permission before software activation. | Owner-directed / required |
 | DEC-014 | Systems whose owners forbid the intended hosted/report use are omitted rather than shipped as disabled branded components. Nine Star Ki uses local versioned mathematics, an explicit third-star convention, and original prose/assets only. | Owner-directed / required |
-| DEC-015 | Landing entry offers **Free Reading** and **Sign up**. The guest lane allows one browser-marked, profile-free deterministic reading; signup/sign-in unlocks a follow-up on the exact encrypted draw without silently saving the guest artifact. IP is only a privacy-minimized automation signal, not the entitlement identity. | Owner-directed / confirmed |
+| DEC-015 | Landing entry offers **Free Reading** and **Sign up**. The guest lane requires a birthday for one browser-marked, deterministic reading. The date is processed transiently into a minimized stable-date lens and omitted from the guest receipt; no anonymous profile is created. Signup/sign-in unlocks a follow-up on the exact encrypted draw without silently saving the guest artifact. IP is only a privacy-minimized automation signal, not the entitlement identity. | Owner-directed / confirmed |
 
 ## 3.2 MVP scope
 | **Included** | **Deferred / future** |
 | --- | --- |
-| Account, consent, private birth profile, profile completeness; one profile-free guest reading with account handoff | Guest personalized readings and anonymous profile storage |
+| Account, consent, private birth profile, profile completeness; one transient birthday-enhanced guest reading with account handoff | Anonymous profile storage and guest use of birth name, place, or time |
 | Western Whole Sign + Placidus, planetary angularity, numerology, BaZi, Dreamspell, and Nine Star Ki | Additional forecasting techniques, compatibility, and proprietary modern systems that do not permit the intended use |
 | One deck, four versioned spreads, upright/reversed | Deck marketplace, custom spreads, community decks |
 | Secure random draw, shuffle/deal/reveal, results, one follow-up | Unlimited chat, live readers, multiplayer/social features |
@@ -185,7 +185,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 
 ## 4.1 Primary journey
 
-The landing page presents two explicit choices: **Free Reading** and **Sign up**. The account journey remains the full personalized path below. The guest path first accepts the current service/age acknowledgements, completes one deterministic one- or three-card ritual without birth data or an AI-provider call, and then offers signup/sign-in for a follow-up using the exact encrypted draw. The guest artifact is not saved to account history; future personalized/saved readings begin after onboarding.
+The landing page presents two explicit choices: **Free Reading** and **Sign up**. The account journey remains the full personalized path below. The guest path first accepts a required birthday and the current service/age acknowledgements, then completes one deterministic one- or three-card ritual without an AI-provider call. The private profile engine returns only stable date-derived statements; the browser-held reading receipt excludes the raw date. Signup/sign-in then offers a follow-up using the exact encrypted draw. The guest artifact is not saved to account history; future saved readings and full-profile personalization begin after onboarding.
 
 | **Step** | **User experience** | **System behavior** |
 | --- | --- | --- |
@@ -238,8 +238,8 @@ The landing page presents two explicit choices: **Free Reading** and **Sign up**
 ## 5.1 Account, consent, and identity
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **ACC-001** | Public visitors can view marketing pages, product explanations, pricing, privacy information, and complete one profile-free guest reading without an account. | **Must** | Public routes load without authentication; the guest lane requests no birth data, calls no live AI provider, returns no raw question, and does not create an anonymous database user or reading. |
-| **ACC-002** | An authenticated account is required before a user can create a private birth profile, save a reading, or purchase a report. | **Must** | Unauthenticated users are redirected to sign in; no birth data is persisted to an anonymous browser session. |
+| **ACC-001** | Public visitors can view marketing pages, product explanations, pricing, privacy information, and complete one birthday-enhanced guest reading without an account. | **Must** | Public routes load without authentication; the guest lane requires only a birthday, processes it transiently through the private profile engine, calls no live AI provider, returns no raw question or birth date in the reading receipt, and creates no anonymous database user, profile, or reading. |
+| **ACC-002** | An authenticated account is required before a user can create a private birth profile, save a reading, or purchase a report. | **Must** | Unauthenticated users are redirected to sign in; no raw guest birth data is persisted in browser storage or an anonymous database record. |
 | **ACC-003** | MVP authentication supports conventional email and password credentials. | **Must** | New users can register, returning users can sign in without an email link, passwords are 12–72 characters, account recovery is non-enumerating, and all flows provide actionable error states. |
 | **ACC-004** | Social sign-in is supported behind a feature flag. | **Should** | Google and/or Apple sign-in can be enabled without changing user or profile schemas. |
 | **ACC-005** | The account display name is separate from the encrypted birth name used for numerology. | **Must** | Reading UI uses the display name; the birth name is never used as the public-facing account label. |
@@ -672,7 +672,7 @@ Every claim must be traceable to one or more card/position tuples, an approved r
 | POST /readings/{id}/draw | Session ID + deck/spread versions | Locked draw; idempotent; no profile input |
 | POST /readings/{id}/generate | Locked draw + curated meanings + compact lens + question | Validated structured result or deterministic fallback |
 | POST /readings/{id}/follow-up | Original context + one follow-up question | Child structured response; no redraw |
-| POST /guest-readings | Guest question/classification + one- or three-card spread + acknowledgements | CSPRNG locked deterministic reading + encrypted seven-day handoff; no anonymous database row or AI call |
+| POST /guest-readings | Guest birthday + question/classification + one- or three-card spread + acknowledgements | Transient stable-date lens + CSPRNG locked deterministic reading + encrypted seven-day handoff without the raw date; no anonymous database row or AI call |
 | POST /guest-readings/continue | Authenticated user + encrypted handoff + optional follow-up | Exact draw recovery or same-draw deterministic follow-up; no redraw |
 | POST /checkout/report | User + profile snapshot + product | Hosted checkout session |
 | POST /webhooks/payment | Signed provider event | Idempotent order, entitlement, and job transition |
