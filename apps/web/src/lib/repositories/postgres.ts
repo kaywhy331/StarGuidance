@@ -71,7 +71,13 @@ export function clientFor(databaseUrl: string): DatabaseClient {
   const clients = (globalDatabase.__starGuidancePostgresClients ??= new Map());
   const existing = clients.get(databaseUrl);
   if (existing) return existing;
-  const client = createDatabaseClient(databaseUrl);
+  // Every Netlify route can live in a separate serverless process, so keep the
+  // per-process pool bounded and return capacity promptly. Three connections
+  // still let first-request provisioning run its independent profile/settings/
+  // consent reads in parallel without exceeding Netlify's request deadline;
+  // the deployment contract requires a transaction-pooler URL to multiplex
+  // these short-lived clients safely.
+  const client = createDatabaseClient(databaseUrl, { max: 3, idleTimeoutSeconds: 5 });
   clients.set(databaseUrl, client);
   return client;
 }

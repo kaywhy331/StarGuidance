@@ -94,7 +94,7 @@ describe("governed runtime configuration", () => {
         },
       ])
       .mockResolvedValueOnce([
-        { target_type: "deck", target_id: "starguidance-illustrated-v3" },
+        { target_type: "deck", target_id: "starguidance-illustrated-v4" },
         ...defaultRuntimeConfiguration().content.enabledSpreadIds.map((target_id) => ({
           target_type: "spread",
           target_id,
@@ -104,7 +104,7 @@ describe("governed runtime configuration", () => {
 
     const configuration = await getRuntimeConfiguration();
     const activeControlSql = (mocks.client.mock.calls[1]?.[0] as TemplateStringsArray).join(" ");
-    expect(activeControlSql).toContain("group by id having bool_and(active)");
+    expect(activeControlSql).toContain("from spreads where active group by id");
     expect(configuration.versions).toMatchObject({ prompts: 2, models: 4 });
     expect(interpretationRuntimeOptions(configuration)).toEqual({
       enabled: true,

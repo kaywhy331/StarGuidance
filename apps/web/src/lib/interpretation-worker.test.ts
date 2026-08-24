@@ -159,7 +159,7 @@ beforeEach(() => {
   );
   mocks.getRuntimeAdapter.mockReturnValue("supabase");
   mocks.getRuntimeConfiguration.mockResolvedValue({
-    content: { tarotContentVersion: "starguidance-original-v1" },
+    content: { tarotContentVersion: "starguidance-original-v2" },
     prompts: { safetyPolicyVersion: "question-safety-v2" },
   });
   mocks.getSystemDatabaseClient.mockReturnValue("synthetic-system-client");
@@ -222,7 +222,7 @@ describe("runInterpretationJobs", () => {
       provenance: {
         providerId: "synthetic-provider",
         promptVersion: "v1",
-        contentVersion: "starguidance-original-v1",
+        contentVersion: "starguidance-original-v2",
         safetyPolicyVersion: "question-safety-v2",
         schemaVersion: "v1",
       },

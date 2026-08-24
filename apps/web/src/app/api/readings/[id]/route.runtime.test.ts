@@ -58,7 +58,7 @@ import { POST } from "./route";
 const readingId = "00000000-0000-4000-8000-000000000912";
 const lockedDraw = {
   id: "00000000-0000-4000-8000-000000000913",
-  deckVersion: "starguidance-illustrated-v3",
+  deckVersion: "starguidance-illustrated-v4",
   spreadId: "one-card",
   spreadVersion: "one-card-v2",
   shuffleVersion: "fisher-yates-csprng-v1",
@@ -116,7 +116,7 @@ const originalResult = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getRuntimeConfiguration.mockResolvedValue({
-    content: { tarotContentVersion: "starguidance-original-v1" },
+    content: { tarotContentVersion: "starguidance-original-v2" },
     commerce: { followUpLimit: 3 },
     models: {
       liveAiEnabled: false,
@@ -189,7 +189,7 @@ describe("follow-up runtime controls", () => {
         outputProvenance: {
           providerId: "deterministic-fallback-v1",
           promptVersion: "deterministic-fallback-v3",
-          contentVersion: "starguidance-original-v1",
+          contentVersion: "starguidance-original-v2",
           safetyPolicyVersion: "question-safety-v2",
           schemaVersion: "follow-up-result-v1",
         },

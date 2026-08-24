@@ -166,6 +166,8 @@ test.afterAll(async () => {
 });
 
 test("critical deployed flows pass automated WCAG rules", async () => {
+  test.setTimeout(300_000);
+
   // Sign-in is the only unauthenticated flow; scan it in a clean context.
   const anonymous = await page.context().browser()?.newContext();
   if (anonymous) {
@@ -242,26 +244,43 @@ test("critical deployed flows pass automated WCAG rules", async () => {
         "did not settle; the scanner resumed through a directly committed application route",
     });
     await navigateForScan(page, "/readings", () =>
-      expect(page.getByRole("button", { name: /^Continue with / })).toBeVisible({
+      expect(page.getByLabel("Your private question")).toBeVisible({
         timeout: 15_000,
       }),
     );
   }
-  await scan("reading selection");
-
-  await page.getByRole("button", { name: /^Continue with / }).click();
-  await expect(page.getByLabel("Your private question")).toBeVisible();
+  await expect(page.getByLabel("Your private question")).toBeVisible({ timeout: 15_000 });
   await scan("reading question");
   await page.getByLabel("Your private question").fill("What deserves my attention now?");
+  await page.getByRole("button", { name: "Review my question" }).click();
+  await expect(page.getByRole("button", { name: "Confirm this question" })).toBeVisible();
+  await scan("question confirmation");
+  await page.getByRole("button", { name: "Confirm this question" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Select a spread for your confirmed question" }),
+  ).toBeVisible();
+  await scan("reading selection");
+  await page
+    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
+    .click();
+  await expect(page.getByRole("button", { name: "Begin the shuffle" })).toBeVisible();
+  await scan("reading focus");
+  await page.getByRole("button", { name: "Begin the shuffle" }).click();
+  await expect(page.getByRole("button", { name: "Finish shuffling" })).toBeVisible();
+  await scan("reading shuffle");
+  await page.getByRole("button", { name: "Finish shuffling" }).click();
+  await expect(page.getByRole("button", { name: /^No cut/ })).toBeVisible();
+  await scan("optional deck cut");
   const readingResponsePromise = page
     .waitForResponse(
       (response) =>
         new URL(response.url()).pathname === "/api/readings" &&
-        response.request().method() === "POST",
+        response.request().method() === "POST" &&
+        response.request().postData()?.includes('"action":"finalize"') === true,
       { timeout: 60_000 },
     )
     .catch(() => undefined);
-  await page.getByRole("button", { name: "Begin the shuffle" }).click();
+  await page.getByRole("button", { name: /^No cut/ }).click();
   const readingResponse = await readingResponsePromise;
   try {
     await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, {
@@ -290,11 +309,16 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   // Reveal remains an intentional action (UX-006). Shorten decorative timing
   // and drive the same centered ready/next sequence through accessible controls.
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
-  await page
-    .getByRole("button", { name: "Gather now", exact: true })
-    .dispatchEvent("click")
-    .catch(() => {});
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  const sanctuary = page.getByTestId("mystic-sanctuary-scene");
+  await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
+  // Reduced motion advances the deal without exposing the transient Gather now
+  // control. The ritual phase is the stable boundary for an actionable spread.
+  await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
+    timeout: 20_000,
+  });
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 12_000 });
   await page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ }).click();
   for (let index = 0; index < 10; index += 1) {
@@ -304,34 +328,43 @@ test("critical deployed flows pass automated WCAG rules", async () => {
       .click();
     const action = page.locator(".guided-next-action");
     await expect(action).toBeVisible();
-    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    const finalCard = (await action.textContent())?.includes("Open the complete reading") === true;
     await action.click();
     if (finalCard) break;
   }
 
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 60_000 });
   await scan("revealed result");
-  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
-  await page.getByRole("button", { name: "Next reading passage" }).click();
-  await scan("card interpretation section");
   const journey = page.getByTestId("reading-journey");
   await expect(journey).toHaveAttribute("data-state", "complete", { timeout: 30_000 });
+  await expect
+    .poll(async () => Number(await journey.getAttribute("data-loaded-section-count")))
+    .toBeGreaterThanOrEqual(3);
   const passageCount = Number(await journey.getAttribute("data-loaded-section-count"));
-  expect(passageCount).toBeGreaterThanOrEqual(3);
+  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
+  const guidedMode = page.getByRole("button", { name: "Guided" });
+  await guidedMode.focus();
+  await expect(guidedMode).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(journey).toHaveAttribute("data-reading-mode", "guided");
   const transcript = page.getByTestId("oracle-transcript");
   await transcript.focus();
   await expect(transcript).toBeFocused();
+  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByText(`2 of ${passageCount}`, { exact: true })).toBeVisible();
+  await scan("card interpretation section");
   await page.keyboard.press("End");
   await expect(page.getByRole("button", { name: "Next reading passage" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
-  await expect(
-    page.getByText(`${passageCount + 1} / ${passageCount + 1}`, { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText(`${passageCount} of ${passageCount}`, { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
-  await expect(page.getByTestId("reading-integration")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Before you leave the cards" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Ask the same cards/ })).toBeEnabled();
   await page.getByRole("button", { name: /Ask the same cards/ }).click();
-  await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();
+  await expect(
+    page.getByLabel("Clarify the original question with these same cards"),
+  ).toBeEnabled();
   await scan("final reflection and follow-up entry point");
 
   await page.setViewportSize({ width: 320, height: 640 });

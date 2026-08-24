@@ -55,6 +55,7 @@ let interpretationContract: InterpretationContract;
 const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
 const NAVIGATION_ATTEMPTS = 3;
 const API_REQUEST_TIMEOUT_MS = 60_000;
+const API_GET_ATTEMPTS = 2;
 const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60_000;
 
 /** Stable digest of a locked draw for byte-for-byte comparison. */
@@ -152,17 +153,26 @@ async function reloadApp(page: Page, ready: () => Promise<void>): Promise<void> 
 }
 
 async function apiGet<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
-  try {
-    const response = await page.request.get(new URL(path, baseUrl).toString(), {
-      headers: { "cache-control": "no-store" },
-      timeout: API_REQUEST_TIMEOUT_MS,
-    });
-    return { status: response.status(), body: (await response.json()) as T };
-  } catch {
-    // Playwright's request error includes every cookie and authorization
-    // header. Never let that provider diagnostic reach a public Actions log.
-    throw new Error(`GET ${path} did not complete; request details redacted`);
+  for (let attempt = 1; attempt <= API_GET_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await page.request.get(new URL(path, baseUrl).toString(), {
+        headers: { "cache-control": "no-store" },
+        timeout: API_REQUEST_TIMEOUT_MS,
+      });
+      return { status: response.status(), body: (await response.json()) as T };
+    } catch {
+      if (attempt < API_GET_ATTEMPTS) {
+        await page.waitForTimeout(attempt * 500);
+        continue;
+      }
+      // Playwright's request error includes every cookie and authorization
+      // header. Never let that provider diagnostic reach a public Actions log.
+      throw new Error(
+        `GET ${path} did not complete after ${API_GET_ATTEMPTS} attempts; request details redacted`,
+      );
+    }
   }
+  throw new Error(`GET ${path} exhausted its bounded retry contract`);
 }
 
 async function apiPost<T>(
@@ -358,10 +368,10 @@ test("both identities create profiles and the profile survives refresh", async (
   await createProfile(pageB, "user B", { name: "Bo Synthetic", date: "1985-06-02" });
 
   // The accessibility suite already proves the deployed onboarding form. This
-  // persistence suite commits the post-profile UI route without depending on
-  // Netlify's injected preview toolbar to observe a duplicate client transition.
+  // persistence suite commits the post-profile question route without depending
+  // on Netlify's injected preview toolbar to observe a duplicate client transition.
   await navigateApp(pageA, "/readings", () =>
-    expect(pageA.getByRole("button", { name: /^Continue with / })).toBeVisible({
+    expect(pageA.getByLabel("Your private question")).toBeVisible({
       timeout: 15_000,
     }),
   );
@@ -375,7 +385,7 @@ test("both identities create profiles and the profile survives refresh", async (
   });
 
   await reloadApp(pageA, () =>
-    expect(pageA.getByRole("button", { name: /^Continue with / })).toBeVisible({
+    expect(pageA.getByLabel("Your private question")).toBeVisible({
       timeout: 15_000,
     }),
   );
@@ -588,11 +598,14 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   // Use the same centered reader-controlled reveal path while shortening its
   // decorative timing for the staging integrity probe.
   const motionControl = pageA.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
-  await pageA
-    .getByRole("button", { name: "Gather now", exact: true })
-    .dispatchEvent("click")
-    .catch(() => {});
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  const sanctuary = pageA.getByTestId("mystic-sanctuary-scene");
+  await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
+  await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
+    timeout: 20_000,
+  });
   await expect(pageA.getByTestId("question-reflection")).toBeVisible({ timeout: 12_000 });
   await pageA.getByRole("button", { name: "I’m ready", exact: true }).click();
   for (let index = 0; index < 10; index += 1) {
@@ -602,7 +615,7 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
       .click();
     const action = pageA.locator(".guided-next-action");
     await expect(action).toBeVisible();
-    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    const finalCard = (await action.textContent())?.includes("Open the complete reading") === true;
     await action.click();
     if (finalCard) break;
   }

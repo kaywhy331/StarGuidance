@@ -3,7 +3,7 @@ name: Staging verification
 # Credential-gated verification of the owner-managed Supabase staging project.
 #
 # This workflow never runs automatically. It is restricted to the current
-# release-candidate branch, runs only against the protected `starguidance-staging`
+# stacked staging branch, runs only against the protected `starguidance-staging`
 # environment, and publishes a single redacted Markdown summary. Secret values
 # are read into step environments and are never printed, echoed, or uploaded.
 #
@@ -18,7 +18,7 @@ on:
       preview_url:
         description: "Deploy preview to verify"
         required: true
-        default: "https://deploy-preview-19--starguidance.netlify.app"
+        default: "https://deploy-preview-30--starguidance.netlify.app"
       confirm_staging:
         description: "Type STAGING to confirm the target is non-production and this migration/test run is authorized"
         required: true
@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ALLOWED_REF: agent/starguidance-immersive-ux
+  ALLOWED_REF: agent/starguidance-supabase-staging
 
 jobs:
   # Runs without the protected environment so an unapproved ref is rejected
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Refuse any ref other than the release-candidate branch
+      - name: Refuse any ref other than the stacked staging branch
         run: |
           if [ "${{ github.ref_name }}" != "$ALLOWED_REF" ]; then
             echo "::error::Refusing to run against '${{ github.ref_name }}'. Only $ALLOWED_REF is permitted."

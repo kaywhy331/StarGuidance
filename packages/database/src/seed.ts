@@ -20,12 +20,16 @@ const asJson = (value: unknown): postgres.JSONValue =>
 try {
   await sql.begin(async (transaction) => {
     await transaction`
+      update decks set active = false
+      where active and version <> ${DECK_VERSION}
+    `;
+    await transaction`
       insert into decks (version, name, active)
       values (${DECK_VERSION}, ${"StarGuidance Typographic Tarot"}, true)
-      on conflict (version) do nothing
+      on conflict (version) do update set active = excluded.active
     `;
     const [storedDeck] = await transaction<{ matches: boolean }[]>`
-      select name = ${"StarGuidance Typographic Tarot"} as matches
+      select name = ${"StarGuidance Typographic Tarot"} and active as matches
       from decks where version = ${DECK_VERSION}
     `;
     if (!storedDeck?.matches) throw new Error(`SEED_VERSION_CONFLICT:deck:${DECK_VERSION}`);
@@ -44,6 +48,7 @@ try {
       const meaningPayload = asJson({
         uprightThemes: card.uprightThemes,
         reversedThemes: card.reversedThemes,
+        reversalFacets: card.reversalFacets,
         eventTags: card.eventTags,
         reflectivePrompt: card.reflectivePrompt,
         attribution: card.attribution,
@@ -70,15 +75,17 @@ try {
       ...spreads.map((spread) => ({ spread, active: true })),
       ...legacySpreads.map((spread) => ({ spread, active: false })),
     ];
+    for (const spreadId of new Set(spreadSeeds.map(({ spread }) => spread.id)))
+      await transaction`update spreads set active = false where id = ${spreadId}`;
     for (const { spread, active } of spreadSeeds) {
       const spreadPayload = asJson(spread);
       await transaction`
         insert into spreads (id, version, payload, active)
         values (${spread.id}, ${spread.version}, ${transaction.json(spreadPayload)}, ${active})
-        on conflict (id, version) do nothing
+        on conflict (id, version) do update set active = excluded.active
       `;
       const [storedSpread] = await transaction<{ matches: boolean }[]>`
-        select payload = ${transaction.json(spreadPayload)} as matches
+        select payload = ${transaction.json(spreadPayload)} and active = ${active} as matches
         from spreads where id = ${spread.id} and version = ${spread.version}
       `;
       if (!storedSpread?.matches) throw new Error(`SEED_VERSION_CONFLICT:spread:${spread.id}`);
@@ -174,6 +181,7 @@ try {
     const runtimeSeeds = [
       {
         domain: "content",
+        version: 2,
         payload: {
           deckVersion: DECK_VERSION,
           cardSetVersion: DECK_VERSION,
@@ -185,6 +193,7 @@ try {
       },
       {
         domain: "prompts",
+        version: 2,
         payload: {
           bundleId: "reader-voice-v5",
           safetyPolicyVersion: "question-safety-v2",
@@ -192,6 +201,7 @@ try {
       },
       {
         domain: "commerce",
+        version: 1,
         payload: {
           readingAccessMode: "unlimited",
           freeAllowance: 3,
@@ -205,6 +215,7 @@ try {
       },
       {
         domain: "features",
+        version: 1,
         payload: {
           profileReportsEnabled: false,
           animationsEnabled: true,
@@ -214,6 +225,7 @@ try {
       },
       {
         domain: "models",
+        version: 1,
         payload: {
           liveAiEnabled: false,
           primaryModel: "openai/gpt-oss-120b",
@@ -222,15 +234,54 @@ try {
         },
       },
     ] as const;
-    for (const seed of runtimeSeeds)
-      await transaction`
-        insert into runtime_configuration_versions
-          (domain, version, status, payload, approved_at, published_at)
-        select ${seed.domain}, 1, 'published', ${transaction.json(asJson(seed.payload))}, now(), now()
-        where not exists (
-          select 1 from runtime_configuration_versions where domain = ${seed.domain}
-        )
+    for (const seed of runtimeSeeds) {
+      const payload = asJson(seed.payload);
+      const [desired] = await transaction<{ matches: boolean; status: string }[]>`
+        select payload = ${transaction.json(payload)} as matches, status
+        from runtime_configuration_versions
+        where domain = ${seed.domain} and version = ${seed.version}
       `;
+      if (desired && !desired.matches)
+        throw new Error(`SEED_VERSION_CONFLICT:runtime:${seed.domain}:${seed.version}`);
+      const [newerPublished] = await transaction<{ exists: boolean }[]>`
+        select exists(
+          select 1 from runtime_configuration_versions
+          where domain = ${seed.domain} and status = 'published' and version > ${seed.version}
+        ) as exists
+      `;
+      if (newerPublished?.exists)
+        throw new Error(`SEED_VERSION_CONFLICT:runtime-newer:${seed.domain}`);
+
+      await transaction`
+        update runtime_configuration_versions
+        set status = 'archived'
+        where domain = ${seed.domain} and status = 'published' and version <> ${seed.version}
+      `;
+      if (!desired)
+        await transaction`
+          insert into runtime_configuration_versions
+            (domain, version, status, payload, approved_at, published_at)
+          values (
+            ${seed.domain}, ${seed.version}, 'published', ${transaction.json(payload)}, now(), now()
+          )
+        `;
+      else if (desired.status === "archived")
+        await transaction`
+          update runtime_configuration_versions
+          set status = 'published', published_at = now()
+          where domain = ${seed.domain} and version = ${seed.version}
+        `;
+      else if (desired.status !== "published")
+        throw new Error(`SEED_VERSION_CONFLICT:runtime-status:${seed.domain}:${desired.status}`);
+
+      const [storedRuntime] = await transaction<{ matches: boolean }[]>`
+        select payload = ${transaction.json(payload)} and status = 'published' as matches
+        from runtime_configuration_versions
+        where domain = ${seed.domain} and version = ${seed.version}
+      `;
+      if (!storedRuntime?.matches)
+        throw new Error(`SEED_VERSION_CONFLICT:runtime-publish:${seed.domain}:${seed.version}`);
+    }
   });
 } finally {
   await sql.end();

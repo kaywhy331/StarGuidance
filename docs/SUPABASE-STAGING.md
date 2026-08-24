@@ -48,7 +48,7 @@ Configure the Render profile-engine service using the exact settings in [Deploym
 
 For migration and isolated SQL verification, configure only in the operator shell:
 
-- `DATABASE_URL` — authorized non-production staging migration/seed target
+- `DATABASE_URL` — authorized non-production staging migration/seed target; the Netlify deploy-preview copy must use Supabase transaction-pooler mode (normally port 6543), while operator migrations may use a direct or session-mode connection
 - `DATABASE_INTEGRATION_URL` — isolated integration target; it may equal `DATABASE_URL` only when the owner has approved the reserved-domain synthetic fixture lifecycle on that staging project
 
 Generate `DATA_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Store and back it up in a managed secret service. The key must never be placed in a database row or migration.
