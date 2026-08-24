@@ -358,10 +358,10 @@ test("both identities create profiles and the profile survives refresh", async (
   await createProfile(pageB, "user B", { name: "Bo Synthetic", date: "1985-06-02" });
 
   // The accessibility suite already proves the deployed onboarding form. This
-  // persistence suite commits the post-profile UI route without depending on
-  // Netlify's injected preview toolbar to observe a duplicate client transition.
+  // persistence suite commits the post-profile question route without depending
+  // on Netlify's injected preview toolbar to observe a duplicate client transition.
   await navigateApp(pageA, "/readings", () =>
-    expect(pageA.getByRole("button", { name: /^Continue with / })).toBeVisible({
+    expect(pageA.getByLabel("Your private question")).toBeVisible({
       timeout: 15_000,
     }),
   );
@@ -375,7 +375,7 @@ test("both identities create profiles and the profile survives refresh", async (
   });
 
   await reloadApp(pageA, () =>
-    expect(pageA.getByRole("button", { name: /^Continue with / })).toBeVisible({
+    expect(pageA.getByLabel("Your private question")).toBeVisible({
       timeout: 15_000,
     }),
   );
