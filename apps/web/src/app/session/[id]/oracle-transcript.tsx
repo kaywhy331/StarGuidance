@@ -179,6 +179,12 @@ export function OracleTranscript({
     } else if (["ArrowLeft", "ArrowUp", "PageUp"].includes(event.key)) {
       event.preventDefault();
       move(-1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      move(-entries.length);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      move(entries.length);
     }
   };
 

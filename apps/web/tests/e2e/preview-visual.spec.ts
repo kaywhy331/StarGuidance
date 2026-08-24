@@ -102,6 +102,9 @@ test("the visual preview renders the spread-aware result and evidence contract",
   await transcript.focus();
   await page.keyboard.press("End");
   await expect(transcript).toBeFocused();
+  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
+  await expect(page.getByText("10 of 10", { exact: true })).toBeVisible();
   await expectNoBlockingAccessibilityViolations(page);
 });
 
