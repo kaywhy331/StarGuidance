@@ -28,6 +28,9 @@ import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/sup
 
 const emailSchema = z.string().trim().toLowerCase().pipe(z.email());
 const passwordSchema = z.string().min(12).max(72);
+const PRIVATE_TESTING_AUTH_MODE = "private-testing";
+const AUTH_USER_PAGE_SIZE = 100;
+const AUTH_USER_MAX_PAGES = 10;
 const signupConsentSchema = z.object({
   termsAccepted: z.literal(true),
   termsVersion: z.literal(POLICY_VERSIONS.terms),
@@ -65,6 +68,81 @@ function isSendRateLimited(error: unknown): boolean {
     candidate.status === 429 ||
     (typeof candidate.code === "string" && candidate.code === "over_email_send_rate_limit")
   );
+}
+
+function hasAuthErrorCode(error: unknown, ...codes: string[]): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { code?: unknown };
+  return typeof candidate.code === "string" && codes.includes(candidate.code);
+}
+
+function privateTestingAuthEnabled(): boolean {
+  return process.env.AUTH_EMAIL_CONFIRMATION_MODE === PRIVATE_TESTING_AUTH_MODE;
+}
+
+function signupAppMetadata(
+  existing: unknown,
+  displayName: string,
+  marketingAccepted: boolean,
+): Record<string, unknown> {
+  const current =
+    typeof existing === "object" && existing !== null ? (existing as Record<string, unknown>) : {};
+  return {
+    ...current,
+    [ACCOUNT_DISPLAY_NAME_METADATA_KEY]: displayName,
+    [POLICY_CONSENT_METADATA_KEY]: signupConsentReceipts(
+      new Date().toISOString(),
+      marketingAccepted,
+    ),
+  };
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+type SupabaseAdminClient = ReturnType<typeof createSupabaseAdminClient>;
+
+/**
+ * Finds an exact Auth identity only inside the explicitly enabled private-test
+ * lane. The address and the scanned identities never leave this server route.
+ */
+async function confirmPrivateTestingAccount(
+  admin: SupabaseAdminClient,
+  email: string,
+): Promise<boolean> {
+  for (let page = 1; page <= AUTH_USER_MAX_PAGES; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage: AUTH_USER_PAGE_SIZE,
+    });
+    if (error) return false;
+    const user = data.users.find((candidate) => candidate.email?.toLowerCase() === email);
+    if (user) {
+      const { error: confirmationError } = await admin.auth.admin.updateUserById(user.id, {
+        email_confirm: true,
+      });
+      return !confirmationError;
+    }
+    if (data.users.length < AUTH_USER_PAGE_SIZE) return false;
+  }
+  return false;
+}
+
+async function signInWithPrivateTestingRecovery(
+  supabase: SupabaseServerClient,
+  admin: SupabaseAdminClient,
+  email: string,
+  password: string,
+) {
+  let result = await supabase.auth.signInWithPassword({ email, password });
+  if (!privateTestingAuthEnabled() || !hasAuthErrorCode(result.error, "email_not_confirmed"))
+    return { result, recoveryFailed: false };
+
+  // Supabase Auth checks the password before returning email_not_confirmed.
+  // Only that password-proven state may activate a pre-existing test account.
+  // Invalid credentials never reach the admin lookup.
+  const confirmed = await confirmPrivateTestingAccount(admin, email);
+  if (!confirmed) return { result, recoveryFailed: true };
+  result = await supabase.auth.signInWithPassword({ email, password });
+  return { result, recoveryFailed: false };
 }
 
 async function recordAuthFailure(
@@ -122,10 +200,28 @@ export async function POST(request: Request) {
     }
     const supabase = await createSupabaseServerClient();
     if (input.action === "sign-in") {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: input.email,
-        password: input.password,
-      });
+      const { result, recoveryFailed } = privateTestingAuthEnabled()
+        ? await signInWithPrivateTestingRecovery(
+            supabase,
+            createSupabaseAdminClient(),
+            input.email,
+            input.password,
+          )
+        : {
+            result: await supabase.auth.signInWithPassword({
+              email: input.email,
+              password: input.password,
+            }),
+            recoveryFailed: false,
+          };
+      const { data, error } = result;
+      if (recoveryFailed) {
+        await recordAuthFailure("persistence");
+        return NextResponse.json(
+          { error: "The private test account could not be activated. Try again shortly." },
+          { status: 503 },
+        );
+      }
       if (error) {
         await recordAuthFailure("authentication");
         return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
@@ -228,6 +324,73 @@ export async function POST(request: Request) {
     }
 
     callbackUrl.searchParams.set("next", safeAccountReturnPath(input.next) ?? "/onboarding");
+    const metadata = signupAppMetadata({}, input.displayName, input.consents.marketingAccepted);
+
+    if (privateTestingAuthEnabled()) {
+      const admin = createSupabaseAdminClient();
+      const { data: created, error: creationError } = await admin.auth.admin.createUser({
+        email: input.email,
+        password: input.password,
+        email_confirm: true,
+        app_metadata: metadata,
+      });
+      const existingAccount = hasAuthErrorCode(
+        creationError,
+        "email_exists",
+        "user_already_exists",
+      );
+      if (creationError && !existingAccount) {
+        await recordAuthFailure("provider_rejected");
+        return NextResponse.json({ error: "Unable to create that account." }, { status: 400 });
+      }
+
+      const { result, recoveryFailed } = await signInWithPrivateTestingRecovery(
+        supabase,
+        admin,
+        input.email,
+        input.password,
+      );
+      if (recoveryFailed) {
+        if (created.user) await admin.auth.admin.deleteUser(created.user.id);
+        await recordAuthFailure("persistence");
+        return NextResponse.json(
+          { error: "The private test account could not be activated. Try again shortly." },
+          { status: 503 },
+        );
+      }
+      if (result.error || !result.data.user) {
+        if (created.user) await admin.auth.admin.deleteUser(created.user.id);
+        await recordAuthFailure("authentication");
+        return NextResponse.json({ error: "Unable to create that account." }, { status: 400 });
+      }
+
+      if (!created.user) {
+        const { error: receiptError } = await admin.auth.admin.updateUserById(result.data.user.id, {
+          app_metadata: signupAppMetadata(
+            result.data.user.app_metadata,
+            input.displayName,
+            input.consents.marketingAccepted,
+          ),
+        });
+        if (receiptError) {
+          await supabase.auth.signOut({ scope: "local" });
+          await recordAuthFailure("persistence");
+          return NextResponse.json(
+            { error: "Unable to record the required policy acknowledgements. Try again later." },
+            { status: 503 },
+          );
+        }
+      }
+
+      await tryRecordProductEvent({
+        idempotencyKey: `consent:${result.data.user.id}:${POLICY_VERSIONS.terms}:${POLICY_VERSIONS.privacy}`,
+        name: "consent_completed",
+        properties: { routeClass: "consent", statusClass: "completed" },
+      });
+      await recordSecurityAudit(result.data.user.id, "auth.signed_in");
+      return NextResponse.json({ ok: true, authenticated: true, pending: false });
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email: input.email,
       password: input.password,
@@ -250,14 +413,11 @@ export async function POST(request: Request) {
     if (data.user?.identities?.length) {
       const admin = createSupabaseAdminClient();
       const { error: receiptError } = await admin.auth.admin.updateUserById(data.user.id, {
-        app_metadata: {
-          ...data.user.app_metadata,
-          [ACCOUNT_DISPLAY_NAME_METADATA_KEY]: input.displayName,
-          [POLICY_CONSENT_METADATA_KEY]: signupConsentReceipts(
-            new Date().toISOString(),
-            input.consents.marketingAccepted,
-          ),
-        },
+        app_metadata: signupAppMetadata(
+          data.user.app_metadata,
+          input.displayName,
+          input.consents.marketingAccepted,
+        ),
       });
       if (receiptError) {
         let identityCleanupConfirmed = false;
