@@ -194,6 +194,7 @@ export function GuestReadingExperience({
     () => new Set(continuationReading?.cards.map((_, index) => index) ?? []),
     [continuationReading],
   );
+  const readingPreviewEvents = useMemo(() => (reading ? phaseEvents(reading) : []), [reading]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -611,6 +612,11 @@ export function GuestReadingExperience({
     );
     return () => window.clearTimeout(timer);
   }, [reading, reducedMotion, send, state]);
+
+  useEffect(() => {
+    if (!state.matches("interpretationStreaming") || !journeyComplete) return;
+    send({ type: "INTERPRETATION_COMPLETE" });
+  }, [journeyComplete, send, state]);
 
   const submitFollowUp = async () => {
     if (!receipt || !followUp.trim()) return;
@@ -1359,11 +1365,7 @@ export function GuestReadingExperience({
             onActiveCardChange={setActiveReadingCard}
             onJourneyCompleteChange={setJourneyComplete}
             onRetry={() => undefined}
-            onStateChange={(streamState) => {
-              if (streamState === "complete" && state.matches("interpretationStreaming"))
-                send({ type: "INTERPRETATION_COMPLETE" });
-            }}
-            previewEvents={phaseEvents(reading)}
+            previewEvents={readingPreviewEvents}
             readingId={reading.id}
             reducedMotion={reducedMotion}
             result={reading.result}
