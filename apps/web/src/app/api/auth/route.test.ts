@@ -9,7 +9,12 @@ const supabase = vi.hoisted(() => ({
   signUp: vi.fn(),
   updateUser: vi.fn(),
 }));
-const admin = vi.hoisted(() => ({ deleteUser: vi.fn(), updateUserById: vi.fn() }));
+const admin = vi.hoisted(() => ({
+  createUser: vi.fn(),
+  deleteUser: vi.fn(),
+  listUsers: vi.fn(),
+  updateUserById: vi.fn(),
+}));
 const recovery = vi.hoisted(() => ({
   cookieDelete: vi.fn(),
   cookieGet: vi.fn(),
@@ -198,6 +203,102 @@ describe("email and password authentication", () => {
       }),
     );
     expect(JSON.stringify(telemetry.record.mock.calls)).not.toContain("reader@example.test");
+  });
+
+  it("activates a password-proven pending account only in private testing mode", async () => {
+    vi.stubEnv("AUTH_EMAIL_CONFIRMATION_MODE", "private-testing");
+    supabase.signInWithPassword
+      .mockResolvedValueOnce({
+        data: { session: null, user: null },
+        error: { code: "email_not_confirmed", message: "Email not confirmed" },
+      })
+      .mockResolvedValueOnce({
+        data: { user: { id: "pending-user" } },
+        error: null,
+      });
+    admin.listUsers.mockResolvedValue({
+      data: {
+        users: [
+          { id: "unrelated", email: "someone-else@example.test" },
+          { id: "pending-user", email: "reader@example.test" },
+        ],
+      },
+      error: null,
+    });
+
+    const response = await POST(request(credentials));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, authenticated: true });
+    expect(supabase.signInWithPassword).toHaveBeenCalledTimes(2);
+    expect(admin.listUsers).toHaveBeenCalledWith({ page: 1, perPage: 100 });
+    expect(admin.updateUserById).toHaveBeenCalledWith("pending-user", {
+      email_confirm: true,
+    });
+  });
+
+  it("never searches Auth users when a private-test password is invalid", async () => {
+    vi.stubEnv("AUTH_EMAIL_CONFIRMATION_MODE", "private-testing");
+    supabase.signInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: { code: "invalid_credentials", message: "Invalid login credentials" },
+    });
+
+    const response = await POST(request(credentials));
+
+    expect(response.status).toBe(401);
+    expect(admin.listUsers).not.toHaveBeenCalled();
+    expect(admin.updateUserById).not.toHaveBeenCalled();
+  });
+
+  it("creates and proves a stored Supabase password without sending mail in private testing", async () => {
+    vi.stubEnv("AUTH_EMAIL_CONFIRMATION_MODE", "private-testing");
+    admin.createUser.mockResolvedValue({
+      data: { user: { id: "private-test-user" } },
+      error: null,
+    });
+    supabase.signInWithPassword.mockResolvedValue({
+      data: {
+        user: { id: "private-test-user", app_metadata: {} },
+      },
+      error: null,
+    });
+
+    const response = await POST(
+      request({
+        ...credentials,
+        action: "sign-up",
+        email: "New.Reader@Example.Test",
+        displayName: "Nova",
+        consents,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, authenticated: true, pending: false });
+    expect(admin.createUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "new.reader@example.test",
+        password: credentials.password,
+        email_confirm: true,
+        app_metadata: expect.objectContaining({
+          starguidance_display_name: "Nova",
+          starguidance_policy_consents: expect.arrayContaining([
+            expect.objectContaining({ policy: "terms", version: consents.termsVersion }),
+            expect.objectContaining({ policy: "privacy", version: consents.privacyVersion }),
+          ]),
+        }),
+      }),
+    );
+    expect(supabase.signInWithPassword).toHaveBeenCalledWith({
+      email: "new.reader@example.test",
+      password: credentials.password,
+    });
+    expect(supabase.signUp).not.toHaveBeenCalled();
+    expect(security.recordSecurityAudit).toHaveBeenCalledWith(
+      "private-test-user",
+      "auth.signed_in",
+    );
   });
 
   it("creates an immediately authenticated account when confirmation is disabled", async () => {

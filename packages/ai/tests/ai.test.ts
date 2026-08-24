@@ -11,6 +11,7 @@ import {
   DeterministicFallbackProvider,
   reviewTarotQuestion,
 } from "../src";
+import { spokenCardMeaning } from "../src/card-language";
 
 function spread(id: string): Spread {
   const value = spreads.find((candidate) => candidate.id === id);
@@ -89,6 +90,13 @@ describe("question consultation rules", () => {
       horizon: "weeks",
       intent: "planning",
     });
+    expect(
+      classifyQuestionContext("What should I understand about the next step in my work?"),
+    ).toMatchObject({ topic: "career", intent: "planning" });
+    expect(classifyQuestionContext("Should I leave my job?")).toMatchObject({
+      topic: "career",
+      intent: "decisionSupport",
+    });
   });
 
   it("interrupts crisis and compulsive redraw language", () => {
@@ -133,6 +141,18 @@ describe("question consultation rules", () => {
 });
 
 describe("spread-aware deterministic interpretation", () => {
+  it("has distinct spoken meanings for every card and orientation", () => {
+    const meanings = tarotCards.flatMap((card) => [
+      spokenCardMeaning(card, "upright"),
+      spokenCardMeaning(card, "reversed"),
+    ]);
+    expect(meanings).toHaveLength(156);
+    expect(new Set(meanings).size).toBe(156);
+    expect(meanings.join(" ")).not.toMatch(
+      /blocked or internalized form|delayed or turned inward/i,
+    );
+  });
+
   it("does not fabricate trajectory, alternate path, or timing for Single Card — Focus", async () => {
     const result = await generate({
       spreadId: "one-card",
@@ -161,6 +181,28 @@ describe("spread-aware deterministic interpretation", () => {
     expect(result.alternatePath).toBeNull();
   });
 
+  it("answers the confirmed concern instead of collapsing it to a broad topic", async () => {
+    const nextStep = await generate({
+      spreadId: "three-card",
+      question: "What should I understand about the next step in my work?",
+    });
+    const promotion = await generate({
+      spreadId: "three-card",
+      question: "What should I understand about the promotion?",
+    });
+
+    expect(nextStep.directAnswer).toContain("the next step in your work");
+    expect(promotion.directAnswer).toContain("the promotion");
+    expect(nextStep.directAnswer).not.toBe(promotion.directAnswer);
+    expect(nextStep.directAnswer).not.toContain("current pattern begins with");
+    expect(nextStep.synthesis).not.toContain("not separate dictionary meanings");
+    expect(
+      nextStep.cards.some(({ positionInterpretation }) =>
+        positionInterpretation.includes("the next step in your work"),
+      ),
+    ).toBe(true);
+  });
+
   it("creates an alternate path only for a structurally branching spread", async () => {
     const result = await generate({
       spreadId: "crossroads",
@@ -185,7 +227,8 @@ describe("spread-aware deterministic interpretation", () => {
     expect(
       (card?.reversalFacets ?? []).some((facet) => result.cards[0]?.coreMeaning.includes(facet)),
     ).toBe(true);
-    expect(result.cards[0]?.positionInterpretation).toContain("not as an automatic opposite");
+    expect(result.cards[0]?.positionInterpretation).toContain("needs correction");
+    expect(result.cards[0]?.positionInterpretation).not.toContain("automatic opposite");
   });
 
   it("sends no lens into Pure Tarot and labels minimized personalization separately", async () => {
@@ -218,5 +261,21 @@ describe("spread-aware deterministic interpretation", () => {
     expect(phases.some(({ phase }) => phase === "alternatePath")).toBe(false);
     expect(phases.some(({ phase }) => phase === "likelyTrajectory")).toBe(false);
     expect(phases.some(({ phase }) => phase === "cardInterpretation")).toBe(true);
+  });
+
+  it("does not repeat evidence-drawer glossary copy in the spoken card passage", async () => {
+    const result = await generate({
+      spreadId: "three-card",
+      question: "How should I approach the next step in my work?",
+    });
+    const card = result.cards[0]!;
+    const event = createOracleStreamEvents(result).find(
+      (candidate) => candidate.type === "phase" && candidate.phase === "cardInterpretation",
+    );
+    expect(event?.type).toBe("phase");
+    if (event?.type !== "phase") throw new Error("Missing card interpretation event");
+    expect(event.text).toBe(card.positionInterpretation);
+    expect(event.text).not.toContain("approved upright themes");
+    expect(event.text).not.toContain(card.relationshipNotes[0] ?? "relationship-note-not-present");
   });
 });

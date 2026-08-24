@@ -14,7 +14,8 @@ import type { LockedDraw, SpreadPosition, TarotCard } from "@starguidance/tarot-
  * person, and the raw question text is never copied into the result: readings
  * are persisted, questions are encrypted separately, and echoing one into the
  * other would quietly widen what is stored in the clear. The question shapes
- * the reading through its subject and its trait lens instead.
+ * the credential-free reading through its subject, a bounded non-identifying
+ * concern vocabulary, and its trait lens instead.
  */
 
 /** The subject a question is about, inferred from its wording. */

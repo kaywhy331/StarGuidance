@@ -9,6 +9,7 @@ import {
   GroqInterpretationProvider,
   normalizedAiProviderBaseUrl,
   PROMPT_VERSION,
+  REVIEWED_GATEWAY_SYSTEM_PROMPTS,
   RESPONSE_SCHEMA_VERSION,
   reviewedReadingResponseSchema,
 } from "../src/groq-provider";
@@ -88,6 +89,17 @@ describe("Groq transport boundaries", () => {
 });
 
 describe("provider payload and response contract", () => {
+  it("uses the question-led consultation contract for new readings", () => {
+    expect(PROMPT_VERSION).toBe("reader-voice-v6");
+    expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain(
+      "first sentence of directAnswer must answer",
+    );
+    expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain(
+      "positionInterpretation is the lived reading",
+    );
+    expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain("Treat the spread like an argument");
+  });
+
   it("omits all supplied traits in Pure Tarot", () => {
     const payload = provider().buildPayload(generationInput("one-card", false));
     expect(payload.personalizationAllowed).toBe(false);

@@ -159,6 +159,23 @@ try {
       ["reader-voice-v5-grounded", "spread-aware evidence contract with observable emphasis"],
       ["follow-up-reader-voice-v5-grounded", "grounded same-draw clarification"],
       [
+        "reader-voice-v6",
+        "question-led consultation voice with distinct evidence and narrative stages",
+      ],
+      ["follow-up-reader-voice-v6", "question-led continuation of the same locked reading"],
+      [
+        "deterministic-fallback-v6",
+        "question-led credential-free reader using original spoken card language",
+      ],
+      [
+        "reader-voice-v6-grounded",
+        "question-led consultation voice with concrete observable emphasis",
+      ],
+      [
+        "follow-up-reader-voice-v6-grounded",
+        "grounded question-led continuation of the same locked reading",
+      ],
+      [
         "reader-voice-v4-grounded",
         "question-first connected live narrator with concrete observable emphasis",
       ],
@@ -193,9 +210,9 @@ try {
       },
       {
         domain: "prompts",
-        version: 2,
+        version: 3,
         payload: {
-          bundleId: "reader-voice-v5",
+          bundleId: "reader-voice-v6",
           safetyPolicyVersion: "question-safety-v2",
         },
       },
