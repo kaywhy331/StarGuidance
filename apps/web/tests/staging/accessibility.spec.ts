@@ -347,12 +347,13 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(guidedMode).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(journey).toHaveAttribute("data-reading-mode", "guided");
-  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
-  await page.getByRole("button", { name: "Next reading passage" }).click();
-  await scan("card interpretation section");
   const transcript = page.getByTestId("oracle-transcript");
   await transcript.focus();
   await expect(transcript).toBeFocused();
+  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeEnabled();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByText(`2 of ${passageCount}`, { exact: true })).toBeVisible();
+  await scan("card interpretation section");
   await page.keyboard.press("End");
   await expect(page.getByRole("button", { name: "Next reading passage" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
