@@ -237,6 +237,12 @@ export async function signupActionPreservesRedirect(redirectTo: string): Promise
     const acceptedRedirect = new URL(actionLink).searchParams.get("redirect_to");
     return acceptedRedirect === requestedRedirect;
   } finally {
-    if (generatedUserId) await client.auth.admin.deleteUser(generatedUserId).catch(() => undefined);
+    if (generatedUserId) {
+      const { error } = await client.auth.admin.deleteUser(generatedUserId);
+      if (error)
+        throw new Error(
+          `Deleting a synthetic signup identity failed with status ${error.status ?? "unknown"}`,
+        );
+    }
   }
 }

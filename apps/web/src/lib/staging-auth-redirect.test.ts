@@ -69,4 +69,22 @@ describe("staging Auth redirect probe", () => {
     await expect(signupActionPreservesRedirect(CALLBACK)).rejects.toThrow("returned no link");
     expect(authAdmin.deleteUser).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000044");
   });
+
+  it("fails the probe when generated-identity cleanup is rejected", async () => {
+    authAdmin.generateLink.mockResolvedValue({
+      data: {
+        properties: { action_link: actionLink(CALLBACK) },
+        user: { id: "00000000-0000-4000-8000-000000000045" },
+      },
+      error: null,
+    });
+    authAdmin.deleteUser.mockResolvedValue({
+      data: null,
+      error: { status: 503 },
+    });
+
+    await expect(signupActionPreservesRedirect(CALLBACK)).rejects.toThrow(
+      "Deleting a synthetic signup identity failed with status 503",
+    );
+  });
 });
