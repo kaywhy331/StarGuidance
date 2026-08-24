@@ -337,8 +337,10 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await scan("revealed result");
   const journey = page.getByTestId("reading-journey");
   await expect(journey).toHaveAttribute("data-state", "complete", { timeout: 30_000 });
+  await expect
+    .poll(async () => Number(await journey.getAttribute("data-loaded-section-count")))
+    .toBeGreaterThanOrEqual(3);
   const passageCount = Number(await journey.getAttribute("data-loaded-section-count"));
-  expect(passageCount).toBeGreaterThanOrEqual(3);
   await expect(page.getByTestId("reading-complete-story")).toBeVisible();
   const guidedMode = page.getByRole("button", { name: "Guided" });
   await guidedMode.focus();

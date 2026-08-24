@@ -55,6 +55,7 @@ let interpretationContract: InterpretationContract;
 const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
 const NAVIGATION_ATTEMPTS = 3;
 const API_REQUEST_TIMEOUT_MS = 60_000;
+const API_GET_ATTEMPTS = 2;
 const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60_000;
 
 /** Stable digest of a locked draw for byte-for-byte comparison. */
@@ -152,17 +153,26 @@ async function reloadApp(page: Page, ready: () => Promise<void>): Promise<void> 
 }
 
 async function apiGet<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
-  try {
-    const response = await page.request.get(new URL(path, baseUrl).toString(), {
-      headers: { "cache-control": "no-store" },
-      timeout: API_REQUEST_TIMEOUT_MS,
-    });
-    return { status: response.status(), body: (await response.json()) as T };
-  } catch {
-    // Playwright's request error includes every cookie and authorization
-    // header. Never let that provider diagnostic reach a public Actions log.
-    throw new Error(`GET ${path} did not complete; request details redacted`);
+  for (let attempt = 1; attempt <= API_GET_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await page.request.get(new URL(path, baseUrl).toString(), {
+        headers: { "cache-control": "no-store" },
+        timeout: API_REQUEST_TIMEOUT_MS,
+      });
+      return { status: response.status(), body: (await response.json()) as T };
+    } catch {
+      if (attempt < API_GET_ATTEMPTS) {
+        await page.waitForTimeout(attempt * 500);
+        continue;
+      }
+      // Playwright's request error includes every cookie and authorization
+      // header. Never let that provider diagnostic reach a public Actions log.
+      throw new Error(
+        `GET ${path} did not complete after ${API_GET_ATTEMPTS} attempts; request details redacted`,
+      );
+    }
   }
+  throw new Error(`GET ${path} exhausted its bounded retry contract`);
 }
 
 async function apiPost<T>(

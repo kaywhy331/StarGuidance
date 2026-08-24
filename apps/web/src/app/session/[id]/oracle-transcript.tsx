@@ -54,15 +54,19 @@ export function OracleTranscript({
   const [completeView, setCompleteView] = useState(Boolean(previewEvents));
   const [announcement, setAnnouncement] = useState("");
   const entriesRef = useRef(entries);
+  const onJourneyCompleteChangeRef = useRef(onJourneyCompleteChange);
+  const onStateChangeRef = useRef(onStateChange);
 
-  const updateState = useCallback(
-    (next: StreamState) => {
-      setStreamState(next);
-      onStateChange?.(next);
-      if (next === "complete") onJourneyCompleteChange?.(true);
-    },
-    [onJourneyCompleteChange, onStateChange],
-  );
+  useEffect(() => {
+    onJourneyCompleteChangeRef.current = onJourneyCompleteChange;
+    onStateChangeRef.current = onStateChange;
+  }, [onJourneyCompleteChange, onStateChange]);
+
+  const updateState = useCallback((next: StreamState) => {
+    setStreamState(next);
+    onStateChangeRef.current?.(next);
+    if (next === "complete") onJourneyCompleteChangeRef.current?.(true);
+  }, []);
 
   useEffect(() => {
     let timer = 0;
