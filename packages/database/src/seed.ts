@@ -44,6 +44,7 @@ try {
       const meaningPayload = asJson({
         uprightThemes: card.uprightThemes,
         reversedThemes: card.reversedThemes,
+        reversalFacets: card.reversalFacets,
         eventTags: card.eventTags,
         reflectivePrompt: card.reflectivePrompt,
         attribution: card.attribution,

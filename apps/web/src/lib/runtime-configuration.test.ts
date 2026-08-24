@@ -94,7 +94,7 @@ describe("governed runtime configuration", () => {
         },
       ])
       .mockResolvedValueOnce([
-        { target_type: "deck", target_id: "starguidance-illustrated-v3" },
+        { target_type: "deck", target_id: "starguidance-illustrated-v4" },
         ...defaultRuntimeConfiguration().content.enabledSpreadIds.map((target_id) => ({
           target_type: "spread",
           target_id,

@@ -6,8 +6,8 @@ StarGuidance treats the reading ritual as part of draw finalization, not as an a
 
 The original StarGuidance illustrated deck has 78 unique IDs: 22 Major Arcana and 56 Minor Arcana, with 14 cards in each suit. Every card includes upright themes, contextual reversed themes, approved reversal facets, event tags, a reflective prompt, content provenance, and versioned artwork metadata. No copyrighted deck artwork or guidebook copy is included.
 
-- Content version: `starguidance-original-v1`
-- Deck version: `starguidance-illustrated-v3`
+- Content version: `starguidance-original-v2`
+- Deck version: `starguidance-illustrated-v4`
 - Artwork version: `starguidance-celestial-gothic-v3`
 - Spread-catalog version: `starguidance-spreads-v3`
 - Draw version: `fisher-yates-committed-v2`

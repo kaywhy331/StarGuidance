@@ -10,9 +10,9 @@ import type {
 
 export { renderTarotFaceSvg, renderTarotFaceSvgV3 } from "./artwork";
 
-export const TAROT_CONTENT_VERSION = "starguidance-original-v1" as const;
+export const TAROT_CONTENT_VERSION = "starguidance-original-v2" as const;
 export const TAROT_ARTWORK_VERSION = "starguidance-celestial-gothic-v3" as const;
-export const DECK_VERSION = "starguidance-illustrated-v3" as const;
+export const DECK_VERSION = "starguidance-illustrated-v4" as const;
 export const SPREAD_CATALOG_VERSION = "starguidance-spreads-v3" as const;
 
 const BACK_ASSET = "/art/tarot/v2/celestial-gothic-back-v1.webp";

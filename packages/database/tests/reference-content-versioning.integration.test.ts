@@ -3,7 +3,12 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { DECK_VERSION, spreads } from "@starguidance/tarot-content";
+import {
+  DECK_VERSION,
+  spreads,
+  TAROT_CONTENT_VERSION,
+  tarotCards,
+} from "@starguidance/tarot-content";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDatabaseClient } from "../src/postgres-client";
@@ -79,6 +84,18 @@ describeDatabase("immutable reference-content releases", () => {
 
     expect(cards?.count).toBe(2);
     expect(storedSpreads?.count).toBe(2);
+  });
+
+  it("publishes curated reversal facets under the versioned meaning release", async () => {
+    if (!sql) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const expectedCard = tarotCards.find(({ id }) => id === "major-00");
+    const [storedMeaning] = await sql<{ payload: { reversalFacets?: string[] } }[]>`
+      select payload from card_meanings
+      where card_id = 'major-00'
+        and deck_version = ${DECK_VERSION}
+        and content_version = ${TAROT_CONTENT_VERSION}`;
+
+    expect(storedMeaning?.payload.reversalFacets).toEqual(expectedCard?.reversalFacets);
   });
 
   it("reruns the real seed without overwriting or colliding with the historical release", async () => {

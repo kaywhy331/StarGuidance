@@ -48,9 +48,9 @@ const configurationId = "00000000-0000-4000-8000-000000000203";
 
 const effective = {
   content: {
-    deckVersion: "starguidance-illustrated-v3",
-    cardSetVersion: "starguidance-illustrated-v3",
-    tarotContentVersion: "starguidance-original-v1",
+    deckVersion: "starguidance-illustrated-v4",
+    cardSetVersion: "starguidance-illustrated-v4",
+    tarotContentVersion: "starguidance-original-v2",
     spreadCatalogVersion: "starguidance-spreads-v3",
     interpretationRulesVersion: "interpretation-rules-v1",
     enabledSpreadIds: [

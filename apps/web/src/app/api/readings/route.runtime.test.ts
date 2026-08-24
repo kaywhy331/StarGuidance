@@ -113,7 +113,7 @@ const privateCeremony = {
   readingId,
   userId,
   idempotencyKey,
-  deckVersion: "starguidance-illustrated-v3",
+  deckVersion: "starguidance-illustrated-v4",
   profileSnapshotId: "00000000-0000-4000-8000-000000000903",
   readingLens: { version: "question-trait-lens-v2", traitIndexes: [], tensionIndexes: [] },
   question: "What deserves my focus?",
@@ -134,7 +134,7 @@ const privateCeremony = {
 };
 const lockedDraw = {
   id: readingId,
-  deckVersion: "starguidance-illustrated-v3",
+  deckVersion: "starguidance-illustrated-v4",
   spreadId: "one-card",
   spreadVersion: "one-card-v3",
   shuffleVersion: "fisher-yates-committed-v2",
@@ -178,9 +178,9 @@ const result = {
 };
 const runtimeConfiguration = {
   content: {
-    deckVersion: "starguidance-illustrated-v3",
-    cardSetVersion: "starguidance-illustrated-v3",
-    tarotContentVersion: "starguidance-original-v1",
+    deckVersion: "starguidance-illustrated-v4",
+    cardSetVersion: "starguidance-illustrated-v4",
+    tarotContentVersion: "starguidance-original-v2",
     spreadCatalogVersion: "starguidance-spreads-v3",
     interpretationRulesVersion: "interpretation-rules-v1",
     enabledSpreadIds: ["one-card"],
