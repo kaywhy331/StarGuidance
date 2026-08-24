@@ -359,7 +359,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(page.getByRole("heading", { name: "Before you leave the cards" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Ask the same cards/ })).toBeEnabled();
   await page.getByRole("button", { name: /Ask the same cards/ }).click();
-  await expect(page.getByLabel("Keep the same cards and ask what they add")).toBeEnabled();
+  await expect(
+    page.getByLabel("Clarify the original question with these same cards"),
+  ).toBeEnabled();
   await scan("final reflection and follow-up entry point");
 
   await page.setViewportSize({ width: 320, height: 640 });
