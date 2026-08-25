@@ -75,16 +75,17 @@ async function navigate(
 }
 
 async function visibleAssignments(targetPage: Page): Promise<string[]> {
-  return targetPage
-    .getByTestId("tarot-spread-stage")
-    .locator(".physical-tarot-card")
-    .evaluateAll((cards) =>
-      cards.map(
-        (card) =>
-          `${card.getAttribute("data-card-id") ?? "missing"}:` +
-          (card.getAttribute("data-orientation") ?? "missing"),
-      ),
-    );
+  const liveSpread = targetPage.getByTestId("tarot-spread-stage").locator(".physical-tarot-card");
+  const cards = (await liveSpread.count())
+    ? liveSpread
+    : targetPage.locator(".guest-locked-spread-review li");
+  return cards.evaluateAll((elements) =>
+    elements.map(
+      (card) =>
+        `${card.getAttribute("data-card-id") ?? "missing"}:` +
+        (card.getAttribute("data-orientation") ?? "missing"),
+    ),
+  );
 }
 
 test.beforeAll(async ({ browser }, testInfo) => {
@@ -180,6 +181,9 @@ test("a birthday-based free reading remains causal and continues through passwor
   expect(finalized.reading.result, "whole-reading prose remains private before reveal").toBe(
     undefined,
   );
+  const originalAssignments = finalized.reading.cards.map(
+    ({ cardId, orientation }) => `${cardId}:${orientation}`,
+  );
 
   await expect(page.getByTestId("guest-question-reflection")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".physical-card-front")).toHaveCount(0);
@@ -188,14 +192,22 @@ test("a birthday-based free reading remains causal and continues through passwor
   await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
   await expect(page.getByTestId("guest-guided-reveal-panel")).toContainText("Situation");
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
+  await expect.poll(async () => (await visibleAssignments(page))[0]).toBe(originalAssignments[0]);
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
 
   await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("tarot-spread-stage")).toHaveCount(0);
+  await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
+  await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+    "data-reading-focus",
+    "reading",
+  );
+  await page.getByTestId("complete-reading-action").click();
   await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
-  const originalAssignments = await visibleAssignments(page);
-  expect(originalAssignments).toEqual(
-    finalized.reading.cards.map(({ cardId, orientation }) => `${cardId}:${orientation}`),
+  await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+    "data-reading-focus",
+    "actions",
   );
 
   await page.evaluate(() => {
@@ -209,11 +221,18 @@ test("a birthday-based free reading remains causal and continues through passwor
   );
   await expect(page.locator(".physical-card-front")).toHaveCount(0);
   await page.getByRole("button", { name: "I’m ready" }).click();
+  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
+  await expect
+    .poll(async () => (await visibleAssignments(page))[0], {
+      message: "receipt recovery preserves the revealed assignment",
+    })
+    .toBe(originalAssignments[0]);
+  await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
-  await expect(page.getByTestId("guest-signup-gate")).toBeVisible({ timeout: 60_000 });
-  expect(await visibleAssignments(page), "receipt recovery preserves the exact draw").toEqual(
-    originalAssignments,
-  );
+  await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
+  await page.getByTestId("complete-reading-action").click();
+  await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
 
   const signInLink = page.getByRole("link", { name: "Sign in" });
   await expect(signInLink).toHaveAttribute("href", "/sign-in?next=%2Ffree-reading%3Fcontinue%3D1");

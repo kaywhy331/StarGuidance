@@ -400,7 +400,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **UX-009** | Reduced-motion and skip-animation modes provide the full experience. | **Must** | The system respects browser preferences, removes large transforms, and preserves all reading content and controls. |
 | **UX-010** | Reading sound is optional, user-controlled, and on by default inside the user-initiated ritual. | **Must** | A persistent sound control exists; spoken-paced word reveal works without audio, browser narration uses only a device-local voice when one is available, and no audio autoplays on the landing or account pages. |
 | **UX-011** | The experience is mobile-first and touch-friendly. | **Must** | Primary controls meet target sizes; safe areas, orientation changes, and common mobile viewport issues are tested. |
-| **UX-012** | The visual system is minimal, immersive, and content-led. | **Must** | Screens use a restrained component set, clear hierarchy, high contrast, and no distracting decorative motion during reading text. |
+| **UX-012** | The visual system is minimal, immersive, and content-led. | **Must** | Attention follows one explicit hierarchy: cards during shuffle/deal/reveal, one interpretation surface after the card scene, next actions only after deliberate reading completion, and all other utilities collapsed, hidden, or visually discreet. Card and reading stages use an original responsive clear starry-night backdrop with a dark central field, high contrast, and no distracting decorative motion during reading text. |
 | **UX-013** | Loading and failure states preserve the ritual and the user's trust. | **Must** | The UI never shows a blank card, finalizes twice, reshuffles after locking, leaks an unrevealed card, or loses the confirmed question; retry language states that the same cards will be used. |
 | **UX-014** | The application supports current desktop and mobile browsers. | **Must** | Critical flows pass on current and previous major versions of Chrome, Safari, Firefox, and Edge, including iOS Safari and Android Chrome. |
 
@@ -412,7 +412,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | Optional cut | Reader selects a cut offset or No cut before assignments are produced. | Static, keyboard-accessible choices with no large transform. |
 | Deal | Cards travel to spread positions in order. | Cards appear sequentially with focus management. |
 | Reveal | User chooses any remaining locked position or explicitly chooses Reveal All; only revealed baselines appear. | Instant reveal with text announcement and identical information gate. |
-| Synthesis | Begins visibly only after the full spread is revealed. | Immediate spread-aware content view; no parallax or scale. |
+| Synthesis | Begins visibly only after the full spread is revealed; the card stage leaves before the single reading surface appears. Follow-up and completion actions remain hidden until the reader explicitly finishes. | Immediate spread-aware content view with the same acknowledgement boundary; no parallax or scale. |
 
 **Epic completion criteria**
 
@@ -421,6 +421,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **[ ]** Keyboard, screen reader, reduced-motion, skip, and no-audio modes deliver the complete reading. |
 | **[ ]** Skipping animation never reduces entropy; pre-finalization stir gestures affect only the pending client nonce, the optional cut affects only the recorded offset, and post-lock interaction never changes the draw. |
 | **[ ]** Whole-reading content is inaccessible until all cards are revealed, including through API/stream responses. |
+| **[ ]** Card, reading, and next-action surfaces never compete: only one primary stage is mounted at a time, and stream completion alone cannot expose follow-up controls. |
 | **[ ]** Performance and visual-regression thresholds pass on the defined representative devices. |
 
 ## 5.7 AI interpretation and safety

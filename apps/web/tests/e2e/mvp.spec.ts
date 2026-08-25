@@ -437,13 +437,13 @@ test("refresh, replay, and same-question clarification preserve the exact locked
 
   await page.goto(`/session/${finalized.readingId}`);
   await page.reload();
-  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3, {
-    timeout: 20_000,
-  });
-  const restoredIds = await page
-    .locator(".physical-tarot-card.is-revealed")
-    .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-card-id")));
-  expect(restoredIds).toEqual(before.assignments.map(({ cardId }) => cardId));
+  await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("tarot-spread-stage")).toHaveCount(0);
+  await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
+    "data-reading-focus",
+    "reading",
+  );
+  expect((await readOwnedReading(page, finalized.readingId)).body.reading.draw).toEqual(before);
 });
 
 test("reduced-motion users can reveal all and reach a spread-aware reading", async ({ page }) => {

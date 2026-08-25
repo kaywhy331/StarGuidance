@@ -44,6 +44,17 @@ A second refinement pass addressed the ten remaining experience gaps found durin
 - The result renderer consumes validated structured data and never renders provider HTML or Markdown.
 - Closure is a decision point, not a destructive action; the reading is already durable before it appears.
 
+## Focused reading hierarchy
+
+The reading route now treats attention as an explicit four-stage contract rather than allowing panels to accumulate:
+
+1. **Cards:** shuffle, cut, deal, and reveal occupy the full visual stage. Only controls required for the current ritual action remain visible; the HUD recedes until hovered or focused, and no transcript, follow-up composer, conversion panel, or saved-reading utility is mounted.
+2. **Reading:** the spread leaves the stage and one centered interpretation surface appears against a darker starry-night backdrop. Evidence and format controls remain available but visually subordinate. The reader deliberately chooses **Finish reading** or **Continue to next steps** after reaching the end.
+3. **Next action:** only after that acknowledgement does the interpretation unmount and the closing reflection, same-draw follow-up choice, account handoff, or saved-reading controls appear.
+4. **Quiet utilities:** provenance, feedback, spread review, and other supporting controls are collapsed, lower contrast, or hidden unless requested.
+
+The dedicated reading background is an original responsive clear-night composition: deep black-blue sky, slight dark-purple shadow, luminous stars, distant Gothic occult silhouettes, subtle celestial geometry, and restrained fog. Desktop and portrait source art preserve a dark central field so cards or prose—not the illustration—remain the focal point. The sequence is represented by `data-reading-focus="cards|reading|actions|ambient"`, which gives tests and styles one semantic boundary without changing the reading state machine or locked draw.
+
 ## Performance contract
 
 The scene remains 2.5D DOM/CSS. It uses one responsive sanctuary asset, 78 lightweight anonymous back shells grouped into six streams, only the dealt physical card components, transform/opacity animation, and small Web Audio oscillators. It intentionally does not mount 78 artwork-bearing card components. Cormorant and Manrope are bundled as self-hosted WOFF2 assets. The experience introduces no canvas, WebGL, video, runtime font service, private analytics payload, or remote sound dependency.

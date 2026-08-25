@@ -52,6 +52,7 @@ export function OracleTranscript({
   const [streamState, setStreamState] = useState<StreamState>(previewEvents ? "complete" : "idle");
   const [activeIndex, setActiveIndex] = useState(0);
   const [completeView, setCompleteView] = useState(Boolean(previewEvents));
+  const [journeyComplete, setJourneyComplete] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const entriesRef = useRef(entries);
   const onJourneyCompleteChangeRef = useRef(onJourneyCompleteChange);
@@ -65,7 +66,12 @@ export function OracleTranscript({
   const updateState = useCallback((next: StreamState) => {
     setStreamState(next);
     onStateChangeRef.current?.(next);
-    if (next === "complete") onJourneyCompleteChangeRef.current?.(true);
+  }, []);
+
+  const completeJourney = useCallback(() => {
+    setJourneyComplete(true);
+    setAnnouncement("The reading is complete. Next actions are now available.");
+    onJourneyCompleteChangeRef.current?.(true);
   }, []);
 
   useEffect(() => {
@@ -75,6 +81,8 @@ export function OracleTranscript({
       timer = window.setTimeout(() => {
         setEntries([...previewEvents]);
         setCompleteView(true);
+        setJourneyComplete(false);
+        onJourneyCompleteChange?.(false);
         updateState("complete");
       }, 0);
       return () => window.clearTimeout(timer);
@@ -84,6 +92,7 @@ export function OracleTranscript({
       setEntries([]);
       setActiveIndex(0);
       setCompleteView(false);
+      setJourneyComplete(false);
       onJourneyCompleteChange?.(false);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -197,6 +206,7 @@ export function OracleTranscript({
       className="oracle-transcript-shell reading-journey-shell"
       data-loaded-section-count={entries.length}
       data-reading-mode={completeView ? "complete" : "guided"}
+      data-journey-complete={journeyComplete ? "true" : "false"}
       data-state={streamState}
       data-testid="reading-journey"
     >
@@ -229,21 +239,34 @@ export function OracleTranscript({
         tabIndex={0}
       >
         {completeView ? (
-          <article className="reading-complete-story" data-testid="reading-complete-story">
-            <header>
-              <p className="reading-section-eyebrow">Your reading</p>
-              <h2>What the cards indicate</h2>
-              <p>{result.directAnswer}</p>
-            </header>
-            {entries
-              .filter(({ phase }) => phase !== "directAnswer")
-              .map((entry) => (
-                <section data-phase={entry.phase} key={`${target}:${entry.sequence}`}>
-                  <h3>{entry.heading}</h3>
-                  <p>{entry.text}</p>
-                </section>
-              ))}
-          </article>
+          <>
+            <article className="reading-complete-story" data-testid="reading-complete-story">
+              <header>
+                <p className="reading-section-eyebrow">Your reading</p>
+                <h2>What the cards indicate</h2>
+                <p>{result.directAnswer}</p>
+              </header>
+              {entries
+                .filter(({ phase }) => phase !== "directAnswer")
+                .map((entry) => (
+                  <section data-phase={entry.phase} key={`${target}:${entry.sequence}`}>
+                    <h3>{entry.heading}</h3>
+                    <p>{entry.text}</p>
+                  </section>
+                ))}
+            </article>
+            {streamState === "complete" && !journeyComplete && (
+              <button
+                className="reading-journey-complete-action"
+                data-testid="complete-reading-action"
+                onClick={completeJourney}
+                type="button"
+              >
+                <span>Reading complete</span>
+                Continue to next steps
+              </button>
+            )}
+          </>
         ) : activeEntry ? (
           <article className="oracle-entry guided-passage is-active" data-phase={activeEntry.phase}>
             <p className="reading-section-eyebrow">
@@ -266,12 +289,21 @@ export function OracleTranscript({
                 {activeIndex + 1} of {Math.max(1, entries.length)}
               </span>
               <button
-                aria-label="Next reading passage"
-                disabled={activeIndex >= entries.length - 1}
-                onClick={() => move(1)}
+                aria-label={
+                  activeIndex >= entries.length - 1 && streamState === "complete"
+                    ? "Finish reading"
+                    : "Next reading passage"
+                }
+                disabled={activeIndex >= entries.length - 1 && streamState !== "complete"}
+                onClick={() => {
+                  if (activeIndex >= entries.length - 1) completeJourney();
+                  else move(1);
+                }}
                 type="button"
               >
-                Next →
+                {activeIndex >= entries.length - 1 && streamState === "complete"
+                  ? "Finish reading"
+                  : "Next →"}
               </button>
             </nav>
           </article>

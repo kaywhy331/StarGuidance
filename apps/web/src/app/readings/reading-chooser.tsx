@@ -366,6 +366,13 @@ export function ReadingChooser({
 
   const showQuestion = state.matches("questionDrafting");
   const showSpread = state.matches("questionConfirmed") || state.matches("spreadConfirmed");
+  const readingSetupFocus =
+    state.matches("focusing") ||
+    state.matches("shuffling") ||
+    state.matches("optionalCut") ||
+    state.matches("drawFinalizing")
+      ? "cards"
+      : "ambient";
 
   const saveCurrentCeremony = (stage: CeremonyStage) => {
     if (!ceremony) return;
@@ -385,6 +392,8 @@ export function ReadingChooser({
   return (
     <MysticSanctuaryScene
       animationVariant={animationVariant}
+      backdrop={readingSetupFocus === "cards" ? "starry-reading" : "sanctuary"}
+      focusStage={readingSetupFocus}
       phase={String(state.value)}
       reducedMotion={reducedMotion}
       testId="mystic-sanctuary-scene"
