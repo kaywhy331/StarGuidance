@@ -41,7 +41,6 @@ export function ReadingScene({
   const [dealtCount, setDealtCount] = useState(0);
   const [readyPromptVisible, setReadyPromptVisible] = useState(false);
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
-  const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
   const [error, setError] = useState<string>();
   const [safetyInterrupt, setSafetyInterrupt] = useState<{
     category: SafetyCategory;
@@ -354,6 +353,8 @@ export function ReadingScene({
     return (
       <MysticSanctuaryScene
         animationVariant={animationVariant}
+        backdrop="starry-reading"
+        focusStage="ambient"
         phase="generationFailed"
         reducedMotion
         testId="mystic-sanctuary-scene"
@@ -370,6 +371,8 @@ export function ReadingScene({
     return (
       <MysticSanctuaryScene
         animationVariant={animationVariant}
+        backdrop="starry-reading"
+        focusStage="cards"
         phase="drawLocked"
         reducedMotion
         testId="mystic-sanctuary-scene"
@@ -380,28 +383,33 @@ export function ReadingScene({
       </MysticSanctuaryScene>
     );
 
-  const cardsVisible =
-    state.matches("dealing") ||
-    state.matches("awaitingReveal") ||
-    state.matches("revealing") ||
-    state.matches("fullSpreadReady") ||
-    state.matches("interpretationStreaming") ||
-    state.matches("generationFailed") ||
-    state.matches("followUpAvailable") ||
-    state.matches("complete");
-  const focusedCardIndex = activeReveal ?? activeReadingCard;
-  const focusMode =
-    activeReveal !== null ? "reveal" : activeReadingCard !== null ? "reading" : null;
   const activeRevealCard = activeReveal === null ? undefined : reading.cards[activeReveal];
   const transcriptVisible =
     (state.matches("interpretationStreaming") ||
       state.matches("followUpAvailable") ||
       state.matches("complete")) &&
     Boolean(reading.result);
+  const cardsVisible =
+    !transcriptVisible &&
+    (state.matches("dealing") ||
+      state.matches("awaitingReveal") ||
+      state.matches("revealing") ||
+      state.matches("fullSpreadReady") ||
+      state.matches("interpretationStreaming") ||
+      state.matches("generationFailed"));
+  const readingFocusStage = transcriptVisible
+    ? journeyComplete
+      ? "actions"
+      : "reading"
+    : cardsVisible
+      ? "cards"
+      : "ambient";
 
   return (
     <MysticSanctuaryScene
       animationVariant={animationVariant}
+      backdrop="starry-reading"
+      focusStage={readingFocusStage}
       phase={String(state.value)}
       reducedMotion={motionOff}
       testId="mystic-sanctuary-scene"
@@ -441,7 +449,7 @@ export function ReadingScene({
 
       <section
         aria-live="polite"
-        className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${activeReveal === null ? "" : "has-cinematic-review"} ${transcriptVisible ? "has-reading-journey" : ""}`}
+        className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${activeReveal === null ? "" : "has-cinematic-review"}`}
       >
         {state.matches("sessionExpired") && (
           <div className="ritual-moment">
@@ -487,9 +495,9 @@ export function ReadingScene({
         {cardsVisible && !state.matches("dealing") && (
           <div className="ritual-card-layout">
             <TarotSpreadStage
-              activeIndex={focusedCardIndex}
+              activeIndex={activeReveal}
               cards={reading.cards}
-              focusMode={focusMode}
+              focusMode={activeReveal === null ? null : "reveal"}
               reducedMotion={motionOff}
               revealed={revealed}
               onReveal={
@@ -598,12 +606,14 @@ export function ReadingScene({
         )}
       </section>
 
-      <div className={`oracle-console-stack ${transcriptVisible ? "" : "is-inactive"}`}>
-        {transcriptVisible && reading.result && (
+      <div
+        className={`oracle-console-stack ${transcriptVisible ? "" : "is-inactive"} ${journeyComplete ? "is-actions" : "is-reading"}`}
+        data-focus-stage={readingFocusStage}
+      >
+        {transcriptVisible && !journeyComplete && reading.result && (
           <OracleTranscript
             active
             cards={reading.cards}
-            onActiveCardChange={setActiveReadingCard}
             onJourneyCompleteChange={setJourneyComplete}
             onRetry={() => setStreamRetryToken((token) => token + 1)}
             onStateChange={handleStreamState}
@@ -675,6 +685,7 @@ export function ReadingScene({
           )}
         {state.matches("complete") && <ReadingSealed readingId={readingId} />}
         {(state.matches("followUpAvailable") || state.matches("complete")) &&
+          journeyComplete &&
           reading.safetyClassification &&
           GUARDED_CATEGORIES.has(reading.safetyClassification) && (
             <p className="safety-flags-banner" role="note">

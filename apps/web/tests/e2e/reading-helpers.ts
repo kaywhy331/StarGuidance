@@ -355,4 +355,9 @@ export async function revealAllThroughUi(page: Page) {
   await page.getByRole("button", { name: /^(I’m ready|Continue revealing)$/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("tarot-spread-stage")).toHaveCount(0);
+  await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
+    "data-reading-focus",
+    "reading",
+  );
 }

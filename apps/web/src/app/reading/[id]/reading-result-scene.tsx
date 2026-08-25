@@ -20,7 +20,6 @@ import {
 import type { ReadingPayload } from "../../session/[id]/reading-types";
 import { useRitualAmbience } from "../../session/[id]/ritual-audio";
 import { RitualControls } from "../../session/[id]/ritual-controls";
-import { TarotSpreadStage } from "../../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 
@@ -36,7 +35,6 @@ export function ReadingResultScene({
   const router = useRouter();
   const [reading, setReading] = useState<ReadingPayload>();
   const [error, setError] = useState<string>();
-  const [activeCard, setActiveCard] = useState<number | null>(null);
   const [followUp, setFollowUp] = useState("");
   const [followUpLoading, setFollowUpLoading] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -102,7 +100,6 @@ export function ReadingResultScene({
         (event): event is PhaseEvent => event.type === "phase",
       )
     : [];
-  const revealed = new Set(reading?.cards.map((_, index) => index) ?? []);
 
   const submitFollowUp = async () => {
     if (!reading || !followUp.trim()) return;
@@ -196,6 +193,8 @@ export function ReadingResultScene({
     return (
       <MysticSanctuaryScene
         animationVariant={animationVariant}
+        backdrop="starry-reading"
+        focusStage="reading"
         reducedMotion={true}
         testId="reading-result-scene"
       >
@@ -212,6 +211,8 @@ export function ReadingResultScene({
     return (
       <MysticSanctuaryScene
         animationVariant={animationVariant}
+        backdrop="starry-reading"
+        focusStage="reading"
         reducedMotion={true}
         testId="reading-result-scene"
       >
@@ -227,6 +228,8 @@ export function ReadingResultScene({
   return (
     <MysticSanctuaryScene
       animationVariant={animationVariant}
+      backdrop="starry-reading"
+      focusStage={journeyComplete ? "actions" : "reading"}
       phase="complete"
       reducedMotion={reducedMotion}
       testId="reading-result-scene"
@@ -247,33 +250,27 @@ export function ReadingResultScene({
         toggleSound={toggleSound}
       />
 
-      <section className="sanctuary-stage has-reading-journey" aria-label="Finished reading">
-        <TarotSpreadStage
-          activeIndex={activeCard}
-          cards={reading.cards}
-          focusMode={activeCard === null ? null : "reading"}
-          reducedMotion={reducedMotion}
-          revealed={revealed}
-        />
-      </section>
-
-      <div className="oracle-console-stack">
-        <OracleTranscript
-          active
-          cards={reading.cards}
-          onActiveCardChange={setActiveCard}
-          onJourneyCompleteChange={setJourneyComplete}
-          onRetry={() => undefined}
-          {...(reading.personalization ? { personalization: reading.personalization } : {})}
-          previewEvents={previewEvents}
-          readingId={readingId}
-          reducedMotion={reducedMotion}
-          result={reading.result}
-          retryToken={0}
-          sigilSeed={reading.profileSnapshotId}
-          soundEnabled={narration}
-          target="primary"
-        />
+      <div
+        className={`oracle-console-stack ${journeyComplete ? "is-actions" : "is-reading"}`}
+        data-focus-stage={journeyComplete ? "actions" : "reading"}
+      >
+        {!journeyComplete && (
+          <OracleTranscript
+            active
+            cards={reading.cards}
+            onJourneyCompleteChange={setJourneyComplete}
+            onRetry={() => undefined}
+            {...(reading.personalization ? { personalization: reading.personalization } : {})}
+            previewEvents={previewEvents}
+            readingId={readingId}
+            reducedMotion={reducedMotion}
+            result={reading.result}
+            retryToken={0}
+            sigilSeed={reading.profileSnapshotId}
+            soundEnabled={narration}
+            target="primary"
+          />
+        )}
 
         {journeyComplete && (
           <div className="result-support-stack">

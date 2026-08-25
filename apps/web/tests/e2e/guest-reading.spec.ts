@@ -97,10 +97,14 @@ test("a visitor completes a causal free reading before signup and continues with
   const finalizedResponse = await finalized;
   expect(finalizedResponse.status()).toBe(201);
   const finalizedBody = (await finalizedResponse.json()) as {
-    reading: { cards: unknown[]; result?: unknown };
+    reading: {
+      cards: { cardId: string; orientation: "upright" | "reversed" }[];
+      result?: unknown;
+    };
   };
   expect(finalizedBody.reading.cards).toHaveLength(3);
   expect(finalizedBody.reading.result).toBeUndefined();
+  const originalCards = finalizedBody.reading.cards.map(({ cardId }) => cardId);
 
   await expect(page.getByTestId("guest-question-reflection")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".physical-card-front")).toHaveCount(0);
@@ -109,11 +113,14 @@ test("a visitor completes a causal free reading before signup and continues with
   await page.getByRole("button", { name: "Reveal card 3, face down" }).click();
   await expect(page.getByTestId("guest-guided-reveal-panel")).toContainText("Direction");
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveAttribute(
+    "data-card-id",
+    originalCards[2]!,
+  );
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
 
   const completeStory = page.getByTestId("reading-complete-story");
-  const readingJourney = page.getByTestId("reading-journey");
   const signupGate = page.getByTestId("guest-signup-gate");
   await expect(completeStory).toBeVisible({ timeout: 20_000 });
   await expect(completeStory.locator("header > p:last-child")).toHaveText(/\S/);
@@ -122,17 +129,19 @@ test("a visitor completes a causal free reading before signup and continues with
   );
   await expect(completeStory).not.toContainText("whose function is");
   await expect(completeStory).not.toContainText("current pattern begins with");
+  await expect(page.getByTestId("tarot-spread-stage")).toHaveCount(0);
+  await expect(signupGate).toHaveCount(0);
+  await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+    "data-reading-focus",
+    "reading",
+  );
+  await page.getByTestId("complete-reading-action").click();
+  await expect(completeStory).toHaveCount(0);
   await expect(signupGate).toBeVisible();
-  const readingBox = await readingJourney.boundingBox();
-  const signupBox = await signupGate.boundingBox();
-  if (!readingBox || !signupBox)
-    throw new Error("The completed reading and signup prompt must both be measurable.");
-  expect(signupBox.y).toBeGreaterThanOrEqual(readingBox.y + readingBox.height - 1);
-  const originalCards = await page
-    .getByTestId("tarot-spread-stage")
-    .locator(".physical-tarot-card")
-    .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-card-id")));
-  expect(originalCards).toHaveLength(3);
+  await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+    "data-reading-focus",
+    "actions",
+  );
 
   await page.evaluate(() => {
     sessionStorage.clear();
@@ -144,14 +153,17 @@ test("a visitor completes a causal free reading before signup and continues with
   });
   await expect(page.locator(".physical-card-front")).toHaveCount(0);
   await page.getByRole("button", { name: "I’m ready" }).click();
+  await page.getByRole("button", { name: "Reveal card 3, face down" }).click();
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveAttribute(
+    "data-card-id",
+    originalCards[2]!,
+  );
+  await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
   await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
+  await page.getByTestId("complete-reading-action").click();
   await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
-  const refreshedCards = await page
-    .getByTestId("tarot-spread-stage")
-    .locator(".physical-tarot-card")
-    .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-card-id")));
-  expect(refreshedCards).toEqual(originalCards);
   await page.getByRole("link", { name: "Sign up to continue" }).click();
   await expect(page).toHaveURL(/\/sign-up\?next=/);
 
@@ -168,8 +180,7 @@ test("a visitor completes a causal free reading before signup and continues with
   await expect(page).toHaveURL(/\/free-reading\?continue=1$/, { timeout: 20_000 });
   await expect(page.getByText("Same cards · account unlocked")).toBeVisible({ timeout: 20_000 });
   const recoveredCards = await page
-    .getByTestId("tarot-spread-stage")
-    .locator(".physical-tarot-card")
+    .locator(".guest-locked-spread-review li")
     .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-card-id")));
   expect(recoveredCards).toEqual(originalCards);
 

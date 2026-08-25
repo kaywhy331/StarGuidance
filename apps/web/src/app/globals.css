@@ -8246,6 +8246,341 @@ body {
   }
 }
 
+/* Focused reading sequence: cards first, then interpretation, then next actions. */
+.mystic-sanctuary[data-backdrop="starry-reading"] .sanctuary-background img {
+  object-position: center center;
+  filter: saturate(0.92) contrast(1.08) brightness(0.7);
+  transform: scale(1.015);
+}
+
+.mystic-sanctuary[data-backdrop="starry-reading"] :is(.sanctuary-sigil, .sanctuary-phase-gate) {
+  opacity: 0.045;
+}
+
+.mystic-sanctuary[data-backdrop="starry-reading"] .sanctuary-floor-constellation {
+  opacity: 0.08;
+}
+
+.mystic-sanctuary[data-backdrop="starry-reading"] .sanctuary-light {
+  opacity: 0.2;
+  filter: blur(26px) saturate(0.75);
+}
+
+.mystic-sanctuary[data-backdrop="starry-reading"] .mist {
+  opacity: 0.3;
+}
+
+.mystic-sanctuary[data-backdrop="starry-reading"] .sanctuary-particles {
+  opacity: 0.32;
+}
+
+.mystic-sanctuary[data-reading-focus="reading"] .sanctuary-background img,
+.mystic-sanctuary[data-reading-focus="actions"] .sanctuary-background img {
+  filter: saturate(0.82) contrast(1.1) brightness(0.48);
+  transform: scale(1.01);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] :is(.ritual-hud, .guest-reading-toolbar) {
+  opacity: 0.36;
+  transition: opacity 240ms ease;
+}
+
+.mystic-sanctuary[data-reading-focus="cards"]
+  :is(.ritual-hud, .guest-reading-toolbar):is(:hover, :focus-within) {
+  opacity: 1;
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .sanctuary-stage {
+  top: max(4.15rem, calc(env(safe-area-inset-top) + 3.5rem));
+  right: clamp(0.5rem, 2vw, 1.5rem);
+  bottom: max(0.6rem, env(safe-area-inset-bottom));
+  left: clamp(0.5rem, 2vw, 1.5rem);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .tarot-spread-stage {
+  width: min(100%, 82rem);
+  transform: none;
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .physical-card-figure {
+  width: clamp(5rem, min(11vw, 13dvh), 9rem);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .spread-count-1 .physical-card-figure {
+  width: clamp(9rem, min(18vw, 24dvh), 14rem);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .spread-count-3 .physical-card-figure {
+  width: clamp(6.5rem, min(15vw, 19dvh), 11rem);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"]
+  :is(.spread-count-5, .spread-count-7, .spread-count-9, .spread-count-10)
+  .physical-card-figure {
+  width: clamp(4rem, min(8.5vw, 10dvh), 6.8rem);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"]
+  .tarot-spread-stage:is([data-layout-kind="celtic-cross"], [data-layout-kind="horseshoe"])
+  .physical-card-figure {
+  width: clamp(3.2rem, min(6.5vw, 7.8dvh), 5.25rem);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .ritual-question-reflection {
+  width: min(92vw, 34rem);
+  padding: 0.45rem 0.75rem 0.15rem;
+  border-top: 1px solid rgb(222 202 145 / 0.12);
+  background: linear-gradient(180deg, rgb(2 8 14 / 0.02), rgb(2 8 14 / 0.46));
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .ritual-question-reflection > p,
+.mystic-sanctuary[data-reading-focus="cards"] .reveal-choice-prompt small {
+  display: none;
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .ritual-question-reflection blockquote {
+  margin-block: 0.25rem;
+  font-size: clamp(1rem, 2.1vw, 1.35rem);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .reveal-choice-prompt {
+  width: min(calc(100vw - 1.25rem), 25rem);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.55rem;
+  padding: 0.5rem 0.65rem;
+  border-color: rgb(222 211 172 / 0.15);
+  background: rgb(2 9 15 / 0.62);
+  box-shadow: none;
+  backdrop-filter: blur(10px);
+}
+
+.mystic-sanctuary[data-reading-focus="cards"] .reveal-choice-prompt > span:first-child {
+  display: none;
+}
+
+.mystic-sanctuary[data-reading-focus="reading"] .oracle-console-stack {
+  top: max(4.35rem, calc(env(safe-area-inset-top) + 3.8rem));
+  right: auto;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  left: 50%;
+  width: min(58rem, calc(100vw - 2rem));
+  height: auto;
+  grid-template-rows: minmax(0, 1fr);
+  filter: none;
+  translate: -50% 0;
+}
+
+.mystic-sanctuary[data-reading-focus="reading"] .oracle-transcript-shell {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.mystic-sanctuary[data-reading-focus="reading"] .oracle-transcript {
+  padding: clamp(1.1rem, 3vw, 2rem);
+  border-color: rgb(221 204 156 / 0.12);
+  border-radius: 1.1rem;
+  background: linear-gradient(180deg, rgb(2 8 15 / 0.5), rgb(2 8 15 / 0.74));
+  box-shadow: 0 1.4rem 5rem rgb(0 0 0 / 0.2);
+  backdrop-filter: blur(8px) saturate(1.05);
+}
+
+.mystic-sanctuary[data-reading-focus="reading"] .reading-mode-bar {
+  opacity: 0.72;
+}
+
+.mystic-sanctuary[data-reading-focus="reading"] .reading-details-drawer {
+  opacity: 0.55;
+  transition: opacity 180ms ease;
+}
+
+.mystic-sanctuary[data-reading-focus="reading"] .reading-details-drawer:is(:hover, :focus-within) {
+  opacity: 1;
+}
+
+.reading-journey-complete-action {
+  display: inline-grid;
+  min-height: 3.25rem;
+  justify-items: center;
+  gap: 0.12rem;
+  margin: 0 auto 0.75rem;
+  padding: 0.7rem 1.25rem;
+  border: 1px solid rgb(232 207 142 / 0.5);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgb(14 57 58 / 0.88), rgb(39 26 62 / 0.88));
+  color: #f3e2b3;
+  cursor: pointer;
+  font: 600 0.86rem/1.2 var(--font-body);
+}
+
+.reading-journey-complete-action span {
+  color: #8fcabd;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mystic-sanctuary[data-reading-focus="actions"] .oracle-console-stack {
+  top: max(4.5rem, calc(env(safe-area-inset-top) + 4rem));
+  right: auto;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  left: 50%;
+  display: grid;
+  width: min(44rem, calc(100vw - 2rem));
+  height: auto;
+  place-items: center;
+  filter: none;
+  translate: -50% 0;
+}
+
+.mystic-sanctuary[data-reading-focus="actions"]
+  .oracle-console-stack
+  > :is(.reading-closure, .reading-sealed, .reading-follow-up-threshold) {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  max-height: calc(100dvh - 6rem);
+}
+
+.mystic-sanctuary[data-reading-focus="actions"] .result-support-stack {
+  width: 100%;
+  max-height: calc(100dvh - 6rem);
+  align-content: center;
+  overflow: auto;
+}
+
+.mystic-sanctuary[data-reading-focus="actions"]
+  .result-support-stack
+  > :is(.reading-closure, .reading-follow-up-threshold, .reading-sealed) {
+  order: 1;
+}
+
+.mystic-sanctuary[data-reading-focus="actions"]
+  .result-support-stack
+  > :is(.result-followups, .reading-feedback-panel, .feedback-thanks) {
+  order: 4;
+  opacity: 0.42;
+  transition: opacity 180ms ease;
+}
+
+.mystic-sanctuary[data-reading-focus="actions"]
+  .result-support-stack
+  > :is(.result-followups, .reading-feedback-panel, .feedback-thanks):is(:hover, :focus-within) {
+  opacity: 1;
+}
+
+.mystic-sanctuary[data-reading-focus="actions"]
+  :is(.reading-closure, .reading-sealed, .reading-follow-up-threshold, .guest-reading-result-gate) {
+  border-color: rgb(224 198 128 / 0.18);
+  background: linear-gradient(155deg, rgb(2 12 19 / 0.9), rgb(12 10 28 / 0.9));
+  box-shadow: 0 1.2rem 4rem rgb(0 0 0 / 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.guest-continuation-reading {
+  width: min(44rem, calc(100vw - 2rem));
+  height: auto;
+  max-height: calc(100dvh - 2rem);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: auto;
+  padding: 4rem 0.25rem 1rem;
+}
+
+.guest-locked-spread-review {
+  width: min(32rem, 100%);
+  margin-inline: auto;
+  border-block: 1px solid rgb(222 202 145 / 0.12);
+  color: #a9bcb7;
+  font: 0.72rem/1.4 var(--font-body);
+}
+
+.guest-locked-spread-review summary {
+  padding: 0.6rem;
+  color: #bba970;
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.guest-locked-spread-review ol {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0 0.6rem 0.75rem;
+  list-style: none;
+}
+
+.guest-locked-spread-review li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.guest-locked-spread-review strong {
+  color: #d8d2c3;
+  font-weight: 500;
+  text-align: right;
+}
+
+@media (max-width: 767px) {
+  .mystic-sanctuary[data-backdrop="starry-reading"] .sanctuary-background img {
+    object-position: center center;
+  }
+
+  .mystic-sanctuary[data-reading-focus="cards"] :is(.ritual-hud, .guest-reading-toolbar) {
+    opacity: 0.58;
+  }
+
+  .mystic-sanctuary[data-reading-focus="cards"] .sanctuary-stage {
+    top: max(3.65rem, calc(env(safe-area-inset-top) + 3.2rem));
+    right: 0.35rem;
+    bottom: max(0.4rem, env(safe-area-inset-bottom));
+    left: 0.35rem;
+  }
+
+  .mystic-sanctuary[data-reading-focus="cards"] .physical-card-figure {
+    width: clamp(3.7rem, min(18vw, 11dvh), 5.2rem);
+  }
+
+  .mystic-sanctuary[data-reading-focus="cards"] .spread-count-1 .physical-card-figure {
+    width: clamp(7.5rem, min(38vw, 23dvh), 10.5rem);
+  }
+
+  .mystic-sanctuary[data-reading-focus="cards"] .spread-count-3 .physical-card-figure {
+    width: clamp(4.7rem, min(24vw, 14dvh), 6.5rem);
+  }
+
+  .mystic-sanctuary[data-reading-focus="cards"]
+    :is(.spread-count-5, .spread-count-7, .spread-count-9, .spread-count-10)
+    .physical-card-figure {
+    width: clamp(3rem, min(15vw, 8dvh), 4.2rem);
+  }
+
+  .mystic-sanctuary[data-reading-focus="cards"]
+    .tarot-spread-stage:is([data-layout-kind="celtic-cross"], [data-layout-kind="horseshoe"])
+    .physical-card-figure {
+    width: clamp(2.2rem, min(10vw, 5.7dvh), 3.2rem);
+  }
+
+  .mystic-sanctuary[data-reading-focus="reading"] .oracle-console-stack,
+  .mystic-sanctuary[data-reading-focus="actions"] .oracle-console-stack {
+    top: max(3.75rem, calc(env(safe-area-inset-top) + 3.35rem));
+    bottom: max(0.45rem, env(safe-area-inset-bottom));
+    width: calc(100vw - 0.75rem);
+  }
+
+  .mystic-sanctuary[data-reading-focus="reading"] .oracle-transcript {
+    padding: 0.9rem;
+    border-radius: 0.9rem;
+  }
+
+  .mystic-sanctuary[data-reading-focus="actions"] .result-support-stack,
+  .mystic-sanctuary[data-reading-focus="actions"]
+    .oracle-console-stack
+    > :is(.reading-closure, .reading-sealed, .reading-follow-up-threshold) {
+    max-height: calc(100dvh - 4.5rem - env(safe-area-inset-bottom));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sanctuary-background img {
     transform: none;

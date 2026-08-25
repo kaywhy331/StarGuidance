@@ -355,10 +355,14 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(page.getByText(`2 of ${passageCount}`, { exact: true })).toBeVisible();
   await scan("card interpretation section");
   await page.keyboard.press("End");
-  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Finish reading" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
   await expect(page.getByText(`${passageCount} of ${passageCount}`, { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Starlit Reflection" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Before you leave the cards" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Finish reading" }).click();
+  await expect(sanctuary).toHaveAttribute("data-reading-focus", "actions");
+  await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Before you leave the cards" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Ask the same cards/ })).toBeEnabled();
   await page.getByRole("button", { name: /Ask the same cards/ }).click();

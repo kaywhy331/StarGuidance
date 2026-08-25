@@ -41,13 +41,29 @@ test("the visual preview renders the spread-aware result and evidence contract",
   );
   await page.goto("/visual-preview");
 
-  await expect(page.getByTestId("mystic-sanctuary-scene")).toBeVisible();
-  await expect(page.getByTestId("tarot-spread-stage")).toHaveAttribute(
-    "data-layout-kind",
-    "horizontal",
+  const sanctuary = page.getByTestId("mystic-sanctuary-scene");
+  await expect(sanctuary).toBeVisible();
+  await expect(sanctuary).toHaveAttribute("data-backdrop", "starry-reading");
+  await expect(sanctuary).toHaveAttribute("data-reading-focus", "reading");
+  await expect
+    .poll(() =>
+      sanctuary
+        .locator(".sanctuary-background img")
+        .evaluate((image: HTMLImageElement) => image.currentSrc),
+    )
+    .toContain(`/art/reading/starry-night-${mobileViewport ? "mobile" : "desktop"}-v1.`);
+  await expect(page.locator("canvas")).toHaveCount(0);
+  const atmosphericTransferBytes = await page.evaluate(() =>
+    performance
+      .getEntriesByType("resource")
+      .filter(({ name }) => name.includes("/art/reading/starry-night-"))
+      .reduce((total, entry) => total + (entry as PerformanceResourceTiming).transferSize, 0),
   );
-  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
-  await expect(page.locator(".physical-card-front")).toHaveCount(3);
+  expect(atmosphericTransferBytes).toBeGreaterThan(0);
+  expect(atmosphericTransferBytes).toBeLessThan(350_000);
+  await expect(page.getByTestId("tarot-spread-stage")).toHaveCount(0);
+  await expect(page.locator(".physical-tarot-card")).toHaveCount(0);
+  await expect(page.locator(".question-composer")).toHaveCount(0);
   await expect(page.getByTestId("reading-journey")).toHaveAttribute(
     "data-loaded-section-count",
     "10",
@@ -67,7 +83,6 @@ test("the visual preview renders the spread-aware result and evidence contract",
   await expect(page.getByRole("heading", { name: "The other path in this spread" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Timing" })).toHaveCount(0);
   await expectHorizontallyCentered(page, '[data-testid="oracle-transcript"]');
-  await expectHorizontallyCentered(page, ".question-composer");
 
   const details = page.locator(".reading-details-drawer");
   await details.locator("summary").click();
@@ -93,18 +108,21 @@ test("the visual preview renders the spread-aware result and evidence contract",
     "data-active-card-index",
     "1",
   );
-  const reversedArtwork = page.locator(
-    ".physical-card-figure.is-reading-subject .physical-card-front img",
-  );
-  await expect(reversedArtwork).toHaveClass(/card-art-reversed/);
 
   const transcript = page.getByTestId("oracle-transcript");
   await transcript.focus();
   await page.keyboard.press("End");
   await expect(transcript).toBeFocused();
-  await expect(page.getByRole("button", { name: "Next reading passage" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Finish reading" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
   await expect(page.getByText("10 of 10", { exact: true })).toBeVisible();
+  await expect(page.locator(".question-composer")).toHaveCount(0);
+  await expectNoBlockingAccessibilityViolations(page);
+  await page.getByRole("button", { name: "Finish reading" }).click();
+  await expect(sanctuary).toHaveAttribute("data-reading-focus", "actions");
+  await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
+  await expect(page.locator(".question-composer")).toBeVisible();
+  await expectHorizontallyCentered(page, ".question-composer");
   await expectNoBlockingAccessibilityViolations(page);
 });
 
@@ -115,7 +133,7 @@ test("capture the sanctuary from the Netlify Deploy Preview", async ({ page }, t
   await page.getByRole("button", { name: "Guided" }).click();
   await page.getByRole("button", { name: "Next reading passage" }).click();
   await page.getByRole("button", { name: "Next reading passage" }).click();
-  await expect(page.locator(".physical-card-figure.is-reading-subject")).toBeVisible();
+  await expect(page.getByTestId("oracle-transcript")).toBeVisible();
   await page.screenshot({
     animations: "disabled",
     path: path.resolve(

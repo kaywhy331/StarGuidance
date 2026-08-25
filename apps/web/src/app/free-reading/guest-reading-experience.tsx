@@ -178,7 +178,6 @@ export function GuestReadingExperience({
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const revealedRef = useRef<ReadonlySet<number>>(revealed);
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
-  const [activeReadingCard, setActiveReadingCard] = useState<number | null>(null);
   const [journeyComplete, setJourneyComplete] = useState(false);
   const [continuationReading, setContinuationReading] = useState<GuestReadingDisplay>();
   const [continuationLoading, setContinuationLoading] = useState(continueRequested);
@@ -196,10 +195,6 @@ export function GuestReadingExperience({
   );
   const consentsReady = termsAccepted && privacyAccepted && ageConfirmed;
   const intakeReady = consentsReady && Boolean(birthDate) && Boolean(question.trim());
-  const continuationReadingRevealed = useMemo(
-    () => new Set(continuationReading?.cards.map((_, index) => index) ?? []),
-    [continuationReading],
-  );
   const readingPreviewEvents = useMemo(() => (reading ? phaseEvents(reading) : []), [reading]);
 
   useEffect(() => {
@@ -696,6 +691,8 @@ export function GuestReadingExperience({
   if (continueRequested)
     return (
       <MysticSanctuaryScene
+        backdrop="starry-reading"
+        focusStage="actions"
         phase="complete"
         reducedMotion={reducedMotion}
         testId="guest-continuation"
@@ -743,13 +740,24 @@ export function GuestReadingExperience({
                 <h1>Your saved guest reading</h1>
                 <p>{continuationReading.result.directAnswer}</p>
               </header>
-              <TarotSpreadStage
-                activeIndex={null}
-                cards={continuationReading.cards}
-                focusMode={null}
-                reducedMotion={reducedMotion}
-                revealed={continuationReadingRevealed}
-              />
+              <details className="guest-locked-spread-review">
+                <summary>Review the locked spread</summary>
+                <ol>
+                  {continuationReading.cards.map((card) => (
+                    <li
+                      data-card-id={card.cardId}
+                      data-orientation={card.orientation}
+                      key={card.positionId}
+                    >
+                      <span>{card.positionName}</span>
+                      <strong>
+                        {card.name}
+                        {card.orientation === "reversed" ? " · Reversed" : ""}
+                      </strong>
+                    </li>
+                  ))}
+                </ol>
+              </details>
               {followUpResult ? (
                 <section
                   className="guest-follow-up-answer"
@@ -869,22 +877,36 @@ export function GuestReadingExperience({
 
   const showQuestion = state.matches("questionDrafting");
   const showSpread = state.matches("questionConfirmed") || state.matches("spreadConfirmed");
-  const cardsVisible =
-    state.matches("awaitingReveal") ||
-    state.matches("revealing") ||
-    state.matches("fullSpreadReady") ||
-    state.matches("interpretationStreaming") ||
-    state.matches("followUpAvailable") ||
-    state.matches("complete");
   const transcriptVisible =
-    state.matches("interpretationStreaming") ||
-    state.matches("followUpAvailable") ||
-    state.matches("complete");
+    (state.matches("interpretationStreaming") ||
+      state.matches("followUpAvailable") ||
+      state.matches("complete")) &&
+    Boolean(reading?.result);
+  const cardsVisible =
+    !transcriptVisible &&
+    (state.matches("awaitingReveal") ||
+      state.matches("revealing") ||
+      state.matches("fullSpreadReady") ||
+      state.matches("interpretationStreaming"));
   const activeRevealCard = activeReveal === null ? undefined : reading?.cards[activeReveal];
-  const focusedCard = activeReveal ?? activeReadingCard;
+  const readingFocusStage = transcriptVisible
+    ? journeyComplete
+      ? "actions"
+      : "reading"
+    : state.matches("focusing") ||
+        state.matches("shuffling") ||
+        state.matches("optionalCut") ||
+        state.matches("drawFinalizing") ||
+        state.matches("drawLocked") ||
+        state.matches("dealing") ||
+        cardsVisible
+      ? "cards"
+      : "ambient";
 
   return (
     <MysticSanctuaryScene
+      backdrop={readingFocusStage === "ambient" ? "sanctuary" : "starry-reading"}
+      focusStage={readingFocusStage}
       phase={String(state.value)}
       reducedMotion={reducedMotion}
       testId="guest-reading-experience"
@@ -1275,11 +1297,9 @@ export function GuestReadingExperience({
           {cardsVisible && reading && (
             <div className="ritual-card-layout">
               <TarotSpreadStage
-                activeIndex={focusedCard}
+                activeIndex={activeReveal}
                 cards={reading.cards}
-                focusMode={
-                  activeReveal !== null ? "reveal" : activeReadingCard !== null ? "reading" : null
-                }
+                focusMode={activeReveal === null ? null : "reveal"}
                 reducedMotion={reducedMotion}
                 revealed={revealed}
                 onReveal={
@@ -1355,12 +1375,14 @@ export function GuestReadingExperience({
         </section>
       )}
 
-      <div className={`oracle-console-stack ${transcriptVisible ? "" : "is-inactive"}`}>
-        {transcriptVisible && reading?.result ? (
+      <div
+        className={`oracle-console-stack ${transcriptVisible ? "" : "is-inactive"} ${journeyComplete ? "is-actions" : "is-reading"}`}
+        data-focus-stage={readingFocusStage}
+      >
+        {transcriptVisible && !journeyComplete && reading?.result ? (
           <OracleTranscript
             active
             cards={reading.cards}
-            onActiveCardChange={setActiveReadingCard}
             onJourneyCompleteChange={setJourneyComplete}
             onRetry={() => undefined}
             previewEvents={readingPreviewEvents}
