@@ -15,18 +15,35 @@ async function expectNoBlockingAccessibilityViolations(page: Page) {
 }
 
 async function expectHorizontallyCentered(page: Page, selector: string) {
-  await expect
-    .poll(async () => {
-      const [bounds, sanctuaryBounds] = await Promise.all([
-        page.locator(selector).boundingBox(),
-        page.getByTestId("mystic-sanctuary-scene").boundingBox(),
-      ]);
-      if (!bounds || !sanctuaryBounds) return Number.POSITIVE_INFINITY;
-      return Math.abs(
-        bounds.x + bounds.width / 2 - (sanctuaryBounds.x + sanctuaryBounds.width / 2),
-      );
-    })
-    .toBeLessThanOrEqual(3);
+  let lastMeasurement: Record<string, unknown> | undefined;
+  try {
+    await expect
+      .poll(async () => {
+        const [bounds, sanctuaryBounds, stackBounds] = await Promise.all([
+          page.locator(selector).boundingBox(),
+          page.getByTestId("mystic-sanctuary-scene").boundingBox(),
+          page.locator(".oracle-console-stack").boundingBox(),
+        ]);
+        lastMeasurement = {
+          bounds,
+          sanctuaryBounds,
+          selector,
+          stackBounds,
+          viewport: page.viewportSize(),
+        };
+        if (!bounds || !sanctuaryBounds) return Number.POSITIVE_INFINITY;
+        return Math.abs(
+          bounds.x + bounds.width / 2 - (sanctuaryBounds.x + sanctuaryBounds.width / 2),
+        );
+      })
+      .toBeLessThanOrEqual(3);
+  } catch (error) {
+    throw new Error(
+      `Horizontal centering failed: ${JSON.stringify(lastMeasurement)}\n${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 test("narration reveal progress remains monotonic", () => {
