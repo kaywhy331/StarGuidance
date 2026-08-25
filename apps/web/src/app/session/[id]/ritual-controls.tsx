@@ -43,7 +43,13 @@ export function RitualControls({
 }) {
   const [audioOpen, setAudioOpen] = useState(false);
   const motionState = animationManaged ? "managed" : reducedMotion ? "on" : "off";
-  const activeAudioLayers = [sound, ambience, narration].filter(Boolean).length;
+  const availableAudioLayers =
+    1 + Number(Boolean(toggleAmbience)) + Number(Boolean(toggleNarration));
+  const activeAudioLayers = [
+    sound,
+    ...(toggleAmbience ? [ambience] : []),
+    ...(toggleNarration ? [narration] : []),
+  ].filter(Boolean).length;
   return (
     <header aria-label={controlsLabel} className="sanctuary-controls ritual-hud">
       <Link className="sanctuary-exit ritual-hud__exit" href={exitHref}>
@@ -89,14 +95,21 @@ export function RitualControls({
               {activeAudioLayers > 0 ? "◖" : "◗"}
             </span>
             <span className="ritual-hud__label">
-              Sound <b>{activeAudioLayers}/3</b>
+              Sound{" "}
+              <b>
+                {activeAudioLayers}/{availableAudioLayers}
+              </b>
             </span>
           </button>
           {audioOpen && (
             <div aria-label="Sound layers" className="ritual-audio-panel" role="group">
               <p>
                 <strong>Sound layers</strong>
-                <span>Each layer stays on this device.</span>
+                <span>
+                  {toggleNarration
+                    ? "Voice sends one selected section only after you press play."
+                    : "Effects and atmosphere stay on this device."}
+                </span>
               </p>
               <button aria-pressed={sound} onClick={toggleSound} type="button">
                 <span aria-hidden="true">◌</span>
@@ -127,8 +140,8 @@ export function RitualControls({
                 <button aria-pressed={narration} onClick={toggleNarration} type="button">
                   <span aria-hidden="true">“</span>
                   <span>
-                    <strong>Local voice</strong>
-                    <small>Uses an on-device English voice only</small>
+                    <strong>Audio reading</strong>
+                    <small>Shows play; sends only that section to Fish Audio</small>
                   </span>
                   <b>{narration ? "On" : "Off"}</b>
                 </button>

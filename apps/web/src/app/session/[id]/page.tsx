@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/auth";
+import { readingAudioAvailable } from "@/lib/reading-audio";
 import { getRuntimeConfiguration } from "@/lib/runtime-configuration";
 
 import { ReadingScene } from "./reading-scene";
@@ -16,6 +17,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   const runtimeConfiguration = await getRuntimeConfiguration();
   return (
     <ReadingScene
+      audioAvailable={readingAudioAvailable()}
       animationVariant={
         runtimeConfiguration.features.animationsEnabled
           ? runtimeConfiguration.features.animationVariant

@@ -26,10 +26,12 @@ import { SafetyInterruptContent } from "./safety-interrupt-panel";
 import { TarotSpreadStage } from "./tarot-spread-stage";
 
 export function ReadingScene({
+  audioAvailable = false,
   animationVariant = "immersive-v1",
   initialPreferences,
   readingId,
 }: {
+  audioAvailable?: boolean;
   animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
   initialPreferences?: ReadingPreferenceSeed;
   readingId: string;
@@ -436,12 +438,12 @@ export function ReadingScene({
         animationManaged={animationManaged}
         displayName={displayName}
         exitHref="/readings"
-        narration={narration}
+        narration={audioAvailable && narration}
         reducedMotion={motionOff}
         sigilSeed={reading.profileSnapshotId}
         sound={sound}
         toggleAmbience={toggleAmbience}
-        toggleNarration={toggleNarration}
+        {...(audioAvailable ? { toggleNarration } : {})}
         toggleReducedMotion={toggleReducedMotion}
         toggleSound={toggleSound}
         {...(state.matches("dealing") && !motionOff ? { onSkip: toggleReducedMotion } : {})}
@@ -623,7 +625,7 @@ export function ReadingScene({
             result={reading.result}
             retryToken={streamRetryToken}
             sigilSeed={reading.profileSnapshotId}
-            soundEnabled={narration}
+            audioEnabled={audioAvailable && narration}
             target={streamTarget}
           />
         )}

@@ -81,6 +81,16 @@ export default function PrivacyNoticePage() {
             require owner legal approval.
           </p>
           <p>
+            For signed-in readings, an optional Audio reading setting may be available. Turning it
+            on does not create or send audio; it only reveals a play button. When you press play,
+            StarGuidance sends that one displayed reading heading and passage to Fish Audio to make
+            speech, then requests another passage only if playback reaches it. We do not add your
+            raw birth details, profile record, account email, locked cards, or exact question to
+            that voice request, although the reading passage itself may reflect what you asked.
+            StarGuidance does not save the generated audio; listened passages remain only in that
+            browser tab for playback. Guest readings do not use this network voice service.
+          </p>
+          <p>
             Signed-in users can export their data and delete individual readings, their private
             profile, or the entire account from Privacy controls. Account deletion removes the Auth
             identity and cascades through user-owned application data.

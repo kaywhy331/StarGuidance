@@ -24,10 +24,12 @@ import { RitualControls } from "../../session/[id]/ritual-controls";
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 
 export function ReadingResultScene({
+  audioAvailable = false,
   animationVariant = "immersive-v1",
   initialPreferences,
   readingId,
 }: {
+  audioAvailable?: boolean;
   animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
   initialPreferences?: ReadingPreferenceSeed;
   readingId: string;
@@ -240,12 +242,12 @@ export function ReadingResultScene({
         displayName={displayName}
         exitHref="/history"
         exitLabel="History"
-        narration={narration}
+        narration={audioAvailable && narration}
         reducedMotion={reducedMotion}
         sigilSeed={reading.profileSnapshotId}
         sound={sound}
         toggleAmbience={toggleAmbience}
-        toggleNarration={toggleNarration}
+        {...(audioAvailable ? { toggleNarration } : {})}
         toggleReducedMotion={toggleReducedMotion}
         toggleSound={toggleSound}
       />
@@ -267,7 +269,7 @@ export function ReadingResultScene({
             result={reading.result}
             retryToken={0}
             sigilSeed={reading.profileSnapshotId}
-            soundEnabled={narration}
+            audioEnabled={audioAvailable && narration}
             target="primary"
           />
         )}

@@ -3870,6 +3870,59 @@ body {
   opacity: 0.46;
 }
 
+.reading-audio-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.reading-mode-bar .reading-audio-trigger {
+  margin-left: 0.15rem;
+  border-left: 1px solid rgb(216 198 145 / 0.2);
+  border-radius: 0 999px 999px 0;
+  color: #e6cf92;
+}
+
+.reading-mode-bar .reading-audio-trigger[data-state="loading"] {
+  cursor: progress;
+  opacity: 0.78;
+}
+
+.reading-mode-bar
+  .reading-audio-trigger:is([data-state="playing"], [data-state="paused"], [data-state="ready"]) {
+  background: linear-gradient(135deg, rgb(20 73 67 / 0.86), rgb(47 34 73 / 0.86));
+  box-shadow: 0 0 1.15rem rgb(112 202 184 / 0.12);
+  color: #f4e3b2;
+}
+
+.reading-mode-bar .reading-audio-trigger[data-state="error"] {
+  color: #f0b8bd;
+}
+
+.reading-mode-bar .reading-audio-trigger small {
+  color: #91bdb3;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+}
+
+.reading-audio-message {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  width: max-content;
+  max-width: min(17rem, calc(100vw - 2rem));
+  padding: 0.45rem 0.6rem;
+  border: 1px solid rgb(229 199 132 / 0.22);
+  border-radius: 0.6rem;
+  background: rgb(3 12 19 / 0.94);
+  box-shadow: 0 0.8rem 2rem rgb(0 0 0 / 0.35);
+  color: #d9cfc3;
+  font: 0.68rem/1.35 var(--font-body);
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+}
+
 .reading-mode-bar > span {
   overflow: hidden;
   color: #d2bc82;
