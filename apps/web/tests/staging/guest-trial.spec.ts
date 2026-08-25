@@ -166,7 +166,12 @@ test("a birthday-based free reading remains causal and continues through passwor
       response.request().postData()?.includes('"action":"finalize"') === true,
     { timeout: 60_000 },
   );
-  await page.getByRole("button", { name: /^Cut at the center/ }).click();
+  const cutDeck = page.getByTestId("ritual-cut-deck");
+  const cutBounds = await cutDeck.boundingBox();
+  if (!cutBounds) throw new Error("The immersive cut deck is not visible.");
+  await cutDeck.click({
+    position: { x: cutBounds.width / 2, y: cutBounds.height / 2 },
+  });
   const finalizedResponse = await finalization;
   const finalized = (await finalizedResponse.json()) as FinalizedGuestReading;
   expect(finalizedResponse.status(), "guest draw finalizes after the selected cut").toBe(201);

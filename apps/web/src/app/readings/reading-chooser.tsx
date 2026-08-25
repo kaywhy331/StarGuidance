@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMachine } from "@xstate/react";
@@ -14,6 +14,11 @@ import {
 } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
+import {
+  createClientDrawNonce,
+  isClientDrawNonce,
+  stirClientDrawNonce,
+} from "@/lib/client-draw-entropy";
 import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
 
 import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
@@ -21,7 +26,7 @@ import { QuestionComposer } from "../session/[id]/question-composer";
 import { playRitualSound, useRitualAmbience } from "../session/[id]/ritual-audio";
 import { RitualControls } from "../session/[id]/ritual-controls";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
-import { ShuffleShells } from "../session/[id]/shuffle-shells";
+import { ImmersiveCutDeck, ImmersiveShuffleDeck } from "../session/[id]/shuffle-shells";
 
 const CEREMONY_STORAGE_KEY = "starguidance:pending-draw-ceremony:v1";
 
@@ -30,6 +35,8 @@ type CeremonyStage = "focusing" | "shuffling" | "optionalCut";
 interface PendingCeremonyReceipt {
   token: string;
   stage: CeremonyStage;
+  clientNonce?: string;
+  stirCount?: number;
 }
 
 interface QuestionReview {
@@ -55,15 +62,13 @@ interface SpreadChoice {
   }[];
 }
 
-function browserNonce(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-}
-
-function savePendingCeremony(token: string, stage: CeremonyStage) {
-  const receipt: PendingCeremonyReceipt = { token, stage };
+function savePendingCeremony(
+  token: string,
+  stage: CeremonyStage,
+  clientNonce: string,
+  stirCount: number,
+) {
+  const receipt: PendingCeremonyReceipt = { token, stage, clientNonce, stirCount };
   window.sessionStorage.setItem(CEREMONY_STORAGE_KEY, JSON.stringify(receipt));
 }
 
@@ -104,6 +109,8 @@ export function ReadingChooser({
   }>();
   const [guardedPrompt, setGuardedPrompt] = useState<{ category: SafetyCategory }>();
   const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const clientNonce = useRef<string | undefined>(undefined);
+  const stirCount = useRef(0);
   const {
     ambience,
     displayName,
@@ -161,6 +168,13 @@ export function ReadingChooser({
         setSelected(payload.ceremony.spread.id);
         setReversalMode(payload.ceremony.configuration.reversalMode);
         setPersonalizationMode(payload.ceremony.configuration.personalizationMode);
+        clientNonce.current = isClientDrawNonce(receipt.clientNonce)
+          ? receipt.clientNonce
+          : createClientDrawNonce();
+        stirCount.current =
+          Number.isSafeInteger(receipt.stirCount) && (receipt.stirCount ?? -1) >= 0
+            ? (receipt.stirCount ?? 0)
+            : 0;
         send({ type: "CONFIRM_QUESTION" });
         send({ type: "CONFIRM_SPREAD" });
         send({ type: "SAFETY_APPROVED" });
@@ -278,7 +292,9 @@ export function ReadingChooser({
         );
       }
       setCeremony(payload.ceremony);
-      savePendingCeremony(payload.ceremony.token, "focusing");
+      clientNonce.current = createClientDrawNonce();
+      stirCount.current = 0;
+      savePendingCeremony(payload.ceremony.token, "focusing", clientNonce.current, 0);
       if (continueAsReflection) send({ type: "CONTINUE_AS_REFLECTION" });
       else send({ type: "SAFETY_APPROVED" });
     } catch (cause) {
@@ -291,6 +307,8 @@ export function ReadingChooser({
   const finalizeDraw = useCallback(
     async (cutIndex: number) => {
       if (!ceremony || loading) return;
+      const pendingNonce = clientNonce.current ?? createClientDrawNonce();
+      clientNonce.current = pendingNonce;
       setLoading(true);
       setMessage(undefined);
       send({ type: cutIndex === 0 ? "SKIP_CUT" : "CUT" });
@@ -301,7 +319,7 @@ export function ReadingChooser({
           body: JSON.stringify({
             action: "finalize",
             ceremonyToken: ceremony.token,
-            clientNonce: browserNonce(),
+            clientNonce: pendingNonce,
             cutIndex,
           }),
         });
@@ -348,6 +366,21 @@ export function ReadingChooser({
 
   const showQuestion = state.matches("questionDrafting");
   const showSpread = state.matches("questionConfirmed") || state.matches("spreadConfirmed");
+
+  const saveCurrentCeremony = (stage: CeremonyStage) => {
+    if (!ceremony) return;
+    const pendingNonce = clientNonce.current ?? createClientDrawNonce();
+    clientNonce.current = pendingNonce;
+    savePendingCeremony(ceremony.token, stage, pendingNonce, stirCount.current);
+  };
+
+  const stirPendingDeck = () => {
+    const pendingNonce = clientNonce.current ?? createClientDrawNonce();
+    clientNonce.current = stirClientDrawNonce(pendingNonce);
+    stirCount.current += 1;
+    saveCurrentCeremony("shuffling");
+    if (sound) playRitualSound("shuffle");
+  };
 
   return (
     <MysticSanctuaryScene
@@ -627,7 +660,7 @@ export function ReadingChooser({
             <button
               className="reading-entry-continue"
               onClick={() => {
-                savePendingCeremony(ceremony.token, "shuffling");
+                saveCurrentCeremony("shuffling");
                 send({ type: "FOCUS_COMPLETE" });
               }}
               type="button"
@@ -640,33 +673,18 @@ export function ReadingChooser({
 
       {state.matches("shuffling") && ceremony && (
         <section className="reading-entry-stage reading-question-stage sanctuary-shuffle-ritual is-shuffling">
-          <ShuffleShells phase="mixing" />
+          <ImmersiveShuffleDeck onStir={stirPendingDeck} />
           <div className="sanctuary-shuffle-copy">
-            <p className="ritual-status">Shuffling the committed deck</p>
+            <p className="ritual-status">All 78 possibilities are in motion</p>
             <span>
-              No final cards exist yet. Finish when the movement feels settled, or skip without
-              changing randomness.
+              Swipe, tap, click, or press Space to stir in fresh secure entropy. The draw remains
+              cryptographically strong if you finish immediately.
             </span>
           </div>
           <button
-            className="tactile-shuffle-control"
-            onClick={() => sound && playRitualSound("shuffle")}
-            type="button"
-          >
-            <span aria-hidden="true" className="tactile-shuffle-control__deck">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span>
-              <strong>Stir the deck</strong>
-              <small>Tap, click, or press Space</small>
-            </span>
-          </button>
-          <button
             className="shuffle-skip-action"
             onClick={() => {
-              savePendingCeremony(ceremony.token, "optionalCut");
+              saveCurrentCeremony("optionalCut");
               send({ type: "SHUFFLE_COMPLETE" });
             }}
             type="button"
@@ -678,47 +696,17 @@ export function ReadingChooser({
 
       {state.matches("optionalCut") && ceremony && (
         <section className="reading-entry-stage reading-question-stage sanctuary-gather-ritual">
-          <ShuffleShells phase="gathering" />
           <div className="sanctuary-shuffle-copy">
             <p className="ritual-status">Cut the deck, if you wish</p>
             <span>
-              Your cut rotates the final shuffled permutation before positions are assigned.
+              Choose where the deck separates. That exact cut becomes part of this locked draw.
             </span>
           </div>
-          <div className="ritual-cut-actions">
-            <button
-              className="ritual-cut-action"
-              onClick={() => void finalizeDraw(20)}
-              type="button"
-            >
-              <strong>Cut near the top</strong>
-              <small>After card 20</small>
-            </button>
-            <button
-              className="ritual-cut-action is-primary"
-              onClick={() => void finalizeDraw(39)}
-              type="button"
-            >
-              <strong>Cut at the center</strong>
-              <small>After card 39</small>
-            </button>
-            <button
-              className="ritual-cut-action"
-              onClick={() => void finalizeDraw(58)}
-              type="button"
-            >
-              <strong>Cut deeper</strong>
-              <small>After card 58</small>
-            </button>
-            <button
-              className="ritual-cut-action"
-              onClick={() => void finalizeDraw(0)}
-              type="button"
-            >
-              <strong>No cut</strong>
-              <small>Finalize the shuffled order</small>
-            </button>
-          </div>
+          <ImmersiveCutDeck
+            onCut={(cutIndex) => void finalizeDraw(cutIndex)}
+            onNoCut={() => void finalizeDraw(0)}
+            reducedMotion={reducedMotion}
+          />
         </section>
       )}
 

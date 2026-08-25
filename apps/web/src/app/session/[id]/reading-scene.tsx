@@ -195,15 +195,6 @@ export function ReadingScene({
   const revealCard = useCallback(
     (index: number) => {
       if (!reading || !state.matches("revealing") || revealedRef.current.has(index)) return;
-      const nextExpected = reading.cards.findIndex(
-        (_, candidate) => !revealedRef.current.has(candidate),
-      );
-      if (index !== nextExpected) {
-        setError(
-          `Reveal position ${nextExpected + 1} next; the numbered order preserves the spread's structure.`,
-        );
-        return;
-      }
       setError(undefined);
       const next = new Set(revealedRef.current).add(index);
       revealedRef.current = next;
@@ -402,7 +393,6 @@ export function ReadingScene({
   const focusMode =
     activeReveal !== null ? "reveal" : activeReadingCard !== null ? "reading" : null;
   const activeRevealCard = activeReveal === null ? undefined : reading.cards[activeReveal];
-  const nextRevealIndex = reading.cards.findIndex((_, index) => !revealed.has(index));
   const transcriptVisible =
     (state.matches("interpretationStreaming") ||
       state.matches("followUpAvailable") ||
@@ -511,8 +501,8 @@ export function ReadingScene({
                 <span>Hold your question at the center</span>
                 <blockquote>{reading.question}</blockquote>
                 <p>
-                  Every card is face down in its numbered position. Nothing from the whole reading
-                  is shown yet.
+                  Every card is face down in its locked position. Nothing from the whole reading is
+                  shown yet.
                 </p>
                 {readyPromptVisible && (
                   <button
@@ -531,9 +521,10 @@ export function ReadingScene({
                 <div className="reveal-choice-prompt" role="status">
                   <span aria-hidden="true">✦</span>
                   <p>
-                    <strong>Reveal position {nextRevealIndex + 1} next</strong>
+                    <strong>Choose any face-down position</strong>
                     <small>
-                      Tap that card, reach it with Tab and press Enter or Space, or reveal all.
+                      Its assignment is already locked. Tap it, use Tab with Enter or Space, or
+                      reveal all.
                     </small>
                   </p>
                   <span>

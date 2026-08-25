@@ -68,6 +68,24 @@ test("a visitor completes a causal free reading before signup and continues with
     "data-ritual-phase",
     "shuffling",
   );
+  await expect(page.locator(".full-deck-possibility-field i")).toHaveCount(78);
+  const nonceBeforeStir = await page.evaluate(() => {
+    const pending = JSON.parse(sessionStorage.getItem("sg:guest-reading:v2") ?? "{}") as {
+      clientNonce?: string;
+    };
+    return pending.clientNonce;
+  });
+  await page.getByRole("button", { name: "Stir all 78 cards" }).click();
+  const entropyAfterStir = await page.evaluate(() => {
+    return JSON.parse(sessionStorage.getItem("sg:guest-reading:v2") ?? "{}") as {
+      clientNonce?: string;
+      stirCount?: number;
+    };
+  });
+  expect(nonceBeforeStir).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(entropyAfterStir.clientNonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(entropyAfterStir.clientNonce).not.toBe(nonceBeforeStir);
+  expect(entropyAfterStir.stirCount).toBe(1);
   await page.getByRole("button", { name: "Finish shuffling" }).click();
   const finalized = page.waitForResponse(
     (response) =>
@@ -75,7 +93,7 @@ test("a visitor completes a causal free reading before signup and continues with
       new URL(response.url()).pathname === "/api/guest-readings" &&
       response.request().postData()?.includes('"action":"finalize"') === true,
   );
-  await page.getByRole("button", { name: /^No cut/ }).click();
+  await page.getByRole("button", { name: "Continue without a cut" }).click();
   const finalizedResponse = await finalized;
   expect(finalizedResponse.status()).toBe(201);
   const finalizedBody = (await finalizedResponse.json()) as {
@@ -88,8 +106,8 @@ test("a visitor completes a causal free reading before signup and continues with
   await expect(page.locator(".physical-card-front")).toHaveCount(0);
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
   await page.getByRole("button", { name: "I’m ready" }).click();
-  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
-  await expect(page.getByTestId("guest-guided-reveal-panel")).toContainText("Situation");
+  await page.getByRole("button", { name: "Reveal card 3, face down" }).click();
+  await expect(page.getByTestId("guest-guided-reveal-panel")).toContainText("Direction");
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();

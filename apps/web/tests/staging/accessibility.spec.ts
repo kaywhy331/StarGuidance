@@ -269,7 +269,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(page.getByRole("button", { name: "Finish shuffling" })).toBeVisible();
   await scan("reading shuffle");
   await page.getByRole("button", { name: "Finish shuffling" }).click();
-  await expect(page.getByRole("button", { name: /^No cut/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue without a cut" })).toBeVisible();
   await scan("optional deck cut");
   const readingResponsePromise = page
     .waitForResponse(
@@ -280,7 +280,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
       { timeout: 60_000 },
     )
     .catch(() => undefined);
-  await page.getByRole("button", { name: /^No cut/ }).click();
+  await page.getByRole("button", { name: "Continue without a cut" }).click();
   const readingResponse = await readingResponsePromise;
   try {
     await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, {

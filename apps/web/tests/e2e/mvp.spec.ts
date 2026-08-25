@@ -135,9 +135,7 @@ test("the optional cut is recorded and upright-only remains a legitimate reading
   ).toBe(true);
 });
 
-test("individual reveals expose only the revealed card baseline before the full spread", async ({
-  page,
-}) => {
+test("users may choose reveal order while exposing only one locked baseline", async ({ page }) => {
   test.setTimeout(150_000);
   await createAccountAndProfileViaApi(page);
   await beginReadingThroughUi(page, {
@@ -156,10 +154,10 @@ test("individual reveals expose only the revealed card baseline before the full 
   await expect(page.locator(".physical-card-front")).toHaveCount(0);
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
   await page.getByRole("button", { name: "I’m ready" }).click();
-  await page.getByRole("button", { name: "Reveal card 1, face down" }).click();
+  await page.getByRole("button", { name: "Reveal card 3, face down" }).click();
 
   const revealedPanel = page.getByTestId("guided-reveal-panel");
-  await expect(revealedPanel).toContainText("Situation");
+  await expect(revealedPanel).toContainText("Direction");
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
   await expect(page.locator(".physical-card-front")).toHaveCount(1);
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
