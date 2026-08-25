@@ -18,9 +18,11 @@ async function expectHorizontallyCentered(page: Page, selector: string) {
   await expect
     .poll(async () => {
       const bounds = await page.locator(selector).boundingBox();
-      const viewport = page.viewportSize();
-      if (!bounds || !viewport) return Number.POSITIVE_INFINITY;
-      return Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2);
+      if (!bounds) return Number.POSITIVE_INFINITY;
+      // Playwright's configured viewport width includes Chromium's classic
+      // scrollbar gutter, while CSS positioning uses the layout viewport.
+      const layoutViewportWidth = await page.evaluate(() => document.documentElement.clientWidth);
+      return Math.abs(bounds.x + bounds.width / 2 - layoutViewportWidth / 2);
     })
     .toBeLessThanOrEqual(3);
 }

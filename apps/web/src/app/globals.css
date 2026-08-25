@@ -8362,7 +8362,7 @@ body {
   top: max(4.35rem, calc(env(safe-area-inset-top) + 3.8rem));
   right: auto;
   bottom: max(1rem, env(safe-area-inset-bottom));
-  left: 50vw;
+  left: 50%;
   width: min(58rem, calc(100vw - 2rem));
   height: auto;
   grid-template-rows: minmax(0, 1fr);
@@ -8422,7 +8422,7 @@ body {
   top: max(4.5rem, calc(env(safe-area-inset-top) + 4rem));
   right: auto;
   bottom: max(1rem, env(safe-area-inset-bottom));
-  left: 50vw;
+  left: 50%;
   display: grid;
   width: min(44rem, calc(100vw - 2rem));
   height: auto;
