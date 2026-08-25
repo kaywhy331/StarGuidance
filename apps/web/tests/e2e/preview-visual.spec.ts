@@ -19,13 +19,15 @@ async function expectHorizontallyCentered(page: Page, selector: string) {
   try {
     await expect
       .poll(async () => {
-        const [bounds, sanctuaryBounds, stackBounds] = await Promise.all([
+        const [bounds, contentBounds, sanctuaryBounds, stackBounds] = await Promise.all([
           page.locator(selector).boundingBox(),
+          page.locator(".sanctuary-content").boundingBox(),
           page.getByTestId("mystic-sanctuary-scene").boundingBox(),
           page.locator(".oracle-console-stack").boundingBox(),
         ]);
         lastMeasurement = {
           bounds,
+          contentBounds,
           sanctuaryBounds,
           selector,
           stackBounds,

@@ -8247,6 +8247,12 @@ body {
 }
 
 /* Focused reading sequence: cards first, then interpretation, then next actions. */
+.mystic-sanctuary[data-backdrop="starry-reading"] .sanctuary-content {
+  position: absolute;
+  inset: 0;
+  height: auto;
+}
+
 .mystic-sanctuary[data-backdrop="starry-reading"] .sanctuary-background img {
   object-position: center center;
   filter: saturate(0.92) contrast(1.08) brightness(0.7);
