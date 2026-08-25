@@ -77,7 +77,12 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await expect(page.getByText("Shuffling the committed deck", { exact: true })).toBeVisible();
   await capturePage(page, testInfo, "shuffle-deal");
   await page.getByRole("button", { name: "Finish shuffling" }).click();
-  await page.getByRole("button", { name: /^Cut at the center/ }).click();
+  const cutDeck = page.getByTestId("ritual-cut-deck");
+  const cutBounds = await cutDeck.boundingBox();
+  if (!cutBounds) throw new Error("The immersive cut deck is not visible.");
+  await cutDeck.click({
+    position: { x: cutBounds.width / 2, y: cutBounds.height / 2 },
+  });
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();

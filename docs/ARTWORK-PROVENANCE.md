@@ -57,7 +57,7 @@ The built-in image-generation path was used; no API key or fallback CLI model wa
 
 - A browser downloads one sanctuary format/composition, not all four variants.
 - Mobile sanctuary transfer is capped at 350 KB by Playwright; the authored AVIF is 27,398 bytes and WebP fallback is 92,332 bytes.
-- The ritual renders 15 lightweight shuffle shells rather than 78 card components.
+- The ritual renders 78 lightweight anonymous card-back shells in six streams, rather than mounting 78 artwork-bearing card components.
 - The scene uses CSS transforms and 14 restrained particles; there is no canvas, WebGL, or 3D engine.
 - The card-face renderer is covered by size and uniqueness tests.
 

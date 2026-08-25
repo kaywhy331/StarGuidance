@@ -2759,10 +2759,18 @@ body {
 
 .ritual-moment {
   display: grid;
+  width: min(100%, 42rem);
   place-items: center;
   max-width: 32rem;
+  margin-inline: auto;
   text-align: center;
   text-shadow: 0 3px 18px #000;
+}
+
+.ritual-moment > :is(blockquote, ol),
+.ritual-moment > div > :is(p, blockquote) {
+  width: min(100%, 60ch);
+  text-align: left;
 }
 
 .ritual-moment h1 {
@@ -2824,6 +2832,9 @@ body {
 
 .ritual-action-group {
   display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 0.6rem;
   margin-top: 1rem;
 }
@@ -2867,42 +2878,42 @@ body {
   inset: 0;
   width: 100%;
   pointer-events: none;
-  transform: translate3d(calc(var(--ritual-drift-x) * 0.2), calc(var(--ritual-drift-y) * 0.2), 0)
-    rotate(calc(var(--ritual-energy) * 1.25deg));
+  transform: translate3d(calc(var(--ritual-drift-x) * 0.2), calc(var(--ritual-drift-y) * 0.2), 0);
   transition: transform 180ms ease-out;
 }
 
-.sanctuary-shuffle-shells span,
+.shuffle-card-stream {
+  position: absolute;
+  inset: 0;
+}
+
+.sanctuary-shuffle-shells i,
 .sanctuary-deal-shells span {
+  display: block;
   border: 1px solid rgb(238 210 132 / 0.58);
   border-radius: 0.42rem;
   background: url("/art/tarot/v2/celestial-gothic-back-v1.webp") center / cover;
   box-shadow: 0 18px 44px rgb(0 0 0 / 0.58);
 }
 
-.sanctuary-shuffle-shells.is-mixing span {
+.sanctuary-shuffle-shells.is-mixing i {
+  --active-field-x: var(--field-x);
+  --active-field-y: var(--field-y);
+  --active-weave-x: var(--weave-x);
+  --active-weave-y: var(--weave-y);
   position: absolute;
   z-index: var(--shell-index);
   top: 50%;
   left: 50%;
-  width: clamp(4.8rem, 8vw, 7rem);
+  width: clamp(2.2rem, 3.8vw, 3.45rem);
   aspect-ratio: 2 / 3;
-  animation: sanctuary-mix 5s cubic-bezier(0.45, 0.02, 0.2, 1) both;
-  animation-delay: calc(var(--shell-index) * -17ms);
-  transform: translate(-50%, -50%);
-}
-
-.sanctuary-shuffle-shells.is-gathering span {
-  position: absolute;
-  z-index: var(--shell-index);
-  top: 50%;
-  left: 50%;
-  width: clamp(4.8rem, 8vw, 7rem);
-  aspect-ratio: 2 / 3;
-  animation: sanctuary-gather 2s cubic-bezier(0.16, 0.82, 0.2, 1) both;
-  animation-delay: calc(var(--shell-index) * -8ms);
-  transform: translate(-50%, -50%) translate(var(--scatter-x), var(--scatter-y))
-    rotate(var(--scatter-rotation));
+  animation: sanctuary-planar-weave 5.4s cubic-bezier(0.45, 0.02, 0.2, 1) both;
+  animation-delay: calc(var(--shell-index) * -31ms);
+  box-shadow:
+    0 9px 22px rgb(0 0 0 / 0.46),
+    0 0 0.8rem rgb(119 217 198 / 0.08);
+  contain: layout paint;
+  will-change: transform, opacity;
 }
 
 .sanctuary-shuffle-copy {
@@ -2912,6 +2923,7 @@ body {
   bottom: max(13vh, 6.5rem);
   left: 1rem;
   display: grid;
+  justify-items: center;
   gap: 0.35rem;
   text-align: center;
 }
@@ -2937,115 +2949,65 @@ body {
 }
 
 .sanctuary-shuffle-copy span {
+  width: min(34rem, 100%);
   color: #b7ccc7;
   font:
     italic clamp(0.9rem, 1.4vw, 1rem) / 1.5 Georgia,
     "Times New Roman",
     serif;
+  text-align: left;
 }
 
-.tactile-shuffle-control {
+.immersive-shuffle-control {
   position: absolute;
-  z-index: 22;
-  top: 48%;
-  left: 50%;
-  display: grid;
-  justify-items: center;
-  width: min(14rem, calc(100vw - 2rem));
-  gap: 1rem;
+  z-index: 12;
+  inset: max(4.5rem, env(safe-area-inset-top)) 0 max(5rem, env(safe-area-inset-bottom));
+  width: 100%;
+  overflow: hidden;
+  padding: 0;
   border: 0;
   background: transparent;
   color: #f4e7c3;
-  padding: 1rem;
-  transform: translate(-50%, -50%) translate3d(var(--ritual-drift-x), var(--ritual-drift-y), 3rem)
-    perspective(50rem) rotateX(var(--ritual-tilt-x)) rotateY(var(--ritual-tilt-y))
-    rotate(calc(var(--ritual-energy) * -2deg));
-  cursor: grab;
+  cursor: pointer;
   touch-action: none;
   user-select: none;
-  transition:
-    transform 180ms ease-out,
-    filter 180ms ease;
+  transition: filter 180ms ease;
 }
 
-.tactile-shuffle-control[data-active="true"] {
-  cursor: grabbing;
+.immersive-shuffle-control:hover {
   filter: drop-shadow(0 0 2.5rem rgb(158 219 209 / 0.38));
-  transition:
-    transform 45ms linear,
-    filter 120ms ease;
 }
 
-.tactile-shuffle-control[data-settling="true"] {
-  transition:
-    transform 680ms cubic-bezier(0.16, 1, 0.3, 1),
-    filter 420ms ease;
+.immersive-shuffle-control:focus-visible {
+  outline: 3px solid #f4d98d;
+  outline-offset: -0.5rem;
 }
 
-.tactile-shuffle-control__deck {
-  position: relative;
-  display: block;
-  width: clamp(5rem, 9vw, 7.2rem);
-  aspect-ratio: 2 / 3;
-}
-
-.tactile-shuffle-control__deck i {
+.immersive-shuffle-cue {
   position: absolute;
-  inset: 0;
-  border: 1px solid rgb(238 210 132 / 0.72);
-  border-radius: 0.48rem;
-  background: url("/art/tarot/v2/celestial-gothic-back-v1.webp") center / cover;
-  box-shadow:
-    0 1.4rem 3rem rgb(0 0 0 / 0.6),
-    0 0 1.8rem rgb(119 217 198 / 0.08);
-  transition:
-    translate 160ms ease-out,
-    rotate 160ms ease-out;
-}
-
-.tactile-shuffle-control[data-active="true"] .tactile-shuffle-control__deck i:first-child {
-  translate: calc(var(--ritual-velocity) * -0.65rem) calc(var(--ritual-energy) * 0.22rem);
-  rotate: calc(0deg - var(--ritual-tilt-y));
-}
-
-.tactile-shuffle-control[data-active="true"] .tactile-shuffle-control__deck i:nth-child(2) {
-  translate: calc(var(--ritual-velocity) * 0.5rem) calc(var(--ritual-energy) * -0.18rem);
-  rotate: var(--ritual-tilt-y);
-}
-
-.tactile-shuffle-control__deck i:first-child {
-  translate: -0.4rem 0.28rem;
-  rotate: -4deg;
-}
-
-.tactile-shuffle-control__deck i:nth-child(2) {
-  translate: 0.36rem 0.2rem;
-  rotate: 3deg;
-}
-
-.tactile-shuffle-control__deck i:last-child {
-  box-shadow:
-    0 1.4rem 3rem rgb(0 0 0 / 0.6),
-    0 0 2.4rem rgb(238 210 132 / calc(0.08 + var(--ritual-energy) * 0.24));
-}
-
-.tactile-shuffle-control > span:last-child {
+  z-index: 24;
+  top: 50%;
+  left: 50%;
   display: grid;
+  width: min(19rem, calc(100vw - 2rem));
   gap: 0.15rem;
+  padding: 0.62rem 1rem;
   border: 1px solid rgb(222 211 172 / 0.22);
   border-radius: 999px;
   background: rgb(2 12 18 / 0.64);
-  padding: 0.55rem 0.9rem;
+  translate: -50% -50%;
   backdrop-filter: blur(14px);
+  pointer-events: none;
+  text-align: center;
 }
 
-.tactile-shuffle-control strong {
+.immersive-shuffle-cue strong {
   font: 600 0.75rem/1.2 var(--font-body);
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
 
-.tactile-shuffle-control small {
+.immersive-shuffle-cue small {
   color: #9fc0b8;
   font: 0.65rem/1.3 var(--font-body);
 }
@@ -3060,66 +3022,125 @@ body {
   padding-block: clamp(9rem, 22vh, 12rem) 1rem;
 }
 
-.ritual-cut-actions {
+.immersive-cut-control {
   position: relative;
   z-index: 23;
   display: grid;
-  width: min(calc(100vw - 2rem), 32rem);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
+  width: min(calc(100vw - 2rem), 36rem);
+  justify-items: center;
+  gap: 0.9rem;
+  margin-inline: auto;
 }
 
-.ritual-cut-action {
-  display: grid;
-  min-height: 5.25rem;
-  place-items: center;
-  align-content: safe center;
-  gap: 0.2rem;
-  border: 1px solid rgb(222 211 172 / 0.25);
-  border-radius: 1.1rem;
-  background: rgb(3 13 19 / 0.7);
-  color: #d8e3dc;
-  padding: 1rem;
-  box-shadow: 0 1.4rem 3rem rgb(0 0 0 / 0.32);
-  cursor: pointer;
-  backdrop-filter: blur(18px);
+.immersive-cut-deck {
+  --cut-ratio: 0.5;
+  position: relative;
+  width: clamp(7.8rem, 18vw, 10.5rem);
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  cursor: ns-resize;
+  perspective: 70rem;
+  touch-action: none;
+}
+
+.immersive-cut-deck:focus-visible {
+  outline: 3px solid #f4d98d;
+  outline-offset: 0.65rem;
+  border-radius: 0.55rem;
+}
+
+.immersive-cut-deck:disabled {
+  opacity: 1;
+  cursor: wait;
+}
+
+.immersive-cut-deck__packet {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(238 210 132 / 0.72);
+  border-radius: 0.5rem;
+  background: url("/art/tarot/v2/celestial-gothic-back-v1.webp") center / cover;
+  box-shadow:
+    0 1.5rem 3.5rem rgb(0 0 0 / 0.62),
+    0 0 2rem rgb(118 211 193 / 0.1);
   transition:
-    translate 180ms ease,
-    border-color 180ms ease,
-    background 180ms ease;
+    translate 220ms ease,
+    rotate 220ms ease;
 }
 
-.ritual-cut-action:hover {
-  translate: 0 -0.2rem;
-  border-color: rgb(239 214 143 / 0.64);
+.immersive-cut-deck__packet.is-lower {
+  translate: 0.28rem 0.32rem;
+  rotate: 1.5deg;
 }
 
-.ritual-cut-action.is-primary {
-  border-color: rgb(239 214 143 / 0.56);
-  background: linear-gradient(145deg, rgb(13 53 51 / 0.86), rgb(34 26 55 / 0.82));
+.immersive-cut-deck__line {
+  position: absolute;
+  z-index: 4;
+  top: calc(var(--cut-ratio) * 100%);
+  right: -0.45rem;
+  left: -0.45rem;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #f1d58b 18%, #8dd6c6 82%, transparent);
+  box-shadow: 0 0 1.1rem 0.22rem rgb(137 215 199 / 0.42);
+  pointer-events: none;
+  transition: top 90ms linear;
 }
 
-.ritual-cut-action > span {
-  display: grid;
-  width: 2.6rem;
-  aspect-ratio: 1;
-  place-items: center;
-  margin-bottom: 0.4rem;
-  border: 1px solid rgb(239 214 143 / 0.34);
-  border-radius: 50%;
-  color: #e9cd84;
-  font-family: var(--font-display);
-  font-size: 1.1rem;
+.immersive-cut-deck__depth {
+  position: absolute;
+  z-index: 5;
+  top: calc(var(--cut-ratio) * 100%);
+  left: calc(100% + 0.7rem);
+  min-width: 2rem;
+  padding: 0.24rem 0.38rem;
+  border: 1px solid rgb(233 208 139 / 0.3);
+  border-radius: 999px;
+  background: rgb(2 12 18 / 0.8);
+  color: #efd791;
+  font: 600 0.65rem/1 var(--font-body);
+  translate: 0 -50%;
+  transition: top 90ms linear;
 }
 
-.ritual-cut-action strong {
-  color: #f3e7c8;
-  font: 500 1.05rem/1.2 var(--font-display);
+.immersive-cut-deck[data-committed="true"] .is-upper {
+  animation: immersive-cut-upper 720ms cubic-bezier(0.22, 0.78, 0.2, 1) both;
 }
 
-.ritual-cut-action small {
-  color: #9bb8b1;
-  font: 0.68rem/1.3 var(--font-body);
+.immersive-cut-deck[data-committed="true"] .is-lower {
+  animation: immersive-cut-lower 720ms cubic-bezier(0.22, 0.78, 0.2, 1) both;
+}
+
+.immersive-cut-deck[data-committed="true"]
+  :is(.immersive-cut-deck__line, .immersive-cut-deck__depth) {
+  opacity: 0;
+}
+
+.immersive-cut-instructions {
+  width: min(34rem, 100%);
+  margin: 0;
+  color: #c7d5d0;
+  font: 0.9rem/1.55 var(--font-body);
+  text-align: left;
+}
+
+.immersive-cut-skip {
+  min-height: 2.75rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid rgb(222 211 172 / 0.28);
+  border-radius: 999px;
+  background: rgb(3 13 19 / 0.62);
+  color: #d9e4df;
+  cursor: pointer;
+  font: 0.82rem/1.2 var(--font-body);
+  backdrop-filter: blur(14px);
+}
+
+.immersive-cut-skip:disabled {
+  cursor: wait;
+  opacity: 0.48;
 }
 
 .shuffle-skip-action {
@@ -3645,19 +3666,19 @@ body {
   transition: none;
 }
 
-.mystic-sanctuary[data-reduced-motion="true"] .sanctuary-shuffle-shells.is-gathering span,
+.mystic-sanctuary[data-reduced-motion="true"] .sanctuary-shuffle-shells.is-mixing i,
+.mystic-sanctuary[data-reduced-motion="true"] .shuffle-card-stream,
+.mystic-sanctuary[data-reduced-motion="true"] .immersive-cut-deck__packet,
 .mystic-sanctuary[data-reduced-motion="true"] .tarot-spread-stage.is-dealing .physical-card-figure,
 .mystic-sanctuary[data-reduced-motion="true"] .ritual-ready-action,
 .mystic-sanctuary[data-reduced-motion="true"] .guided-reveal-panel {
   animation: none !important;
 }
 
-.mystic-sanctuary[data-reduced-motion="true"] .sanctuary-shuffle-shells.is-gathering span {
-  transform: translate(-50%, -50%);
-}
-
-.mystic-sanctuary[data-reduced-motion="true"] .tactile-shuffle-control {
-  transform: translate(-50%, -50%);
+.mystic-sanctuary[data-reduced-motion="true"] .sanctuary-shuffle-shells.is-mixing i {
+  opacity: 0.68;
+  transform: translate(-50%, -50%) translate(var(--active-field-x), var(--active-field-y))
+    rotate(var(--field-rotation)) scale(0.88);
 }
 
 .stage-whisper,
@@ -3803,10 +3824,12 @@ body {
 }
 
 .reading-mode-bar {
-  display: flex;
+  display: grid;
   min-width: 0;
+  grid-template-columns: 1fr;
   align-items: center;
-  justify-content: space-between;
+  justify-items: center;
+  justify-content: center;
   gap: 0.75rem;
   padding: 0 0.2rem;
   color: #9bb5ae;
@@ -3889,8 +3912,11 @@ body {
 }
 
 .oracle-entry {
+  display: grid;
   width: min(100%, 42rem);
   min-width: 0;
+  justify-items: center;
+  margin-inline: auto;
   overflow-wrap: anywhere;
   animation: oracle-rise 520ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
   color: #edf5ec;
@@ -3917,7 +3943,31 @@ body {
   display: grid;
   width: min(100%, 45rem);
   gap: clamp(2rem, 5vw, 3.5rem);
+  margin-inline: auto;
   padding: 0.4rem clamp(0rem, 1vw, 0.75rem) 2rem;
+}
+
+.reading-complete-story > header,
+.reading-complete-story > section {
+  display: grid;
+  width: 100%;
+  justify-items: center;
+  margin-inline: auto;
+}
+
+.reading-complete-story > header {
+  text-align: center;
+}
+
+.reading-complete-story > header > p:last-child,
+.reading-complete-story > section > p {
+  width: min(100%, 60ch);
+  margin-inline: auto;
+  text-align: left;
+}
+
+.reading-complete-story > section > h3 {
+  text-align: center;
 }
 
 .reading-complete-story > article {
@@ -4079,6 +4129,17 @@ body {
     serif;
   letter-spacing: 0.015em;
   overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.oracle-entry > .reading-section-eyebrow {
+  text-align: center;
+}
+
+.oracle-entry > p:not(.reading-section-eyebrow) {
+  width: min(100%, 60ch);
+  margin-inline: auto;
+  text-align: left;
 }
 
 .oracle-entry-text {
@@ -4523,6 +4584,7 @@ body {
   position: relative;
   display: grid;
   min-width: 0;
+  justify-items: center;
   gap: 0.65rem;
   max-height: min(42dvh, 22rem);
   overflow: auto;
@@ -4536,6 +4598,7 @@ body {
     0 1.4rem 3.5rem rgb(0 0 0 / 0.5),
     0 0 0 1px rgb(255 255 255 / 0.025) inset;
   color: #dce8e4;
+  text-align: center;
 }
 
 .reading-closure h2,
@@ -4558,6 +4621,7 @@ body {
     0.85rem/1.5 Arial,
     Helvetica,
     sans-serif;
+  text-align: left;
 }
 
 .reading-closure blockquote {
@@ -4571,6 +4635,7 @@ body {
     italic 1rem/1.45 Georgia,
     "Times New Roman",
     serif;
+  text-align: left;
 }
 
 .reading-closure blockquote span {
@@ -4598,7 +4663,7 @@ body {
   background: rgb(255 255 255 / 0.035);
   color: #ece4d0;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
 }
 
 .reading-closure-actions button:first-child {
@@ -4646,7 +4711,7 @@ body {
 }
 
 .reading-sealed {
-  justify-items: start;
+  justify-items: center;
 }
 
 .reading-sealed > div {
@@ -5066,7 +5131,7 @@ body {
   text-transform: uppercase;
 }
 
-.reading-question-stage > div > p {
+.reading-question-stage > div > p:first-child {
   margin: 0;
   color: #d8bc78;
   font:
@@ -5090,14 +5155,37 @@ body {
   padding-bottom: 0.5rem;
 }
 
+.reading-selection-stage > blockquote {
+  width: min(44rem, calc(100vw - 2rem));
+  margin: 0 auto 1rem;
+  text-align: left;
+}
+
 .reading-question-stage {
   bottom: clamp(17rem, 39dvh, 22rem);
   overflow: hidden;
 }
 
 .reading-question-stage > div {
+  display: grid;
   width: min(46rem, calc(100vw - 2rem));
+  justify-items: center;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.reading-question-stage > div > p:not(:first-child),
+.reading-question-stage > div > :is(blockquote, ol) {
+  width: min(100%, 60ch);
   text-align: left;
+}
+
+.reading-question-stage > div > p:not(:first-child) {
+  margin: 0;
+  color: #c8d6d0;
+  font: 0.95rem/1.6 var(--font-body);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .reading-question-stage h1 {
@@ -5110,6 +5198,7 @@ body {
   display: grid;
   width: min(68rem, calc(100vw - 2rem));
   gap: 0.55rem;
+  margin-inline: auto;
   margin-bottom: 0.9rem;
 }
 
@@ -5195,7 +5284,7 @@ body {
   width: min(68rem, calc(100vw - 2rem));
   align-items: center;
   gap: 0.75rem;
-  margin: 0.1rem 0 0.5rem;
+  margin: 0.1rem auto 0.5rem;
   color: #d8bc78;
   font-family: var(--font-body);
 }
@@ -5225,6 +5314,7 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.55rem;
   width: min(68rem, calc(100vw - 2rem));
+  margin-inline: auto;
 }
 
 .ritual-spread-options label[hidden] {
@@ -5400,6 +5490,7 @@ body {
   display: grid;
   width: min(100%, 28rem);
   gap: 0.22rem;
+  margin-inline: auto;
   padding: 0.75rem 1rem;
   border-radius: 1rem;
   text-align: left;
@@ -5417,6 +5508,8 @@ body {
 }
 
 .reading-question-console .entry-privacy-note {
+  width: min(100%, 60ch);
+  margin-inline: auto;
   text-align: left;
 }
 
@@ -5431,13 +5524,14 @@ body {
 }
 
 .entry-privacy-note {
-  margin: 0 0 0.55rem;
+  width: min(100%, 60ch);
+  margin: 0 auto 0.55rem;
   color: #bed3ce;
   font:
     0.875rem/1.45 Arial,
     Helvetica,
     sans-serif;
-  text-align: center;
+  text-align: left;
   text-shadow: 0 2px 12px #000;
 }
 
@@ -5521,7 +5615,7 @@ body {
 }
 
 .guest-reading-entry .ritual-spread-options label > span {
-  text-align: center;
+  text-align: left;
 }
 
 .guest-reading-entry.reading-question-stage > div {
@@ -5531,7 +5625,7 @@ body {
 
 .guest-reading-entry .selected-ritual-summary {
   margin-inline: auto;
-  text-align: center;
+  text-align: left;
 }
 
 .guest-reading-intro {
@@ -5540,6 +5634,7 @@ body {
   color: #c8d4d0 !important;
   font: 0.92rem/1.6 var(--font-body) !important;
   letter-spacing: normal !important;
+  text-align: left !important;
   text-transform: none !important;
 }
 
@@ -5552,7 +5647,7 @@ body {
 }
 
 .guest-question-console .entry-privacy-note {
-  text-align: center;
+  text-align: left;
 }
 
 .guest-birth-date-field {
@@ -5587,10 +5682,12 @@ body {
 }
 
 .guest-birth-date-field small {
+  width: 100%;
   max-width: 34rem;
   margin-inline: auto;
   color: #a9bfba;
   font: 0.78rem/1.45 var(--font-body);
+  text-align: left;
 }
 
 .guest-policy-consents {
@@ -5667,10 +5764,12 @@ body {
 }
 
 .guest-conversion-card > p:not(.page-eyebrow) {
+  width: min(100%, 60ch);
   max-width: 39rem;
   margin: 0 auto;
   color: #c4d0cc;
   line-height: 1.65;
+  text-align: left;
 }
 
 .guest-conversion-card > small {
@@ -5870,60 +5969,75 @@ body {
   }
 }
 
-@keyframes sanctuary-mix {
+@keyframes sanctuary-planar-weave {
   0% {
-    opacity: 0.78;
-    transform: translate(-50%, -50%) scale(0.88);
+    opacity: 0.54;
+    transform: translate(-50%, -50%) translate(var(--active-field-x), var(--active-field-y))
+      rotate(var(--field-rotation)) scale(0.86);
   }
 
-  16% {
-    opacity: 1;
-    transform: translate(-50%, -50%) translate(var(--scatter-x), var(--scatter-y))
-      rotate(var(--scatter-rotation)) scale(0.95);
+  18% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) translate(var(--active-weave-x), var(--active-weave-y))
+      rotate(var(--weave-rotation)) scale(0.98);
   }
 
-  34% {
-    transform: translate(-50%, -50%) translate(var(--mix-x), var(--mix-y))
-      rotate(var(--mix-rotation)) scale(1.02);
+  37% {
+    opacity: 0.64;
+    transform: translate(-50%, -50%) translate(var(--return-x), var(--return-y))
+      rotate(var(--return-rotation)) scale(0.9);
   }
 
-  52% {
-    transform: translate(-50%, -50%) translate(var(--counter-x), var(--counter-y))
-      rotate(var(--scatter-rotation)) scale(0.9);
+  55% {
+    opacity: 0.92;
+    transform: translate(-50%, -50%) translate(var(--active-weave-x), var(--return-y))
+      rotate(var(--weave-rotation)) scale(1);
   }
 
-  70% {
-    transform: translate(-50%, -50%) translate(var(--mix-x), var(--scatter-y))
-      rotate(var(--mix-rotation)) scale(0.98);
+  73% {
+    opacity: 0.7;
+    transform: translate(-50%, -50%) translate(var(--active-field-x), var(--active-weave-y))
+      rotate(var(--return-rotation)) scale(0.91);
   }
 
-  86% {
-    transform: translate(-50%, -50%) translate(var(--counter-x), var(--mix-y))
-      rotate(var(--scatter-rotation)) scale(0.93);
+  89% {
+    opacity: 0.88;
+    transform: translate(-50%, -50%) translate(var(--return-x), var(--active-weave-y))
+      rotate(var(--weave-rotation)) scale(0.96);
   }
 
   100% {
-    opacity: 0.96;
-    transform: translate(-50%, -50%) translate(var(--scatter-x), var(--scatter-y))
-      rotate(var(--scatter-rotation)) scale(0.96);
+    opacity: 0.58;
+    transform: translate(-50%, -50%) translate(var(--active-field-x), var(--active-field-y))
+      rotate(var(--field-rotation)) scale(0.88);
   }
 }
 
-@keyframes sanctuary-gather {
-  from {
-    opacity: 0.96;
-    transform: translate(-50%, -50%) translate(var(--scatter-x), var(--scatter-y))
-      rotate(var(--scatter-rotation)) scale(0.96);
+@keyframes immersive-cut-upper {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0);
   }
 
-  72% {
-    opacity: 1;
-    transform: translate(-50%, -50%) translate(0, 0) rotate(0) scale(1.02);
+  48% {
+    transform: translate3d(-58%, -8%, 2rem) rotate(-7deg);
   }
 
-  to {
-    opacity: 0.94;
-    transform: translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(1);
+  100% {
+    transform: translate3d(0.24rem, 0.38rem, 0) rotate(1.2deg);
+  }
+}
+
+@keyframes immersive-cut-lower {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0);
+  }
+
+  48% {
+    transform: translate3d(54%, 8%, 1rem) rotate(6deg);
+  }
+
+  100% {
+    transform: translate3d(-0.18rem, -0.12rem, 0) rotate(-1deg);
   }
 }
 
@@ -7723,7 +7837,8 @@ body {
   }
 
   .reading-mode-bar {
-    align-items: flex-end;
+    align-items: center;
+    justify-items: center;
   }
 
   .reading-mode-bar button {
@@ -7732,9 +7847,9 @@ body {
   }
 
   .reading-mode-bar > span {
-    max-width: 8.5rem;
-    padding-bottom: 0.3rem;
-    text-align: right;
+    max-width: 100%;
+    padding-bottom: 0;
+    text-align: center;
   }
 
   .reading-complete-story {
@@ -7800,12 +7915,22 @@ body {
     margin-top: 0.55rem;
   }
 
-  .tactile-shuffle-control {
-    top: 47%;
-  }
-
   .sanctuary-shuffle-copy {
     bottom: max(15vh, 7.5rem);
+  }
+
+  .sanctuary-shuffle-shells.is-mixing i {
+    --active-field-x: var(--mobile-field-x);
+    --active-field-y: var(--mobile-field-y);
+    --active-weave-x: var(--mobile-weave-x);
+    --active-weave-y: var(--mobile-weave-y);
+    width: clamp(1.55rem, 7vw, 2.35rem);
+    border-radius: 0.3rem;
+  }
+
+  .immersive-shuffle-cue {
+    top: 47%;
+    width: min(18rem, calc(100vw - 1.5rem));
   }
 
   .sanctuary-gather-ritual .sanctuary-shuffle-copy {
@@ -7813,13 +7938,12 @@ body {
     bottom: auto;
   }
 
-  .ritual-cut-actions {
+  .immersive-cut-control {
     width: calc(100vw - 1rem);
   }
 
-  .ritual-cut-action {
-    min-height: 4.75rem;
-    padding: 0.75rem 0.5rem;
+  .immersive-cut-deck {
+    width: clamp(7rem, 28vw, 9rem);
   }
 
   .reveal-choice-prompt {
@@ -7986,46 +8110,43 @@ body {
   }
 
   .ritual-need-picker {
-    overflow: hidden;
+    justify-items: center;
+    overflow: visible;
   }
 
   .ritual-need-options {
     display: grid;
-    grid-auto-columns: min(72vw, 18rem);
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    justify-content: start;
-    overflow-x: auto;
-    padding: 0.15rem 0.15rem 0.4rem;
-    scroll-padding-inline: 0.15rem;
-    scroll-snap-type: x proximity;
-    scrollbar-width: thin;
+    width: min(100%, 27rem);
+    grid-auto-flow: row;
+    grid-template-columns: 1fr;
+    justify-content: center;
+    margin-inline: auto;
+    overflow: visible;
+    padding: 0.15rem;
   }
 
   .ritual-need-options button {
-    scroll-snap-align: start;
+    width: 100%;
   }
 
   .ritual-spread-heading small {
     display: none;
   }
 
-  .ritual-spread-options {
-    grid-auto-columns: min(76vw, 19rem);
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    justify-content: start;
-    width: calc(100vw - 1.2rem);
+  .ritual-spread-options,
+  .guest-reading-entry .ritual-spread-options {
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: center;
+    width: min(27rem, calc(100vw - 1.2rem));
     gap: 0.5rem;
-    overflow-x: auto;
+    margin-inline: auto;
+    overflow: visible;
     padding: 0.2rem 0.15rem 0.6rem;
-    scroll-padding-inline: 0.15rem;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: thin;
   }
 
   .ritual-spread-options label {
-    scroll-snap-align: start;
+    width: 100%;
   }
 
   .ritual-spread-options label > span {
@@ -8148,15 +8269,19 @@ body {
     transition: none;
   }
 
-  .sanctuary-shuffle-shells.is-gathering span,
+  .sanctuary-shuffle-shells.is-mixing i,
+  .shuffle-card-stream,
+  .immersive-cut-deck__packet,
   .tarot-spread-stage.is-dealing .physical-card-figure,
   .ritual-ready-action,
   .guided-reveal-panel {
     animation: none;
   }
 
-  .sanctuary-shuffle-shells.is-gathering span {
-    transform: translate(-50%, -50%);
+  .sanctuary-shuffle-shells.is-mixing i {
+    opacity: 0.68;
+    transform: translate(-50%, -50%) translate(var(--active-field-x), var(--active-field-y))
+      rotate(var(--field-rotation)) scale(0.88);
   }
 }
 

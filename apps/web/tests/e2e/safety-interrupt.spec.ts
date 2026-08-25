@@ -60,7 +60,7 @@ test("a guarded question is acknowledged before the commitment and can continue 
 
   await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await page.getByRole("button", { name: "Finish shuffling" }).click();
-  await page.getByRole("button", { name: /^No cut/ }).click();
+  await page.getByRole("button", { name: "Continue without a cut" }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   await revealAllThroughUi(page);
   await expect(

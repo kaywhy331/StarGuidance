@@ -321,7 +321,22 @@ export async function beginReadingThroughUi(
       new URL(response.url()).pathname === "/api/readings" &&
       response.request().postData()?.includes('"action":"finalize"') === true,
   );
-  await page.getByRole("button", { name: new RegExp(`^${options.cutButton ?? "No cut"}`) }).click();
+  const cutChoice = options.cutButton ?? "No cut";
+  if (cutChoice === "No cut") {
+    await page.getByRole("button", { name: "Continue without a cut" }).click();
+  } else {
+    const cutIndex = {
+      "Cut near the top": 20,
+      "Cut at the center": 39,
+      "Cut deeper": 58,
+    }[cutChoice];
+    const deck = page.getByTestId("ritual-cut-deck");
+    const bounds = await deck.boundingBox();
+    if (!bounds) throw new Error("The immersive cut deck is not visible.");
+    await deck.click({
+      position: { x: bounds.width / 2, y: (bounds.height * cutIndex) / 78 },
+    });
+  }
   expect((await finalization).status()).toBe(201);
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   return page.url().split("/").at(-1) as string;

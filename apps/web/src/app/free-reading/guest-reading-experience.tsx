@@ -15,6 +15,11 @@ import {
 import { readingMachine } from "@starguidance/reading-machine";
 
 import {
+  createClientDrawNonce,
+  isClientDrawNonce,
+  stirClientDrawNonce,
+} from "@/lib/client-draw-entropy";
+import {
   GUEST_DEVICE_HEADER,
   GUEST_DEVICE_STORAGE_KEY,
   GUEST_READING_RECEIPT_KEY,
@@ -32,14 +37,20 @@ import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../session/[id]/question-composer";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
-import { ShuffleShells } from "../session/[id]/shuffle-shells";
+import { ImmersiveCutDeck, ImmersiveShuffleDeck } from "../session/[id]/shuffle-shells";
 import { TarotSpreadStage } from "../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 type CeremonyStage = "focusing" | "shuffling" | "optionalCut";
 
 type PendingGuestSession =
-  | { kind: "ceremony"; token: string; stage: CeremonyStage }
+  | {
+      kind: "ceremony";
+      token: string;
+      stage: CeremonyStage;
+      clientNonce?: string;
+      stirCount?: number;
+    }
   | {
       kind: "receipt";
       receipt: string;
@@ -83,13 +94,6 @@ function storedDeviceId(): string {
   } catch {
     return crypto.randomUUID();
   }
-}
-
-function browserNonce(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
 function readPendingSession(): PendingGuestSession | undefined {
@@ -183,6 +187,8 @@ export function GuestReadingExperience({
   const [followUpLoading, setFollowUpLoading] = useState(false);
   const bootstrapped = useRef(false);
   const resultUnlockStarted = useRef(false);
+  const clientNonce = useRef<string | undefined>(undefined);
+  const stirCount = useRef(0);
 
   const selectedSpread = useMemo(
     () => spreads.find(({ id }) => id === selected) ?? spreads[0],
@@ -237,6 +243,13 @@ export function GuestReadingExperience({
           setSelected(restored.spread.id as FreeSpread["id"]);
           setReversalMode(restored.configuration.reversalMode);
           setPersonalizationMode(restored.configuration.personalizationMode);
+          clientNonce.current = isClientDrawNonce(pending.clientNonce)
+            ? pending.clientNonce
+            : createClientDrawNonce();
+          stirCount.current =
+            Number.isSafeInteger(pending.stirCount) && (pending.stirCount ?? -1) >= 0
+              ? (pending.stirCount ?? 0)
+              : 0;
           send({ type: "START" });
           send({ type: "DRAFT_QUESTION" });
           send({ type: "CONFIRM_QUESTION" });
@@ -459,7 +472,15 @@ export function GuestReadingExperience({
         throw new Error(payload.error ?? "The free reading could not be prepared.");
       const prepared = drawCeremonySchema.parse(payload.ceremony);
       setCeremony(prepared);
-      savePendingSession({ kind: "ceremony", token: prepared.token, stage: "focusing" });
+      clientNonce.current = createClientDrawNonce();
+      stirCount.current = 0;
+      savePendingSession({
+        kind: "ceremony",
+        token: prepared.token,
+        stage: "focusing",
+        clientNonce: clientNonce.current,
+        stirCount: 0,
+      });
       if (continueAsReflection) send({ type: "CONTINUE_AS_REFLECTION" });
       else send({ type: "SAFETY_APPROVED" });
     } catch (cause) {
@@ -472,6 +493,8 @@ export function GuestReadingExperience({
   const finalizeDraw = useCallback(
     async (cutIndex: number) => {
       if (!deviceId || !ceremony || loading) return;
+      const pendingNonce = clientNonce.current ?? createClientDrawNonce();
+      clientNonce.current = pendingNonce;
       setLoading(true);
       setError(undefined);
       send({ type: cutIndex === 0 ? "SKIP_CUT" : "CUT" });
@@ -482,7 +505,7 @@ export function GuestReadingExperience({
           body: JSON.stringify({
             action: "finalize",
             ceremonyToken: ceremony.token,
-            clientNonce: browserNonce(),
+            clientNonce: pendingNonce,
             cutIndex,
           }),
         });
@@ -515,18 +538,29 @@ export function GuestReadingExperience({
     [ceremony, deviceId, loading, send],
   );
 
+  const saveCurrentCeremony = (stage: CeremonyStage) => {
+    if (!ceremony) return;
+    const pendingNonce = clientNonce.current ?? createClientDrawNonce();
+    clientNonce.current = pendingNonce;
+    savePendingSession({
+      kind: "ceremony",
+      token: ceremony.token,
+      stage,
+      clientNonce: pendingNonce,
+      stirCount: stirCount.current,
+    });
+  };
+
+  const stirPendingDeck = () => {
+    const pendingNonce = clientNonce.current ?? createClientDrawNonce();
+    clientNonce.current = stirClientDrawNonce(pendingNonce);
+    stirCount.current += 1;
+    saveCurrentCeremony("shuffling");
+  };
+
   const revealCard = useCallback(
     (index: number) => {
       if (!reading || !state.matches("revealing") || revealedRef.current.has(index)) return;
-      const nextExpected = reading.cards.findIndex(
-        (_, candidate) => !revealedRef.current.has(candidate),
-      );
-      if (index !== nextExpected) {
-        setError(
-          `Reveal position ${nextExpected + 1} next so the spread keeps its intended order.`,
-        );
-        return;
-      }
       const next = new Set(revealedRef.current).add(index);
       revealedRef.current = next;
       setRevealed(next);
@@ -1159,7 +1193,7 @@ export function GuestReadingExperience({
             <button
               className="reading-entry-continue"
               onClick={() => {
-                savePendingSession({ kind: "ceremony", token: ceremony.token, stage: "shuffling" });
+                saveCurrentCeremony("shuffling");
                 send({ type: "FOCUS_COMPLETE" });
               }}
               type="button"
@@ -1172,29 +1206,18 @@ export function GuestReadingExperience({
 
       {state.matches("shuffling") && ceremony && (
         <section className="reading-entry-stage reading-question-stage sanctuary-shuffle-ritual is-shuffling">
-          <ShuffleShells phase="mixing" />
+          <ImmersiveShuffleDeck onStir={stirPendingDeck} />
           <div className="sanctuary-shuffle-copy">
-            <p className="ritual-status">Shuffling the committed deck</p>
+            <p className="ritual-status">All 78 possibilities are in motion</p>
             <span>
-              No final cards exist yet. Skipping the animation preserves the same strength of
-              randomness.
+              Swipe, tap, click, or press Space to stir in fresh secure entropy. The draw remains
+              cryptographically strong if you finish immediately.
             </span>
           </div>
-          <button className="tactile-shuffle-control" type="button">
-            <span aria-hidden="true" className="tactile-shuffle-control__deck">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span>
-              <strong>Stir the deck</strong>
-              <small>Tap, click, or press Space</small>
-            </span>
-          </button>
           <button
             className="shuffle-skip-action"
             onClick={() => {
-              savePendingSession({ kind: "ceremony", token: ceremony.token, stage: "optionalCut" });
+              saveCurrentCeremony("optionalCut");
               send({ type: "SHUFFLE_COMPLETE" });
             }}
             type="button"
@@ -1206,45 +1229,17 @@ export function GuestReadingExperience({
 
       {state.matches("optionalCut") && ceremony && (
         <section className="reading-entry-stage reading-question-stage sanctuary-gather-ritual">
-          <ShuffleShells phase="gathering" />
           <div className="sanctuary-shuffle-copy">
             <p className="ritual-status">Cut the deck, if you wish</p>
-            <span>Your cut rotates the shuffled permutation before positions are assigned.</span>
+            <span>
+              Choose where the deck separates. That exact cut becomes part of this locked draw.
+            </span>
           </div>
-          <div className="ritual-cut-actions">
-            <button
-              className="ritual-cut-action"
-              onClick={() => void finalizeDraw(20)}
-              type="button"
-            >
-              <strong>Cut near the top</strong>
-              <small>After card 20</small>
-            </button>
-            <button
-              className="ritual-cut-action is-primary"
-              onClick={() => void finalizeDraw(39)}
-              type="button"
-            >
-              <strong>Cut at the center</strong>
-              <small>After card 39</small>
-            </button>
-            <button
-              className="ritual-cut-action"
-              onClick={() => void finalizeDraw(58)}
-              type="button"
-            >
-              <strong>Cut deeper</strong>
-              <small>After card 58</small>
-            </button>
-            <button
-              className="ritual-cut-action"
-              onClick={() => void finalizeDraw(0)}
-              type="button"
-            >
-              <strong>No cut</strong>
-              <small>Finalize the shuffled order</small>
-            </button>
-          </div>
+          <ImmersiveCutDeck
+            onCut={(cutIndex) => void finalizeDraw(cutIndex)}
+            onNoCut={() => void finalizeDraw(0)}
+            reducedMotion={reducedMotion}
+          />
         </section>
       )}
 
@@ -1314,8 +1309,11 @@ export function GuestReadingExperience({
                   <div className="reveal-choice-prompt" role="status">
                     <span aria-hidden="true">✦</span>
                     <p>
-                      <strong>Reveal position {revealed.size + 1} next</strong>
-                      <small>Tap, click, press Enter or Space, or reveal all.</small>
+                      <strong>Choose any face-down position</strong>
+                      <small>
+                        Its assignment is already locked. Tap, click, use Enter or Space, or reveal
+                        all.
+                      </small>
                     </p>
                     <span>
                       {revealed.size} of {reading.cards.length}
