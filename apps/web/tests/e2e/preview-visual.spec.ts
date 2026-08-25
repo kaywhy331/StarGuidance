@@ -17,12 +17,14 @@ async function expectNoBlockingAccessibilityViolations(page: Page) {
 async function expectHorizontallyCentered(page: Page, selector: string) {
   await expect
     .poll(async () => {
-      const bounds = await page.locator(selector).boundingBox();
-      if (!bounds) return Number.POSITIVE_INFINITY;
-      // Playwright's configured viewport width includes Chromium's classic
-      // scrollbar gutter, while CSS positioning uses the layout viewport.
-      const layoutViewportWidth = await page.evaluate(() => document.documentElement.clientWidth);
-      return Math.abs(bounds.x + bounds.width / 2 - layoutViewportWidth / 2);
+      const [bounds, sanctuaryBounds] = await Promise.all([
+        page.locator(selector).boundingBox(),
+        page.getByTestId("mystic-sanctuary-scene").boundingBox(),
+      ]);
+      if (!bounds || !sanctuaryBounds) return Number.POSITIVE_INFINITY;
+      return Math.abs(
+        bounds.x + bounds.width / 2 - (sanctuaryBounds.x + sanctuaryBounds.width / 2),
+      );
     })
     .toBeLessThanOrEqual(3);
 }
