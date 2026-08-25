@@ -64,6 +64,8 @@ If `PROFILE_ENGINE_SHARED_SECRET` is set for FastAPI, configure the identical va
 
 Web `/api/health` is liveness only. Deep `/api/health?readiness=1` probes protected configuration and dependencies and requires a domain-separated HMAC bearer derived from the dedicated `READINESS_PROBE_SECRET` as documented in [Deployment](DEPLOYMENT.md). Keep it distinct from `PROFILE_ENGINE_SHARED_SECRET` and `INTERPRETATION_WORKER_SECRET`; do not expose deep readiness through a public uptime monitor.
 
+Reading audio remains unavailable by default. To exercise it locally, set `READING_AUDIO_PROVIDER=fish-audio` plus a server-only `FISH_AUDIO_API_KEY`, an explicit supported `FISH_AUDIO_MODEL`, and a `FISH_AUDIO_REFERENCE_ID` for a voice you have permission to use. Sign in and open a fully revealed reading. Turn on **Audio reading** in Sound layers; this only reveals **Play audio**. The first Fish request must not appear until Play is pressed. In guided mode only the visible passage is requested; in complete-story mode inspect the network panel to confirm each later `/audio` request begins only after the prior passage finishes. Never use production credentials in `.env.local` screenshots, fixtures, or test output.
+
 ## Verify
 
 ```bash

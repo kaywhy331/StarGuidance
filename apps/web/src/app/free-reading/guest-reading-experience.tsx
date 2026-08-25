@@ -1390,7 +1390,7 @@ export function GuestReadingExperience({
             reducedMotion={reducedMotion}
             result={reading.result}
             retryToken={0}
-            soundEnabled={false}
+            audioEnabled={false}
             target="guest-primary"
           />
         ) : null}

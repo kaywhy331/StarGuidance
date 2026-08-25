@@ -25,7 +25,6 @@ export function SanctuaryVisualPreview({
   const [question, setQuestion] = useState("");
   const [sound, setSound] = useState(false);
   const [ambience, setAmbience] = useState(false);
-  const [narration, setNarration] = useState(false);
   useRitualAmbience(ambience, "complete");
   return (
     <MysticSanctuaryScene
@@ -39,12 +38,10 @@ export function SanctuaryVisualPreview({
         ambience={ambience}
         controlsLabel="Visual preview controls"
         exitHref="/"
-        narration={narration}
         reducedMotion={false}
         showMotion={false}
         sound={sound}
         toggleAmbience={() => setAmbience((enabled) => !enabled)}
-        toggleNarration={() => setNarration((enabled) => !enabled)}
         toggleSound={() => setSound((enabled) => !enabled)}
       />
       <div
@@ -63,7 +60,7 @@ export function SanctuaryVisualPreview({
             result={result}
             retryToken={0}
             sigilSeed="synthetic-preview-profile"
-            soundEnabled={narration}
+            audioEnabled={false}
             target="preview"
           />
         ) : (

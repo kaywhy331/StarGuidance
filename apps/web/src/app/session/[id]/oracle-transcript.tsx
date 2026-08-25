@@ -7,6 +7,7 @@ import {
   type ReadingResult,
 } from "@starguidance/contracts";
 
+import { ReadingAudioPlayer } from "./reading-audio-player";
 import type { DealtCardView, ReadingPersonalization } from "./reading-types";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
@@ -25,7 +26,7 @@ export function OracleTranscript({
   target,
   reducedMotion,
   retryToken,
-  soundEnabled,
+  audioEnabled,
   onActiveCardChange,
   onJourneyCompleteChange,
   onRetry,
@@ -41,7 +42,7 @@ export function OracleTranscript({
   target: string;
   reducedMotion: boolean;
   retryToken: number;
-  soundEnabled: boolean;
+  audioEnabled: boolean;
   onActiveCardChange?: (index: number | null) => void;
   onJourneyCompleteChange?: (complete: boolean) => void;
   onRetry: () => void;
@@ -166,15 +167,6 @@ export function OracleTranscript({
     onActiveCardChange?.(completeView || activeCardIndex < 0 ? null : activeCardIndex);
   }, [activeCardIndex, completeView, onActiveCardChange]);
 
-  useEffect(() => {
-    if (!soundEnabled || !activeEntry || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(`${activeEntry.heading}. ${activeEntry.text}`);
-    utterance.rate = 0.94;
-    window.speechSynthesis.speak(utterance);
-    return () => window.speechSynthesis.cancel();
-  }, [activeEntry, soundEnabled]);
-
   const move = (offset: number) => {
     setActiveIndex((current) => {
       const next = Math.max(0, Math.min(current + offset, entries.length - 1));
@@ -223,6 +215,14 @@ export function OracleTranscript({
           >
             <span aria-hidden="true">☰</span> Read as one story
           </button>
+          <ReadingAudioPlayer
+            activeIndex={activeIndex}
+            continuous={completeView}
+            enabled={audioEnabled}
+            entries={entries}
+            readingId={readingId}
+            target={target}
+          />
         </div>
         <span>
           {streamState === "complete" ? "Spread-aware reading" : "The reading is arriving"}
