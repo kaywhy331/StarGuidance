@@ -36,7 +36,7 @@ describe("governed runtime configuration", () => {
     const configuration = await getRuntimeConfiguration();
 
     expect(configuration.content.enabledSpreadIds).toHaveLength(8);
-    expect(configuration.prompts.bundleId).toBe("reader-voice-v6");
+    expect(configuration.prompts.bundleId).toBe("reader-voice-v7");
     expect(configuration.models.primaryModel).toBe("approved-primary");
     expect(profileReportsEnabled(configuration)).toBe(true);
   });

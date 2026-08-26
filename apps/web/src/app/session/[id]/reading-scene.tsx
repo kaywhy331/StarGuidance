@@ -620,6 +620,7 @@ export function ReadingScene({
           <OracleTranscript
             active
             cards={reading.cards}
+            displayName={displayName}
             onJourneyCompleteChange={setJourneyComplete}
             onNarratedCardIndexesChange={(indexes) =>
               setNarratingCardIndexes((current) =>

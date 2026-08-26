@@ -98,7 +98,7 @@ describe("reading audio route", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store, no-transform");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([73, 68, 51]));
     expect(mocks.stream).toHaveBeenCalledWith(
-      "What the cards indicate. The current pattern suggests one grounded step.",
+      "Your answer. The current pattern suggests one grounded step.",
       expect.any(AbortSignal),
     );
     expect(mocks.assertRateLimit).toHaveBeenCalledWith(`reading-audio:${user.id}`, 60, 3_600_000);

@@ -61,6 +61,8 @@ export const promptConfigurationSchema = z
       "reader-voice-v5-grounded",
       "reader-voice-v6",
       "reader-voice-v6-grounded",
+      "reader-voice-v7",
+      "reader-voice-v7-grounded",
     ]),
     safetyPolicyVersion: z.literal("question-safety-v2"),
   })
@@ -161,7 +163,7 @@ export function defaultRuntimeConfiguration(): RuntimeConfiguration {
       interpretationRulesVersion: "interpretation-rules-v1",
       enabledSpreadIds: spreads.map(({ id }) => id),
     },
-    prompts: { bundleId: "reader-voice-v6", safetyPolicyVersion: "question-safety-v2" },
+    prompts: { bundleId: "reader-voice-v7", safetyPolicyVersion: "question-safety-v2" },
     commerce: {
       readingAccessMode:
         process.env.READING_ACCESS_MODE === "free-window" ? "free-window" : "unlimited",

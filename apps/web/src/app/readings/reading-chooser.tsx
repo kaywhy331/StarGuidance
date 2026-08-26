@@ -594,8 +594,9 @@ export function ReadingChooser({
               </button>
             </div>
             <p className="entry-privacy-note">
-              Pure Tarot sends no profile traits. Personalized Tarot uses only a minimized
-              reflection lens and never changes the draw.
+              Pure Tarot sends no profile traits. Personalized Tarot weaves only relevant, available
+              profile traits into the interpretation and never changes the draw. Unavailable or
+              unvalidated systems are not invented.
             </p>
           </div>
           <div className="ritual-action-group">

@@ -32,7 +32,6 @@ import {
   agencySteps,
   buildQuestionFrame,
   cardNarration,
-  closingNarration,
   likelyNarration,
   openingNarration,
   overallPatternNarration,
@@ -47,7 +46,7 @@ export interface InterpretationProvider<TInput, TOutput> {
 }
 
 export const FALLBACK_PROVIDER_ID = "deterministic-fallback-v1" as const;
-export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v6" as const;
+export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v7" as const;
 export const READING_RESULT_SCHEMA_VERSION = "reading-result-v3" as const;
 
 export interface ReadingGenerationOutcome {
@@ -144,12 +143,12 @@ export function classifyQuestion(question: string): {
 
 const inferredTopics: readonly [ReadingTopic, RegExp][] = [
   [
-    "career",
-    /\b(work|career|job|business|project|lead|colleague|coworker|manager|boss|role|position|promot\w*|raise|salary|pay|income|interview|hiring|offer|employment|contract|client|company|team|freelance)\b/i,
-  ],
-  [
     "relationships",
     /\b(love|relationship|partner|friend|family|communicat\w*|conflict|marriage|reconcil\w*|reconnect|break ?up)\b/i,
+  ],
+  [
+    "career",
+    /\b(work|career|job|business|project|lead|colleague|coworker|manager|boss|role|position|promot\w*|raise|salary|pay|income|interview|hiring|offer|employment|contract|client|company|team|freelance)\b/i,
   ],
   ["change", /\b(change|move|relocat\w*|choice|direction|transition|future|next)\b/i],
   ["wellbeing", /\b(wellbeing|well-being|balance|rest|energy|habit|stress|burnout|overwhelm)\b/i],
@@ -180,7 +179,7 @@ export function classifyQuestionContext(
       : (inferredTopics.find(([, pattern]) => pattern.test(question))?.[0] ?? "general");
   const intent = generalReading
     ? "generalReflection"
-    : /\b(choose|choice|decid|which path)\b/i.test(question) || /^\s*should i\b/i.test(question)
+    : /\b(choose|choice|decid|which path)\b|\bshould i (?!understand\b)/i.test(question)
       ? "decisionSupport"
       : /\b(plan|prepare|next step|approach)\b/i.test(question)
         ? "planning"
@@ -506,7 +505,8 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
         relationshipNotes.push(
           `${entry.card.name} and ${suitReinforcement.card.name} repeat the ${entry.card.suit} current across ${entry.position.displayName} and ${suitReinforcement.position.displayName}, reinforcing ${entry.card.suit === "cups" ? "emotion and reciprocity" : entry.card.suit === "swords" ? "thought and communication" : entry.card.suit === "wands" ? "initiative and momentum" : "work, resources, and tangible follow-through"}.`,
         );
-      const ordinaryPositionMeaning = cardNarration(entry, frame, index, false);
+      const trait = traits.length > 0 ? traits[index % traits.length] : undefined;
+      const ordinaryPositionMeaning = cardNarration(entry, frame, index, false, trait);
       return {
         positionId: entry.position.id,
         positionLabel: entry.position.displayName,
@@ -520,7 +520,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
           ? guardedQuestionConnection(
               safety.category,
               entry.position.order,
-              cardNarration(entry, frame, index, true),
+              cardNarration(entry, frame, index, true, trait),
             )
           : ordinaryPositionMeaning,
         relationshipNotes,
@@ -538,10 +538,10 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
           voice.about,
           `This reading will not turn the question into a factual prediction. ${safety.guidance}`,
         )
-      : openingNarration(answer, frame, resolved);
+      : openingNarration(answer, frame, traits[0]);
 
     const overallPattern = overallPatternNarration(resolved, frame);
-    const synthesis = `${turningPointNarration(answer, resolved, frame, traits[0])} ${closingNarration(frame, answer)}`;
+    const synthesis = turningPointNarration(answer, resolved, frame, traits[1] ?? traits[0]);
 
     const trajectoryEntries = input.configuration.capabilities.trajectoryPositionIds.flatMap(
       (positionId) => {
@@ -555,7 +555,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       input.draw.spreadId === "outlook";
     const likelyTrajectory =
       trajectoryEntries.length > 0 && questionSupportsOutlook
-        ? likelyNarration(answer, resolved, frame, guarded)
+        ? likelyNarration(answer, frame, guarded)
         : null;
     const alternativeGroup = input.configuration.capabilities.alternativePositionGroups[0] ?? [];
     const alternativeEntries = alternativeGroup.flatMap((positionId) => {
@@ -564,10 +564,10 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
     });
     const alternatePath =
       alternativeEntries.length >= 2
-        ? `${alternativeEntries[0]!.position.displayName}, shown by ${named(alternativeEntries[0]!)}, asks you to work with ${meaning(alternativeEntries[0]!)}. ${alternativeEntries[1]!.position.displayName}, shown by ${named(alternativeEntries[1]!)}, asks something different: ${meaning(alternativeEntries[1]!)}. Neither card declares a winner; the real branch is which demand matches the life you are prepared to live, and ${named(answer)} shows the leverage you retain while choosing.`
+        ? `${named(alternativeEntries[0]!)} asks for ${meaning(alternativeEntries[0]!)}, while ${named(alternativeEntries[1]!)} asks for ${meaning(alternativeEntries[1]!)}. The real branch is which demand fits the life you are prepared to live.`
         : null;
     const timing = input.configuration.capabilities.timingMethod
-      ? `Timing is interpreted only through the approved ${input.configuration.capabilities.timingMethod.id} method and its configured positions; it remains conditional rather than an exact date.`
+      ? `The approved ${input.configuration.capabilities.timingMethod.id} timing method gives a window, not an exact date.`
       : null;
     const userAgency = agencyNarration(agencySteps(frame, answer, traits, guarded));
     const personalizationLens =
@@ -575,12 +575,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       input.relevantTraitStatements.length > 0
         ? {
             label: "Personalized reflection" as const,
-            observations: input.relevantTraitStatements
-              .slice(0, 3)
-              .map(
-                (trait) =>
-                  `Your private reflection lens notes that ${naturalTrait(trait)}. This may make ${meaning(answer)} especially relevant to notice, but it does not change ${answer.card.name}'s meaning or the draw.`,
-              ),
+            observations: input.relevantTraitStatements.slice(0, 3).map((trait) => trait.trim()),
           }
         : null;
 
@@ -596,7 +591,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       userAgency,
       reflectionPrompt: reflectionQuestion(frame, answer),
       uncertaintyNote:
-        "Tarot offers a conditional interpretation, not factual proof or a guarantee. New evidence, choices, and changing conditions can alter the direction described.",
+        "This is a conditional reading; new evidence and choices can change the direction.",
       personalizationLens,
       safetyFlags: safety.category === "ordinary" ? [] : [safety.category],
     });
@@ -694,13 +689,8 @@ export function createOracleStreamEvents(result: ReadingResult): readonly Oracle
   const authored = [
     {
       phase: "directAnswer" as const,
-      heading: "What the cards indicate",
+      heading: "Your answer",
       text: validated.directAnswer,
-    },
-    {
-      phase: "overallPattern" as const,
-      heading: "The pattern across the spread",
-      text: validated.overallPattern,
     },
     ...validated.cards.map((card) => ({
       phase: "cardInterpretation" as const,
@@ -714,15 +704,15 @@ export function createOracleStreamEvents(result: ReadingResult): readonly Oracle
     })),
     {
       phase: "synthesis" as const,
-      heading: "How the cards work together",
-      text: validated.synthesis,
+      heading: "The thread",
+      text: `${validated.overallPattern} ${validated.synthesis}`,
       cardPositionIds: validated.cards.map(({ positionId }) => positionId),
     },
     ...(validated.likelyTrajectory
       ? [
           {
             phase: "likelyTrajectory" as const,
-            heading: "Conditional trajectory",
+            heading: "If this continues",
             text: validated.likelyTrajectory,
           },
         ]
@@ -731,37 +721,23 @@ export function createOracleStreamEvents(result: ReadingResult): readonly Oracle
       ? [
           {
             phase: "alternatePath" as const,
-            heading: "How the paths differ",
+            heading: "The other path",
             text: validated.alternatePath,
           },
         ]
       : []),
     ...(validated.timing
-      ? [{ phase: "timing" as const, heading: "Timing", text: validated.timing }]
+      ? [{ phase: "timing" as const, heading: "When to watch", text: validated.timing }]
       : []),
     {
       phase: "userAgency" as const,
-      heading: "Your leverage",
+      heading: "Your move",
       text: validated.userAgency,
     },
-    ...(validated.personalizationLens
-      ? [
-          {
-            phase: "personalization" as const,
-            heading: "Why this may be especially relevant to you",
-            text: validated.personalizationLens.observations.join(" "),
-          },
-        ]
-      : []),
     {
       phase: "reflectionPrompt" as const,
-      heading: "Reflection",
-      text: validated.reflectionPrompt,
-    },
-    {
-      phase: "uncertainty" as const,
-      heading: "A note on uncertainty",
-      text: validated.uncertaintyNote,
+      heading: "Hold this question",
+      text: `${validated.reflectionPrompt} ${validated.uncertaintyNote}`,
     },
   ];
   return authored.map((entry, sequence) =>

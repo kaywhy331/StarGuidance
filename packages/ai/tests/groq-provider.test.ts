@@ -89,15 +89,17 @@ describe("Groq transport boundaries", () => {
 });
 
 describe("provider payload and response contract", () => {
-  it("uses the question-led consultation contract for new readings", () => {
-    expect(PROMPT_VERSION).toBe("reader-voice-v6");
+  it("uses the concise, trait-integrated consultation contract for new readings", () => {
+    expect(PROMPT_VERSION).toBe("reader-voice-v7");
     expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain(
-      "first sentence of directAnswer must answer",
+      "first sentence of directAnswer must take a clear",
     );
     expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain(
-      "positionInterpretation is the lived reading",
+      "silently weave one to three relevant readerLens statements",
     );
-    expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain("Treat the spread like an argument");
+    expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain(
+      "Sound like a reading, not an explainer",
+    );
   });
 
   it("omits all supplied traits in Pure Tarot", () => {
@@ -122,12 +124,13 @@ describe("provider payload and response contract", () => {
       input.configuration.positions,
     );
     const schema = reviewedReadingResponseSchema(resolved, input.configuration) as {
-      properties: Record<string, { type?: string }>;
+      properties: Record<string, { maxLength?: number; type?: string }>;
     };
     expect(schema.properties.likelyTrajectory?.type).toBe("null");
     expect(schema.properties.alternatePath?.type).toBe("null");
     expect(schema.properties.timing?.type).toBe("null");
     expect(schema.properties.personalizationLens?.type).toBe("null");
+    expect(schema.properties.directAnswer?.maxLength).toBe(480);
   });
 
   it("falls back on an invalid provider response without changing the locked draw", async () => {

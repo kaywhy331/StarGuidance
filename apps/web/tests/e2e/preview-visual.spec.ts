@@ -89,22 +89,13 @@ test("the visual preview renders the spread-aware result and evidence contract",
   await expect(page.locator(".question-composer")).toHaveCount(0);
   await expect(page.getByTestId("reading-journey")).toHaveAttribute(
     "data-loaded-section-count",
-    "10",
+    "8",
   );
-  await expect(page.getByTestId("reading-journey")).toHaveAttribute(
-    "data-reading-mode",
-    "complete",
-  );
-  await expect(
-    page.getByRole("heading", { name: "What the cards indicate", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText(/quiet architecture of change is already forming/i)).toHaveCount(1);
-  await expect(page.getByRole("heading", { name: "Situation" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Challenge" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Direction" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Conditional trajectory" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "The other path in this spread" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Timing" })).toHaveCount(0);
+  await expect(page.getByTestId("reading-journey")).toHaveAttribute("data-reading-mode", "section");
+  await expect(page.getByRole("heading", { name: "Your answer", exact: true })).toBeVisible();
+  await expect(page.getByText(/a careful change is already taking shape/i)).toHaveCount(1);
+  await expect(page.getByTestId("reading-active-passage")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "Situation" })).toHaveCount(0);
   await expectHorizontallyCentered(page, '[data-testid="oracle-transcript"]');
 
   const details = page.locator(".reading-details-drawer");
@@ -114,19 +105,14 @@ test("the visual preview renders the spread-aware result and evidence contract",
   await expect(details).toContainText("approved reversed themes");
   await expect(details).toContainText("This reading uses only the locked cards");
 
-  await page.getByRole("button", { name: "Guided" }).click();
-  await expect(page.getByTestId("reading-journey")).toHaveAttribute("data-reading-mode", "guided");
-  await expect(
-    page.getByRole("heading", { name: "What the cards indicate", exact: true }),
-  ).toBeVisible();
   await page.getByRole("button", { name: "Next reading passage" }).click();
-  await expect(page.getByRole("heading", { name: "The pattern across the spread" })).toBeVisible();
-  await page.getByRole("button", { name: "Next reading passage" }).click();
+  await expect(page.getByRole("heading", { name: "Situation" })).toBeVisible();
   await expect(page.getByTestId("oracle-transcript")).toHaveAttribute(
     "data-active-card-index",
     "0",
   );
   await page.getByRole("button", { name: "Next reading passage" }).click();
+  await expect(page.getByRole("heading", { name: "Challenge" })).toBeVisible();
   await expect(page.getByTestId("oracle-transcript")).toHaveAttribute(
     "data-active-card-index",
     "1",
@@ -138,7 +124,7 @@ test("the visual preview renders the spread-aware result and evidence contract",
   await expect(transcript).toBeFocused();
   await expect(page.getByRole("button", { name: "Finish reading" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Previous reading passage" })).toBeEnabled();
-  await expect(page.getByText("10 of 10", { exact: true })).toBeVisible();
+  await expect(page.getByText("8 of 8", { exact: true })).toBeVisible();
   await expect(page.locator(".question-composer")).toHaveCount(0);
   await expectNoBlockingAccessibilityViolations(page);
   await page.getByRole("button", { name: "Finish reading" }).click();
@@ -152,8 +138,7 @@ test("the visual preview renders the spread-aware result and evidence contract",
 test("capture the sanctuary from the Netlify Deploy Preview", async ({ page }, testInfo) => {
   test.skip(!process.env.PREVIEW_SCREENSHOTS, "Run only against the deployed preview URL.");
   await page.goto("/visual-preview");
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
-  await page.getByRole("button", { name: "Guided" }).click();
+  await expect(page.getByTestId("reading-active-passage")).toBeVisible();
   await page.getByRole("button", { name: "Next reading passage" }).click();
   await page.getByRole("button", { name: "Next reading passage" }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible();

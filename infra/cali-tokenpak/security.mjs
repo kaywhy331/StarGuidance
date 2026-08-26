@@ -53,6 +53,16 @@ const REVIEWED_PROMPT_HASHES = new Map([
   ["f03c5ffe9e3ac2f0bac84c430b38f4c073ce2c11fa31dd7726713ef1fdee1aee", READING_SCHEMA_NAME],
   ["de963a0e4bda0467f071eef984fe93fb99dbc7832e490a3051b18763cf9d00a1", FOLLOW_UP_SCHEMA_NAME],
   ["705626fccb0e264a58cb730aa50ce5838481ad56604abee4c8f0e49b2595d709", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v7 concise reading, guarded reading, follow-up, and guarded follow-up.
+  ["05455e8d16b3bab704136966790392f0b50497d0831552bad4e0a23f97fe1435", READING_SCHEMA_NAME],
+  ["02dd277a06d407ceaf2ca395180ae731abb35fe37417d2e3ec30379bada802cc", READING_SCHEMA_NAME],
+  ["a467ae5f4b3295b2c03b8e19f2ba774ad034718e4867a88238df5e4107164ad6", FOLLOW_UP_SCHEMA_NAME],
+  ["29dd2263401d24235c4ff1255f50ed0ce7c1d26eac6fb0eb52f4aaf0dba2d503", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v7-grounded reading, guarded reading, follow-up, and guarded follow-up.
+  ["824ef78cc267a0d769a10efb02badeba9dc8d436cfd0a7f162db8d1beecd3268", READING_SCHEMA_NAME],
+  ["c8ba06f53174a390d4e4f81a4424c8ca21ec84ea56c6152ba961c00de319224d", READING_SCHEMA_NAME],
+  ["5433ad4a583d6bc7f602e469603a776bc720d4dc9cc8c41efcc5d752d3cf4ae2", FOLLOW_UP_SCHEMA_NAME],
+  ["67316989afc19f6bb2a3509e2bf358a56a199a2d98885ebd65d22c68d070fef4", FOLLOW_UP_SCHEMA_NAME],
 ]);
 const SPREAD_POSITIONS = new Map([
   ["one-card", ["card-1"]],
@@ -254,23 +264,25 @@ function reviewedReadingSchema(cards, controls) {
       positionLabel: { type: "string", enum: [entry.positionName], minLength: 1 },
       cardId: { type: "string", enum: [entry.cardId], minLength: 1 },
       orientation: { type: "string", enum: [entry.orientation] },
-      coreMeaning: { type: "string", minLength: 1 },
-      positionInterpretation: { type: "string", minLength: 1 },
+      coreMeaning: { type: "string", minLength: 1, maxLength: 260 },
+      positionInterpretation: { type: "string", minLength: 1, maxLength: 420 },
       relationshipNotes: {
         type: "array",
-        items: { type: "string", minLength: 1 },
+        items: { type: "string", minLength: 1, maxLength: 420 },
         maxItems: 12,
       },
       supportingEvidence: {
         type: "array",
-        items: { type: "string", minLength: 1 },
+        items: { type: "string", minLength: 1, maxLength: 320 },
         minItems: 1,
         maxItems: 12,
       },
     },
   }));
-  const nullableText = (allowed) =>
-    allowed ? { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] } : { type: "null" };
+  const nullableText = (allowed, maxLength) =>
+    allowed
+      ? { anyOf: [{ type: "string", minLength: 1, maxLength }, { type: "null" }] }
+      : { type: "null" };
   return {
     type: "object",
     additionalProperties: false,
@@ -291,21 +303,21 @@ function reviewedReadingSchema(cards, controls) {
     ],
     properties: {
       schemaVersion: { type: "string", enum: ["reading-result-v3"] },
-      directAnswer: { type: "string", minLength: 1 },
-      overallPattern: { type: "string", minLength: 1 },
+      directAnswer: { type: "string", minLength: 1, maxLength: 480 },
+      overallPattern: { type: "string", minLength: 1, maxLength: 360 },
       cards: {
         type: "array",
         items: exactCards.length === 1 ? exactCards[0] : { anyOf: exactCards },
         minItems: cards.length,
         maxItems: cards.length,
       },
-      synthesis: { type: "string", minLength: 1 },
-      likelyTrajectory: nullableText(controls.trajectoryAllowed),
-      alternatePath: nullableText(controls.alternatePathAllowed),
-      timing: nullableText(controls.timingAllowed),
-      userAgency: { type: "string", minLength: 1 },
-      reflectionPrompt: { type: "string", minLength: 1 },
-      uncertaintyNote: { type: "string", minLength: 1 },
+      synthesis: { type: "string", minLength: 1, maxLength: 480 },
+      likelyTrajectory: nullableText(controls.trajectoryAllowed, 420),
+      alternatePath: nullableText(controls.alternatePathAllowed, 420),
+      timing: nullableText(controls.timingAllowed, 260),
+      userAgency: { type: "string", minLength: 1, maxLength: 340 },
+      reflectionPrompt: { type: "string", minLength: 1, maxLength: 220 },
+      uncertaintyNote: { type: "string", minLength: 1, maxLength: 220 },
       personalizationLens: controls.personalizationAllowed
         ? {
             anyOf: [
@@ -317,7 +329,7 @@ function reviewedReadingSchema(cards, controls) {
                   label: { type: "string", enum: ["Personalized reflection"] },
                   observations: {
                     type: "array",
-                    items: { type: "string", minLength: 1 },
+                    items: { type: "string", minLength: 1, maxLength: 300 },
                     minItems: 1,
                     maxItems: 6,
                   },
@@ -337,7 +349,7 @@ function reviewedFollowUpSchema() {
     type: "object",
     additionalProperties: false,
     required: ["response"],
-    properties: { response: { type: "string", minLength: 1 } },
+    properties: { response: { type: "string", minLength: 1, maxLength: 900 } },
   };
 }
 

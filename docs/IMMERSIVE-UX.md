@@ -39,7 +39,7 @@ A second refinement pass addressed the ten remaining experience gaps found durin
 - Reduced motion disables ornamental movement and cinematic transitions without skipping content.
 - `Finish shuffling` advances immediately; the reader then selects a real cut offset or No cut before assignment and dealing.
 - Card effects, ambient room tone, and cloud narration are independently optional. Preferences persist, but voice generation starts only from the reading-surface play button.
-- The complete-story view removes forced pagination without exposing result or follow-up controls before the full spread is revealed and deliberately finished.
+- The compact reading view presents one passage at a time beside the spread and does not expose result or follow-up controls before the final passage is deliberately finished.
 - Horizontal mobile rails use scroll snap but retain normal DOM reading order.
 - The result renderer consumes validated structured data and never renders provider HTML or Markdown.
 - Closure is a decision point, not a destructive action; the reading is already durable before it appears.

@@ -97,6 +97,11 @@ describe("question consultation rules", () => {
       topic: "career",
       intent: "decisionSupport",
     });
+    expect(
+      classifyQuestionContext(
+        "What should I do about my relationship? Should I leave because I work too hard?",
+      ),
+    ).toMatchObject({ topic: "relationships", intent: "decisionSupport" });
   });
 
   it("interrupts crisis and compulsive redraw language", () => {
@@ -177,7 +182,7 @@ describe("spread-aware deterministic interpretation", () => {
       "Direction",
     ]);
     expect(result.cards.every(({ relationshipNotes }) => relationshipNotes.length > 0)).toBe(true);
-    expect(result.likelyTrajectory).toContain("Under present conditions");
+    expect(result.likelyTrajectory).toContain("If the pattern holds");
     expect(result.alternatePath).toBeNull();
   });
 
@@ -227,11 +232,11 @@ describe("spread-aware deterministic interpretation", () => {
     expect(
       (card?.reversalFacets ?? []).some((facet) => result.cards[0]?.coreMeaning.includes(facet)),
     ).toBe(true);
-    expect(result.cards[0]?.positionInterpretation).toContain("needs correction");
+    expect(result.cards[0]?.positionInterpretation).toContain("correct the pattern");
     expect(result.cards[0]?.positionInterpretation).not.toContain("automatic opposite");
   });
 
-  it("sends no lens into Pure Tarot and labels minimized personalization separately", async () => {
+  it("keeps Pure Tarot unprofiled and weaves minimized traits through a personalized reading", async () => {
     const traits = ["you prefer reversible experiments before permanent commitments"];
     const pure = await generate({
       spreadId: "one-card",
@@ -247,9 +252,42 @@ describe("spread-aware deterministic interpretation", () => {
     });
     expect(pure.personalizationLens).toBeNull();
     expect(personalized.personalizationLens?.label).toBe("Personalized reflection");
-    expect(personalized.personalizationLens?.observations.join(" ")).toContain(
-      "private reflection lens",
-    );
+    expect(personalized.personalizationLens?.observations).toEqual(traits);
+    expect(personalized.directAnswer).toContain("you prefer reversible experiments");
+    expect(
+      personalized.cards.some(({ positionInterpretation }) =>
+        positionInterpretation.includes("you prefer reversible experiments"),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(pure)).not.toContain("you prefer reversible experiments");
+  });
+
+  it("keeps each spoken fallback passage concise", async () => {
+    const result = await generate({
+      spreadId: "three-card",
+      question: "What should I do about my relationship? Should I leave because I work too hard?",
+      personalizationMode: "personalized_tarot",
+      traits: [
+        "You tend to work with determination and carry responsibility longer than most.",
+        "In conflict, you may delay a decision while trying to care for everyone involved.",
+      ],
+    });
+    const wordCount = (value: string) => value.match(/\S+/gu)?.length ?? 0;
+    const passages = [
+      result.directAnswer,
+      result.overallPattern,
+      ...result.cards.map(({ positionInterpretation }) => positionInterpretation),
+      result.synthesis,
+      result.likelyTrajectory,
+      result.alternatePath,
+      result.timing,
+      result.userAgency,
+      result.reflectionPrompt,
+      result.uncertaintyNote,
+    ].filter((value): value is string => value !== null);
+    expect(Math.max(...passages.map(wordCount))).toBeLessThanOrEqual(70);
+    expect(result.directAnswer).toMatch(/^This relationship cannot continue unchanged\./);
+    expect(passages.join(" ")).not.toMatch(/traditionally means|private reflection lens/i);
   });
 
   it("streams only the sections the spread-aware result actually contains", async () => {
@@ -261,6 +299,15 @@ describe("spread-aware deterministic interpretation", () => {
     expect(phases.some(({ phase }) => phase === "alternatePath")).toBe(false);
     expect(phases.some(({ phase }) => phase === "likelyTrajectory")).toBe(false);
     expect(phases.some(({ phase }) => phase === "cardInterpretation")).toBe(true);
+    expect(phases.some(({ phase }) => phase === "overallPattern")).toBe(false);
+    expect(phases.some(({ phase }) => phase === "personalization")).toBe(false);
+    expect(phases.some(({ phase }) => phase === "uncertainty")).toBe(false);
+    expect(phases.find(({ phase }) => phase === "synthesis")?.text).toContain(
+      result.overallPattern,
+    );
+    expect(phases.find(({ phase }) => phase === "reflectionPrompt")?.text).toContain(
+      result.uncertaintyNote,
+    );
   });
 
   it("does not repeat evidence-drawer glossary copy in the spoken card passage", async () => {

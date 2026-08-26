@@ -59,6 +59,7 @@ function NarratedPassage({
 export function OracleTranscript({
   active,
   cards,
+  displayName,
   personalization,
   readingId,
   result,
@@ -75,6 +76,7 @@ export function OracleTranscript({
 }: {
   active: boolean;
   cards: readonly DealtCardView[];
+  displayName?: string;
   personalization?: ReadingPersonalization;
   readingId: string;
   result: ReadingResult;
@@ -93,7 +95,6 @@ export function OracleTranscript({
   const [entries, setEntries] = useState<PhaseEvent[]>(previewEvents ? [...previewEvents] : []);
   const [streamState, setStreamState] = useState<StreamState>(previewEvents ? "complete" : "idle");
   const [activeIndex, setActiveIndex] = useState(0);
-  const [completeView, setCompleteView] = useState(Boolean(previewEvents));
   const [journeyComplete, setJourneyComplete] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [narration, setNarration] = useState<ReadingNarrationSnapshot>({
@@ -128,7 +129,7 @@ export function OracleTranscript({
       entriesRef.current = [...previewEvents];
       timer = window.setTimeout(() => {
         setEntries([...previewEvents]);
-        setCompleteView(true);
+        setActiveIndex(0);
         setJourneyComplete(false);
         onJourneyCompleteChange?.(false);
         updateState("complete");
@@ -139,7 +140,6 @@ export function OracleTranscript({
     timer = window.setTimeout(() => {
       setEntries([]);
       setActiveIndex(0);
-      setCompleteView(false);
       setJourneyComplete(false);
       onJourneyCompleteChange?.(false);
     }, 0);
@@ -185,7 +185,6 @@ export function OracleTranscript({
               setAnnouncement(event.message);
               updateState("failed");
             } else {
-              setCompleteView(true);
               updateState("complete");
             }
           }
@@ -211,8 +210,8 @@ export function OracleTranscript({
     : -1;
 
   useEffect(() => {
-    onActiveCardChange?.(completeView || activeCardIndex < 0 ? null : activeCardIndex);
-  }, [activeCardIndex, completeView, onActiveCardChange]);
+    onActiveCardChange?.(activeCardIndex < 0 ? null : activeCardIndex);
+  }, [activeCardIndex, onActiveCardChange]);
 
   const narratedCardIndexes = useMemo(() => {
     if (narration.state !== "playing" || narration.sectionIndex === null) return [];
@@ -239,7 +238,6 @@ export function OracleTranscript({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (completeView) return;
     if (["ArrowRight", "ArrowDown", "PageDown"].includes(event.key)) {
       event.preventDefault();
       move(1);
@@ -271,46 +269,41 @@ export function OracleTranscript({
     if (index > narration.sectionIndex) return 0;
     return Math.max(0, narration.visibleWordCount - countNarrationWords(`${entry.heading}.`));
   };
-  const directEntryIndex = Math.max(
-    0,
-    entries.findIndex(({ phase }) => phase === "directAnswer"),
-  );
-  const directEntry = entries[directEntryIndex];
+  const handleNarrationChange = useCallback((snapshot: ReadingNarrationSnapshot) => {
+    setNarration(snapshot);
+    if (snapshot.sectionIndex !== null) setActiveIndex(snapshot.sectionIndex);
+  }, []);
+  const personalGreeting =
+    activeEntry?.phase === "directAnswer" && displayName?.trim() && displayName.trim() !== "Reader"
+      ? `For ${displayName.trim()}`
+      : undefined;
 
   return (
     <section
       className="oracle-transcript-shell reading-journey-shell"
       data-loaded-section-count={entries.length}
-      data-reading-mode={completeView ? "complete" : "guided"}
+      data-reading-mode="section"
       data-journey-complete={journeyComplete ? "true" : "false"}
       data-state={streamState}
       data-testid="reading-journey"
     >
       <div className="reading-mode-bar">
-        <div aria-label="Reading format" role="group">
-          <button aria-pressed={!completeView} onClick={() => setCompleteView(false)} type="button">
-            <span aria-hidden="true">↝</span> Guided
-          </button>
-          <button
-            aria-pressed={completeView}
-            disabled={entries.length === 0}
-            onClick={() => setCompleteView(true)}
-            type="button"
-          >
-            <span aria-hidden="true">☰</span> Read as one story
-          </button>
+        <div aria-label="Reading controls" role="group">
+          <span className="reading-section-count">
+            {activeEntry ? `${activeIndex + 1} / ${entries.length}` : "Preparing"}
+          </span>
           <ReadingAudioPlayer
             activeIndex={activeIndex}
-            continuous={completeView}
+            continuous
             enabled={audioEnabled}
             entries={entries}
-            onNarrationChange={setNarration}
+            onNarrationChange={handleNarrationChange}
             readingId={readingId}
             target={target}
           />
         </div>
         <span>
-          {streamState === "complete" ? "Spread-aware reading" : "The reading is arriving"}
+          {streamState === "complete" ? "One passage at a time" : "The reading is arriving"}
         </span>
       </div>
 
@@ -323,71 +316,20 @@ export function OracleTranscript({
         role="region"
         tabIndex={0}
       >
-        {completeView ? (
-          <>
-            <article
-              className="reading-complete-story"
-              data-narration-active={narrationSequencing ? "true" : "false"}
-              data-testid="reading-complete-story"
-            >
-              <header data-narration-state={narrationStateFor(directEntryIndex)}>
-                <p className="reading-section-eyebrow">Your reading</p>
-                <h2>What the cards indicate</h2>
-                <NarratedPassage
-                  active={narrationSequencing}
-                  currentWord={
-                    narration.state === "playing" && narration.sectionIndex === directEntryIndex
-                  }
-                  text={result.directAnswer}
-                  visibleWords={
-                    directEntry
-                      ? visiblePassageWords(directEntry, directEntryIndex)
-                      : Number.POSITIVE_INFINITY
-                  }
-                />
-              </header>
-              {entries.map((entry, index) =>
-                entry.phase === "directAnswer" ? null : (
-                  <section
-                    data-narration-state={narrationStateFor(index)}
-                    data-phase={entry.phase}
-                    key={`${target}:${entry.sequence}`}
-                  >
-                    <h3>{entry.heading}</h3>
-                    <NarratedPassage
-                      active={narrationSequencing}
-                      currentWord={
-                        narration.state === "playing" && narration.sectionIndex === index
-                      }
-                      text={entry.text}
-                      visibleWords={visiblePassageWords(entry, index)}
-                    />
-                  </section>
-                ),
-              )}
-            </article>
-            {streamState === "complete" && !journeyComplete && (
-              <button
-                className="reading-journey-complete-action"
-                data-testid="complete-reading-action"
-                onClick={completeJourney}
-                type="button"
-              >
-                <span>Reading complete</span>
-                Continue to next steps
-              </button>
-            )}
-          </>
-        ) : activeEntry ? (
+        {activeEntry ? (
           <article
+            aria-live="polite"
             className="oracle-entry guided-passage is-active"
             data-narration-state={narrationStateFor(activeIndex)}
             data-phase={activeEntry.phase}
+            data-testid="reading-active-passage"
+            key={`${target}:${activeEntry.sequence}`}
           >
             <p className="reading-section-eyebrow">
-              {activeEntry.cardPositionIds?.length
-                ? "What this card contributes"
-                : "What the cards indicate"}
+              {personalGreeting ??
+                (activeEntry.cardPositionIds?.length
+                  ? "What this card contributes"
+                  : "Your reading")}
             </p>
             <h2>{activeEntry.heading}</h2>
             <NarratedPassage
@@ -415,6 +357,11 @@ export function OracleTranscript({
                     : "Next reading passage"
                 }
                 disabled={activeIndex >= entries.length - 1 && streamState !== "complete"}
+                data-testid={
+                  activeIndex >= entries.length - 1 && streamState === "complete"
+                    ? "complete-reading-action"
+                    : undefined
+                }
                 onClick={() => {
                   if (activeIndex >= entries.length - 1) completeJourney();
                   else move(1);
@@ -449,7 +396,7 @@ export function OracleTranscript({
         <summary>Reading details and evidence</summary>
         <p>
           {result.personalizationLens
-            ? "What the cards indicate is kept separate from the personalized reflection."
+            ? "Relevant profile traits shaped the emphasis of this reading. They never changed the locked cards or their meanings."
             : "This reading uses only the locked cards and spread positions."}
         </p>
         <ol>

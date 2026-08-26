@@ -165,7 +165,8 @@ test("users may choose reveal order while exposing only one locked baseline", as
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
+  await expect(page.getByTestId("reading-active-passage")).toBeVisible();
+  await expect(page.getByTestId("reading-active-passage")).toHaveCount(1);
 });
 
 const spreadContracts = [
@@ -454,16 +455,10 @@ test("reduced-motion users can reveal all and reach a spread-aware reading", asy
     question: "What should I understand about my next grounded choice?",
   });
   await revealAllThroughUi(page);
-  await expect(page.getByTestId("reading-journey")).toHaveAttribute(
-    "data-reading-mode",
-    "complete",
-  );
-  await expect(
-    page.getByRole("heading", { name: "What the cards indicate", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "How the cards work together" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "The other path in this spread" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Timing" })).toHaveCount(0);
+  await expect(page.getByTestId("reading-journey")).toHaveAttribute("data-reading-mode", "section");
+  await expect(page.getByRole("heading", { name: "Your answer", exact: true })).toBeVisible();
+  await expect(page.getByTestId("reading-active-passage")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "The thread" })).toHaveCount(0);
 });
 
 test("profile snapshots remain pinned after later birth-data updates", async ({ page }) => {

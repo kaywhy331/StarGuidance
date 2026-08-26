@@ -196,7 +196,7 @@ test("a birthday-based free reading remains causal and continues through passwor
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
 
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
@@ -204,6 +204,7 @@ test("a birthday-based free reading remains causal and continues through passwor
     "data-reading-focus",
     "reading",
   );
+  await page.getByTestId("oracle-transcript").press("End");
   await page.getByTestId("complete-reading-action").click();
   await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
   await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
@@ -230,8 +231,9 @@ test("a birthday-based free reading remains causal and continues through passwor
     .toBe(originalAssignments[0]);
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
+  await page.getByTestId("oracle-transcript").press("End");
   await page.getByTestId("complete-reading-action").click();
   await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
 

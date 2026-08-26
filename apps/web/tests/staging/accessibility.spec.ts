@@ -341,12 +341,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
     .poll(async () => Number(await journey.getAttribute("data-loaded-section-count")))
     .toBeGreaterThanOrEqual(3);
   const passageCount = Number(await journey.getAttribute("data-loaded-section-count"));
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
-  const guidedMode = page.getByRole("button", { name: "Guided" });
-  await guidedMode.focus();
-  await expect(guidedMode).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(journey).toHaveAttribute("data-reading-mode", "guided");
+  await expect(page.getByTestId("reading-active-passage")).toBeVisible();
+  await expect(page.getByTestId("reading-active-passage")).toHaveCount(1);
+  await expect(journey).toHaveAttribute("data-reading-mode", "section");
   const transcript = page.getByTestId("oracle-transcript");
   await transcript.focus();
   await expect(transcript).toBeFocused();

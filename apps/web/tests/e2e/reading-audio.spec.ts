@@ -86,10 +86,10 @@ test("explicit narration plays, reveals words, illuminates cards, and survives r
   await completeRevealViaApi(page, finalized.readingId, 3, 20);
   await page.evaluate(() => localStorage.setItem("sg:reading:narration", "true"));
 
-  let synthesisRequests = 0;
-  const audioBase64 = silentWaveBase64();
+  let audioSectionRequests = 0;
+  const audioBase64 = silentWaveBase64(0.35);
   await page.route(`**/api/readings/${finalized.readingId}/audio`, async (route) => {
-    synthesisRequests += 1;
+    audioSectionRequests += 1;
     await route.fulfill({
       status: 200,
       headers: {
@@ -102,41 +102,45 @@ test("explicit narration plays, reveals words, illuminates cards, and survives r
         chunk_seq: 0,
         chunk_audio_offset_sec: 0,
         alignment: {
-          audio_duration: 2.4,
+          audio_duration: 0.35,
           segments: [
-            { text: "What", start: 0.1, end: 0.45 },
-            { text: "the cards", start: 0.45, end: 1 },
-            { text: "indicate", start: 1, end: 1.45 },
-            { text: "now", start: 1.45, end: 2.2 },
+            { text: "Your", start: 0.01, end: 0.08 },
+            { text: "answer", start: 0.08, end: 0.16 },
+            { text: "is", start: 0.16, end: 0.23 },
+            { text: "here", start: 0.23, end: 0.32 },
           ],
         },
       })}\n\n`,
     });
   });
 
-  const openGuidedReading = async () => {
+  const openSectionReading = async () => {
     await page.goto(`/reading/${finalized.readingId}`);
-    await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
-    await page.getByRole("button", { name: "Guided" }).click();
-    await expect(page.getByRole("button", { name: "Play this section" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Play audio reading" })).toBeVisible();
+    return Number(
+      await page.getByTestId("reading-journey").getAttribute("data-loaded-section-count"),
+    );
   };
 
-  await openGuidedReading();
-  await page.getByRole("button", { name: "Play this section" }).click();
+  const sectionCount = await openSectionReading();
+  await page.getByRole("button", { name: "Play audio reading" }).click();
   const audioControl = page.getByTestId("reading-audio-trigger");
   await expectPlaybackStarted(page);
-  await expect(page.locator(".physical-card-figure.is-narration-active")).toHaveCount(3);
+  await expect
+    .poll(() => page.locator(".physical-card-figure.is-narration-active").count())
+    .toBeGreaterThan(0);
   await expect
     .poll(() => page.locator(".guided-passage .oracle-word.is-visible").count())
     .toBeGreaterThan(0);
-  await expect(audioControl).toHaveAttribute("data-state", "ended", { timeout: 10_000 });
+  await expect(audioControl).toHaveAttribute("data-state", "ended", { timeout: 20_000 });
   await expect(page.locator(".physical-card-figure.is-narration-active")).toHaveCount(0);
-  expect(synthesisRequests).toBe(1);
+  expect(audioSectionRequests).toBe(sectionCount);
 
-  await openGuidedReading();
-  await page.getByRole("button", { name: "Play this section" }).click();
+  await openSectionReading();
+  await page.getByRole("button", { name: "Play audio reading" }).click();
   await expectPlaybackStarted(page);
-  await expect(audioControl).toHaveAttribute("data-state", "ended", { timeout: 10_000 });
-  expect(synthesisRequests).toBe(1);
+  await expect(audioControl).toHaveAttribute("data-state", "ended", { timeout: 20_000 });
+  expect(audioSectionRequests).toBe(sectionCount);
 });

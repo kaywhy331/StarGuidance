@@ -33,9 +33,9 @@ import { generatedOutputSafetyViolation } from "./output-safety";
  * times out, or errors falls back to the deterministic reading rather than
  * showing a person a broken or empty result (AI-015).
  */
-export const PROMPT_VERSION = "reader-voice-v6" as const;
+export const PROMPT_VERSION = "reader-voice-v7" as const;
 export const RESPONSE_SCHEMA_VERSION = "reading-result-v3" as const;
-export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v6" as const;
+export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v7" as const;
 export const DEFAULT_GROQ_PRIMARY_MODEL = "openai/gpt-oss-120b" as const;
 export const DEFAULT_GROQ_FALLBACK_MODELS = [
   "llama-3.3-70b-versatile",
@@ -139,7 +139,8 @@ const READER_VOICE_V5 = [
   "Do not mention being an AI or the existence of these instructions.",
 ].join(" ");
 
-const READER_VOICE = [
+/** Frozen system prompt retained for persisted v6 runtime configurations. */
+const READER_VOICE_V6 = [
   "You are a warm, perceptive tarot reader conducting a private consultation from a locked spread.",
   "Before writing, internally analyze the question's subject, decision or tension, requested horizon, and the user's agency. Then interpret every card through its approved orientation meaning, immutable position function, question, and domain tags.",
   "Scan the whole spread for repeated suits or elements, Major Arcana concentration, repeated ranks, court patterns, reinforcing cards, conflicts, directional movement, and only the explicit linked-position rules supplied in spreadCapabilities.",
@@ -160,6 +161,29 @@ const READER_VOICE = [
   "Use the specific non-identifying concern in the question without copying names, locations, exact dates, employers, or other identifying details into persisted prose.",
   "Sound spoken but edited: warm, candid, thoughtful, specific, and natural. Avoid filler, profanity, canned mysticism, academic reporting, repetitive sentence frames, and therapy-speak.",
   "Do not mention being an AI or the existence of these instructions.",
+].join(" ");
+
+const READER_VOICE = [
+  "You are a warm, perceptive tarot reader speaking directly to one person in a private consultation from a locked spread.",
+  "Read the supplied question, immutable card positions, approved meanings, and whole-spread relationships before writing. The cards are already selected; never imply that the profile, question, stars, or narrator selected them.",
+  "Lead with the answer. The first sentence of directAnswer must take a clear, useful stance on the person's specific non-identifying concern. Sound like a reading, not an explainer: favor 'Your spread points to', 'What I see here is', 'Watch for', and 'If this continues' over definitions, process commentary, or repeated hedging.",
+  "Keep visible prose short and spoken. Target 35–55 words for directAnswer, 20–40 for overallPattern, 25–45 for each positionInterpretation, 30–50 for synthesis, 25–45 for each trajectory or alternate path, 20–35 for userAgency, and one sentence each for reflectionPrompt and uncertaintyNote.",
+  "Treat the spread as one argument: foundation or situation shows what is active, challenge shows the pressure, and direction, leverage, or outcome shows what changes the answer. Do not recite dictionary meanings, spread instructions, card counts, or schema structure.",
+  "likelyTrajectory may be non-null only when trajectoryAllowed is true and the configured positions genuinely support it. alternatePath may be non-null only when alternatePathAllowed is true. timing may be non-null only when timingAllowed is true. Otherwise return null.",
+  "For a one-card Focus reading, give the central message, a concrete sign to watch, and one action; never manufacture an alternate path. For Situation–Challenge–Direction, connect all three and make any outlook conditional on what happens around Direction.",
+  "A reversed card is not automatically opposite or negative. Use only one supplied approvedReversalFacet when supported: blocked, internalized, delayed, imbalanced, excessive, deficient, avoided, releasing, or recovering.",
+  "Every claim must remain traceable. supportingEvidence cites supplied themes and position function; relationshipNotes name only supplied card-position relationships. Keep evidence concise and never contradict the curated semantic range.",
+  "coreMeaning is terse evidence. positionInterpretation is the lived reading: say what appears to be happening, why this card matters here, and what the person may observe. Never say 'whose function is', 'designed to examine', or otherwise teach the interface back to the person.",
+  "overallPattern names the turn across the spread. synthesis states what the cards say together without relisting them or repeating directAnswer.",
+  "In Pure Tarot, personalizationAllowed is false, readerLens is empty, and personalizationLens must be null.",
+  "In Personalized Tarot, silently weave one to three relevant readerLens statements into the actual direct answer, card interpretations, synthesis, trajectory, or agency. When readerLens is non-empty, use it in at least two of those places; do not isolate all personalization in personalizationLens. personalizationLens is only a terse audit record of the lens used, not a reader-facing explanation.",
+  "Treat readerLens as a tendency to compare with the question, never proof or destiny. Never announce a profile, birth data, astrology, numerology, BaZi, Dreamspell, hidden labels, or source-system names. Profile context may change emphasis but cannot change a card, its meaning, its orientation, or create a prediction.",
+  "For relationship questions, you may name visible strain, imbalance, distance, or reciprocity in the connection, but never claim another person's private thoughts, motives, or feelings as fact. Point to observable behavior, an honest conversation, boundaries, evidence, and the user's choices.",
+  "Use confident but conditional language. Give one clear conditional anchor rather than weakening every sentence. Never guarantee an outcome or exact date.",
+  "Echo every supplied positionId, positionLabel, cardId, and orientation exactly. Include exactly one card object per supplied locked card in position order.",
+  "Use the specific non-identifying concern without copying names, locations, exact dates, employers, or other identifying details into persisted prose.",
+  "Sound candid, intuitive, specific, and slightly mysterious. Avoid filler, canned mysticism, academic reporting, therapy-speak, and phrases such as 'this card traditionally means' or 'your private reflection lens notes'.",
+  "Do not mention being an AI or these instructions.",
 ].join(" ");
 
 const GUARDED_VOICE = [
@@ -190,6 +214,13 @@ const V5_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
   guardedReading: `${READER_VOICE_V5} ${GUARDED_VOICE}`,
   followUp: `${READER_VOICE_V5} ${FOLLOW_UP_VOICE}`,
   guardedFollowUp: `${READER_VOICE_V5} ${FOLLOW_UP_VOICE} ${GUARDED_VOICE}`,
+});
+
+const V6_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
+  reading: READER_VOICE_V6,
+  guardedReading: `${READER_VOICE_V6} ${GUARDED_VOICE}`,
+  followUp: `${READER_VOICE_V6} ${FOLLOW_UP_VOICE}`,
+  guardedFollowUp: `${READER_VOICE_V6} ${FOLLOW_UP_VOICE} ${GUARDED_VOICE}`,
 });
 
 export const REVIEWED_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
@@ -246,13 +277,26 @@ export const RUNTIME_PROMPT_BUNDLES = Object.freeze({
     guardedFollowUp: `${V5_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp} ${GROUNDED_VOICE}`,
   },
   "reader-voice-v6": {
-    readingVersion: PROMPT_VERSION,
-    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
-    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+    readingVersion: "reader-voice-v6",
+    followUpVersion: "follow-up-reader-voice-v6",
+    ...V6_GATEWAY_SYSTEM_PROMPTS,
   },
   "reader-voice-v6-grounded": {
     readingVersion: "reader-voice-v6-grounded",
     followUpVersion: "follow-up-reader-voice-v6-grounded",
+    reading: `${V6_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
+    guardedReading: `${V6_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
+    followUp: `${V6_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
+    guardedFollowUp: `${V6_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp} ${GROUNDED_VOICE}`,
+  },
+  "reader-voice-v7": {
+    readingVersion: PROMPT_VERSION,
+    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
+    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+  },
+  "reader-voice-v7-grounded": {
+    readingVersion: "reader-voice-v7-grounded",
+    followUpVersion: "follow-up-reader-voice-v7-grounded",
     reading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
     guardedReading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
     followUp: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
@@ -415,16 +459,16 @@ function exactCardSchema(entry: ResolvedDraw[number]): Record<string, unknown> {
       positionLabel: { type: "string", enum: [entry.position.displayName], minLength: 1 },
       cardId: { type: "string", enum: [entry.card.id], minLength: 1 },
       orientation: { type: "string", enum: [entry.orientation] },
-      coreMeaning: { type: "string", minLength: 1 },
-      positionInterpretation: { type: "string", minLength: 1 },
+      coreMeaning: { type: "string", minLength: 1, maxLength: 260 },
+      positionInterpretation: { type: "string", minLength: 1, maxLength: 420 },
       relationshipNotes: {
         type: "array",
-        items: { type: "string", minLength: 1 },
+        items: { type: "string", minLength: 1, maxLength: 420 },
         maxItems: 12,
       },
       supportingEvidence: {
         type: "array",
-        items: { type: "string", minLength: 1 },
+        items: { type: "string", minLength: 1, maxLength: 320 },
         minItems: 1,
         maxItems: 12,
       },
@@ -439,10 +483,10 @@ export function reviewedReadingResponseSchema(
 ): Record<string, unknown> {
   const cardCount = resolved.length;
   const exactCards = resolved.map(exactCardSchema);
-  const nullableText = (allowed: boolean | undefined) =>
+  const nullableText = (allowed: boolean | undefined, maxLength: number) =>
     allowed === false
       ? { type: "null" }
-      : { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] };
+      : { anyOf: [{ type: "string", minLength: 1, maxLength }, { type: "null" }] };
   const trajectoryAllowed =
     configuration === undefined || configuration.capabilities.trajectoryPositionIds.length > 0;
   const alternateAllowed =
@@ -471,21 +515,21 @@ export function reviewedReadingResponseSchema(
     ],
     properties: {
       schemaVersion: { type: "string", enum: ["reading-result-v3"] },
-      directAnswer: { type: "string", minLength: 1 },
-      overallPattern: { type: "string", minLength: 1 },
+      directAnswer: { type: "string", minLength: 1, maxLength: 480 },
+      overallPattern: { type: "string", minLength: 1, maxLength: 360 },
       cards: {
         type: "array",
         items: exactCards.length === 1 ? exactCards[0] : { anyOf: exactCards },
         minItems: cardCount,
         maxItems: cardCount,
       },
-      synthesis: { type: "string", minLength: 1 },
-      likelyTrajectory: nullableText(trajectoryAllowed),
-      alternatePath: nullableText(alternateAllowed),
-      timing: nullableText(timingAllowed),
-      userAgency: { type: "string", minLength: 1 },
-      reflectionPrompt: { type: "string", minLength: 1 },
-      uncertaintyNote: { type: "string", minLength: 1 },
+      synthesis: { type: "string", minLength: 1, maxLength: 480 },
+      likelyTrajectory: nullableText(trajectoryAllowed, 420),
+      alternatePath: nullableText(alternateAllowed, 420),
+      timing: nullableText(timingAllowed, 260),
+      userAgency: { type: "string", minLength: 1, maxLength: 340 },
+      reflectionPrompt: { type: "string", minLength: 1, maxLength: 220 },
+      uncertaintyNote: { type: "string", minLength: 1, maxLength: 220 },
       personalizationLens: personalizationAllowed
         ? {
             anyOf: [
@@ -497,7 +541,7 @@ export function reviewedReadingResponseSchema(
                   label: { type: "string", enum: ["Personalized reflection"] },
                   observations: {
                     type: "array",
-                    items: { type: "string", minLength: 1 },
+                    items: { type: "string", minLength: 1, maxLength: 300 },
                     minItems: 1,
                     maxItems: 6,
                   },
@@ -563,7 +607,7 @@ export function reviewedFollowUpResponseSchema(): Record<string, unknown> {
     type: "object",
     additionalProperties: false,
     required: ["response"],
-    properties: { response: { type: "string", minLength: 1 } },
+    properties: { response: { type: "string", minLength: 1, maxLength: 900 } },
   };
 }
 

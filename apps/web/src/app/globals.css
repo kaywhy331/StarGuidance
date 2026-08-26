@@ -3855,10 +3855,18 @@ body {
 
 .reading-mode-bar > div {
   display: inline-flex;
+  align-items: center;
   padding: 0.2rem;
   border: 1px solid rgb(216 198 145 / 0.18);
   border-radius: 999px;
   background: rgb(3 14 20 / 0.62);
+}
+
+.reading-section-count {
+  padding: 0.35rem 0.65rem;
+  color: #9fc6bd;
+  font: 600 0.66rem/1 var(--font-body);
+  letter-spacing: 0.08em;
 }
 
 .reading-mode-bar button {
@@ -4522,7 +4530,7 @@ body {
   min-height: 100%;
   align-content: safe center;
   margin: 0;
-  padding: clamp(0.5rem, 3vh, 2rem) 0;
+  padding: clamp(0.25rem, 1.5vh, 0.9rem) 0;
 }
 
 .reading-integration {
@@ -8483,8 +8491,9 @@ body {
   right: auto;
   bottom: max(1rem, env(safe-area-inset-bottom));
   left: 50%;
-  width: min(58rem, calc(100vw - 2rem));
-  height: auto;
+  width: min(42rem, calc(100vw - 2rem));
+  height: clamp(16rem, 32dvh, 21rem);
+  max-height: calc(100dvh - max(13rem, 27dvh));
   grid-template-rows: minmax(0, 1fr);
   filter: none;
   translate: -50% 0;
@@ -8517,7 +8526,7 @@ body {
 }
 
 .mystic-sanctuary[data-reading-focus="reading"] .oracle-transcript {
-  padding: clamp(1.1rem, 3vw, 2rem);
+  padding: clamp(0.85rem, 2vw, 1.25rem);
   border-color: rgb(221 204 156 / 0.12);
   border-radius: 1.1rem;
   background: linear-gradient(180deg, rgb(2 8 15 / 0.5), rgb(2 8 15 / 0.74));
@@ -8526,11 +8535,19 @@ body {
 }
 
 .mystic-sanctuary[data-reading-focus="reading"] .reading-mode-bar {
+  grid-template-columns: auto auto;
+  justify-items: stretch;
+  justify-content: space-between;
+  gap: 0.45rem;
   opacity: 0.72;
 }
 
 .mystic-sanctuary[data-reading-focus="reading"] .reading-details-drawer {
-  opacity: 0.55;
+  justify-self: center;
+  max-width: min(100%, 34rem);
+  color: #8da29e;
+  font-size: 0.68rem;
+  opacity: 0.34;
   transition: opacity 180ms ease;
 }
 
@@ -8710,6 +8727,11 @@ body {
     width: calc(100vw - 0.75rem);
   }
 
+  .mystic-sanctuary[data-reading-focus="reading"] .oracle-console-stack {
+    height: clamp(14.5rem, 36dvh, 19rem);
+    max-height: calc(100dvh - max(10.5rem, 24dvh) - env(safe-area-inset-bottom));
+  }
+
   .mystic-sanctuary[data-reading-focus="reading"] .sanctuary-stage.has-reading-journey {
     top: max(3.7rem, calc(env(safe-area-inset-top) + 3.25rem));
     right: 0.35rem;
@@ -8723,8 +8745,12 @@ body {
   }
 
   .mystic-sanctuary[data-reading-focus="reading"] .oracle-transcript {
-    padding: 0.9rem;
+    padding: 0.75rem;
     border-radius: 0.9rem;
+  }
+
+  .mystic-sanctuary[data-reading-focus="reading"] .reading-mode-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .mystic-sanctuary[data-reading-focus="actions"] .result-support-stack,
