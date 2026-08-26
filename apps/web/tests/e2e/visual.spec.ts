@@ -74,6 +74,9 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   await capturePage(page, testInfo, "shuffle-deal");
   await page.getByRole("button", { name: "Gather the cards" }).click();
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
   for (let index = 1; index <= 3; index += 1)
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })

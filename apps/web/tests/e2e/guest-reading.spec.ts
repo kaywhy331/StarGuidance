@@ -67,6 +67,9 @@ test("a visitor completes a causal free reading before signup and continues with
       response.request().postData()?.includes('"action":"finalize"') === true,
   );
   const cardCount = preparedBody.ceremony.spread.positions.length as number;
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
   const fanSurface = page.getByTestId("casino-fan-hit-surface");
   const fanBounds = await fanSurface.boundingBox();
   if (!fanBounds) throw new Error("The casino fan selection surface is not visible.");

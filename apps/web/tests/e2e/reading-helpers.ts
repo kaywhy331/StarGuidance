@@ -130,7 +130,6 @@ export async function reviewAndConfirmQuestion(page: Page, question: string) {
 export async function prepareReadingViaApi(
   page: Page,
   options: {
-    spreadId?: string;
     question?: string;
     reversalMode?: "reversals_enabled" | "upright_only";
     personalizationMode?: "pure_tarot" | "personalized_tarot";
@@ -146,7 +145,6 @@ export async function prepareReadingViaApi(
       },
       body: JSON.stringify({
         action: "prepare",
-        spreadId: input.spreadId ?? "three-card",
         question: input.question ?? "What should I understand about my next grounded step?",
         questionConfirmed: true,
         reversalMode: input.reversalMode ?? "reversals_enabled",
@@ -197,7 +195,7 @@ export async function finalizeReadingViaApi(
 export async function completeRevealViaApi(
   page: Page,
   readingId: string,
-  cardCount: number,
+  ceremony: Pick<PreparedCeremony, "spread">,
   cutIndex: number,
 ) {
   const result = await page.evaluate(
@@ -214,7 +212,7 @@ export async function completeRevealViaApi(
       });
       return { body: await response.text(), status: response.status };
     },
-    { id: readingId, count: cardCount, cut: cutIndex },
+    { id: readingId, count: ceremony.spread.positions.length, cut: cutIndex },
   );
   expect(result.status, `Reveal completion failed: ${result.body}`).toBe(200);
 }
@@ -273,15 +271,7 @@ export async function readOwnedReading(page: Page, readingId: string) {
   }, readingId);
 }
 
-export async function beginReadingThroughUi(
-  page: Page,
-  options: {
-    question?: string;
-    spreadId?: "one-card" | "three-card" | "crossroads" | "outlook";
-    spreadName?: string;
-    cutButton?: "Cut near the top" | "Cut at the center" | "Cut deeper" | "No cut";
-  } = {},
-) {
+export async function beginReadingThroughUi(page: Page, options: { question?: string } = {}) {
   const question = options.question ?? "What should I understand about my next grounded step?";
   const preparedResponse = await reviewAndConfirmQuestion(page, question);
   expect(preparedResponse.status()).toBe(201);
@@ -300,6 +290,9 @@ export async function beginReadingThroughUi(
       response.request().postData()?.includes('"action":"finalize"') === true,
   );
   const cardCount = preparedBody.ceremony.spread.positions.length;
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
   for (let index = 0; index < cardCount; index += 1)
     await page
       .getByRole("button", { name: `Choose face-down card ${index + 1}`, exact: true })

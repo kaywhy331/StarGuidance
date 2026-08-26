@@ -36,6 +36,20 @@ describe("automatic spread selection", () => {
     expect(route("What should I notice today?")).toBe("one-card");
   });
 
+  it("uses the wider outlook structures for time-bound depth and a whole-picture request", () => {
+    expect(
+      route(
+        "What deeper long-term pattern is shaping my career transition over the coming months?",
+      ),
+    ).toBe("celtic-cross");
+    expect(
+      route(
+        "What full picture connects the many dimensions shaping my work and wellbeing right now?",
+      ),
+    ).toBe("nine-card-matrix");
+    expect(route("How may my work transition unfold over the coming months?")).toBe("outlook");
+  });
+
   it("falls back only to an enabled spread", () => {
     const question = "What is happening in my relationship?";
     expect(

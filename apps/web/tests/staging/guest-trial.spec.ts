@@ -162,6 +162,9 @@ test("a birthday-based free reading remains causal and continues through passwor
     { timeout: 60_000 },
   );
   const cardCount = preparedBody.ceremony.spread.positions.length;
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
   for (let index = 1; index <= cardCount; index += 1)
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })

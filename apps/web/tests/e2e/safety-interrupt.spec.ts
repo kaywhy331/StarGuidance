@@ -54,6 +54,9 @@ test("a guarded question is acknowledged before the commitment and can continue 
 
   await page.getByRole("button", { name: "Gather the cards" }).click();
   const cardCount = acknowledgedBody.ceremony.spread.positions.length as number;
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
   for (let index = 1; index <= cardCount; index += 1)
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })

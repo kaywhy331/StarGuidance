@@ -69,7 +69,7 @@ test("an explicitly mentioned saved person contributes only a minimized locked l
   });
   expect(ceremony.spread.id).toBe("relationship");
   const finalized = await finalizeReadingViaApi(page, ceremony);
-  await completeRevealViaApi(page, finalized.readingId, ceremony.spread.positions.length, 0);
+  await completeRevealViaApi(page, finalized.readingId, ceremony, 0);
 
   const exported = await page.evaluate(async () => {
     const response = await fetch("/api/privacy/export", { cache: "no-store" });
@@ -118,8 +118,7 @@ test("preparation commits the ritual but finalization atomically creates the fir
 }) => {
   await createAccountAndProfileViaApi(page);
   const ceremony = await prepareReadingViaApi(page, {
-    question: "What should I understand about choosing my next work project?",
-    spreadId: "three-card",
+    question: "How can I understand the uncertainty I feel about this work project right now?",
     personalizationMode: "pure_tarot",
   });
 
@@ -161,11 +160,11 @@ test("the optional cut is recorded and upright-only remains a legitimate reading
 }) => {
   await createAccountAndProfileViaApi(page);
   const ceremony = await prepareReadingViaApi(page, {
-    spreadId: "outlook",
-    question: "How may this plan develop over the next month?",
+    question: "How may my work transition unfold over the coming months?",
     reversalMode: "upright_only",
     personalizationMode: "pure_tarot",
   });
+  expect(ceremony.spread.id).toBe("outlook");
   const finalized = await finalizeReadingViaApi(page, ceremony, 58);
   const owned = await readOwnedReading(page, finalized.readingId);
 
@@ -184,7 +183,6 @@ test("users may choose reveal order while exposing only one locked baseline", as
   test.setTimeout(150_000);
   await createAccountAndProfileViaApi(page);
   await beginReadingThroughUi(page, {
-    cutButton: "Cut at the center",
     question: "What should I understand about moving this project forward?",
   });
 
@@ -218,7 +216,7 @@ const spreadContracts = [
   {
     id: "one-card",
     count: 1,
-    question: "What is most important for me to notice now?",
+    question: "What should I notice today?",
     trajectory: false,
     alternate: false,
   },
@@ -255,12 +253,12 @@ for (const contract of spreadContracts) {
     );
     await createAccountAndProfileViaApi(page);
     const ceremony = await prepareReadingViaApi(page, {
-      spreadId: contract.id,
       question: contract.question,
       personalizationMode: "pure_tarot",
     });
+    expect(ceremony.spread.id).toBe(contract.id);
     const finalized = await finalizeReadingViaApi(page, ceremony, 20);
-    await completeRevealViaApi(page, finalized.readingId, contract.count, 20);
+    await completeRevealViaApi(page, finalized.readingId, ceremony, 20);
     const owned = await readOwnedReading(page, finalized.readingId);
     const result = owned.body.reading.result;
 
@@ -290,11 +288,13 @@ for (const contract of spreadContracts) {
 const configuredSpreadCases = [
   {
     id: "one-card",
+    question: "What should I notice today?",
     kind: "centered",
     positions: [[0, 0, 0]],
   },
   {
     id: "three-card",
+    question: "How can I understand the uncertainty I feel about work right now?",
     kind: "horizontal",
     positions: [
       [0, 0, 0],
@@ -304,6 +304,7 @@ const configuredSpreadCases = [
   },
   {
     id: "crossroads",
+    question: "Should I choose the promotion or remain in my current role?",
     kind: "legacy",
     positions: [
       [1, 2, 0],
@@ -315,6 +316,7 @@ const configuredSpreadCases = [
   },
   {
     id: "outlook",
+    question: "How may my work transition unfold over the coming months?",
     kind: "legacy",
     positions: [
       [0, 2, 0],
@@ -328,6 +330,8 @@ const configuredSpreadCases = [
   },
   {
     id: "celtic-cross",
+    question:
+      "What deeper long-term pattern is shaping my career transition over the coming months?",
     kind: "celtic-cross",
     positions: [
       [2, 1, 0],
@@ -344,6 +348,7 @@ const configuredSpreadCases = [
   },
   {
     id: "horseshoe",
+    question: "How should I plan my next career move?",
     kind: "horseshoe",
     positions: [
       [0, 0, 0],
@@ -357,6 +362,7 @@ const configuredSpreadCases = [
   },
   {
     id: "relationship",
+    question: "How can I communicate with my partner more honestly?",
     kind: "relationship",
     positions: [
       [0, 0, 0],
@@ -370,6 +376,8 @@ const configuredSpreadCases = [
   },
   {
     id: "nine-card-matrix",
+    question:
+      "What full picture connects the many dimensions shaping my work and wellbeing right now?",
     kind: "matrix",
     positions: [
       [0, 0, 0],
@@ -390,10 +398,10 @@ for (const spreadCase of configuredSpreadCases) {
     test.setTimeout(120_000);
     await createAccountAndProfileViaApi(page);
     const ceremony = await prepareReadingViaApi(page, {
-      spreadId: spreadCase.id,
-      question: "What should I understand about the path in front of me?",
+      question: spreadCase.question,
       personalizationMode: "pure_tarot",
     });
+    expect(ceremony.spread.id).toBe(spreadCase.id);
     const finalized = await finalizeReadingViaApi(page, ceremony, 20);
     await page.goto(`/session/${finalized.readingId}`);
 
@@ -452,7 +460,7 @@ test("refresh, replay, and same-question clarification preserve the exact locked
   expect(replay.status).toBe(200);
   expect(replay.body).toMatchObject({ readingId: finalized.readingId, idempotentReplay: true });
 
-  await completeRevealViaApi(page, finalized.readingId, 3, 20);
+  await completeRevealViaApi(page, finalized.readingId, ceremony, 20);
   const sameScope = await page.evaluate(async (id) => {
     const response = await fetch(`/api/readings/${id}`, {
       method: "POST",
@@ -485,7 +493,9 @@ test("refresh, replay, and same-question clarification preserve the exact locked
   await page.reload();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
-  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(
+    ceremony.spread.positions.length,
+  );
   await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
     "data-reading-focus",
     "reading",

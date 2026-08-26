@@ -63,6 +63,9 @@ async function createReading(page: Page): Promise<void> {
     .fill("How can I understand the uncertainty I feel right now?");
   await page.getByRole("button", { name: "Send question" }).click();
   await page.getByRole("button", { name: "Gather the cards" }).click();
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
   for (let index = 1; index <= 3; index += 1)
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })

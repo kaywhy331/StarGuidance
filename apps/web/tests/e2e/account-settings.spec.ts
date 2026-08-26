@@ -29,8 +29,9 @@ test("an account missing current receipts must re-consent before protected creat
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
       body: JSON.stringify({
-        spreadId: "three-card",
+        action: "prepare",
         question: "What can support a grounded next step?",
+        questionConfirmed: true,
       }),
     });
     return { body: await response.json(), status: response.status };

@@ -224,15 +224,12 @@ async function activeSnapshot(page: Page): Promise<{ id: string; version: number
 }
 
 async function createReading(page: Page, question: string): Promise<string> {
-  // One card is sufficient for persistence/isolation assertions and avoids
-  // burning the live provider's staging quota on content the gate never reads.
   // The preparation response intentionally contains no card assignment: the
-  // browser contributes fresh entropy only after the ritual is prepared.
+  // browser contributes fresh entropy only after the question-routed ritual is prepared.
   const prepared = await apiPost<{
     ceremony?: { token?: string; sessionId?: string; serverSeedCommitment?: string };
   }>(page, "/api/readings", {
     action: "prepare",
-    spreadId: "one-card",
     question,
     questionConfirmed: true,
     reversalMode: "reversals_enabled",

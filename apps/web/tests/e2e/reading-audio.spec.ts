@@ -79,11 +79,10 @@ test("explicit narration plays, reveals words, illuminates cards, and survives r
   await createAccountAndProfileViaApi(page);
   const ceremony = await prepareReadingViaApi(page, {
     question: "What grounded step can help this project move forward?",
-    spreadId: "three-card",
     personalizationMode: "pure_tarot",
   });
   const finalized = await finalizeReadingViaApi(page, ceremony, 20);
-  await completeRevealViaApi(page, finalized.readingId, 3, 20);
+  await completeRevealViaApi(page, finalized.readingId, ceremony, 20);
   await page.evaluate(() => localStorage.setItem("sg:reading:narration", "true"));
 
   let audioSectionRequests = 0;
