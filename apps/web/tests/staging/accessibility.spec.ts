@@ -269,9 +269,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   await scan("reading shuffle");
   await page.getByRole("button", { name: "Gather the cards" }).click();
-  await expect(page.getByRole("button", { name: "Choose face-down card 1" })).toBeEnabled({
-    timeout: 10_000,
-  });
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
   await scan("card selection fan");
   const readingResponsePromise = page
     .waitForResponse(
