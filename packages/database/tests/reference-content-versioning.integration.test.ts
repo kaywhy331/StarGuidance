@@ -129,7 +129,7 @@ describeDatabase("immutable reference-content releases", () => {
       }),
       expect.objectContaining({
         domain: "prompts",
-        version: 3,
+        version: 4,
         payload: expect.objectContaining({ bundleId: "reader-voice-v7" }),
       }),
     ]);
