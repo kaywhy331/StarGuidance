@@ -42,23 +42,24 @@ describe("Fish Audio reading provider", () => {
     expect(readingAudioAvailable({ READING_AUDIO_PROVIDER: "fish-audio" })).toBe(false);
   });
 
-  it("streams an MP3 section with the key confined to the Fish request header", async () => {
-    const audio = new Uint8Array([73, 68, 51, 4]);
+  it("streams timestamped MP3 events with the key confined to the Fish request header", async () => {
+    const event = 'data: {"audio_base64":"SUQzBA==","alignment":null,"chunk_seq":0}\n\n';
     const implementation = vi.fn<typeof fetch>(async () =>
       Promise.resolve(
-        new Response(audio, { status: 200, headers: { "content-type": "audio/mpeg" } }),
+        new Response(event, { status: 200, headers: { "content-type": "text/event-stream" } }),
       ),
     );
     const provider = createReadingAudioProvider(configuredEnvironment, implementation);
 
     const stream = await provider.stream("Reflection. Take one grounded step.");
-    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    const payload = await new Response(stream).text();
 
-    expect(bytes).toEqual(audio);
+    expect(payload).toBe(event);
     expect(implementation).toHaveBeenCalledOnce();
     const [url, init] = implementation.mock.calls[0]!;
-    expect(url).toBe("https://api.fish.audio/v1/tts");
+    expect(url).toBe("https://api.fish.audio/v1/tts/stream/with-timestamp");
     const headers = new Headers(init?.headers);
+    expect(headers.get("accept")).toBe("text/event-stream");
     expect(headers.get("authorization")).toBe("Bearer fish-secret-key");
     expect(headers.get("model")).toBe("s2.1-pro");
     expect(JSON.parse(String(init?.body))).toMatchObject({
@@ -81,6 +82,19 @@ describe("Fish Audio reading provider", () => {
     await expect(provider.stream("A valid reading section.")).rejects.toMatchObject({
       code: "READING_AUDIO_UPSTREAM_UNAVAILABLE",
       message: "READING_AUDIO_UPSTREAM_UNAVAILABLE",
+    });
+  });
+
+  it("rejects an unexpected successful response type", async () => {
+    const provider = createReadingAudioProvider(
+      configuredEnvironment,
+      vi.fn<typeof fetch>(async () =>
+        Promise.resolve(new Response("not an event stream", { status: 200 })),
+      ),
+    );
+
+    await expect(provider.stream("A valid reading section.")).rejects.toMatchObject({
+      code: "READING_AUDIO_UPSTREAM_UNAVAILABLE",
     });
   });
 });

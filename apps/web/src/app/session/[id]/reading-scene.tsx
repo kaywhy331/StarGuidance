@@ -43,6 +43,7 @@ export function ReadingScene({
   const [dealtCount, setDealtCount] = useState(0);
   const [readyPromptVisible, setReadyPromptVisible] = useState(false);
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
+  const [narratingCardIndexes, setNarratingCardIndexes] = useState<readonly number[]>([]);
   const [error, setError] = useState<string>();
   const [safetyInterrupt, setSafetyInterrupt] = useState<{
     category: SafetyCategory;
@@ -392,12 +393,14 @@ export function ReadingScene({
       state.matches("complete")) &&
     Boolean(reading.result);
   const cardsVisible =
-    !transcriptVisible &&
+    !journeyComplete &&
     (state.matches("dealing") ||
       state.matches("awaitingReveal") ||
       state.matches("revealing") ||
       state.matches("fullSpreadReady") ||
       state.matches("interpretationStreaming") ||
+      state.matches("followUpAvailable") ||
+      state.matches("complete") ||
       state.matches("generationFailed"));
   const readingFocusStage = transcriptVisible
     ? journeyComplete
@@ -451,7 +454,7 @@ export function ReadingScene({
 
       <section
         aria-live="polite"
-        className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${activeReveal === null ? "" : "has-cinematic-review"}`}
+        className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${activeReveal === null ? "" : "has-cinematic-review"} ${transcriptVisible && !journeyComplete ? "has-reading-journey" : ""}`}
       >
         {state.matches("sessionExpired") && (
           <div className="ritual-moment">
@@ -500,6 +503,7 @@ export function ReadingScene({
               activeIndex={activeReveal}
               cards={reading.cards}
               focusMode={activeReveal === null ? null : "reveal"}
+              narratingIndexes={narratingCardIndexes}
               reducedMotion={motionOff}
               revealed={revealed}
               onReveal={
@@ -617,6 +621,14 @@ export function ReadingScene({
             active
             cards={reading.cards}
             onJourneyCompleteChange={setJourneyComplete}
+            onNarratedCardIndexesChange={(indexes) =>
+              setNarratingCardIndexes((current) =>
+                current.length === indexes.length &&
+                current.every((value, index) => value === indexes[index])
+                  ? current
+                  : [...indexes],
+              )
+            }
             onRetry={() => setStreamRetryToken((token) => token + 1)}
             onStateChange={handleStreamState}
             {...(reading.personalization ? { personalization: reading.personalization } : {})}

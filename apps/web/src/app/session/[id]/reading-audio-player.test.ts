@@ -2,35 +2,41 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { boundedAudioBlob, ReadingAudioPlayer } from "./reading-audio-player";
+import {
+  countNarrationWords,
+  playbackFailure,
+  ReadingAudioPlayer,
+  synchronizedWordCount,
+} from "./reading-audio-player";
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("section audio buffering", () => {
-  it("assembles streamed chunks as one playable MP3 section", async () => {
-    const response = new Response(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(new Uint8Array([73, 68]));
-          controller.enqueue(new Uint8Array([51, 4]));
-          controller.close();
-        },
-      }),
-      { headers: { "content-type": "audio/mpeg" } },
-    );
-
-    const blob = await boundedAudioBlob(response);
-
-    expect(blob.type).toBe("audio/mpeg");
-    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(new Uint8Array([73, 68, 51, 4]));
+describe("section audio playback", () => {
+  it("maps Fish timing progress onto the displayed narration words", () => {
+    expect(countNarrationWords("A calm, grounded step.")).toBe(4);
+    expect(
+      synchronizedWordCount(
+        0.61,
+        2,
+        [
+          { start: 0.1, end: 0.4 },
+          { start: 0.4, end: 0.8 },
+          { start: 0.8, end: 1.2 },
+          { start: 1.2, end: 1.6 },
+        ],
+        4,
+      ),
+    ).toBe(2);
   });
 
-  it("rejects a declared section larger than the client memory bound", async () => {
-    const response = new Response(new Uint8Array([1]), {
-      headers: { "content-length": String(12 * 1024 * 1024 + 1) },
+  it("distinguishes autoplay denial from an unsupported media response", () => {
+    expect(playbackFailure(new DOMException("denied", "NotAllowedError"))).toMatchObject({
+      retryable: true,
     });
-
-    await expect(boundedAudioBlob(response)).rejects.toThrow("Audio section is too large.");
+    expect(playbackFailure(new DOMException("unsupported", "NotSupportedError"))).toMatchObject({
+      retryable: false,
+      message: expect.stringContaining("decode"),
+    });
   });
 
   it("shows Play when voice is enabled without requesting any audio", () => {

@@ -12,7 +12,9 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   `connect-src 'self'${process.env.NODE_ENV === "development" ? " ws: http:" : ""}`,
-  "media-src 'self'",
+  // Narration is assembled client-side from timestamped chunks and played
+  // through an origin-created object URL. No remote media origins are allowed.
+  "media-src 'self' blob:",
   "manifest-src 'self'",
 ].join("; ");
 
