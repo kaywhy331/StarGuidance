@@ -268,7 +268,15 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   };
   await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   await scan("reading shuffle");
+  // The scan covers semantics and reflow, not decorative timing. Use the
+  // persisted reduced-motion path before opening the fan so hosted WebKit
+  // scheduling cannot postpone the fan-ready timer beyond the assertion.
+  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Gather the cards" }).click();
+  const fan = page.getByTestId("casino-wash-deck");
   await expect(
     page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
   ).toBeEnabled({ timeout: 10_000 });
@@ -282,10 +290,13 @@ test("critical deployed flows pass automated WCAG rules", async () => {
       { timeout: 60_000 },
     )
     .catch(() => undefined);
-  for (let index = 1; index <= preparation.ceremony.spread.positions.length; index += 1)
+  for (let index = 1; index <= preparation.ceremony.spread.positions.length; index += 1) {
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
       .press("Enter");
+    if (index < preparation.ceremony.spread.positions.length)
+      await expect(fan).toHaveAttribute("data-selected-count", String(index));
+  }
   const readingResponse = await readingResponsePromise;
   try {
     await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, {
@@ -313,9 +324,6 @@ test("critical deployed flows pass automated WCAG rules", async () => {
 
   // Reveal remains an intentional action (UX-006). Shorten decorative timing
   // and drive the same centered ready/next sequence through accessible controls.
-  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
-    await motionControl.dispatchEvent("click");
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
   const sanctuary = page.getByTestId("mystic-sanctuary-scene");
   await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
