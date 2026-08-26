@@ -120,15 +120,15 @@ test("a visitor completes a causal free reading before signup and continues with
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
 
-  const completeStory = page.getByTestId("reading-complete-story");
+  const activePassage = page.getByTestId("reading-active-passage");
   const signupGate = page.getByTestId("guest-signup-gate");
-  await expect(completeStory).toBeVisible({ timeout: 20_000 });
-  await expect(completeStory.locator("header > p:last-child")).toHaveText(/\S/);
-  await expect(completeStory.locator("header > p:last-child")).toContainText(
+  await expect(activePassage).toBeVisible({ timeout: 20_000 });
+  await expect(activePassage.locator(".oracle-entry-text")).toHaveText(/\S/);
+  await expect(activePassage.locator(".oracle-entry-text")).toContainText(
     "the next step in your work",
   );
-  await expect(completeStory).not.toContainText("whose function is");
-  await expect(completeStory).not.toContainText("current pattern begins with");
+  await expect(activePassage).not.toContainText("whose function is");
+  await expect(activePassage).not.toContainText("current pattern begins with");
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   await expect(signupGate).toHaveCount(0);
@@ -136,8 +136,9 @@ test("a visitor completes a causal free reading before signup and continues with
     "data-reading-focus",
     "reading",
   );
+  await page.getByTestId("oracle-transcript").press("End");
   await page.getByTestId("complete-reading-action").click();
-  await expect(completeStory).toHaveCount(0);
+  await expect(activePassage).toHaveCount(0);
   await expect(signupGate).toBeVisible();
   await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
     "data-reading-focus",
@@ -161,8 +162,9 @@ test("a visitor completes a causal free reading before signup and continues with
   );
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
+  await page.getByTestId("oracle-transcript").press("End");
   await page.getByTestId("complete-reading-action").click();
   await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
   await page.getByRole("link", { name: "Sign up to continue" }).click();

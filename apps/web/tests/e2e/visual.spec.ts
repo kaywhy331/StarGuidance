@@ -98,7 +98,7 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: /Return to the spread/ }).click();
   await page.getByRole("button", { name: "Reveal All" }).click();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("reading-complete-story")).toBeVisible();
+  await expect(page.getByTestId("reading-active-passage")).toBeVisible();
   await capturePage(page, testInfo, "reading-result");
 
   await page.goto("/profile");

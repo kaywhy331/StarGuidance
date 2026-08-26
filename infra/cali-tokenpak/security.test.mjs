@@ -3,6 +3,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+  RUNTIME_PROMPT_BUNDLES,
   reviewedFollowUpResponseSchema,
   reviewedReadingResponseSchema,
 } from "@starguidance/ai";
@@ -180,6 +181,32 @@ describe("gateway security primitives", () => {
       requestPayload({ reasoning_effort: "high" }),
     ])
       expect(() => validateInferencePayload(Buffer.from(JSON.stringify(payload)))).toThrow();
+  });
+
+  it("accepts every concise grounded prompt through the reviewed boundary", () => {
+    const grounded = RUNTIME_PROMPT_BUNDLES["reader-voice-v7-grounded"];
+    for (const systemPrompt of [grounded.reading, grounded.guardedReading])
+      expect(
+        validateInferencePayload(Buffer.from(JSON.stringify(requestPayload({ systemPrompt }))))
+          .model,
+      ).toBe(DEFAULT_ALLOWED_MODELS[0]);
+
+    const schema = reviewedFollowUpResponseSchema();
+    const userPayload = {
+      ...readingPayload,
+      question: "What is the next concrete move?",
+      originalReading,
+    };
+    for (const systemPrompt of [grounded.followUp, grounded.guardedFollowUp])
+      expect(
+        validateInferencePayload(
+          Buffer.from(
+            JSON.stringify(
+              requestPayload({ userPayload, schemaName: "follow_up", schema, systemPrompt }),
+            ),
+          ),
+        ).model,
+      ).toBe(DEFAULT_ALLOWED_MODELS[0]);
   });
 
   it("accepts only the exact JSON-mode schema embedded after a reviewed prompt", () => {

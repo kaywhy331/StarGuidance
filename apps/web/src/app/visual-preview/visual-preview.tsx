@@ -67,6 +67,7 @@ export function SanctuaryVisualPreview({
           <OracleTranscript
             active={false}
             cards={cards}
+            displayName="Avery"
             onJourneyCompleteChange={setJourneyComplete}
             onRetry={() => undefined}
             previewEvents={events}

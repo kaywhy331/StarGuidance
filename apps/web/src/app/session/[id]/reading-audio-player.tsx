@@ -207,6 +207,7 @@ export function ReadingAudioPlayer({
   }, [stopProgressLoop, transition]);
 
   useEffect(() => {
+    if (continuous) return;
     resetTimerRef.current = window.setTimeout(() => {
       resetTimerRef.current = undefined;
       stopPlayback();
@@ -215,7 +216,18 @@ export function ReadingAudioPlayer({
       if (resetTimerRef.current !== undefined) window.clearTimeout(resetTimerRef.current);
       resetTimerRef.current = undefined;
     };
-  }, [activeIndex, continuous, readingId, stopPlayback, target]);
+  }, [activeIndex, continuous, stopPlayback]);
+
+  useEffect(() => {
+    resetTimerRef.current = window.setTimeout(() => {
+      resetTimerRef.current = undefined;
+      stopPlayback();
+    }, 0);
+    return () => {
+      if (resetTimerRef.current !== undefined) window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = undefined;
+    };
+  }, [continuous, readingId, stopPlayback, target]);
 
   useEffect(() => {
     if (enabled) return;
@@ -449,7 +461,11 @@ export function ReadingAudioPlayer({
         }}
         onLoadedMetadata={() => emitNarration()}
         onPause={() => {
-          if (primingRef.current || playbackRef.current !== "playing") return;
+          // Replacing a completed section can queue a stale pause event after
+          // the next section has already started. Only treat a pause as real
+          // when the current media element is still paused.
+          if (primingRef.current || playbackRef.current !== "playing" || !audioRef.current?.paused)
+            return;
           stopProgressLoop();
           transition("paused");
         }}

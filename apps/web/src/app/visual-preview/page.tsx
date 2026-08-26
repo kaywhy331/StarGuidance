@@ -46,9 +46,9 @@ export default function VisualPreviewPage() {
   const result = readingResultSchema.parse({
     schemaVersion: "reading-result-v3",
     directAnswer:
-      "The quiet architecture of change is already forming: movement becomes useful when it is measured, observable, and open to revision.",
+      "A careful change is already taking shape. Do not force certainty; choose the next step you can test and revise.",
     overallPattern:
-      "The spread moves from inner knowledge through changing conditions toward renewed orientation. The tension is not whether change exists, but how consciously it is met.",
+      "The spread moves from inner knowledge, through uncertainty, toward a clearer direction.",
     cards: cards.map((card, index) => ({
       positionId: card.positionId,
       positionLabel: card.positionName,
@@ -56,9 +56,9 @@ export default function VisualPreviewPage() {
       orientation: card.orientation,
       coreMeaning: `${card.name} carries ${card.themes.slice(0, 2).join(" and ")}.`,
       positionInterpretation: [
-        "In Situation, quiet inner knowing suggests that the reader already recognizes the essential change, even before all of its consequences are visible.",
-        "In Challenge, changing conditions can feel delayed or internalized; waiting for perfect certainty could become its own decision.",
-        "In Direction, renewed orientation supports one measured step that can be tested against real evidence.",
+        "You already recognize the change beneath the surface, even before every consequence is visible.",
+        "Waiting for perfect certainty could become its own decision. Notice what fear keeps postponing.",
+        "One measured step will show more than another round of analysis. Let reality answer you.",
       ][index]!,
       relationshipNotes: [
         `${cards[0]!.name} in Situation develops in sequence with ${cards[1]!.name} in Challenge and ${cards[2]!.name} in Direction.`,
@@ -69,16 +69,16 @@ export default function VisualPreviewPage() {
       ],
     })),
     synthesis:
-      "Taken together, the cards describe an intuitive recognition meeting a real-world shift and becoming a deliberate next move. The Direction card matters because it turns uncertainty into something testable without pretending uncertainty has vanished.",
+      "Your intuition is meeting a real-world shift. The way through is a deliberate move that tests the direction without pretending uncertainty has vanished.",
     likelyTrajectory:
-      "Under present conditions, following Direction suggests a clearer and more hopeful route—one that becomes visible through a practical conversation, invitation, or reversible decision.",
+      "If this pattern continues, a practical conversation or reversible decision will make the stronger route easier to see.",
     alternatePath: null,
     timing: null,
     userAgency:
-      "Name one observable fact, choose a proportionate next action, and leave enough room to revise it when the situation answers back.",
+      "Name one observable fact, take one proportionate action, and leave room to revise it.",
     reflectionPrompt: "What becomes possible when you do not force certainty before listening?",
     uncertaintyNote:
-      "Tarot is reflective guidance, not factual proof or a guarantee; new evidence and choices can change the pattern.",
+      "This is a conditional reading; new evidence and choices can change the direction.",
     personalizationLens: null,
     safetyFlags: [],
   });

@@ -175,6 +175,17 @@ try {
         "follow-up-reader-voice-v6-grounded",
         "grounded question-led continuation of the same locked reading",
       ],
+      ["reader-voice-v7", "concise direct consultation with integrated minimized profile traits"],
+      ["follow-up-reader-voice-v7", "concise continuation of the same locked reading"],
+      [
+        "deterministic-fallback-v7",
+        "concise trait-aware credential-free consultation using locked cards",
+      ],
+      ["reader-voice-v7-grounded", "concise direct consultation with concrete observable emphasis"],
+      [
+        "follow-up-reader-voice-v7-grounded",
+        "grounded concise continuation of the same locked reading",
+      ],
       [
         "reader-voice-v4-grounded",
         "question-first connected live narrator with concrete observable emphasis",
@@ -210,9 +221,9 @@ try {
       },
       {
         domain: "prompts",
-        version: 3,
+        version: 4,
         payload: {
-          bundleId: "reader-voice-v6",
+          bundleId: "reader-voice-v7",
           safetyPolicyVersion: "question-safety-v2",
         },
       },

@@ -63,6 +63,10 @@ test("a guarded question is acknowledged before the commitment and can continue 
   await page.getByRole("button", { name: "Continue without a cut" }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   await revealAllThroughUi(page);
+  await expect(page.getByTestId("reading-journey")).toHaveAttribute("data-state", "complete", {
+    timeout: 30_000,
+  });
+  await page.getByTestId("oracle-transcript").press("End");
   await page.getByTestId("complete-reading-action").click();
   await expect(
     page.getByText("This reading offers user-centered reflection rather than a factual claim."),
