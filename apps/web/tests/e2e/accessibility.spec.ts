@@ -62,20 +62,30 @@ async function createReading(page: Page): Promise<void> {
     .getByLabel("Your question for the stars")
     .fill("How can I understand the uncertainty I feel right now?");
   await page.getByRole("button", { name: "Send question" }).click();
-  await page.getByRole("button", { name: "Gather the cards" }).click();
-  await expect(
-    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
-  ).toBeEnabled({ timeout: 10_000 });
-  for (let index = 1; index <= 3; index += 1)
-    await page
-      .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
-      .press("Enter");
-  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
-  // Keep the accessibility suite fast while exercising the same centered,
-  // reader-controlled sequence through standard buttons.
+  // This test validates reflow and keyboard operation, not decorative timing.
+  // Enable the persisted reduced-motion path before opening the fan so a busy
+  // WebKit runner cannot throttle the fan-opening timer past the assertion.
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true")
     await motionControl.dispatchEvent("click");
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Gather the cards" }).click();
+  const fan = page.getByTestId("casino-wash-deck");
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
+  for (let index = 1; index <= 3; index += 1) {
+    await page
+      .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
+      .press("Enter");
+    // Wait for React to commit each keyboard selection before pressing the
+    // next card. The final selection immediately replaces the fan with the
+    // locking state, so its successful commit is proven by navigation below.
+    if (index < 3) await expect(fan).toHaveAttribute("data-selected-count", String(index));
+  }
+  await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
+  // Keep the accessibility suite fast while exercising the same centered,
+  // reader-controlled sequence through standard buttons.
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
   const sanctuary = page.getByTestId("mystic-sanctuary-scene");
   await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
