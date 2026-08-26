@@ -11,43 +11,17 @@ test("a visitor completes a causal free reading before signup and continues with
   await expect(freeReading).toHaveAttribute("href", "/free-reading");
   await freeReading.click();
 
-  await expect(
-    page.getByRole("heading", { name: "What would you like the cards to illuminate?" }),
-  ).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Reduce motion" }).click();
+  await expect(page.getByLabel("Your birthday")).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Your birthday").fill("1990-01-15");
   await page.getByLabel(/I agree to the Terms/i).check();
   await page.getByLabel(/I have read the Privacy Notice/i).check();
-  await page.getByLabel(/I confirm that I am at least 18/i).check();
   await page
-    .getByLabel("Your private guest question")
-    .fill("What can I understand about the next step in my work?");
-  await page.getByRole("button", { name: "Review my question" }).click();
-  await expect(page.getByTestId("guest-question-confirmation")).toContainText(
-    "What can I understand about the next step in my work?",
-  );
-  await page.getByRole("button", { name: "Confirm this question" }).click();
-
-  const spreadOptions = page.getByRole("radiogroup", { name: "Free reading type" });
-  await expect(spreadOptions).toBeVisible();
-  await expect
-    .poll(
-      async () => {
-        const spreadBox = await spreadOptions.boundingBox();
-        const viewport = page.viewportSize();
-        if (!spreadBox || !viewport) return Number.POSITIVE_INFINITY;
-        return Math.abs(spreadBox.x + spreadBox.width / 2 - viewport.width / 2);
-      },
-      {
-        message: "the spread selector settles on the horizontal viewport center",
-        timeout: 5_000,
-      },
-    )
-    .toBeLessThanOrEqual(3);
-  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Situation");
-  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Challenge");
-  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Direction");
-
+    .getByLabel(/I confirm that I am at least 18/i)
+    .evaluate((checkbox: HTMLInputElement) => checkbox.click());
+  await expect(
+    page.getByRole("heading", { name: "What question did you have for the stars today?" }),
+  ).toBeVisible();
   const prepared = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -55,20 +29,19 @@ test("a visitor completes a causal free reading before signup and continues with
       response.request().postData()?.includes('"action":"prepare"') === true,
   );
   await page
-    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
-    .click();
+    .getByLabel("Your question for the stars")
+    .fill("What can I understand about the next step in my work?");
+  await page.getByRole("button", { name: "Send question" }).click();
   const preparedResponse = await prepared;
   expect(preparedResponse.status()).toBe(201);
-  expect(JSON.stringify(await preparedResponse.json())).not.toMatch(
-    /"cardId"|"assignments"|"orientation"/,
-  );
+  const preparedBody = await preparedResponse.json();
+  expect(JSON.stringify(preparedBody)).not.toMatch(/"cardId"|"assignments"|"orientation"/);
 
-  await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
     "data-ritual-phase",
     "shuffling",
   );
-  await expect(page.locator(".full-deck-possibility-field i")).toHaveCount(78);
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   const nonceBeforeStir = await page.evaluate(() => {
     const pending = JSON.parse(sessionStorage.getItem("sg:guest-reading:v2") ?? "{}") as {
       clientNonce?: string;
@@ -86,14 +59,27 @@ test("a visitor completes a causal free reading before signup and continues with
   expect(entropyAfterStir.clientNonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(entropyAfterStir.clientNonce).not.toBe(nonceBeforeStir);
   expect(entropyAfterStir.stirCount).toBe(1);
-  await page.getByRole("button", { name: "Finish shuffling" }).click();
+  await page.getByRole("button", { name: "Gather the cards" }).click();
   const finalized = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       new URL(response.url()).pathname === "/api/guest-readings" &&
       response.request().postData()?.includes('"action":"finalize"') === true,
   );
-  await page.getByRole("button", { name: "Continue without a cut" }).click();
+  const cardCount = preparedBody.ceremony.spread.positions.length as number;
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
+  const fanSurface = page.getByTestId("casino-fan-hit-surface");
+  const fanBounds = await fanSurface.boundingBox();
+  if (!fanBounds) throw new Error("The casino fan selection surface is not visible.");
+  for (let index = 0; index < cardCount; index += 1)
+    await fanSurface.click({
+      position: {
+        x: fanBounds.width * ((index + 1) / (cardCount + 1)),
+        y: fanBounds.height / 2,
+      },
+    });
   const finalizedResponse = await finalized;
   expect(finalizedResponse.status()).toBe(201);
   const finalizedBody = (await finalizedResponse.json()) as {

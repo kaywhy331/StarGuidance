@@ -23,11 +23,34 @@ export async function GET() {
             persistence.decrypt(profile.encryptedCalculations, "profile-calculations"),
           ) as unknown,
         })),
+        relationshipProfiles: data.relationshipProfiles.map((profile) => ({
+          relationshipProfileId: profile.relationshipProfileId,
+          snapshot: profile.snapshot,
+          birthDetails: JSON.parse(
+            persistence.decrypt(profile.encryptedInput, "related-person-profile-input"),
+          ) as unknown,
+          calculations: JSON.parse(
+            persistence.decrypt(
+              profile.encryptedCalculations,
+              "related-person-profile-calculations",
+            ),
+          ) as unknown,
+        })),
         readings: data.readings.map((reading) => ({
           id: reading.id,
           profileSnapshotId: reading.profileSnapshotId,
           spreadId: reading.spreadId,
           question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
+          ...(reading.encryptedRelatedPersonLens
+            ? {
+                relatedPersonLens: JSON.parse(
+                  persistence.decrypt(
+                    reading.encryptedRelatedPersonLens,
+                    "related-person-reading-lens",
+                  ),
+                ) as unknown,
+              }
+            : {}),
           safetyClassification: reading.safetyClassification,
           draw: reading.draw,
           result: reading.result,

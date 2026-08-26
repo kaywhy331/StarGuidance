@@ -3012,6 +3012,180 @@ body {
   font: 0.65rem/1.3 var(--font-body);
 }
 
+.casino-wash-deck,
+.casino-card-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.casino-wash-deck {
+  z-index: 14;
+  touch-action: none;
+}
+
+.casino-card-field {
+  perspective: 80rem;
+}
+
+.casino-card-shell {
+  position: absolute;
+  display: block;
+  width: clamp(2.25rem, 4vw, 3.5rem);
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  border: 1px solid rgb(238 210 132 / 0.62);
+  border-radius: 0.4rem;
+  background: url("/art/tarot/v2/celestial-gothic-back-v1.webp") center / cover;
+  box-shadow:
+    0 0.7rem 1.5rem rgb(0 0 0 / 0.54),
+    0 0 0 1px rgb(255 255 255 / 0.04) inset;
+  contain: layout paint;
+  transform-origin: 50% 92%;
+}
+
+.casino-wash-deck.is-washing .casino-card-shell {
+  z-index: calc(var(--shell-index) + 1);
+  top: 48%;
+  left: 50%;
+  opacity: 0.88;
+  animation: casino-wash-scramble 4.8s cubic-bezier(0.42, 0.04, 0.28, 0.98) infinite;
+  animation-delay: calc(var(--shell-index) * -47ms);
+  will-change: transform, opacity;
+}
+
+.casino-wash-actions {
+  position: absolute;
+  z-index: 180;
+  inset: 0;
+  pointer-events: none;
+}
+
+.casino-stir-surface {
+  position: absolute;
+  z-index: 1;
+  inset: 4.5rem 0 5rem;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.casino-stir-surface:active {
+  cursor: grabbing;
+}
+
+.casino-stir-surface:focus-visible {
+  outline: 2px solid #f0d68b;
+  outline-offset: -0.5rem;
+}
+
+.casino-gather-action {
+  position: absolute;
+  z-index: 2;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  left: 50%;
+  min-width: 11rem;
+  padding: 0.78rem 1.25rem;
+  border: 1px solid rgb(236 211 142 / 0.66);
+  border-radius: 999px;
+  background: rgb(3 13 20 / 0.82);
+  box-shadow: 0 0 2rem rgb(102 209 191 / 0.18);
+  color: #f2dfaa;
+  cursor: pointer;
+  pointer-events: auto;
+  translate: -50% 0;
+}
+
+.casino-wash-deck.is-selecting .casino-card-shell {
+  z-index: calc(var(--shell-index) + 1);
+  bottom: var(--fan-bottom);
+  left: var(--fan-left);
+  cursor: pointer;
+  pointer-events: none;
+  transform: translateX(-50%) rotate(var(--fan-rotation));
+  animation: casino-gather-stack-fan 1.75s cubic-bezier(0.2, 0.76, 0.18, 1) both;
+  animation-delay: calc(var(--shell-index) * 2ms);
+  transition:
+    left 780ms cubic-bezier(0.16, 0.82, 0.2, 1),
+    bottom 780ms cubic-bezier(0.16, 0.82, 0.2, 1),
+    transform 580ms cubic-bezier(0.16, 0.82, 0.2, 1),
+    border-color 160ms ease,
+    filter 160ms ease,
+    box-shadow 220ms ease;
+}
+
+.casino-wash-deck.is-ready
+  .casino-card-shell:not(.is-picked):is(:hover, :focus-visible, .is-pointer-hovered) {
+  z-index: 160;
+  border-color: #f7dfa0;
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgb(247 223 160 / 0.68),
+    0 0 1.5rem rgb(108 230 208 / 0.62),
+    0 1rem 2rem rgb(0 0 0 / 0.68);
+  filter: brightness(1.16) saturate(1.08);
+  transform: translateX(-50%) translateY(-1.2rem) rotate(var(--fan-rotation));
+}
+
+.casino-fan-hit-surface {
+  position: absolute;
+  z-index: 159;
+  right: 4%;
+  bottom: 1.5%;
+  left: 4%;
+  height: clamp(7rem, 24vh, 13rem);
+  cursor: pointer;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.casino-wash-deck.is-ready .casino-fan-hit-surface {
+  pointer-events: auto;
+}
+
+.casino-wash-deck.is-selecting .casino-card-shell.is-picked {
+  z-index: calc(220 + var(--picked-order));
+  bottom: var(--target-bottom);
+  left: var(--target-left);
+  animation: none;
+  border-color: rgb(238 219 161 / 0.92);
+  box-shadow:
+    0 0 1.25rem rgb(106 224 204 / 0.48),
+    0 1.2rem 2.4rem rgb(0 0 0 / 0.72);
+  filter: brightness(1.07);
+  transform: translateX(-50%) rotate(var(--target-rotation)) scale(1.18);
+}
+
+.casino-wash-deck.motion-off .casino-card-shell {
+  animation: none;
+}
+
+.casino-wash-deck.motion-off.is-washing .casino-card-shell {
+  opacity: 0.76;
+  transform: translate(-50%, -50%) translate(var(--wash-a-x), var(--wash-a-y))
+    rotate(var(--wash-rotation-a)) scale(0.9);
+}
+
+.casino-pick-progress {
+  position: absolute;
+  z-index: 360;
+  top: max(4.5rem, calc(env(safe-area-inset-top) + 3.8rem));
+  left: 50%;
+  margin: 0;
+  padding: 0.48rem 0.9rem;
+  border: 1px solid rgb(220 205 160 / 0.18);
+  border-radius: 999px;
+  background: rgb(2 10 17 / 0.72);
+  color: #e9d9aa;
+  font: 600 0.72rem/1.3 var(--font-body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  translate: -50% 0;
+  white-space: nowrap;
+}
+
 .sanctuary-gather-ritual .sanctuary-shuffle-copy {
   top: clamp(5.6rem, 15vh, 9rem);
   bottom: auto;
@@ -5296,6 +5470,350 @@ body {
   text-wrap: balance;
 }
 
+.minimal-question-stage {
+  position: absolute;
+  z-index: 18;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: clamp(1.1rem, 3vh, 2rem);
+  width: 100%;
+  padding: max(5rem, env(safe-area-inset-top)) 1rem max(3rem, env(safe-area-inset-bottom));
+  text-align: center;
+}
+
+.minimal-question-stage h1 {
+  width: min(92vw, 48rem);
+  margin: 0;
+  color: #f1e4bf;
+  font: 500 clamp(1.85rem, 4.2vw, 3.25rem) / 1.08 var(--font-display);
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+  text-shadow: 0 0.7rem 2.4rem rgb(0 0 0 / 0.8);
+}
+
+.minimal-question-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  width: min(92vw, 48rem);
+  overflow: hidden;
+  border: 1px solid rgb(228 208 151 / 0.38);
+  border-radius: 1.05rem;
+  background: rgb(2 12 20 / 0.78);
+  box-shadow:
+    0 1.4rem 4rem rgb(0 0 0 / 0.5),
+    0 0 2.8rem rgb(93 184 176 / 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.minimal-question-form:focus-within {
+  border-color: rgb(240 216 150 / 0.78);
+  box-shadow:
+    0 0 0 2px rgb(240 216 150 / 0.12),
+    0 1.4rem 4rem rgb(0 0 0 / 0.58),
+    0 0 3.2rem rgb(94 209 191 / 0.16);
+}
+
+.minimal-question-form textarea {
+  min-height: clamp(8rem, 22vh, 11rem);
+  resize: none;
+  padding: 1.15rem 1.2rem;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #e8e6df;
+  font: 400 clamp(1rem, 1.8vw, 1.15rem) / 1.55 var(--font-body);
+}
+
+.minimal-question-form button {
+  align-self: stretch;
+  width: clamp(3.5rem, 8vw, 4.7rem);
+  border: 0;
+  border-left: 1px solid rgb(228 208 151 / 0.2);
+  background: linear-gradient(180deg, rgb(19 55 61 / 0.86), rgb(8 29 38 / 0.94));
+  color: #f4dda0;
+  cursor: pointer;
+  font-size: 1.25rem;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.minimal-question-form button:not(:disabled):is(:hover, :focus-visible) {
+  background: linear-gradient(180deg, rgb(29 76 78 / 0.94), rgb(11 39 48 / 0.98));
+  color: #fff0bf;
+  outline: 2px solid #ebd28e;
+  outline-offset: -4px;
+}
+
+.minimal-question-form button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.casino-wash-stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  overflow: hidden;
+  padding: 0;
+}
+
+.guest-prerequisite-stage {
+  position: absolute;
+  z-index: 18;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  width: min(92vw, 28rem);
+  margin-inline: auto;
+  gap: 1rem;
+  padding: max(5rem, env(safe-area-inset-top)) 0 max(3rem, env(safe-area-inset-bottom));
+}
+
+.guest-prerequisite-stage .guest-birth-date-field,
+.guest-prerequisite-stage .guest-policy-consents {
+  border: 1px solid rgb(222 203 151 / 0.24);
+  border-radius: 0.9rem;
+  background: rgb(2 12 20 / 0.76);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 0.38);
+  backdrop-filter: blur(16px);
+}
+
+.people-vault-page {
+  position: relative;
+  z-index: 1;
+  width: min(72rem, calc(100% - 2rem));
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding: clamp(7rem, 12vw, 9rem) 0 5rem;
+}
+
+.people-vault-hero {
+  width: min(44rem, 100%);
+  margin-bottom: 2rem;
+}
+
+.people-vault-hero > p,
+.people-profile-editor > div > p,
+.people-profile-list > header p {
+  margin: 0 0 0.45rem;
+  color: #d8bd76;
+  font: 600 0.7rem/1.3 var(--font-body);
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+}
+
+.people-vault-hero h1,
+.people-profile-editor h2,
+.people-profile-list h2 {
+  margin: 0;
+  color: #f1e6ca;
+  font-family: var(--font-display);
+  font-weight: 450;
+}
+
+.people-vault-hero h1 {
+  font-size: clamp(2.6rem, 7vw, 5rem);
+  line-height: 0.95;
+}
+
+.people-vault-hero > span {
+  display: block;
+  max-width: 39rem;
+  margin-top: 1rem;
+  color: #a9bfba;
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.people-vault-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.88fr) minmax(20rem, 1.12fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.people-profile-editor,
+.people-profile-list {
+  padding: clamp(1.15rem, 3vw, 1.75rem);
+  border: 1px solid rgb(218 200 149 / 0.2);
+  border-radius: 1.1rem;
+  background: linear-gradient(145deg, rgb(3 16 25 / 0.86), rgb(9 18 33 / 0.72));
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 0.32);
+  backdrop-filter: blur(18px);
+}
+
+.people-profile-editor h2,
+.people-profile-list h2 {
+  font-size: clamp(1.55rem, 3vw, 2.1rem);
+}
+
+.people-profile-editor form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1.35rem;
+}
+
+.people-profile-editor form > label:not(.people-permission-check) {
+  display: grid;
+  gap: 0.38rem;
+  color: #bcd0ca;
+  font: 0.75rem/1.4 var(--font-body);
+}
+
+.people-profile-editor input:not([type="checkbox"]) {
+  min-width: 0;
+  padding: 0.78rem 0.82rem;
+  border: 1px solid rgb(203 219 212 / 0.24);
+  border-radius: 0.7rem;
+  background: rgb(1 11 18 / 0.78);
+  color: #f1e7cc;
+  font: 0.88rem/1.3 var(--font-body);
+}
+
+.people-profile-editor input:focus-visible {
+  border-color: #d9bd76;
+  outline: 2px solid rgb(217 189 118 / 0.42);
+  outline-offset: 2px;
+}
+
+.people-permission-check {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 0.65rem;
+  align-items: flex-start;
+  color: #9fb7b1;
+  font: 0.75rem/1.5 var(--font-body);
+}
+
+.people-permission-check input {
+  margin-top: 0.2rem;
+  accent-color: #d9bd76;
+}
+
+.people-editor-actions,
+.people-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.people-editor-actions {
+  grid-column: 1 / -1;
+}
+
+.people-editor-actions button,
+.people-card-actions button {
+  padding: 0.62rem 0.9rem;
+  border: 1px solid rgb(218 196 133 / 0.3);
+  border-radius: 999px;
+  background: rgb(5 24 31 / 0.82);
+  color: #dfca91;
+  cursor: pointer;
+  font: 600 0.69rem/1 var(--font-body);
+  letter-spacing: 0.06em;
+}
+
+.people-editor-actions button:last-child {
+  background: linear-gradient(180deg, rgb(37 80 77 / 0.92), rgb(11 37 45 / 0.96));
+}
+
+.people-editor-actions button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.people-profile-editor > p {
+  margin: 0.9rem 0 0;
+  color: #eab8bd;
+  font: 0.78rem/1.5 var(--font-body);
+}
+
+.people-profile-list > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+.people-profile-list > header > span {
+  color: #809d98;
+  font: 0.68rem/1.4 var(--font-body);
+}
+
+.people-profile-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem 1rem;
+  padding: 1rem 0;
+  border-top: 1px solid rgb(207 195 155 / 0.13);
+}
+
+.people-profile-list article > div:first-child p {
+  margin: 0 0 0.28rem;
+  color: #eee2c5;
+  font: 500 1.05rem/1.3 var(--font-display);
+}
+
+.people-profile-list code {
+  color: #8fd1c2;
+  font: 0.7rem/1.3 var(--font-body);
+}
+
+.people-profile-list dl {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 1.25rem;
+  margin: 0;
+}
+
+.people-profile-list dl div {
+  min-width: 0;
+}
+
+.people-profile-list dt {
+  color: #718e89;
+  font: 0.59rem/1.3 var(--font-body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.people-profile-list dd {
+  margin: 0.18rem 0 0;
+  color: #a8bbb6;
+  font: 0.7rem/1.4 var(--font-body);
+}
+
+.people-empty-state {
+  display: grid;
+  min-height: 11rem;
+  place-content: center;
+  justify-items: center;
+  color: #789690;
+}
+
+.people-empty-state > span {
+  color: #bda768;
+  font-size: 1.5rem;
+}
+
+@media (max-width: 760px) {
+  .people-vault-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .people-profile-editor form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ritual-need-picker {
   display: grid;
   width: min(68rem, calc(100vw - 2rem));
@@ -6112,6 +6630,57 @@ body {
     opacity: 0.58;
     transform: translate(-50%, -50%) translate(var(--active-field-x), var(--active-field-y))
       rotate(var(--field-rotation)) scale(0.88);
+  }
+}
+
+@keyframes casino-wash-scramble {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translate(-50%, -50%) translate(var(--wash-a-x), var(--wash-a-y))
+      rotate(var(--wash-rotation-a)) scale(0.9);
+  }
+
+  32% {
+    opacity: 0.98;
+    transform: translate(-50%, -50%) translate(var(--wash-b-x), var(--wash-b-y))
+      rotate(var(--wash-rotation-b)) scale(1.02);
+  }
+
+  66% {
+    opacity: 0.82;
+    transform: translate(-50%, -50%) translate(var(--wash-c-x), var(--wash-c-y))
+      rotate(var(--wash-rotation-c)) scale(0.95);
+  }
+}
+
+@keyframes casino-gather-stack-fan {
+  0% {
+    bottom: 48%;
+    left: 50%;
+    opacity: 0.84;
+    transform: translate(-50%, 50%) translate(var(--wash-c-x), var(--wash-c-y))
+      rotate(var(--wash-rotation-c)) scale(0.94);
+  }
+
+  42% {
+    bottom: 44%;
+    left: 50%;
+    opacity: 1;
+    transform: translate(-50%, 50%) rotate(calc((var(--shell-index) - 39) * 0.08deg)) scale(0.98);
+  }
+
+  64% {
+    bottom: 4%;
+    left: 7%;
+    transform: translateX(-50%) rotate(calc((var(--shell-index) - 39) * 0.06deg)) scale(0.96);
+  }
+
+  100% {
+    bottom: var(--fan-bottom);
+    left: var(--fan-left);
+    opacity: 1;
+    transform: translateX(-50%) rotate(var(--fan-rotation));
   }
 }
 
@@ -8793,6 +9362,7 @@ body {
 
   .sanctuary-shuffle-shells.is-mixing i,
   .shuffle-card-stream,
+  .casino-card-shell,
   .immersive-cut-deck__packet,
   .tarot-spread-stage.is-dealing .physical-card-figure,
   .ritual-ready-action,
@@ -8804,6 +9374,17 @@ body {
     opacity: 0.68;
     transform: translate(-50%, -50%) translate(var(--active-field-x), var(--active-field-y))
       rotate(var(--field-rotation)) scale(0.88);
+  }
+
+  .casino-wash-deck.is-washing .casino-card-shell {
+    opacity: 0.76;
+    animation: none;
+    transform: translate(-50%, -50%) translate(var(--wash-a-x), var(--wash-a-y))
+      rotate(var(--wash-rotation-a)) scale(0.9);
+  }
+
+  .casino-wash-deck.is-selecting .casino-card-shell {
+    animation: none;
   }
 }
 

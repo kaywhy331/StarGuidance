@@ -25,6 +25,10 @@ import {
 } from "@starguidance/tarot-domain";
 
 import type { RequestPersistence } from "./persistence";
+import {
+  relatedPersonReadingLensSchema,
+  type RelatedPersonReadingLens,
+} from "./related-person-lens";
 
 export const DRAW_CEREMONY_VERSION = "draw-ceremony-v1" as const;
 export const DRAW_CEREMONY_TTL_MS = 2 * 60 * 60 * 1_000;
@@ -74,6 +78,7 @@ const privateCeremonySchema = z
         tensionIndexes: z.array(z.number().int().nonnegative()).readonly().optional(),
       })
       .strict(),
+    relatedPersonLens: relatedPersonReadingLensSchema.optional(),
     question: z.string().trim().min(1).max(500),
     questionClassification: questionClassificationSchema,
     entitlementDecision: readingEntitlementDecisionSchema,
@@ -123,6 +128,7 @@ export function issueDrawCeremony(
     deckVersion: string;
     profileSnapshotId: string;
     readingLens: ReadingLensRecord;
+    relatedPersonLens?: RelatedPersonReadingLens;
     question: string;
     questionClassification: QuestionClassification;
     entitlementDecision: ReadingEntitlementDecision;
@@ -146,6 +152,7 @@ export function issueDrawCeremony(
     idempotencyKey: input.idempotencyKey,
     profileSnapshotId: input.profileSnapshotId,
     readingLens: input.readingLens,
+    ...(input.relatedPersonLens ? { relatedPersonLens: input.relatedPersonLens } : {}),
     question: input.question,
     questionClassification: input.questionClassification,
     entitlementDecision: input.entitlementDecision,

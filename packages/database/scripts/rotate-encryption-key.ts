@@ -149,6 +149,62 @@ const targets: Target[] = [
     },
   },
   {
+    name: "relationship_profile_snapshots.encrypted_input",
+    async load(sql, afterId) {
+      return rows(
+        await sql`
+          select id, user_id, encrypted_input as envelope from relationship_profile_snapshots
+          where (${afterId}::uuid is null or id > ${afterId}::uuid)
+          order by id limit ${BATCH_SIZE}`,
+        () => "related-person-profile-input",
+      );
+    },
+    async replace(sql, row, envelope) {
+      const updated = await sql`
+        update relationship_profile_snapshots set encrypted_input = ${envelope}
+        where id = ${row.id} and encrypted_input = ${row.envelope} returning id`;
+      return updated.length === 1;
+    },
+  },
+  {
+    name: "relationship_profile_snapshots.encrypted_calculations",
+    async load(sql, afterId) {
+      return rows(
+        await sql`
+          select id, user_id, encrypted_calculations as envelope
+          from relationship_profile_snapshots
+          where (${afterId}::uuid is null or id > ${afterId}::uuid)
+          order by id limit ${BATCH_SIZE}`,
+        () => "related-person-profile-calculations",
+      );
+    },
+    async replace(sql, row, envelope) {
+      const updated = await sql`
+        update relationship_profile_snapshots set encrypted_calculations = ${envelope}
+        where id = ${row.id} and encrypted_calculations = ${row.envelope} returning id`;
+      return updated.length === 1;
+    },
+  },
+  {
+    name: "reading_sessions.encrypted_related_person_lens",
+    async load(sql, afterId) {
+      return rows(
+        await sql`
+          select id, user_id, encrypted_related_person_lens as envelope from reading_sessions
+          where encrypted_related_person_lens is not null
+            and (${afterId}::uuid is null or id > ${afterId}::uuid)
+          order by id limit ${BATCH_SIZE}`,
+        () => "related-person-reading-lens",
+      );
+    },
+    async replace(sql, row, envelope) {
+      const updated = await sql`
+        update reading_sessions set encrypted_related_person_lens = ${envelope}, updated_at = now()
+        where id = ${row.id} and encrypted_related_person_lens = ${row.envelope} returning id`;
+      return updated.length === 1;
+    },
+  },
+  {
     name: "follow_up_questions.encrypted_question",
     async load(sql, afterId) {
       return rows(

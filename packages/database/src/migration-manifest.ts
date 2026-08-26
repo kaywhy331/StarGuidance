@@ -31,4 +31,5 @@ export const EXPECTED_MIGRATIONS = [
   "0023_output_provenance",
   "0024_immutable_content_versions",
   "0025_committed_draw_lifecycle",
+  "0026_relationship_profiles",
 ] as const;

@@ -15,6 +15,7 @@ import type {
   StoredOrder,
   StoredProfileVersion,
   StoredReading,
+  StoredRelationshipProfileVersion,
   StoredReport,
   UserSettingsRecord,
 } from "@starguidance/database";
@@ -183,6 +184,66 @@ export function createLocalRepositories(): ApplicationRepositories {
     },
     async list(userId: string) {
       return (await birthProfiles.listVersions(userId)).map(({ snapshot }) => snapshot);
+    },
+  };
+
+  const relationshipProfiles = {
+    async getActive(userId: string, relationshipProfileId: string) {
+      const root = localStore.relationshipProfileRoots.get(relationshipProfileId);
+      if (root?.userId !== userId) return undefined;
+      return localStore.relationshipProfileSnapshots.get(root.activeSnapshotId);
+    },
+    async getSnapshot(userId: string, snapshotId: string) {
+      const profile = localStore.relationshipProfileSnapshots.get(snapshotId);
+      const root = profile
+        ? localStore.relationshipProfileRoots.get(profile.relationshipProfileId)
+        : undefined;
+      return root?.userId === userId ? profile : undefined;
+    },
+    async listActive(userId: string) {
+      return [...localStore.relationshipProfileRoots.values()].flatMap((root) => {
+        if (root.userId !== userId) return [];
+        const profile = localStore.relationshipProfileSnapshots.get(root.activeSnapshotId);
+        return profile ? [profile] : [];
+      });
+    },
+    async listVersions(userId: string, relationshipProfileId?: string) {
+      return [...localStore.relationshipProfileSnapshots.values()]
+        .filter((profile) => {
+          const root = localStore.relationshipProfileRoots.get(profile.relationshipProfileId);
+          return (
+            root?.userId === userId &&
+            (relationshipProfileId === undefined ||
+              profile.relationshipProfileId === relationshipProfileId)
+          );
+        })
+        .sort((left, right) => left.snapshot.version - right.snapshot.version);
+    },
+    async saveVersion(userId: string, profile: StoredRelationshipProfileVersion) {
+      const root = localStore.relationshipProfileRoots.get(profile.relationshipProfileId);
+      if (root && root.userId !== userId) throw new Error("RELATIONSHIP_PROFILE_NOT_FOUND");
+      const existingVersions = await this.listVersions(userId, profile.relationshipProfileId);
+      const snapshot = {
+        ...profile.snapshot,
+        profileId: profile.relationshipProfileId,
+        version: (existingVersions.at(-1)?.snapshot.version ?? 0) + 1,
+      };
+      const stored = structuredClone({ ...profile, snapshot });
+      localStore.relationshipProfileSnapshots.set(snapshot.id, stored);
+      localStore.relationshipProfileRoots.set(profile.relationshipProfileId, {
+        userId,
+        activeSnapshotId: snapshot.id,
+      });
+      return snapshot;
+    },
+    async delete(userId: string, relationshipProfileId: string) {
+      const root = localStore.relationshipProfileRoots.get(relationshipProfileId);
+      if (root?.userId !== userId) return false;
+      localStore.relationshipProfileRoots.delete(relationshipProfileId);
+      for (const [snapshotId, profile] of localStore.relationshipProfileSnapshots)
+        if (profile.relationshipProfileId === relationshipProfileId)
+          localStore.relationshipProfileSnapshots.delete(snapshotId);
+      return true;
     },
   };
 
@@ -452,6 +513,7 @@ export function createLocalRepositories(): ApplicationRepositories {
         ...(storedSettings ? { settings: storedSettings } : {}),
         consents: await consents.list(userId),
         profiles: await birthProfiles.listVersions(userId),
+        relationshipProfiles: await relationshipProfiles.listVersions(userId),
         readings: await readingSessions.list(userId),
         feedback: [...localStore.feedback.values()].filter(
           (feedback) => feedback.userId === userId,
@@ -480,6 +542,12 @@ export function createLocalRepositories(): ApplicationRepositories {
           localStore.profileComponents.delete(id);
           localStore.profileTraits.delete(id);
         }
+      for (const [id, root] of localStore.relationshipProfileRoots)
+        if (root.userId === userId) localStore.relationshipProfileRoots.delete(id);
+      for (const [id, profile] of localStore.relationshipProfileSnapshots) {
+        const root = localStore.relationshipProfileRoots.get(profile.relationshipProfileId);
+        if (!root || root.userId === userId) localStore.relationshipProfileSnapshots.delete(id);
+      }
       for (const [token, id] of localStore.sessions)
         if (id === userId) localStore.sessions.delete(token);
       localStore.settings.delete(userId);
@@ -494,6 +562,7 @@ export function createLocalRepositories(): ApplicationRepositories {
     settings,
     consents,
     birthProfiles,
+    relationshipProfiles,
     profileSnapshots,
     profileComponents,
     traits,

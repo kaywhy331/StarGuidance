@@ -224,15 +224,12 @@ async function activeSnapshot(page: Page): Promise<{ id: string; version: number
 }
 
 async function createReading(page: Page, question: string): Promise<string> {
-  // One card is sufficient for persistence/isolation assertions and avoids
-  // burning the live provider's staging quota on content the gate never reads.
   // The preparation response intentionally contains no card assignment: the
-  // browser contributes fresh entropy only after the ritual is prepared.
+  // browser contributes fresh entropy only after the question-routed ritual is prepared.
   const prepared = await apiPost<{
     ceremony?: { token?: string; sessionId?: string; serverSeedCommitment?: string };
   }>(page, "/api/readings", {
     action: "prepare",
-    spreadId: "one-card",
     question,
     questionConfirmed: true,
     reversalMode: "reversals_enabled",
@@ -371,7 +368,7 @@ test("both identities create profiles and the profile survives refresh", async (
   // persistence suite commits the post-profile question route without depending
   // on Netlify's injected preview toolbar to observe a duplicate client transition.
   await navigateApp(pageA, "/readings", () =>
-    expect(pageA.getByLabel("Your private question")).toBeVisible({
+    expect(pageA.getByLabel("Your question for the stars")).toBeVisible({
       timeout: 15_000,
     }),
   );
@@ -385,7 +382,7 @@ test("both identities create profiles and the profile survives refresh", async (
   });
 
   await reloadApp(pageA, () =>
-    expect(pageA.getByLabel("Your private question")).toBeVisible({
+    expect(pageA.getByLabel("Your question for the stars")).toBeVisible({
       timeout: 15_000,
     }),
   );
@@ -506,13 +503,13 @@ test("a reading is created against the active snapshot with a locked draw", asyn
   const persistedProviderId = outputProvenance?.providerId ?? "";
   const liveProvenance =
     approvedLiveProviderIds.has(persistedProviderId) &&
-    ["reader-voice-v7", "reader-voice-v7-grounded"].includes(
+    ["reader-voice-v8", "reader-voice-v8-grounded"].includes(
       outputProvenance?.promptVersion ?? "",
     ) &&
     outputProvenance?.schemaVersion === "reading-result-v3";
   const deterministicProvenance =
     outputProvenance?.providerId === "deterministic-fallback-v1" &&
-    outputProvenance.promptVersion === "deterministic-fallback-v7" &&
+    outputProvenance.promptVersion === "deterministic-fallback-v8" &&
     outputProvenance.schemaVersion === "reading-result-v3";
   const configuredProvenance =
     interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
@@ -539,11 +536,11 @@ test("a reading is created against the active snapshot with a locked draw", asyn
         : outputProvenance?.providerId
           ? "other"
           : "absent";
-  const promptState = ["reader-voice-v7", "reader-voice-v7-grounded"].includes(
+  const promptState = ["reader-voice-v8", "reader-voice-v8-grounded"].includes(
     outputProvenance?.promptVersion ?? "",
   )
     ? "approved-live"
-    : outputProvenance?.promptVersion === "deterministic-fallback-v7"
+    : outputProvenance?.promptVersion === "deterministic-fallback-v8"
       ? "deterministic-fallback"
       : outputProvenance?.promptVersion
         ? "other"

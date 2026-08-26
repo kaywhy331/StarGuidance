@@ -23,7 +23,7 @@ const routing: Record<string, { milestone: string; owner: string; evidence: stri
     milestone: "M2/M3",
     owner: "Full-stack + profile-engine engineering",
     evidence:
-      "`apps/web/src/lib/repositories/profile-storage.test.ts`; `apps/profile-engine/tests`; `apps/web/tests/e2e/mvp.spec.ts`",
+      "`apps/web/src/lib/repositories/profile-storage.test.ts`; `apps/web/src/lib/related-person-lens.test.ts`; `packages/database/tests/migration-integrity.test.ts`; `apps/profile-engine/tests`; `apps/web/tests/e2e/mvp.spec.ts`",
   },
   CAL: {
     milestone: "M3",
@@ -34,7 +34,7 @@ const routing: Record<string, { milestone: string; owner: string; evidence: stri
     milestone: "M4",
     owner: "Full-stack + tarot content",
     evidence:
-      "`packages/tarot-content/tests`; `apps/web/src/lib/guest-reading-security.test.ts`; `apps/web/tests/e2e/guest-reading.spec.ts`; `apps/web/tests/e2e/mvp.spec.ts`",
+      "`packages/tarot-content/tests`; `packages/ai/tests/spread-selection.test.ts`; `apps/web/src/lib/guest-reading-security.test.ts`; `apps/web/tests/e2e/guest-reading.spec.ts`; `apps/web/tests/e2e/mvp.spec.ts`",
   },
   DRW: {
     milestone: "M4",

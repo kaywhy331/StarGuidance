@@ -135,6 +135,57 @@ describe("locked draw", () => {
     expect(cut.proof?.cutIndex).toBe(2);
   });
 
+  it("locks the exact unique fan positions pulled by the user", () => {
+    const serverSeed = Buffer.alloc(32, 17).toString("base64url");
+    const common = {
+      cards,
+      deckVersion: "test-deck-v1",
+      spread,
+      sessionId: "reading-user-picks",
+      serverSeed,
+      serverSeedCommitment: commitDrawServerSeed(serverSeed),
+      clientNonce: Buffer.alloc(32, 41).toString("base64url"),
+      cutIndex: 0,
+      reversalMode: "upright_only" as const,
+    };
+    const picked = finalizeCommittedDraw({ ...common, selectedIndexes: [7, 3, 5] });
+    const cardAt = (selectedIndex: number) =>
+      finalizeCommittedDraw({
+        ...common,
+        spread: { ...spread, positions: [spread.positions[0]!] },
+        selectedIndexes: [selectedIndex],
+      }).assignments[0]?.cardId;
+
+    expect(picked.assignments.map(({ cardId }) => cardId)).toEqual([
+      cardAt(7),
+      cardAt(3),
+      cardAt(5),
+    ]);
+    expect(picked.shuffleVersion).toBe("fisher-yates-committed-user-pick-v3");
+    expect(picked.proof?.selectedIndexes).toEqual([7, 3, 5]);
+  });
+
+  it("rejects duplicate or incomplete fan selections", () => {
+    const serverSeed = Buffer.alloc(32, 18).toString("base64url");
+    const input = {
+      cards,
+      deckVersion: "test-deck-v1",
+      spread,
+      sessionId: "reading-invalid-picks",
+      serverSeed,
+      serverSeedCommitment: commitDrawServerSeed(serverSeed),
+      clientNonce: Buffer.alloc(32, 42).toString("base64url"),
+      cutIndex: 0,
+      reversalMode: "upright_only" as const,
+    };
+    expect(() => finalizeCommittedDraw({ ...input, selectedIndexes: [1, 1, 2] })).toThrow(
+      /unique/i,
+    );
+    expect(() => finalizeCommittedDraw({ ...input, selectedIndexes: [1, 2] })).toThrow(
+      /match the spread/i,
+    );
+  });
+
   it("keeps every card upright when reversals are disabled", () => {
     const serverSeed = Buffer.alloc(32, 13).toString("base64url");
     const draw = finalizeCommittedDraw({

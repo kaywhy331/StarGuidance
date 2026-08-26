@@ -23,7 +23,8 @@ export const guestDeviceIdSchema = z.string().uuid();
 export const guestReadingPrepareInputSchema = z
   .object({
     action: z.literal("prepare"),
-    spreadId: z.enum(FREE_GUEST_SPREAD_IDS),
+    /** Accepted for recovery-compatible clients but ignored for new routing. */
+    spreadId: z.enum(FREE_GUEST_SPREAD_IDS).optional(),
     birthDate: birthDateSchema,
     question: z.string().trim().min(1).max(500),
     questionConfirmed: z.literal(true),
@@ -47,7 +48,14 @@ export const guestReadingActionSchema = z.discriminatedUnion("action", [
       action: z.literal("finalize"),
       ceremonyToken: z.string().min(32).max(65_536),
       clientNonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-      cutIndex: z.number().int().min(0).max(77),
+      cutIndex: z.number().int().min(0).max(77).default(0),
+      selectedIndexes: z
+        .array(z.number().int().min(0).max(77))
+        .min(1)
+        .max(10)
+        .refine((indexes) => new Set(indexes).size === indexes.length)
+        .readonly()
+        .optional(),
     })
     .strict(),
   z.object({ action: z.literal("recover"), receipt: z.string().min(32).max(65_536) }).strict(),
@@ -82,6 +90,7 @@ export const guestDrawSchema = z
         clientNonceHash: z.string().min(1),
         cutIndex: z.number().int().min(0).max(77),
         reversalMode: reversalModeSchema,
+        selectedIndexes: z.array(z.number().int().min(0).max(77)).max(10).readonly().optional(),
       })
       .strict()
       .optional(),

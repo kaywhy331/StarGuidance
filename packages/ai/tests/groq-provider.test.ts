@@ -90,7 +90,7 @@ describe("Groq transport boundaries", () => {
 
 describe("provider payload and response contract", () => {
   it("uses the concise, trait-integrated consultation contract for new readings", () => {
-    expect(PROMPT_VERSION).toBe("reader-voice-v7");
+    expect(PROMPT_VERSION).toBe("reader-voice-v8");
     expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain(
       "first sentence of directAnswer must take a clear",
     );
@@ -100,20 +100,38 @@ describe("provider payload and response contract", () => {
     expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain(
       "Sound like a reading, not an explainer",
     );
+    expect(REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading).toContain(
+      "readerLens and relationshipLens distinct",
+    );
   });
 
   it("omits all supplied traits in Pure Tarot", () => {
-    const payload = provider().buildPayload(generationInput("one-card", false));
+    const payload = provider().buildPayload({
+      ...generationInput("one-card", false),
+      relatedPersonContext: [
+        { mention: "@john-smith", relevantTraitStatements: ["may become impatient"] },
+      ],
+    });
     expect(payload.personalizationAllowed).toBe(false);
     expect(payload.readerLens).toEqual([]);
+    expect(payload.relationshipLens).toEqual([]);
     expect(JSON.stringify(payload)).not.toContain("birthDate");
     expect(JSON.stringify(payload)).not.toContain("fullName");
   });
 
   it("sends only minimized statements in Personalized Tarot", () => {
-    const payload = provider().buildPayload(generationInput("one-card", true));
+    const payload = provider().buildPayload({
+      ...generationInput("one-card", true),
+      relatedPersonContext: [
+        { mention: "@john-smith", relevantTraitStatements: ["may become impatient"] },
+      ],
+    });
     expect(payload.personalizationAllowed).toBe(true);
     expect(payload.readerLens).toEqual(["the reader prefers reversible experiments"]);
+    expect(payload.relationshipLens).toEqual([
+      { mention: "@john-smith", relevantTraitStatements: ["may become impatient"] },
+    ]);
+    expect(JSON.stringify(payload)).not.toContain("1990-05-10");
   });
 
   it("constrains unsupported one-card outlook sections to null", () => {

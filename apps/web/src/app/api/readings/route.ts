@@ -4,11 +4,13 @@ import {
   classifyQuestionContext,
   createInterpretationProvider,
   GUARDED_CATEGORIES,
+  recommendSpreadId,
   readingLensStatements,
   reviewTarotQuestion,
   selectReadingLens,
 } from "@starguidance/ai";
 import {
+  birthProfileInputSchema,
   drawFinalizationInputSchema,
   GENERAL_READING_QUESTION,
   personalizationModeSchema,
@@ -22,6 +24,10 @@ import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } f
 import { issueDrawCeremony, publicDrawCeremony, readDrawCeremony } from "@/lib/draw-ceremony";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
+import {
+  buildRelatedPersonReadingLens,
+  relatedPersonProviderContext,
+} from "@/lib/related-person-lens";
 import {
   classifyProductProvider,
   productModelVersion,
@@ -40,7 +46,7 @@ import { getRuntimeConfiguration, interpretationRuntimeOptions } from "@/lib/run
 const prepareInputSchema = z
   .object({
     action: z.literal("prepare"),
-    spreadId: z.string().min(1),
+    spreadId: z.string().min(1).optional(),
     question: z.string().trim().min(1).max(500),
     questionConfirmed: z.literal(true),
     reversalMode: reversalModeSchema.default("reversals_enabled"),
@@ -92,7 +98,10 @@ export async function POST(request: Request) {
     ) {
       const input = prepareInputSchema.parse(body);
       const idempotencyKey = idempotencyKeySchema.parse(request.headers.get("idempotency-key"));
-      const profile = await persistence.repositories.birthProfiles.getActive(user.id);
+      const [profile, relationshipProfiles] = await Promise.all([
+        persistence.repositories.birthProfiles.getActive(user.id),
+        persistence.repositories.relationshipProfiles?.listActive(user.id) ?? Promise.resolve([]),
+      ]);
       if (!profile)
         return NextResponse.json({ error: "Complete a private profile first." }, { status: 409 });
 
@@ -105,7 +114,18 @@ export async function POST(request: Request) {
           { safety, reflectionAcknowledgementRequired: true },
           { status: 409 },
         );
-      const spread = spreads.find(({ id }) => id === input.spreadId);
+      const enabledSpreadIds = runtimeConfiguration.content.enabledSpreadIds;
+      if (enabledSpreadIds.length === 0)
+        return NextResponse.json(
+          { error: "That spread is currently unavailable." },
+          { status: 409 },
+        );
+      const selectedSpreadId = recommendSpreadId({
+        question,
+        classification: questionClassification,
+        availableSpreadIds: enabledSpreadIds,
+      });
+      const spread = spreads.find(({ id }) => id === selectedSpreadId);
       if (!spread) return NextResponse.json({ error: "Unknown spread." }, { status: 404 });
       if (!runtimeConfiguration.content.enabledSpreadIds.includes(spread.id))
         return NextResponse.json(
@@ -166,6 +186,23 @@ export async function POST(request: Request) {
               tensionIndexes: [],
               statements: [],
             };
+      const relatedPersonLens =
+        input.personalizationMode === "personalized_tarot"
+          ? buildRelatedPersonReadingLens(
+              question,
+              relationshipProfiles.map((relatedProfile) => ({
+                profile: relatedProfile,
+                input: birthProfileInputSchema.parse(
+                  JSON.parse(
+                    persistence.decrypt(
+                      relatedProfile.encryptedInput,
+                      "related-person-profile-input",
+                    ),
+                  ),
+                ),
+              })),
+            )
+          : undefined;
       const { ceremony } = issueDrawCeremony(persistence, {
         userId: user.id,
         idempotencyKey,
@@ -176,6 +213,7 @@ export async function POST(request: Request) {
           traitIndexes: selectedLens.traitIndexes,
           tensionIndexes: selectedLens.tensionIndexes,
         },
+        ...(relatedPersonLens ? { relatedPersonLens } : {}),
         question,
         questionClassification,
         entitlementDecision,
@@ -298,6 +336,7 @@ export async function POST(request: Request) {
       serverSeedCommitment: ceremony.serverSeedCommitment,
       clientNonce: input.clientNonce,
       cutIndex: input.cutIndex,
+      ...(input.selectedIndexes ? { selectedIndexes: input.selectedIndexes } : {}),
       reversalMode: ceremony.configuration.reversalMode,
     });
     const now = new Date();
@@ -320,6 +359,14 @@ export async function POST(request: Request) {
       spreadId: ceremony.spread.id,
       configuration: ceremony.configuration,
       encryptedQuestion: persistence.encrypt(ceremony.question, "reading-question"),
+      ...(ceremony.relatedPersonLens
+        ? {
+            encryptedRelatedPersonLens: persistence.encrypt(
+              JSON.stringify(ceremony.relatedPersonLens),
+              "related-person-reading-lens",
+            ),
+          }
+        : {}),
       encryptedServerSeed: persistence.encrypt(ceremony.serverSeed, "draw-server-seed"),
       safetyClassification: ceremony.safetyClassification,
       draw,
@@ -401,6 +448,7 @@ export async function POST(request: Request) {
           question: ceremony.question,
           questionClassification: ceremony.questionClassification,
           relevantTraitStatements,
+          relatedPersonContext: relatedPersonProviderContext(ceremony.relatedPersonLens),
         });
         await persistence.repositories.outputs.save(user.id, reading.id, generated.result, {
           ...generated.provenance,

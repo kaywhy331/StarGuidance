@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { spreads } from "@starguidance/tarot-content";
 
 import { requireUser } from "@/lib/auth";
 import { persistenceFor } from "@/lib/persistence";
@@ -22,7 +21,6 @@ export default async function ReadingsPage() {
     getRuntimeConfiguration(),
   ]);
   const access = readingEntitlementDecision(readings, undefined, runtimeConfiguration.commerce);
-  const enabledSpreads = new Set(runtimeConfiguration.content.enabledSpreadIds);
   return (
     <ReadingChooser
       access={access}
@@ -33,18 +31,6 @@ export default async function ReadingsPage() {
       }
       {...(user.settings ? { initialPreferences: user.settings } : {})}
       sigilSeed={user.profile.snapshot.id}
-      spreads={spreads
-        .filter(({ id }) => enabledSpreads.has(id))
-        .map(({ id, version, name, purpose, estimatedMinutes, entitlementClass, positions }) => ({
-          id,
-          version,
-          name,
-          purpose,
-          estimatedMinutes,
-          entitlementClass,
-          count: positions.length,
-          positions,
-        }))}
     />
   );
 }

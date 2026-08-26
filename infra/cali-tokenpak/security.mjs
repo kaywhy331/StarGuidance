@@ -27,6 +27,7 @@ const MAX_SCHEMA_BYTES = 96 * 1024;
 const MAX_QUESTION_CHARACTERS = 500;
 const MAX_READER_LENS_STATEMENTS = 3;
 const MAX_READER_LENS_CHARACTERS = 1_000;
+const MAX_RELATIONSHIP_PROFILES = 3;
 const MAX_STRING_CHARACTERS = 4_000;
 const READING_SCHEMA_NAME = "reading";
 const FOLLOW_UP_SCHEMA_NAME = "follow_up";
@@ -63,6 +64,16 @@ const REVIEWED_PROMPT_HASHES = new Map([
   ["c8ba06f53174a390d4e4f81a4424c8ca21ec84ea56c6152ba961c00de319224d", READING_SCHEMA_NAME],
   ["5433ad4a583d6bc7f602e469603a776bc720d4dc9cc8c41efcc5d752d3cf4ae2", FOLLOW_UP_SCHEMA_NAME],
   ["67316989afc19f6bb2a3509e2bf358a56a199a2d98885ebd65d22c68d070fef4", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v8 relationship-aware reading, guarded reading, follow-up, and guarded follow-up.
+  ["c10de8b9a3b48a19262e8e9843831fb4d19d828a8a98df51d1765aaf3261c574", READING_SCHEMA_NAME],
+  ["9cb6602d933feaa03ea2e56272fed73d6de2b705ea308a1ff10e147dc8eec551", READING_SCHEMA_NAME],
+  ["92c762c3a1819c8e14fb733ecdbc46444ded91ee1834b39e69c80fefe0109e0c", FOLLOW_UP_SCHEMA_NAME],
+  ["85c70379c1be97e3a06e76b7a1960737ece9705dbcad06ae7a85e8c79d70007b", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v8-grounded reading, guarded reading, follow-up, and guarded follow-up.
+  ["3f59f91ed95eba46d890c28d999414c22289451874fab080764899992605fc99", READING_SCHEMA_NAME],
+  ["814d69b5c04e559cd9d1e5599b17a4b51f551dce5f0acd3411ed854931f2dd35", READING_SCHEMA_NAME],
+  ["cbf0ad2c2ef080e2365bbaa8d2cabd61f8977b35e26163d0c81263372b572256", FOLLOW_UP_SCHEMA_NAME],
+  ["de1486a7b95aa1ab85add23b18c1f7b6139681c694646b8b6c5d5e9fcc322ca1", FOLLOW_UP_SCHEMA_NAME],
 ]);
 const SPREAD_POSITIONS = new Map([
   ["one-card", ["card-1"]],
@@ -221,6 +232,25 @@ function validQuestionContext(value) {
       value.intent,
     ) &&
     typeof value.generalReading === "boolean"
+  );
+}
+
+function validRelationshipLens(value, personalizationAllowed) {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_RELATIONSHIP_PROFILES &&
+    (personalizationAllowed || value.length === 0) &&
+    value.every(
+      (profile) =>
+        exactObject(profile, ["mention", "relevantTraitStatements"]) &&
+        boundedString(profile.mention, 201) &&
+        /^@[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(profile.mention) &&
+        Array.isArray(profile.relevantTraitStatements) &&
+        profile.relevantTraitStatements.length <= MAX_READER_LENS_STATEMENTS &&
+        profile.relevantTraitStatements.every((statement) =>
+          boundedString(statement, MAX_READER_LENS_CHARACTERS),
+        ),
+    )
   );
 }
 
@@ -465,6 +495,7 @@ function validateReadingPayload(payload) {
       "answerPositionId",
       "cards",
       "readerLens",
+      "relationshipLens",
     ]) ||
     !boundedString(payload.question, MAX_QUESTION_CHARACTERS) ||
     !boundedString(payload.spreadId, 64) ||
@@ -480,7 +511,8 @@ function validateReadingPayload(payload) {
     !Array.isArray(payload.readerLens) ||
     payload.readerLens.length > MAX_READER_LENS_STATEMENTS ||
     payload.readerLens.some((statement) => !boundedString(statement, MAX_READER_LENS_CHARACTERS)) ||
-    (!payload.personalizationAllowed && payload.readerLens.length > 0)
+    (!payload.personalizationAllowed && payload.readerLens.length > 0) ||
+    !validRelationshipLens(payload.relationshipLens, payload.personalizationAllowed)
   )
     throw new Error("INVALID_STARGUIDANCE_PAYLOAD");
 
@@ -581,6 +613,7 @@ function validateFollowUpPayload(payload) {
       "answerPositionId",
       "cards",
       "readerLens",
+      "relationshipLens",
       "originalReading",
     ])
   )
@@ -597,6 +630,7 @@ function validateFollowUpPayload(payload) {
     answerPositionId: payload.answerPositionId,
     cards: payload.cards,
     readerLens: payload.readerLens,
+    relationshipLens: payload.relationshipLens,
   });
   if (
     !exactObject(payload.originalReading, [

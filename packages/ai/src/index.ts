@@ -40,13 +40,15 @@ import {
 } from "./fallback-narration";
 import type { RuntimePromptBundleId } from "./groq-provider";
 
+export { AUTOMATIC_SPREAD_SELECTION_VERSION, recommendSpreadId } from "./spread-selection";
+
 export interface InterpretationProvider<TInput, TOutput> {
   readonly id: string;
   generate(input: TInput, signal?: AbortSignal): Promise<TOutput>;
 }
 
 export const FALLBACK_PROVIDER_ID = "deterministic-fallback-v1" as const;
-export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v7" as const;
+export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v8" as const;
 export const READING_RESULT_SCHEMA_VERSION = "reading-result-v3" as const;
 
 export interface ReadingGenerationOutcome {
@@ -302,6 +304,10 @@ export interface ReadingGenerationInput {
   readonly question: string;
   readonly questionClassification: QuestionClassification;
   readonly relevantTraitStatements: readonly string[];
+  readonly relatedPersonContext?: readonly {
+    readonly mention: string;
+    readonly relevantTraitStatements: readonly string[];
+  }[];
 }
 
 export interface FollowUpGenerationInput extends ReadingGenerationInput {
@@ -541,7 +547,19 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       : openingNarration(answer, frame, traits[0]);
 
     const overallPattern = overallPatternNarration(resolved, frame);
-    const synthesis = turningPointNarration(answer, resolved, frame, traits[1] ?? traits[0]);
+    const baseSynthesis = turningPointNarration(answer, resolved, frame, traits[1] ?? traits[0]);
+    const relatedPerson =
+      input.configuration.personalizationMode === "personalized_tarot"
+        ? input.relatedPersonContext?.find(({ relevantTraitStatements }) =>
+            relevantTraitStatements.some(Boolean),
+          )
+        : undefined;
+    const readerTrait = naturalTrait(traits[0]);
+    const otherTrait = naturalTrait(relatedPerson?.relevantTraitStatements[0]);
+    const synthesis =
+      relatedPerson && otherTrait
+        ? `${baseSynthesis} In this connection, ${readerTrait ? `your tendency to ${readerTrait} may meet ` : "you may meet "}${relatedPerson.mention}'s tendency to ${otherTrait}. Treat that as a pattern to compare with observable behavior, not a claim about their private thoughts.`
+        : baseSynthesis;
 
     const trajectoryEntries = input.configuration.capabilities.trajectoryPositionIds.flatMap(
       (positionId) => {
@@ -575,7 +593,13 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       input.relevantTraitStatements.length > 0
         ? {
             label: "Personalized reflection" as const,
-            observations: input.relevantTraitStatements.slice(0, 3).map((trait) => trait.trim()),
+            observations: [
+              ...input.relevantTraitStatements.slice(0, 3).map((trait) => trait.trim()),
+              ...(input.relatedPersonContext ?? []).flatMap(
+                ({ mention, relevantTraitStatements }) =>
+                  relevantTraitStatements.slice(0, 1).map((trait) => `${mention}: ${trait.trim()}`),
+              ),
+            ].slice(0, 3),
           }
         : null;
 
@@ -630,6 +654,10 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       input.configuration.personalizationMode === "personalized_tarot"
         ? naturalTrait(input.relevantTraitStatements[0])
         : undefined;
+    const relatedPerson = input.relatedPersonContext?.find(({ relevantTraitStatements }) =>
+      relevantTraitStatements.some(Boolean),
+    );
+    const relatedTrait = naturalTrait(relatedPerson?.relevantTraitStatements[0]);
     const answerMeaning = spokenCardMeaning(answer.card, answer.orientation);
     const agency = input.originalResult.userAgency
       .replace(/[.?!]+$/, "")
@@ -644,6 +672,9 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
           trait
             ? `Because ${trait}, the clarification is to notice when that familiar response begins and choose from the evidence instead.`
             : "The clarification is to wait for one observable change, then respond to what actually happens rather than to the fear of what might happen.",
+          relatedPerson && relatedTrait
+            ? `With ${relatedPerson.mention}, compare that evidence with their possible tendency to ${relatedTrait}; do not assume it explains their private motives.`
+            : "Keep the other person's private motives open until their behavior or an honest conversation gives you evidence.",
           `For now, ${agency}.`,
         ].join(" "),
       }),

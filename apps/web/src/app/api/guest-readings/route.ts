@@ -5,6 +5,7 @@ import {
   classifyQuestionContext,
   DeterministicFallbackProvider,
   GUARDED_CATEGORIES,
+  recommendSpreadId,
   reviewTarotQuestion,
 } from "@starguidance/ai";
 import { DECK_VERSION, findSpread, spreads, tarotCards } from "@starguidance/tarot-content";
@@ -13,6 +14,7 @@ import { z } from "zod";
 
 import { readingConfiguration } from "@/lib/draw-ceremony";
 import {
+  FREE_GUEST_SPREAD_IDS,
   GUEST_DEVICE_HEADER,
   guestDeviceIdSchema,
   guestReadingActionSchema,
@@ -174,7 +176,12 @@ export async function POST(request: Request) {
         return noStore(
           NextResponse.json({ safety, reflectionAcknowledgementRequired: true }, { status: 409 }),
         );
-      const spread = spreads.find(({ id }) => id === input.spreadId);
+      const selectedSpreadId = recommendSpreadId({
+        question: input.question,
+        classification: questionClassification,
+        availableSpreadIds: FREE_GUEST_SPREAD_IDS,
+      });
+      const spread = spreads.find(({ id }) => id === selectedSpreadId);
       if (!spread)
         return noStore(
           NextResponse.json({ error: "That free spread is unavailable." }, { status: 404 }),
@@ -226,6 +233,7 @@ export async function POST(request: Request) {
       serverSeedCommitment: ceremony.serverSeedCommitment,
       clientNonce: input.clientNonce,
       cutIndex: input.cutIndex,
+      ...(input.selectedIndexes ? { selectedIndexes: input.selectedIndexes } : {}),
       reversalMode: ceremony.configuration.reversalMode,
     });
     const relevantTraitStatements =

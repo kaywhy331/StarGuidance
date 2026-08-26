@@ -28,7 +28,9 @@ let baseUrl: string;
 interface FinalizedGuestReading {
   readonly reading: {
     readonly cards: readonly { cardId: string; orientation: "upright" | "reversed" }[];
-    readonly draw: { readonly proof?: { readonly cutIndex?: number } };
+    readonly draw: {
+      readonly proof?: { readonly cutIndex?: number; readonly selectedIndexes?: readonly number[] };
+    };
     readonly result?: unknown;
   };
 }
@@ -111,29 +113,19 @@ test("a birthday-based free reading remains causal and continues through passwor
     "/free-reading",
   );
   await navigate(page, "/free-reading", () =>
-    expect(
-      page.getByRole("heading", { name: "What would you like the cards to illuminate?" }),
-    ).toBeVisible({ timeout: 30_000 }),
+    expect(page.getByLabel("Your birthday")).toBeVisible({ timeout: 30_000 }),
   );
 
   await page.getByRole("button", { name: "Reduce motion" }).click();
-  await expect(page.getByRole("button", { name: "Review my question" })).toBeDisabled();
   await page.getByLabel("Your birthday").fill("1990-01-15");
   await page.getByLabel(/I agree to the Terms/i).check();
   await page.getByLabel(/I have read the Privacy Notice/i).check();
-  await page.getByLabel(/I confirm that I am at least 18/i).check();
   await page
-    .getByLabel("Your private guest question")
-    .fill("What can I understand about the next step in my work?");
-  await page.getByRole("button", { name: "Review my question" }).click();
-  await expect(page.getByTestId("guest-question-confirmation")).toBeVisible();
-  await page.getByRole("button", { name: "Confirm this question" }).click();
-
-  const spreadOptions = page.getByRole("radiogroup", { name: "Free reading type" });
-  await expect(spreadOptions).toBeVisible();
-  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Situation");
-  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Challenge");
-  await expect(page.getByTestId("guest-spread-position-preview")).toContainText("Direction");
+    .getByLabel(/I confirm that I am at least 18/i)
+    .evaluate((checkbox: HTMLInputElement) => checkbox.click());
+  await expect(
+    page.getByRole("heading", { name: "What question did you have for the stars today?" }),
+  ).toBeVisible();
 
   const preparation = page.waitForResponse(
     (response) =>
@@ -143,22 +135,24 @@ test("a birthday-based free reading remains causal and continues through passwor
     { timeout: 60_000 },
   );
   await page
-    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
-    .click();
+    .getByLabel("Your question for the stars")
+    .fill("What can I understand about the next step in my work?");
+  await page.getByRole("button", { name: "Send question" }).click();
   const preparedResponse = await preparation;
-  const preparedBody = await preparedResponse.json();
+  const preparedBody = (await preparedResponse.json()) as {
+    ceremony: { spread: { positions: readonly unknown[] } };
+  };
   expect(preparedResponse.status(), "guest draw commitment is created").toBe(201);
-  expect(JSON.stringify(preparedBody), "no card is assigned before shuffle and cut").not.toMatch(
+  expect(JSON.stringify(preparedBody), "no card is assigned before user selection").not.toMatch(
     /"cardId"|"assignments"|"orientation"/,
   );
 
-  await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
     "data-ritual-phase",
     "shuffling",
   );
-  await page.getByRole("button", { name: "Finish shuffling" }).click();
-  await expect(page.getByText("Cut the deck, if you wish")).toBeVisible();
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
+  await page.getByRole("button", { name: "Gather the cards" }).click();
 
   const finalization = page.waitForResponse(
     (response) =>
@@ -167,17 +161,22 @@ test("a birthday-based free reading remains causal and continues through passwor
       response.request().postData()?.includes('"action":"finalize"') === true,
     { timeout: 60_000 },
   );
-  const cutDeck = page.getByTestId("ritual-cut-deck");
-  const cutBounds = await cutDeck.boundingBox();
-  if (!cutBounds) throw new Error("The immersive cut deck is not visible.");
-  await cutDeck.click({
-    position: { x: cutBounds.width / 2, y: cutBounds.height / 2 },
-  });
+  const cardCount = preparedBody.ceremony.spread.positions.length;
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
+  for (let index = 1; index <= cardCount; index += 1)
+    await page
+      .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
+      .press("Enter");
   const finalizedResponse = await finalization;
   const finalized = (await finalizedResponse.json()) as FinalizedGuestReading;
-  expect(finalizedResponse.status(), "guest draw finalizes after the selected cut").toBe(201);
-  expect(finalized.reading.draw.proof?.cutIndex, "the selected cut changes the offset").toBe(39);
-  expect(finalized.reading.cards).toHaveLength(3);
+  expect(finalizedResponse.status(), "guest draw finalizes after the selected backs").toBe(201);
+  expect(finalized.reading.draw.proof?.selectedIndexes).toHaveLength(cardCount);
+  expect(finalized.reading.draw.proof?.cutIndex, "new casino-wash sessions do not add a cut").toBe(
+    0,
+  );
+  expect(finalized.reading.cards).toHaveLength(cardCount);
   expect(finalized.reading.result, "whole-reading prose remains private before reveal").toBe(
     undefined,
   );
@@ -198,7 +197,7 @@ test("a birthday-based free reading remains causal and continues through passwor
 
   await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
-  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(cardCount);
   await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
   await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
     "data-reading-focus",
@@ -286,15 +285,14 @@ test("a birthday-based free reading remains causal and continues through passwor
     section: "Guest reading",
     check: "Birthday-based reading is available before account creation",
     status: "pass",
-    detail:
-      "required birthday, confirmed question, and three immutable positions completed anonymously",
+    detail: "required birthday, direct question, and immutable positions completed anonymously",
   });
   record({
     section: "Guest reading",
-    check: "Shuffle and selected cut causally finalize the draw",
+    check: "Casino wash and selected backs causally finalize the draw",
     status: "pass",
     detail:
-      "the commitment exposed no assignments; finalization persisted three cards at non-zero cut offset 39",
+      "the commitment exposed no assignments; finalization persisted the user-picked hidden indexes",
   });
   record({
     section: "Guest reading",

@@ -166,7 +166,21 @@ export const drawFinalizationInputSchema = z
     action: z.literal("finalize"),
     ceremonyToken: z.string().min(32).max(65_536),
     clientNonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-    cutIndex: z.number().int().min(0).max(77),
+    /** Retained for verification of historical cut-based ceremonies. New
+     * casino-wash readings leave the gathered deck uncut. */
+    cutIndex: z.number().int().min(0).max(77).default(0),
+    /** Zero-based positions the person pulled from the already shuffled,
+     * face-down fan, in the order they selected them. Card identities are
+     * still unknown to both the browser and narrator at this boundary. */
+    selectedIndexes: z
+      .array(z.number().int().min(0).max(77))
+      .min(1)
+      .max(10)
+      .refine((indexes) => new Set(indexes).size === indexes.length, {
+        message: "Selected card positions must be unique.",
+      })
+      .readonly()
+      .optional(),
   })
   .strict();
 

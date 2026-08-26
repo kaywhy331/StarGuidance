@@ -58,15 +58,18 @@ async function createReading(page: Page): Promise<void> {
     .check();
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
-  await page.getByLabel("Your private question").fill("What should I notice now?");
-  await page.getByRole("button", { name: "Review my question" }).click();
-  await page.getByRole("button", { name: "Confirm this question" }).click();
   await page
-    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
-    .click();
-  await page.getByRole("button", { name: "Begin the shuffle" }).click();
-  await page.getByRole("button", { name: "Finish shuffling" }).click();
-  await page.getByRole("button", { name: "Continue without a cut" }).click();
+    .getByLabel("Your question for the stars")
+    .fill("How can I understand the uncertainty I feel right now?");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Gather the cards" }).click();
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 10_000 });
+  for (let index = 1; index <= 3; index += 1)
+    await page
+      .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
+      .press("Enter");
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   // Keep the accessibility suite fast while exercising the same centered,
   // reader-controlled sequence through standard buttons.
@@ -76,8 +79,7 @@ async function createReading(page: Page): Promise<void> {
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
   const sanctuary = page.getByTestId("mystic-sanctuary-scene");
   await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
-  // Reduced motion advances the shuffle automatically. Avoid racing the
-  // short-lived Gather now button in slower WebKit runs.
+  // The draw is already locked; reduced motion keeps deal/reveal transitions immediate.
   await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
     timeout: 20_000,
   });
@@ -124,9 +126,7 @@ test("the account-free reading threshold exposes valid automated WCAG semantics"
   page,
 }) => {
   await page.goto("/free-reading");
-  await expect(
-    page.getByRole("heading", { name: "What would you like the cards to illuminate?" }),
-  ).toBeVisible();
+  await expect(page.getByLabel("Your birthday")).toBeVisible();
   let scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   expect(
     scan.violations
@@ -134,7 +134,13 @@ test("the account-free reading threshold exposes valid automated WCAG semantics"
       .map(({ id }) => id),
   ).toEqual([]);
 
-  await expect(page.getByLabel("Your private guest question")).toBeVisible();
+  await page.getByLabel("Your birthday").fill("1990-01-15");
+  await page.getByLabel(/I agree to the Terms/i).check();
+  await page.getByLabel(/I have read the Privacy Notice/i).check();
+  await page
+    .getByLabel(/I confirm that I am at least 18/i)
+    .evaluate((checkbox: HTMLInputElement) => checkbox.click());
+  await expect(page.getByLabel("Your question for the stars")).toBeVisible();
   scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   expect(
     scan.violations

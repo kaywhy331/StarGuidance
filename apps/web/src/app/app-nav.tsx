@@ -9,6 +9,7 @@ const links = [
   ["History", "/history", "◴"],
   ["Reports", "/reports", "⌑"],
   ["Profile", "/profile", "◇"],
+  ["People", "/people", "♊"],
   ["Account", "/settings/account", "○"],
   ["Privacy", "/settings/privacy", "◈"],
 ] as const;

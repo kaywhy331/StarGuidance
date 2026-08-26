@@ -31,6 +31,7 @@ import type {
   StoredOrder,
   StoredProfileVersion,
   StoredReading,
+  StoredRelationshipProfileVersion,
   StoredReport,
   UserSettingsRecord,
   DatabaseClient,
@@ -96,6 +97,14 @@ function profileFromRow(row: DatabaseRow): StoredProfileVersion {
     encryptedInput: String(row.encrypted_input),
     encryptedCalculations: String(row.encrypted_calculations),
     snapshot: profileSnapshotSchema.parse(payload.snapshot),
+  };
+}
+
+function relationshipProfileFromRow(row: DatabaseRow): StoredRelationshipProfileVersion {
+  const profile = profileFromRow(row);
+  return {
+    ...profile,
+    relationshipProfileId: String(row.relationship_profile_id),
   };
 }
 
@@ -425,6 +434,114 @@ export function createPostgresRepositories(
     },
   };
 
+  const relationshipProfiles = {
+    async getActive(userId: string, relationshipProfileId: string) {
+      return userTransaction(userId, async (tx) => {
+        const [row] = await tx`
+          select rps.relationship_profile_id, rps.encrypted_input,
+            rps.encrypted_calculations, rps.derived_payload
+          from relationship_profiles rp
+          join relationship_profile_snapshots rps on rps.id = rp.active_snapshot_id
+          where rp.user_id = ${userId} and rp.id = ${relationshipProfileId}
+        `;
+        return row ? relationshipProfileFromRow(row) : undefined;
+      });
+    },
+    async getSnapshot(userId: string, snapshotId: string) {
+      return userTransaction(userId, async (tx) => {
+        const [row] = await tx`
+          select relationship_profile_id, encrypted_input, encrypted_calculations, derived_payload
+          from relationship_profile_snapshots
+          where user_id = ${userId} and id = ${snapshotId}
+        `;
+        return row ? relationshipProfileFromRow(row) : undefined;
+      });
+    },
+    async listActive(userId: string) {
+      return userTransaction(userId, async (tx) => {
+        const rows = await tx`
+          select rps.relationship_profile_id, rps.encrypted_input,
+            rps.encrypted_calculations, rps.derived_payload
+          from relationship_profiles rp
+          join relationship_profile_snapshots rps on rps.id = rp.active_snapshot_id
+          where rp.user_id = ${userId}
+          order by rp.updated_at desc, rp.id
+        `;
+        return rows.map(relationshipProfileFromRow);
+      });
+    },
+    async listVersions(userId: string, relationshipProfileId?: string) {
+      return userTransaction(userId, async (tx) => {
+        const rows = relationshipProfileId
+          ? await tx`
+              select relationship_profile_id, encrypted_input, encrypted_calculations,
+                derived_payload
+              from relationship_profile_snapshots
+              where user_id = ${userId} and relationship_profile_id = ${relationshipProfileId}
+              order by version, id
+            `
+          : await tx`
+              select relationship_profile_id, encrypted_input, encrypted_calculations,
+                derived_payload
+              from relationship_profile_snapshots
+              where user_id = ${userId}
+              order by relationship_profile_id, version, id
+            `;
+        return rows.map(relationshipProfileFromRow);
+      });
+    },
+    async saveVersion(userId: string, profile: StoredRelationshipProfileVersion) {
+      return userTransaction(userId, async (tx) => {
+        await tx`
+          insert into relationship_profiles (id, user_id)
+          values (${profile.relationshipProfileId}, ${userId})
+          on conflict (id) do nothing
+        `;
+        const [root] = await tx`
+          select id from relationship_profiles
+          where id = ${profile.relationshipProfileId} and user_id = ${userId}
+          for update
+        `;
+        if (!root) throw new Error("RELATIONSHIP_PROFILE_NOT_FOUND");
+        const [versionRow] = await tx`
+          select coalesce(max(version), 0)::integer as version
+          from relationship_profile_snapshots
+          where relationship_profile_id = ${profile.relationshipProfileId}
+        `;
+        const snapshot = {
+          ...profile.snapshot,
+          profileId: profile.relationshipProfileId,
+          version: Number(versionRow?.version ?? 0) + 1,
+        };
+        await tx`
+          insert into relationship_profile_snapshots (
+            id, user_id, relationship_profile_id, version, encrypted_input,
+            encrypted_calculations, derived_payload, created_at
+          ) values (
+            ${snapshot.id}, ${userId}, ${profile.relationshipProfileId}, ${snapshot.version},
+            ${profile.encryptedInput}, ${profile.encryptedCalculations},
+            ${tx.json(json(profileDerivedPayload(snapshot)))}, ${snapshot.createdAt}
+          )
+        `;
+        await tx`
+          update relationship_profiles set active_snapshot_id = ${snapshot.id}, updated_at = now()
+          where id = ${profile.relationshipProfileId} and user_id = ${userId}
+        `;
+        return snapshot;
+      });
+    },
+    async delete(userId: string, relationshipProfileId: string) {
+      return userTransaction(userId, async (tx) => {
+        const rows = await tx`
+          delete from relationship_profiles
+          where id = ${relationshipProfileId} and user_id = ${userId}
+          returning id
+        `;
+        return rows.length === 1;
+      });
+    },
+  };
+
   const profileComponents = {
     async list(userId: string, snapshotId: string): Promise<ProfileComponentRecord[]> {
       return userTransaction(userId, async (tx) => {
@@ -516,6 +633,9 @@ export function createPostgresRepositories(
         ? readingConfigurationSchema.parse(row.configuration)
         : historicalReadingConfiguration(row),
       encryptedQuestion: String(row.encrypted_question),
+      ...(row.encrypted_related_person_lens
+        ? { encryptedRelatedPersonLens: String(row.encrypted_related_person_lens) }
+        : {}),
       ...(drawRow.encrypted_server_seed
         ? { encryptedServerSeed: String(drawRow.encrypted_server_seed) }
         : {}),
@@ -573,13 +693,14 @@ export function createPostgresRepositories(
         const [created] = await tx`
           insert into reading_sessions (
             id, user_id, profile_snapshot_id, spread_id, spread_version, idempotency_key,
-            encrypted_question,
+            encrypted_question, encrypted_related_person_lens,
             reading_lens, configuration, question_classification, entitlement_decision,
             ritual_progress, expires_at,
             safety_classification, state, created_at
           ) values (
             ${reading.id}, ${reading.userId}, ${reading.profileSnapshotId}, ${reading.spreadId},
             ${reading.draw.spreadVersion}, ${reading.idempotencyKey}, ${reading.encryptedQuestion},
+            ${reading.encryptedRelatedPersonLens ?? null},
             ${tx.json(json(reading.readingLens))},
             ${tx.json(json(reading.configuration))},
             ${tx.json(json(reading.questionClassification))},
@@ -1178,6 +1299,7 @@ export function createPostgresRepositories(
         ...(userSettings ? { settings: userSettings } : {}),
         consents: await consents.list(userId),
         profiles: await birthProfiles.listVersions(userId),
+        relationshipProfiles: await relationshipProfiles.listVersions(userId),
         readings: await readingSessions.list(userId),
         feedback: await feedback.list(userId),
         reports: await reports.listForExport(userId),
@@ -1196,6 +1318,7 @@ export function createPostgresRepositories(
     settings,
     consents,
     birthProfiles,
+    relationshipProfiles,
     profileSnapshots,
     profileComponents,
     traits,

@@ -244,33 +244,35 @@ test("critical deployed flows pass automated WCAG rules", async () => {
         "did not settle; the scanner resumed through a directly committed application route",
     });
     await navigateForScan(page, "/readings", () =>
-      expect(page.getByLabel("Your private question")).toBeVisible({
+      expect(page.getByLabel("Your question for the stars")).toBeVisible({
         timeout: 15_000,
       }),
     );
   }
-  await expect(page.getByLabel("Your private question")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByLabel("Your question for the stars")).toBeVisible({ timeout: 15_000 });
   await scan("reading question");
-  await page.getByLabel("Your private question").fill("What deserves my attention now?");
-  await page.getByRole("button", { name: "Review my question" }).click();
-  await expect(page.getByRole("button", { name: "Confirm this question" })).toBeVisible();
-  await scan("question confirmation");
-  await page.getByRole("button", { name: "Confirm this question" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Select a spread for your confirmed question" }),
-  ).toBeVisible();
-  await scan("reading selection");
+  const preparationPromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/readings" &&
+      response.request().method() === "POST" &&
+      response.request().postData()?.includes('"action":"prepare"') === true,
+    { timeout: 60_000 },
+  );
   await page
-    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
-    .click();
-  await expect(page.getByRole("button", { name: "Begin the shuffle" })).toBeVisible();
-  await scan("reading focus");
-  await page.getByRole("button", { name: "Begin the shuffle" }).click();
-  await expect(page.getByRole("button", { name: "Finish shuffling" })).toBeVisible();
+    .getByLabel("Your question for the stars")
+    .fill("What deserves my attention now as I decide my next step?");
+  await page.getByRole("button", { name: "Send question" }).click();
+  const preparationResponse = await preparationPromise;
+  const preparation = (await preparationResponse.json()) as {
+    ceremony: { spread: { positions: readonly unknown[] } };
+  };
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   await scan("reading shuffle");
-  await page.getByRole("button", { name: "Finish shuffling" }).click();
-  await expect(page.getByRole("button", { name: "Continue without a cut" })).toBeVisible();
-  await scan("optional deck cut");
+  await page.getByRole("button", { name: "Gather the cards" }).click();
+  await expect(page.getByRole("button", { name: "Choose face-down card 1" })).toBeEnabled({
+    timeout: 10_000,
+  });
+  await scan("card selection fan");
   const readingResponsePromise = page
     .waitForResponse(
       (response) =>
@@ -280,7 +282,10 @@ test("critical deployed flows pass automated WCAG rules", async () => {
       { timeout: 60_000 },
     )
     .catch(() => undefined);
-  await page.getByRole("button", { name: "Continue without a cut" }).click();
+  for (let index = 1; index <= preparation.ceremony.spread.positions.length; index += 1)
+    await page
+      .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
+      .press("Enter");
   const readingResponse = await readingResponsePromise;
   try {
     await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, {
