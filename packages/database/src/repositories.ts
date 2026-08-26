@@ -38,6 +38,13 @@ export interface StoredProfileVersion {
   snapshot: ProfileSnapshot;
 }
 
+/** A private, versioned profile for a person the account owner knows. Raw
+ * birth inputs and full calculations remain encrypted; only the normalized
+ * snapshot is available to server-side lens selection. */
+export interface StoredRelationshipProfileVersion extends StoredProfileVersion {
+  relationshipProfileId: string;
+}
+
 export interface ProfileComponentRecord {
   snapshotId: string;
   system: string;
@@ -90,6 +97,7 @@ export interface StoredReading {
   spreadId: string;
   configuration: ReadingConfiguration;
   encryptedQuestion: string;
+  encryptedRelatedPersonLens?: string;
   encryptedServerSeed?: string;
   safetyClassification: string;
   draw: LockedDraw;
@@ -169,6 +177,24 @@ export interface BirthProfileRepository {
   saveVersion(userId: string, profile: StoredProfileVersion): Promise<ProfileSnapshot>;
   listVersions(userId: string): Promise<StoredProfileVersion[]>;
   delete(userId: string): Promise<boolean>;
+}
+
+export interface RelationshipProfileRepository {
+  getActive(
+    userId: string,
+    relationshipProfileId: string,
+  ): Promise<StoredRelationshipProfileVersion | undefined>;
+  getSnapshot(
+    userId: string,
+    snapshotId: string,
+  ): Promise<StoredRelationshipProfileVersion | undefined>;
+  listActive(userId: string): Promise<StoredRelationshipProfileVersion[]>;
+  listVersions(
+    userId: string,
+    relationshipProfileId?: string,
+  ): Promise<StoredRelationshipProfileVersion[]>;
+  saveVersion(userId: string, profile: StoredRelationshipProfileVersion): Promise<ProfileSnapshot>;
+  delete(userId: string, relationshipProfileId: string): Promise<boolean>;
 }
 
 export interface ProfileSnapshotRepository {
@@ -302,6 +328,7 @@ export interface PrivacyRepository {
     settings?: UserSettingsRecord;
     consents: ConsentRecord[];
     profiles: StoredProfileVersion[];
+    relationshipProfiles: StoredRelationshipProfileVersion[];
     readings: StoredReading[];
     feedback: StoredFeedback[];
     reports: StoredReport[];
@@ -317,6 +344,7 @@ export interface ApplicationRepositories {
   settings: SettingsRepository;
   consents: ConsentRepository;
   birthProfiles: BirthProfileRepository;
+  relationshipProfiles: RelationshipProfileRepository;
   profileSnapshots: ProfileSnapshotRepository;
   profileComponents: ProfileComponentRepository;
   traits: TraitRepository;

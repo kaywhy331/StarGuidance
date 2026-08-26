@@ -147,6 +147,9 @@ export interface LockedDraw {
         readonly clientNonceHash: string;
         readonly cutIndex: number;
         readonly reversalMode: ReversalMode;
+        /** Fan positions intentionally pulled by the user. Historical
+         * cut-based draws legitimately omit this field. */
+        readonly selectedIndexes?: readonly number[] | undefined;
       }
     | undefined;
   readonly lockedAt: string;

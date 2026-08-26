@@ -111,22 +111,20 @@ export async function createAccountAndProfileViaApi(page: Page) {
     `Synthetic profile setup failed: ${result.profileBody || result.authBody}`,
   ).toMatchObject({ authStatus: 200, profileStatus: 201 });
   await page.goto("/readings");
-  await expect(page.getByLabel("Your private question")).toBeVisible();
+  await expect(page.getByLabel("Your question for the stars")).toBeVisible();
 }
 
 export async function reviewAndConfirmQuestion(page: Page, question: string) {
-  await expect(page.getByLabel("Your private question")).toBeVisible();
-  await page.getByLabel("Your private question").fill(question);
-  const reviewResponse = page.waitForResponse(
+  await expect(page.getByLabel("Your question for the stars")).toBeVisible();
+  await page.getByLabel("Your question for the stars").fill(question);
+  const prepareResponse = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       new URL(response.url()).pathname === "/api/readings" &&
-      response.request().postData()?.includes('"action":"review"') === true,
+      response.request().postData()?.includes('"action":"prepare"') === true,
   );
-  await page.getByRole("button", { name: "Review my question" }).click();
-  expect((await reviewResponse).status()).toBe(200);
-  await expect(page.getByTestId("question-confirmation")).toContainText(question);
-  await page.getByRole("button", { name: "Confirm this question" }).click();
+  await page.getByRole("button", { name: "Send question" }).click();
+  return prepareResponse;
 }
 
 export async function prepareReadingViaApi(
@@ -285,58 +283,27 @@ export async function beginReadingThroughUi(
   } = {},
 ) {
   const question = options.question ?? "What should I understand about my next grounded step?";
-  const spreadId = options.spreadId ?? "three-card";
-  await reviewAndConfirmQuestion(page, question);
-  await page.locator(`input[name="spread"][value="${spreadId}"]`).check();
-  await expect(page.getByTestId("spread-position-preview")).toBeVisible();
-  const spreadLabel =
-    options.spreadName ??
-    {
-      "one-card": "Single Card — Focus",
-      "three-card": "Three Cards — Situation, Challenge, Direction",
-      crossroads: "Five Cards — Crossroads",
-      outlook: "Seven Cards — Deeper Outlook",
-    }[spreadId];
-  const preparation = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === "/api/readings" &&
-      response.request().postData()?.includes('"action":"prepare"') === true,
-  );
-  await page.getByRole("button", { name: `Confirm ${spreadLabel}` }).click();
-  const preparedResponse = await preparation;
+  const preparedResponse = await reviewAndConfirmQuestion(page, question);
   expect(preparedResponse.status()).toBe(201);
-  const preparedBody = await preparedResponse.json();
+  const preparedBody = (await preparedResponse.json()) as { ceremony: PreparedCeremony };
   expect(JSON.stringify(preparedBody)).not.toMatch(/"cardId"|"assignments"|"orientation"/);
-  await page.getByRole("button", { name: "Begin the shuffle" }).click();
   await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
     "data-ritual-phase",
     "shuffling",
   );
-  await page.getByRole("button", { name: "Finish shuffling" }).click();
-  await expect(page.getByText("Cut the deck, if you wish")).toBeVisible();
+  await expect(page.getByTestId("casino-wash-deck").locator(".casino-card-shell")).toHaveCount(78);
+  await page.getByRole("button", { name: "Gather the cards" }).click();
   const finalization = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       new URL(response.url()).pathname === "/api/readings" &&
       response.request().postData()?.includes('"action":"finalize"') === true,
   );
-  const cutChoice = options.cutButton ?? "No cut";
-  if (cutChoice === "No cut") {
-    await page.getByRole("button", { name: "Continue without a cut" }).click();
-  } else {
-    const cutIndex = {
-      "Cut near the top": 20,
-      "Cut at the center": 39,
-      "Cut deeper": 58,
-    }[cutChoice];
-    const deck = page.getByTestId("ritual-cut-deck");
-    const bounds = await deck.boundingBox();
-    if (!bounds) throw new Error("The immersive cut deck is not visible.");
-    await deck.click({
-      position: { x: bounds.width / 2, y: (bounds.height * cutIndex) / 78 },
-    });
-  }
+  const cardCount = preparedBody.ceremony.spread.positions.length;
+  for (let index = 0; index < cardCount; index += 1)
+    await page
+      .getByRole("button", { name: `Choose face-down card ${index + 1}`, exact: true })
+      .press("Enter");
   expect((await finalization).status()).toBe(201);
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   return page.url().split("/").at(-1) as string;

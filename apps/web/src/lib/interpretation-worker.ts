@@ -12,6 +12,7 @@ import {
 import { createInterpretationProvider, readingLensStatements } from "@starguidance/ai";
 
 import { persistenceFor } from "./persistence";
+import { parseRelatedPersonReadingLens, relatedPersonProviderContext } from "./related-person-lens";
 import {
   classifyProductProvider,
   productDurationBucket,
@@ -83,6 +84,13 @@ async function processJob(
       reading.configuration.personalizationMode === "personalized_tarot" && snapshot
         ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
         : [];
+    const relatedPersonContext = reading.encryptedRelatedPersonLens
+      ? relatedPersonProviderContext(
+          parseRelatedPersonReadingLens(
+            persistence.decrypt(reading.encryptedRelatedPersonLens, "related-person-reading-lens"),
+          ),
+        )
+      : [];
     generationStartedAt = Date.now();
     const generated = await createInterpretationProvider(
       interpretationRuntimeOptions(runtimeConfiguration),
@@ -92,6 +100,7 @@ async function processJob(
       question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
       questionClassification: reading.questionClassification,
       relevantTraitStatements,
+      relatedPersonContext,
     });
     const written = await actorTransaction(sql, job.userId, (tx) =>
       writeInterpretationResult(tx, {

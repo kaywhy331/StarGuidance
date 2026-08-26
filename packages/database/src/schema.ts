@@ -104,6 +104,39 @@ export const profileTraits = pgTable("profile_traits", {
   provenance: jsonb("provenance").notNull(),
   createdAt,
 });
+export const relationshipProfiles = pgTable(
+  "relationship_profiles",
+  {
+    id,
+    userId: userId(),
+    activeSnapshotId: uuid("active_snapshot_id"),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [index("relationship_profiles_user_idx").on(table.userId)],
+);
+export const relationshipProfileSnapshots = pgTable(
+  "relationship_profile_snapshots",
+  {
+    id,
+    userId: userId(),
+    relationshipProfileId: uuid("relationship_profile_id")
+      .notNull()
+      .references(() => relationshipProfiles.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    encryptedInput: text("encrypted_input").notNull(),
+    encryptedCalculations: text("encrypted_calculations").notNull(),
+    derivedPayload: jsonb("derived_payload").notNull(),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex("relationship_profile_snapshot_version_unique").on(
+      table.relationshipProfileId,
+      table.version,
+    ),
+    index("relationship_profile_snapshots_user_idx").on(table.userId),
+  ],
+);
 export const decks = pgTable("decks", {
   id,
   version: text("version").notNull().unique(),
@@ -191,6 +224,7 @@ export const readingSessions = pgTable(
     spreadVersion: text("spread_version").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     encryptedQuestion: text("encrypted_question").notNull(),
+    encryptedRelatedPersonLens: text("encrypted_related_person_lens"),
     readingLens: jsonb("reading_lens").notNull(),
     configuration: jsonb("configuration"),
     questionClassification: jsonb("question_classification")

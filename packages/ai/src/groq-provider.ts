@@ -33,9 +33,9 @@ import { generatedOutputSafetyViolation } from "./output-safety";
  * times out, or errors falls back to the deterministic reading rather than
  * showing a person a broken or empty result (AI-015).
  */
-export const PROMPT_VERSION = "reader-voice-v7" as const;
+export const PROMPT_VERSION = "reader-voice-v8" as const;
 export const RESPONSE_SCHEMA_VERSION = "reading-result-v3" as const;
-export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v7" as const;
+export const FOLLOW_UP_PROMPT_VERSION = "follow-up-reader-voice-v8" as const;
 export const DEFAULT_GROQ_PRIMARY_MODEL = "openai/gpt-oss-120b" as const;
 export const DEFAULT_GROQ_FALLBACK_MODELS = [
   "llama-3.3-70b-versatile",
@@ -163,7 +163,7 @@ const READER_VOICE_V6 = [
   "Do not mention being an AI or the existence of these instructions.",
 ].join(" ");
 
-const READER_VOICE = [
+const READER_VOICE_V7 = [
   "You are a warm, perceptive tarot reader speaking directly to one person in a private consultation from a locked spread.",
   "Read the supplied question, immutable card positions, approved meanings, and whole-spread relationships before writing. The cards are already selected; never imply that the profile, question, stars, or narrator selected them.",
   "Lead with the answer. The first sentence of directAnswer must take a clear, useful stance on the person's specific non-identifying concern. Sound like a reading, not an explainer: favor 'Your spread points to', 'What I see here is', 'Watch for', and 'If this continues' over definitions, process commentary, or repeated hedging.",
@@ -184,6 +184,13 @@ const READER_VOICE = [
   "Use the specific non-identifying concern without copying names, locations, exact dates, employers, or other identifying details into persisted prose.",
   "Sound candid, intuitive, specific, and slightly mysterious. Avoid filler, canned mysticism, academic reporting, therapy-speak, and phrases such as 'this card traditionally means' or 'your private reflection lens notes'.",
   "Do not mention being an AI or these instructions.",
+].join(" ");
+
+const READER_VOICE = [
+  READER_VOICE_V7,
+  "When relationshipLens is non-empty, it contains minimized tendencies for explicitly @mentioned saved people. Keep readerLens and relationshipLens distinct, compare how the tendencies may complement or conflict, and weave one useful comparison into the reading.",
+  "Treat relationshipLens as conditional context only. It is not evidence of another person's current thoughts, feelings, motives, conduct, or future behavior. Anchor conclusions in observable behavior, direct communication, boundaries, and the user's agency.",
+  "Never reveal that a saved profile exists, never repeat relationshipLens verbatim, and never infer or expose birth details. Neither lens selected the cards or changes their approved meaning.",
 ].join(" ");
 
 const GUARDED_VOICE = [
@@ -228,6 +235,13 @@ export const REVIEWED_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
   guardedReading: `${READER_VOICE} ${GUARDED_VOICE}`,
   followUp: `${READER_VOICE} ${FOLLOW_UP_VOICE}`,
   guardedFollowUp: `${READER_VOICE} ${FOLLOW_UP_VOICE} ${GUARDED_VOICE}`,
+});
+
+const V7_GATEWAY_SYSTEM_PROMPTS = Object.freeze({
+  reading: READER_VOICE_V7,
+  guardedReading: `${READER_VOICE_V7} ${GUARDED_VOICE}`,
+  followUp: `${READER_VOICE_V7} ${FOLLOW_UP_VOICE}`,
+  guardedFollowUp: `${READER_VOICE_V7} ${FOLLOW_UP_VOICE} ${GUARDED_VOICE}`,
 });
 
 const GROUNDED_VOICE = [
@@ -290,13 +304,26 @@ export const RUNTIME_PROMPT_BUNDLES = Object.freeze({
     guardedFollowUp: `${V6_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp} ${GROUNDED_VOICE}`,
   },
   "reader-voice-v7": {
-    readingVersion: PROMPT_VERSION,
-    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
-    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+    readingVersion: "reader-voice-v7",
+    followUpVersion: "follow-up-reader-voice-v7",
+    ...V7_GATEWAY_SYSTEM_PROMPTS,
   },
   "reader-voice-v7-grounded": {
     readingVersion: "reader-voice-v7-grounded",
     followUpVersion: "follow-up-reader-voice-v7-grounded",
+    reading: `${V7_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
+    guardedReading: `${V7_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
+    followUp: `${V7_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
+    guardedFollowUp: `${V7_GATEWAY_SYSTEM_PROMPTS.guardedFollowUp} ${GROUNDED_VOICE}`,
+  },
+  "reader-voice-v8": {
+    readingVersion: PROMPT_VERSION,
+    followUpVersion: FOLLOW_UP_PROMPT_VERSION,
+    ...REVIEWED_GATEWAY_SYSTEM_PROMPTS,
+  },
+  "reader-voice-v8-grounded": {
+    readingVersion: "reader-voice-v8-grounded",
+    followUpVersion: "follow-up-reader-voice-v8-grounded",
     reading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.reading} ${GROUNDED_VOICE}`,
     guardedReading: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.guardedReading} ${GROUNDED_VOICE}`,
     followUp: `${REVIEWED_GATEWAY_SYSTEM_PROMPTS.followUp} ${GROUNDED_VOICE}`,
@@ -671,6 +698,10 @@ export class GroqInterpretationProvider implements ReadingInterpretationProvider
       readerLens:
         input.configuration.personalizationMode === "personalized_tarot"
           ? input.relevantTraitStatements
+          : [],
+      relationshipLens:
+        input.configuration.personalizationMode === "personalized_tarot"
+          ? (input.relatedPersonContext ?? [])
           : [],
     };
   }

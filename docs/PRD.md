@@ -151,7 +151,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | DEC-004 | A detailed profile report is sold separately. | Confirmed |
 | DEC-005 | Profile data affects interpretation, never card selection. | Recommended / launch-critical |
 | DEC-006 | MVP begins with one original or properly licensed 78-card deck. | Recommended |
-| DEC-007 | MVP includes six selectable spreads and one follow-up question per completed reading. | Recommended |
+| DEC-007 | MVP includes six server-recommendable spreads and one follow-up question per completed reading. | Owner-directed / confirmed |
 | DEC-008 | MVP is a responsive web application; native apps are deferred. | Recommended |
 | DEC-009 | The Full Profile Report is the required one-time paid SKU; reading pricing remains configurable. | Recommended |
 | DEC-010 | MVP launches in English and is architected for localization. | Recommended |
@@ -211,9 +211,9 @@ The landing page presents two explicit choices: **Free Reading** and **Sign up**
 | /forgot-password | Non-enumerating account recovery request | Recovery email requested |
 | /reset-password | Recovery-session password update | Password replaced and session retained |
 | /onboarding | Consent and private birth profile | Profile snapshot ready |
-| /readings | Reading catalog | Spread selected |
-| /readings/{slug} | Reading details and question entry | Question classified and session created |
-| /session/{id} | Shuffle, cut, deal, reveal, generation | All cards revealed and result ready |
+| /people | Private, permission-confirmed profiles for people in the user's life | Relationship profile created, versioned, or deleted |
+| /readings | Minimal question entry | Question classified, spread recommended, and ceremony prepared |
+| /session/{id} | Casino wash, gather, fan selection, deal, reveal, generation | All cards revealed and result ready |
 | /reading/{id} | Layered result and follow-up | Reading reviewed/saved; optional feedback |
 | /history | Saved readings and purchased reports | Artifact reopened or managed |
 | /profile | Birth facts, completeness, privacy controls, report preview | Profile updated, deleted, or report purchase started |
@@ -274,6 +274,10 @@ The landing page presents two explicit choices: **Free Reading** and **Sign up**
 | **PRO-014** | Pythagorean numerology handles non-Latin names transparently. | **Should** | The original Unicode name is preserved; unsupported name-derived values are explicitly unavailable without requesting a Latin rendering or silently transliterating. |
 | **PRO-015** | The user can review and correct supplied birth facts without viewing the hidden profile. | **Must** | Settings show birth name masked by default, date, place, and time status with edit and delete controls. |
 | **PRO-016** | Profile calculation failures are recoverable. | **Must** | The user sees a clear retry state; no partial profile is silently marked complete; operations receives a traceable error event. |
+| **PRO-017** | Signed-in users can create private profiles for people in their lives. | **Must** | Name and birth date are required; birthplace and birth time are independently optional; creation requires an explicit acknowledgement that the user has permission to store the information. |
+| **PRO-018** | Relationship profiles are encrypted, versioned, and user-isolated. | **Must** | Raw inputs and calculation payloads use context-bound application encryption; edits append immutable snapshots; forced RLS, export, deletion, and account-cascade tests prevent cross-user access. |
+| **PRO-019** | A relationship profile enters a reading only through an explicit mention. | **Must** | Each active profile has a unique Unicode-safe `@handle`; plain-name matching and inferred identity resolution are prohibited; unmentioned profiles are not loaded into narration context. |
+| **PRO-020** | Historical relationship context remains reproducible and minimized. | **Must** | Draw finalization locks an encrypted lens containing immutable profile/snapshot references and at most three stable traits; retry and follow-up reuse it even if the active profile later changes or is deleted. Raw birth inputs never enter that lens. |
 
 **Epic completion criteria**
 
@@ -284,6 +288,7 @@ The landing page presents two explicit choices: **Free Reading** and **Sign up**
 | **[ ]** The user sees editable facts and private-handling copy but no completeness taxonomy, calculation-system names, capability checklist, or hidden profile interpretation. |
 | **[ ]** Updating profile facts creates a new snapshot and leaves historical readings unchanged. |
 | **[ ]** Unicode and non-Latin name cases follow the approved numerology handling policy. |
+| **[ ]** Relationship profiles require permission acknowledgement, remain user-isolated and encrypted, activate only through explicit `@handles`, and never alter card selection. |
 
 ## 5.3 Profile calculation and trait synthesis
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
@@ -320,23 +325,23 @@ The landing page presents two explicit choices: **Free Reading** and **Sign up**
 ## 5.4 Reading catalog and question intake
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **RDG-001** | The reading catalog presents a small, understandable set of reading types. | **Must** | Each card shows title, purpose, card count, approximate experience length, and free/paid entitlement state. |
+| **RDG-001** | Reading intake recommends a suitable configured reading type without requiring spread knowledge. | **Must** | One direct question routes to the smallest suitable active spread; its title, purpose, card count, positions, and entitlement state remain available in the prepared ritual response and history. |
 | **RDG-002** | MVP includes One-Card, Three-Card, Celtic Cross, Horseshoe, Relationship / Two-Party, and Nine-Card Matrix spreads. | **Must** | All six spreads are fully configured, content-complete, tested, and operator-activatable. Retired spread definitions remain available only for historical locked draws. |
 | **RDG-003** | Spread definitions are data-driven and versioned. | **Must** | Card count, ordered positions, labels, interpretive functions, reversals, animation placement, linked positions, and trajectory/alternative/timing capabilities can change without rewriting the session engine. The complete definition is snapshotted before any card is known. |
-| **RDG-004** | Users may type a question or choose a general reading where the spread permits it. | **Must** | Question-required spreads block empty submission; general readings require confirmation of the approved intention, “What is most important for me to understand at this time?” |
-| **RDG-005** | Question input supports optional topic and time-horizon chips. | **Should** | Relationship, career, money, creativity, life direction, and general topics are available; predictive questions can select a bounded horizon. |
-| **RDG-006** | Question input is length-limited and private. | **Must** | The UI enforces the configured limit, stores the question encrypted, and never places the raw text in analytics or URLs. |
+| **RDG-004** | Users submit one direct question to begin a reading. | **Must** | Empty submission is blocked. The normal entry scene contains only “What question did you have for the stars today?”, one input, and Send; there is no separate general-intention action, question confirmation, or spread picker. |
+| **RDG-005** | Topic, decision shape, relationship context, and horizon are inferred server-side. | **Should** | Deterministic classification recommends an active one-card, three-card, relationship, crossroads, horseshoe, or deeper-outlook structure while leaving the user's wording unchanged. |
+| **RDG-006** | Question input is length-limited and private. | **Must** | The UI and API enforce a 500-character limit, store the question encrypted, and never place the raw text in analytics or URLs. |
 | **RDG-007** | Questions are classified before the draw for domain, intent, time horizon, and safety risk. | **Must** | Classification is stored separately from the raw question and is used to select content and safety behavior. |
-| **RDG-008** | The interface helps users ask actionable questions without replacing their words. | **Must** | Examples encourage What/How/user-centered questions. Binary, deterministic, or third-party-private wording receives an optional reformulation; the exact final question is displayed and must be confirmed before the spread can be finalized. |
+| **RDG-008** | The interface preserves the user's wording and minimizes pre-reading copy. | **Must** | No suggestion, explainer, confirmation panel, topic chip, or generic-intention button competes with the question. Safety handling may interrupt before any ceremony; third-party-private wording is reframed within the reading rather than treated as evidence of hidden facts. |
 | **RDG-009** | Reading entitlements are configurable. | **Must** | Authenticated allowances remain operator-configurable; the account-free trial is separately limited by a signed browser marker plus a privacy-minimized network automation quota. |
-| **RDG-010** | Starting a reading prepares a recoverable committed-draw ceremony before animation without selecting cards. | **Must** | The ceremony has a unique session ID, confirmed question, immutable spread/configuration snapshot, profile-snapshot reference where applicable, safety/entitlement context, expiry, and server-seed commitment—but no card, position assignment, or orientation. The durable authenticated session and guest exact-draw receipt are created only at finalization. |
+| **RDG-010** | Starting a reading prepares a recoverable committed-draw ceremony before animation without selecting cards. | **Must** | The ceremony has a unique session ID, exact question, server-recommended immutable spread/configuration snapshot, profile-snapshot reference where applicable, safety/entitlement context, expiry, and server-seed commitment—but no card, position assignment, or orientation. The durable authenticated session and guest exact-draw receipt are created only at finalization. |
 
 **Epic completion criteria**
 
-| **[ ]** All four MVP spreads can be selected, started, and configured without hard-coded page logic. |
+| **[ ]** Every active spread can be recommended, started, and configured without hard-coded route logic or a user-facing spread chooser. |
 | --- |
 | **[ ]** Questions are stored privately, classified before the draw, and bounded by clear input rules. |
-| **[ ]** Every position/function is visible and fixed before shuffle; suggested question wording is never applied without explicit confirmation. |
+| **[ ]** Every position/function is fixed before shuffle; the user's question is never silently rewritten. |
 | **[ ]** Unsafe or inappropriate question patterns are intercepted before immersive animation begins. |
 | **[ ]** Entitlement configuration can change without altering spread or draw code. |
 
@@ -345,25 +350,24 @@ The landing page presents two explicit choices: **Free Reading** and **Sign up**
 | --- | --- | --- | --- |
 | **DRW-001** | Card selection uses committed cryptographic entropy and a tested unbiased shuffle. | **Must** | A 32-byte server seed is committed before the ritual; the browser creates an independent 32-byte CSPRNG nonce before shuffling and XOR-mixes another independent contribution for each stir; domain-separated HMAC-SHA-256 streams drive rejection-sampled Fisher–Yates and orientations without duplicates. |
 | **DRW-002** | The private profile never influences which cards are selected. | **Must** | Automated tests verify that the draw function accepts no profile traits, question meaning, or AI output as selection inputs. |
-| **DRW-003** | Final cards are assigned only after shuffle/cut completion or skip, then locked before dealing or interpretation. | **Must** | Preparation returns no assignments. Finalization atomically persists all card-position-orientation records and the interpretation job; retries reuse that exact draw. |
+| **DRW-003** | Final cards are assigned only after casino-wash gathering and the required user selections, then locked before interpretation. | **Must** | Preparation returns no assignments. Finalization accepts the exact number of distinct anonymous visual indexes and atomically persists all card-position-orientation records and the interpretation job; retries reuse that exact draw. |
 | **DRW-004** | Card orientation follows an explicit `reversals_enabled` or `upright_only` preference and an independent entropy stream. | **Must** | The mode and orientation results are persisted. Reversed content uses only curated contextual facets and is never automatically opposite or negative. |
 | **DRW-005** | The session records deck, card, spread, shuffle, and content versions. | **Must** | Every completed reading is reproducible from stored version references and draw records. |
 | **DRW-006** | Redraw is explicit and creates a new reading session. | **Must** | The interface never silently replaces an unfavorable draw; a new draw consumes the appropriate entitlement and links to the prior session only as history. |
 | **DRW-007** | Draw creation and payment-dependent consumption are idempotent. | **Must** | Repeated network requests cannot create multiple draws or consume multiple credits for one session. |
-| **DRW-008** | Interrupted sessions can resume from the last recoverable state. | **Must** | Reloading before finalization restores the commitment, pending client nonce, stir count, and ritual without inventing cards; reloading after finalization restores the exact locked draw and reveal progress. |
+| **DRW-008** | Interrupted sessions can resume from the last recoverable state. | **Must** | Reloading before finalization restores the commitment, pending client nonce, wash count, selected visual indexes, and ritual without inventing cards; reloading after finalization restores the exact locked draw and reveal progress. |
 | **DRW-009** | The user receives a concise trust explanation of the random draw. | **Should** | A visible help affordance states that profile data shapes interpretation, not card selection. |
-| **DRW-010** | Every new user-facing draw uses the committed entropy protocol. | **Must** | The durable proof stores algorithm versions, server-seed commitment, client-nonce hash, cut index, and reversal mode; raw question/profile/meaning/payment/AI data cannot enter derivation. |
-| **DRW-011** | The optional cut is causally meaningful. | **Must** | The selected cut index rotates the shuffled deck before assignment; deterministic tests show distinct offsets change the assigned permutation while preserving the same entropy inputs. |
+| **DRW-010** | Every new user-facing draw uses the committed entropy protocol. | **Must** | The durable proof stores algorithm versions, server-seed commitment, client-nonce hash, distinct selected indexes, and reversal mode; raw question/profile/meaning/payment/AI data cannot enter derivation. |
+| **DRW-011** | Each user-picked back is causally meaningful without exposing card identity. | **Must** | Pick order addresses distinct unknown entries in the uniform committed permutation; changing an index changes the assignment under fixed entropy, while every valid index pattern remains an unbiased draw without replacement. |
 
 ```text
 reading_created
-  -> question_drafting
-  -> question_confirmed
-  -> spread_confirmed
+  -> question_entering
+  -> spread_recommended
   -> safety_approved
-  -> focusing
   -> shuffling
-  -> optional_cut
+  -> gathering
+  -> selecting_cards
   -> draw_finalizing
   -> draw_locked
   -> dealing
@@ -381,19 +385,19 @@ error branches: generation_failed | session_expired | payment_required | safety_
 
 | **[ ]** Draw tests prove that card selection has no profile or AI dependency and cannot contain duplicates. |
 | --- |
-| **[ ]** No assignment exists before shuffle/cut completion or skip; all cards, orientations, versions, and position assignments persist atomically before dealing and interpretation. |
-| **[ ]** Cut offsets measurably rotate the finalized permutation, and question/profile data never participates in entropy. |
+| **[ ]** No assignment exists before the required distinct selections; all cards, orientations, versions, and position assignments persist atomically before interpretation. |
+| **[ ]** Visual indexes measurably change assignments under fixed entropy, remain unbiased, and question/profile data never participates in entropy. |
 | **[ ]** Refresh, retry, and reconnect always restore the same draw and correct state. |
 | **[ ]** A new draw is always a new session and never a silent replacement. |
 
 ## 5.6 Immersive reading experience
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **UX-001** | The reading journey is governed by the explicit committed-draw state machine above. | **Must** | Invalid state combinations are impossible; finalization cannot occur before question/spread/safety confirmation and shuffle/cut completion or skip, and whole-reading streaming cannot become visible before `full_spread_ready`. |
-| **UX-002** | The shuffle sequence feels tactile and ritualized without delaying users unnecessarily. | **Must** | Exactly 78 anonymous card backs move through six interleaving planar streams; swipe, tap, click, and Space restart the mix, while Finish shuffling advances immediately. The composition must not use a spherical arrangement. |
+| **UX-001** | The reading journey is governed by the explicit committed-draw state machine above. | **Must** | Invalid state combinations are impossible; finalization cannot occur before question/spread/safety preparation and the exact required anonymous-card selections, and whole-reading streaming cannot become visible before `full_spread_ready`. |
+| **UX-002** | The shuffle sequence feels tactile and ritualized without delaying users unnecessarily. | **Must** | Exactly 78 anonymous card backs overlap and travel along random-looking circular planar paths like a casino wash. Gather forms a center stack, moves it to the lower left, and fans it in a slight arch toward the lower right. The composition must not use a spherical arrangement. |
 | **UX-003** | Visual shuffling uses lightweight card-back shells rather than animating 78 full card components. | **Must** | All 78 possibilities are visibly accounted for without mounting artwork, meanings, identities, orientations, or per-card application state; mid-tier mobile devices maintain the minimum animation frame-rate target without memory spikes. |
-| **UX-004** | Shuffle flows into an optional, causally meaningful cut before finalization. | **Must** | The reader may choose a visible cut offset or No cut; reduced-motion/skip paths make the same choice without decorative delay. Dealing cannot start until finalization succeeds. |
-| **UX-005** | Cards are dealt into spread-specific positions with stable layout. | **Must** | No card overlaps, clips, or moves unexpectedly across supported viewport sizes and text zoom levels. |
+| **UX-004** | Shuffle flows into a causally meaningful card-picking fan before finalization. | **Must** | Hover/focus highlights a card border; click, keyboard activation, or an upward swipe selects one unchosen back and lifts it into the next spread position. Selection continues until the recommended spread count is met. |
+| **UX-005** | Selected cards are dealt into spread-specific positions with stable layout. | **Must** | The fan may overlap deliberately, but dealt spread cards do not clip or move unexpectedly across supported viewport sizes and text zoom levels. |
 | **UX-006** | Users intentionally choose the reveal order among locked face-down spread positions by tap, click, or keyboard, or invoke Reveal All. | **Must** | Every unrevealed position remains eligible, has visible focus state, Enter/Space activation, a screen-reader position description, locked double-trigger prevention, and reduced-motion parity. Reveal order cannot change the locked assignment. |
 | **UX-007** | Each reveal immediately shows only that card's deterministic baseline. | **Must** | Card name, position, orientation, and one concise position-aware meaning appear without waiting for synthesis; no overall answer, outlook, alternate path, or unrevealed card identifier appears. |
 | **UX-008** | Interpretation may prepare privately while cards are revealed but remains gated. | **Must** | Background generation starts only after the draw is atomically locked and never blocks card interaction; result routes and streams suppress all whole-reading content until every position is revealed. |
@@ -407,19 +411,19 @@ error branches: generation_failed | session_expired | payment_required | safety_
 ### Animation choreography
 | **Stage** | **Default behavior** | **Accessible alternative** |
 | --- | --- | --- |
-| Prepare | Deck enters with subtle depth and ambient movement. | Static deck with immediate Begin control. |
-| Shuffle | Six planar streams interleave 78 lightweight anonymous backs; intentional stir gestures restart the motion and add fresh nonce entropy. | Static field accounting for all 78 backs, with the same controls and secure initial nonce. |
-| Optional cut | Reader selects a cut offset or No cut before assignments are produced. | Static, keyboard-accessible choices with no large transform. |
-| Deal | Cards travel to spread positions in order. | Cards appear sequentially with focus management. |
+| Prepare | The question is sent and the recommended spread prepares without extra explanatory panels. | The same single input and Send control. |
+| Casino wash | Circular planar paths scramble 78 overlapping lightweight anonymous backs; each additional wash adds fresh nonce entropy. | Static overlapping field accounting for all 78 backs, with the same secure initial nonce. |
+| Gather and fan | Backs gather to center, move lower left, and fan in a shallow arch toward the lower right. | Immediate static fan with identical DOM order and focus labels. |
+| Select and deal | Each pointer, keyboard, or upward-swipe choice lifts into the next spread position until the exact count is reached. | Cards appear sequentially with focus management and no large transform. |
 | Reveal | User chooses any remaining locked position or explicitly chooses Reveal All; only revealed baselines appear. | Instant reveal with text announcement and identical information gate. |
 | Synthesis | Begins visibly only after the full spread is revealed; the spread remains present while a smaller reading window shows one concise passage at a time. Follow-up and completion actions remain hidden until the reader explicitly finishes the final passage. | Immediate one-passage content view with the same acknowledgement boundary; no parallax or scale. |
 
 **Epic completion criteria**
 
-| **[ ]** All six selectable spreads render correctly on supported mobile and desktop viewport/device matrices. |
+| **[ ]** All six recommendable spreads render correctly on supported mobile and desktop viewport/device matrices. |
 | --- |
 | **[ ]** Keyboard, screen reader, reduced-motion, skip, and no-audio modes deliver the complete reading. |
-| **[ ]** Skipping animation never reduces entropy; pre-finalization stir gestures affect only the pending client nonce, the optional cut affects only the recorded offset, and post-lock interaction never changes the draw. |
+| **[ ]** Reduced motion never reduces entropy; pre-finalization washes affect only the pending client nonce, anonymous picks select unknown permutation indexes, and post-lock interaction never changes the draw. |
 | **[ ]** Whole-reading content is inaccessible until all cards are revealed, including through API/stream responses. |
 | **[ ]** Card, reading, and next-action surfaces never compete: only one primary stage is mounted at a time, and stream completion alone cannot expose follow-up controls. |
 | **[ ]** Performance and visual-regression thresholds pass on the defined representative devices. |
@@ -445,6 +449,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **AI-016** | Prompts, models, policies, and schemas are versioned. | **Must** | Each output stores prompt version, model identifier, content version, safety policy version, and response schema version. |
 | **AI-017** | Token, latency, and cost budgets are enforced per spread. | **Must** | Maximum input/output sizes, timeout, retry count, and cost alert thresholds are configurable and monitored. |
 | **AI-018** | A pre-release evaluation suite measures quality and safety. | **Must** | The approved eval set covers all spreads, domains, profile completeness levels, adversarial questions, and prohibited claims; launch thresholds are met. |
+| **AI-019** | Explicitly mentioned relationship profiles can deepen personalized readings without making private-fact claims. | **Must** | The narrator receives only the locked `@handle`, immutable internal references, and at most three stable traits; raw birth data and calculations are excluded. It compares observable interaction patterns conditionally, never asserts the person's thoughts, motives, diagnosis, guilt, or future behavior as fact. |
 
 ### Internal interpretation process
 
@@ -841,7 +846,7 @@ Every claim must be traceable to one or more card/position tuples, an approved r
 
 | **[ ]** All Must requirements have a passing test or documented manual acceptance record. |
 | --- |
-| **[ ]** All six selectable spreads pass complete end-to-end journeys for Core and Complete profiles. |
+| **[ ]** All six recommendable spreads pass complete end-to-end journeys for Core and Complete profiles. |
 | **[ ]** Calculation reference datasets pass at 100%; no unresolved boundary discrepancy remains hidden. |
 | **[ ]** AI and safety thresholds are approved by product, tarot/profile content, and safety owners. |
 | **[ ]** No Sev-1 or Sev-2 defect remains open; any waived lower-severity defect has an owner and target release. |

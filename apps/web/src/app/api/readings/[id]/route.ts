@@ -12,6 +12,10 @@ import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
+import {
+  parseRelatedPersonReadingLens,
+  relatedPersonProviderContext,
+} from "@/lib/related-person-lens";
 import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { followUpLimit, followUpLimitMessage } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
@@ -54,6 +58,19 @@ async function ownedReading(id: string) {
   const persistence = persistenceFor(user);
   const reading = await persistence.repositories.readingSessions.get(user.id, id);
   return reading ? { persistence, reading, user } : undefined;
+}
+
+function storedRelatedPersonContext(
+  persistence: ReturnType<typeof persistenceFor>,
+  encryptedLens: string | undefined,
+) {
+  return encryptedLens
+    ? relatedPersonProviderContext(
+        parseRelatedPersonReadingLens(
+          persistence.decrypt(encryptedLens, "related-person-reading-lens"),
+        ),
+      )
+    : [];
 }
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
@@ -288,6 +305,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             reading.configuration.personalizationMode === "personalized_tarot" && snapshot
               ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
               : [],
+          relatedPersonContext: storedRelatedPersonContext(
+            persistence,
+            reading.encryptedRelatedPersonLens,
+          ),
         });
         await persistence.repositories.outputs.save(user.id, reading.id, generated.result, {
           ...generated.provenance,
@@ -387,6 +408,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       question: input.question,
       questionClassification: reading.questionClassification,
       relevantTraitStatements: lensStatements,
+      relatedPersonContext: storedRelatedPersonContext(
+        persistence,
+        reading.encryptedRelatedPersonLens,
+      ),
       originalResult: reading.result,
     });
     const result = generated.result;

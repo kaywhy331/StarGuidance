@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMachine } from "@xstate/react";
 import type { SafetyCategory } from "@starguidance/ai";
 import {
-  GENERAL_READING_QUESTION,
   drawCeremonySchema,
   type DrawCeremony,
   type OracleStreamEvent,
@@ -37,11 +36,11 @@ import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../session/[id]/question-composer";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
-import { ImmersiveCutDeck, ImmersiveShuffleDeck } from "../session/[id]/shuffle-shells";
+import { CasinoWashDeck } from "../session/[id]/shuffle-shells";
 import { TarotSpreadStage } from "../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
-type CeremonyStage = "focusing" | "shuffling" | "optionalCut";
+type CeremonyStage = "focusing" | "shuffling" | "selectingCards" | "optionalCut";
 
 type PendingGuestSession =
   | {
@@ -50,6 +49,7 @@ type PendingGuestSession =
       stage: CeremonyStage;
       clientNonce?: string;
       stirCount?: number;
+      selectedIndexes?: number[];
     }
   | {
       kind: "receipt";
@@ -57,12 +57,6 @@ type PendingGuestSession =
       revealedIndexes: number[];
       resultUnlocked: boolean;
     };
-
-interface QuestionReview {
-  encouragedForm: boolean;
-  reformulationReason?: "binary" | "deterministic" | "third_party_private";
-  suggestedQuestion?: string;
-}
 
 interface FreeSpread {
   id: "three-card" | "one-card";
@@ -104,7 +98,7 @@ function readPendingSession(): PendingGuestSession | undefined {
     if (
       value.kind === "ceremony" &&
       typeof value.token === "string" &&
-      ["focusing", "shuffling", "optionalCut"].includes(String(value.stage))
+      ["focusing", "shuffling", "selectingCards", "optionalCut"].includes(String(value.stage))
     )
       return value as PendingGuestSession;
     if (
@@ -153,7 +147,6 @@ export function GuestReadingExperience({
   const [birthDate, setBirthDate] = useState("");
   const [question, setQuestion] = useState("");
   const [confirmedQuestion, setConfirmedQuestion] = useState("");
-  const [questionReview, setQuestionReview] = useState<QuestionReview>();
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
@@ -162,6 +155,7 @@ export function GuestReadingExperience({
     useState<PersonalizationMode>("personalized_tarot");
   const [deviceId, setDeviceId] = useState<string>();
   const [ceremony, setCeremony] = useState<DrawCeremony>();
+  const [selectedIndexes, setSelectedIndexes] = useState<number[]>([]);
   const [reading, setReading] = useState<GuestReadingDisplay>();
   const [receipt, setReceipt] = useState<string>();
   const [trialUsed, setTrialUsed] = useState(false);
@@ -245,14 +239,24 @@ export function GuestReadingExperience({
             Number.isSafeInteger(pending.stirCount) && (pending.stirCount ?? -1) >= 0
               ? (pending.stirCount ?? 0)
               : 0;
+          setSelectedIndexes(
+            (pending.selectedIndexes ?? []).filter(
+              (index, position, indexes) =>
+                Number.isInteger(index) &&
+                index >= 0 &&
+                index < 78 &&
+                indexes.indexOf(index) === position &&
+                position < restored.spread.positions.length,
+            ),
+          );
           send({ type: "START" });
           send({ type: "DRAFT_QUESTION" });
           send({ type: "CONFIRM_QUESTION" });
           send({ type: "CONFIRM_SPREAD" });
           send({ type: "SAFETY_APPROVED" });
-          if (pending.stage === "shuffling" || pending.stage === "optionalCut")
-            send({ type: "FOCUS_COMPLETE" });
-          if (pending.stage === "optionalCut") send({ type: "SHUFFLE_COMPLETE" });
+          send({ type: "FOCUS_COMPLETE" });
+          if (pending.stage === "selectingCards" || pending.stage === "optionalCut")
+            send({ type: "SHUFFLE_COMPLETE" });
           return;
         }
 
@@ -377,52 +381,15 @@ export function GuestReadingExperience({
     send({ type: "REVEAL" });
   }, [send, state]);
 
-  const reviewQuestion = async () => {
-    if (!deviceId || !intakeReady) return;
-    setLoading(true);
-    setError(undefined);
-    try {
-      const response = await fetch("/api/guest-readings", {
-        method: "POST",
-        headers: { "content-type": "application/json", [GUEST_DEVICE_HEADER]: deviceId },
-        body: JSON.stringify({ action: "review", question: question.trim() }),
-      });
-      const payload = (await response.json()) as {
-        review?: QuestionReview;
-        error?: string;
-        safety?: { category: SafetyCategory; interrupt: boolean; guidance: string };
-      };
-      if (payload.safety?.interrupt) {
-        setSafetyInterrupt({
-          category: payload.safety.category,
-          guidance: payload.safety.guidance,
-        });
-        return;
-      }
-      if (!response.ok || !payload.review)
-        throw new Error(payload.error ?? "The question could not be reviewed.");
-      setQuestionReview(payload.review);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The question could not be reviewed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const confirmQuestion = () => {
-    const finalQuestion = question.trim();
-    if (!finalQuestion || !questionReview) return;
-    setConfirmedQuestion(finalQuestion);
-    setQuestionReview(undefined);
-    send({ type: "CONFIRM_QUESTION" });
-  };
-
   const prepareRitual = async (continueAsReflection = false) => {
-    if (!deviceId || !selectedSpread || !confirmedQuestion) return;
+    const finalQuestion = (continueAsReflection ? confirmedQuestion : question).trim();
+    if (!deviceId || !birthDate || !consentsReady || !finalQuestion || loading) return;
     setLoading(true);
     setError(undefined);
     if (!continueAsReflection) {
+      setConfirmedQuestion(finalQuestion);
       setGuardedPrompt(undefined);
+      send({ type: "CONFIRM_QUESTION" });
       send({ type: "CONFIRM_SPREAD" });
     }
     try {
@@ -431,9 +398,8 @@ export function GuestReadingExperience({
         headers: { "content-type": "application/json", [GUEST_DEVICE_HEADER]: deviceId },
         body: JSON.stringify({
           action: "prepare",
-          spreadId: selectedSpread.id,
           birthDate,
-          question: confirmedQuestion,
+          question: finalQuestion,
           questionConfirmed: true,
           reversalMode,
           personalizationMode,
@@ -467,17 +433,21 @@ export function GuestReadingExperience({
         throw new Error(payload.error ?? "The free reading could not be prepared.");
       const prepared = drawCeremonySchema.parse(payload.ceremony);
       setCeremony(prepared);
+      setSelected(prepared.spread.id as FreeSpread["id"]);
+      setSelectedIndexes([]);
       clientNonce.current = createClientDrawNonce();
       stirCount.current = 0;
       savePendingSession({
         kind: "ceremony",
         token: prepared.token,
-        stage: "focusing",
+        stage: "shuffling",
         clientNonce: clientNonce.current,
         stirCount: 0,
+        selectedIndexes: [],
       });
       if (continueAsReflection) send({ type: "CONTINUE_AS_REFLECTION" });
       else send({ type: "SAFETY_APPROVED" });
+      send({ type: "FOCUS_COMPLETE" });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The free reading could not be prepared.");
     } finally {
@@ -486,13 +456,14 @@ export function GuestReadingExperience({
   };
 
   const finalizeDraw = useCallback(
-    async (cutIndex: number) => {
-      if (!deviceId || !ceremony || loading) return;
+    async (picks: readonly number[]) => {
+      if (!deviceId || !ceremony || loading || picks.length !== ceremony.spread.positions.length)
+        return;
       const pendingNonce = clientNonce.current ?? createClientDrawNonce();
       clientNonce.current = pendingNonce;
       setLoading(true);
       setError(undefined);
-      send({ type: cutIndex === 0 ? "SKIP_CUT" : "CUT" });
+      send({ type: "SELECTION_COMPLETE" });
       try {
         const response = await fetch("/api/guest-readings", {
           method: "POST",
@@ -501,7 +472,8 @@ export function GuestReadingExperience({
             action: "finalize",
             ceremonyToken: ceremony.token,
             clientNonce: pendingNonce,
-            cutIndex,
+            cutIndex: 0,
+            selectedIndexes: picks,
           }),
         });
         const payload = guestReadingResponseSchema.safeParse(await response.json());
@@ -533,7 +505,22 @@ export function GuestReadingExperience({
     [ceremony, deviceId, loading, send],
   );
 
-  const saveCurrentCeremony = (stage: CeremonyStage) => {
+  useEffect(() => {
+    if (
+      !state.matches("selectingCards") ||
+      !ceremony ||
+      selectedIndexes.length !== ceremony.spread.positions.length ||
+      loading
+    )
+      return;
+    const timer = window.setTimeout(
+      () => void finalizeDraw(selectedIndexes),
+      reducedMotion ? 0 : 850,
+    );
+    return () => window.clearTimeout(timer);
+  }, [ceremony, finalizeDraw, loading, reducedMotion, selectedIndexes, state]);
+
+  const saveCurrentCeremony = (stage: CeremonyStage, picks = selectedIndexes) => {
     if (!ceremony) return;
     const pendingNonce = clientNonce.current ?? createClientDrawNonce();
     clientNonce.current = pendingNonce;
@@ -543,6 +530,7 @@ export function GuestReadingExperience({
       stage,
       clientNonce: pendingNonce,
       stirCount: stirCount.current,
+      selectedIndexes: [...picks],
     });
   };
 
@@ -876,7 +864,9 @@ export function GuestReadingExperience({
     );
 
   const showQuestion = state.matches("questionDrafting");
-  const showSpread = state.matches("questionConfirmed") || state.matches("spreadConfirmed");
+  // Spread routing is server-owned; the legacy chooser remains unreachable
+  // only so old in-flight guest bundles can hydrate without a hard failure.
+  const showSpread = false;
   const transcriptVisible =
     (state.matches("interpretationStreaming") ||
       state.matches("followUpAvailable") ||
@@ -897,7 +887,7 @@ export function GuestReadingExperience({
       : "reading"
     : state.matches("focusing") ||
         state.matches("shuffling") ||
-        state.matches("optionalCut") ||
+        state.matches("selectingCards") ||
         state.matches("drawFinalizing") ||
         state.matches("drawLocked") ||
         state.matches("dealing") ||
@@ -922,139 +912,76 @@ export function GuestReadingExperience({
         </button>
       </header>
 
-      {showQuestion && (
-        <>
-          <section className="reading-entry-stage reading-question-stage guest-reading-entry">
-            <div>
-              <p>Set your intention</p>
-              <h1>What would you like the cards to illuminate?</h1>
-              <p>
-                What, How, and “What should I understand” questions leave room for insight and
-                choice.
-              </p>
-            </div>
-          </section>
-          <div className="oracle-console-stack reading-entry-console reading-question-console guest-question-console">
-            <p className="entry-privacy-note">
-              Your birthday can shape a minimized reflection lens. Neither it nor your question
-              selects cards.
-            </p>
-            {questionReview ? (
-              <div className="ritual-moment" data-testid="guest-question-confirmation">
-                <p className="ritual-status">Confirm the exact question this reading will use</p>
-                <blockquote>{question}</blockquote>
-                {questionReview.suggestedQuestion && (
-                  <div>
-                    <p>A more open, user-centered question may serve the spread better:</p>
-                    <blockquote>{questionReview.suggestedQuestion}</blockquote>
-                    <button
-                      className="ritual-action"
-                      onClick={() => {
-                        setQuestion(questionReview.suggestedQuestion ?? question);
-                        setQuestionReview({ encouragedForm: true });
-                      }}
-                      type="button"
-                    >
-                      Use this reformulation
-                    </button>
-                  </div>
-                )}
-                <div className="ritual-action-group">
-                  <button
-                    className="ritual-action is-primary"
-                    onClick={confirmQuestion}
-                    type="button"
-                  >
-                    Confirm this question
-                  </button>
-                  <button
-                    className="ritual-action"
-                    onClick={() => setQuestionReview(undefined)}
-                    type="button"
-                  >
-                    Revise it
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <label className="guest-birth-date-field">
-                  <span>
-                    Your birthday <strong aria-hidden="true">*</strong>
-                  </span>
-                  <input
-                    autoComplete="bday"
-                    onChange={(event) => setBirthDate(event.target.value)}
-                    required
-                    type="date"
-                    value={birthDate}
-                  />
-                  <small>
-                    Used to personalize interpretation only. It does not choose or orient cards.
-                  </small>
-                </label>
-                <QuestionComposer
-                  disabled={!consentsReady || !birthDate}
-                  hint="You will confirm the exact wording before choosing a spread."
-                  label="Your private guest question"
-                  loading={loading}
-                  onChange={setQuestion}
-                  onSubmit={reviewQuestion}
-                  placeholder="What should I understand about…"
-                  submitLabel="Review my question"
-                  testId="guest-question-composer"
-                  value={question}
-                />
-                <button
-                  className="reading-entry-continue"
-                  onClick={() => {
-                    setQuestion(GENERAL_READING_QUESTION);
-                    setQuestionReview({ encouragedForm: true });
-                  }}
-                  type="button"
-                >
-                  Use a general intention
-                </button>
-                <fieldset className="guest-policy-consents">
-                  <legend>Before the cards are prepared</legend>
-                  <label>
-                    <input
-                      checked={termsAccepted}
-                      onChange={(event) => setTermsAccepted(event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>
-                      I agree to the <Link href="/terms">Terms</Link>.
-                    </span>
-                  </label>
-                  <label>
-                    <input
-                      checked={privacyAccepted}
-                      onChange={(event) => setPrivacyAccepted(event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>
-                      I have read the <Link href="/privacy">Privacy Notice</Link>.
-                    </span>
-                  </label>
-                  <label>
-                    <input
-                      checked={ageConfirmed}
-                      onChange={(event) => setAgeConfirmed(event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>I confirm that I am at least 18 years old.</span>
-                  </label>
-                </fieldset>
-                {!intakeReady ? (
-                  <p className="guest-consent-hint">
-                    Enter your birthday and question, then accept all three commitments.
-                  </p>
-                ) : null}
-              </>
-            )}
-          </div>
-        </>
+      {showQuestion && (!birthDate || !consentsReady) && (
+        <section className="guest-prerequisite-stage">
+          <label className="guest-birth-date-field">
+            <span>Your birthday</span>
+            <input
+              autoComplete="bday"
+              onChange={(event) => setBirthDate(event.target.value)}
+              required
+              type="date"
+              value={birthDate}
+            />
+          </label>
+          <fieldset className="guest-policy-consents">
+            <legend>Private guest reading</legend>
+            <label>
+              <input
+                checked={termsAccepted}
+                onChange={(event) => setTermsAccepted(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                I agree to the <Link href="/terms">Terms</Link>.
+              </span>
+            </label>
+            <label>
+              <input
+                checked={privacyAccepted}
+                onChange={(event) => setPrivacyAccepted(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                I have read the <Link href="/privacy">Privacy Notice</Link>.
+              </span>
+            </label>
+            <label>
+              <input
+                checked={ageConfirmed}
+                onChange={(event) => setAgeConfirmed(event.target.checked)}
+                type="checkbox"
+              />
+              <span>I confirm that I am at least 18 years old.</span>
+            </label>
+          </fieldset>
+        </section>
+      )}
+
+      {showQuestion && birthDate && consentsReady && (
+        <section className="minimal-question-stage">
+          <h1>What question did you have for the stars today?</h1>
+          <form
+            className="minimal-question-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void prepareRitual();
+            }}
+          >
+            <textarea
+              aria-label="Your question for the stars"
+              autoFocus
+              disabled={loading}
+              maxLength={500}
+              onChange={(event) => setQuestion(event.target.value)}
+              value={question}
+            />
+            <button disabled={!intakeReady || loading} type="submit">
+              <span className="sr-only">Send question</span>
+              <span aria-hidden="true">➤</span>
+            </button>
+          </form>
+        </section>
       )}
 
       {showSpread && selectedSpread && (
@@ -1197,80 +1124,30 @@ export function GuestReadingExperience({
         </section>
       )}
 
-      {state.matches("focusing") && ceremony && (
-        <section className="reading-entry-stage reading-question-stage">
-          <div className="ritual-moment">
-            <p>Focus</p>
-            <h1>Hold the confirmed question</h1>
-            <blockquote>{ceremony.question}</blockquote>
-            <ol>
-              {ceremony.spread.positions.map((position) => (
-                <li key={position.id}>
-                  <strong>
-                    {position.order + 1}. {position.displayName}
-                  </strong>{" "}
-                  — {position.interpretiveFunction}
-                </li>
-              ))}
-            </ol>
-            <small>Fair-draw commitment: {ceremony.serverSeedCommitment.slice(0, 12)}…</small>
-            <button
-              className="reading-entry-continue"
-              onClick={() => {
-                saveCurrentCeremony("shuffling");
-                send({ type: "FOCUS_COMPLETE" });
-              }}
-              type="button"
-            >
-              Begin the shuffle
-            </button>
-          </div>
-        </section>
-      )}
-
-      {state.matches("shuffling") && ceremony && (
-        <section className="reading-entry-stage reading-question-stage sanctuary-shuffle-ritual is-shuffling">
-          <ImmersiveShuffleDeck onStir={stirPendingDeck} />
-          <div className="sanctuary-shuffle-copy">
-            <p className="ritual-status">All 78 possibilities are in motion</p>
-            <span>
-              Swipe, tap, click, or press Space to stir in fresh secure entropy. The draw remains
-              cryptographically strong if you finish immediately.
-            </span>
-          </div>
-          <button
-            className="shuffle-skip-action"
-            onClick={() => {
-              saveCurrentCeremony("optionalCut");
+      {(state.matches("shuffling") || state.matches("selectingCards")) && ceremony && (
+        <section className="reading-entry-stage casino-wash-stage">
+          <CasinoWashDeck
+            onFinishWash={() => {
+              saveCurrentCeremony("selectingCards");
               send({ type: "SHUFFLE_COMPLETE" });
             }}
-            type="button"
-          >
-            Finish shuffling
-          </button>
-        </section>
-      )}
-
-      {state.matches("optionalCut") && ceremony && (
-        <section className="reading-entry-stage reading-question-stage sanctuary-gather-ritual">
-          <div className="sanctuary-shuffle-copy">
-            <p className="ritual-status">Cut the deck, if you wish</p>
-            <span>
-              Choose where the deck separates. That exact cut becomes part of this locked draw.
-            </span>
-          </div>
-          <ImmersiveCutDeck
-            onCut={(cutIndex) => void finalizeDraw(cutIndex)}
-            onNoCut={() => void finalizeDraw(0)}
+            onSelect={(index) => {
+              const next = [...selectedIndexes, index];
+              setSelectedIndexes(next);
+              saveCurrentCeremony("selectingCards", next);
+            }}
+            onStir={stirPendingDeck}
+            phase={state.matches("shuffling") ? "washing" : "selecting"}
+            positions={ceremony.spread.positions}
             reducedMotion={reducedMotion}
+            selectedIndexes={selectedIndexes}
           />
         </section>
       )}
 
       {state.matches("drawFinalizing") && (
         <div className="sanctuary-loading" role="status">
-          <span aria-hidden="true">✦</span> Finalizing and locking every card, position, and
-          orientation…
+          <span aria-hidden="true">✦</span> Locking your selected cards…
         </div>
       )}
 

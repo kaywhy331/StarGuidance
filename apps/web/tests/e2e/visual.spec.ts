@@ -64,25 +64,20 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
   await expect(
-    page.getByRole("heading", { name: "What would you like the cards to illuminate?" }),
+    page.getByRole("heading", { name: "What question did you have for the stars today?" }),
   ).toBeVisible();
-  await page.getByLabel("Your private question").fill("What can support my next grounded step?");
-  await page.getByRole("button", { name: "Review my question" }).click();
-  await page.getByRole("button", { name: "Confirm this question" }).click();
   await capturePage(page, testInfo, "reading-selection");
   await page
-    .getByRole("button", { name: "Confirm Three Cards — Situation, Challenge, Direction" })
-    .click();
-  await page.getByRole("button", { name: "Begin the shuffle" }).click();
-  await expect(page.getByText("Shuffling the committed deck", { exact: true })).toBeVisible();
+    .getByLabel("Your question for the stars")
+    .fill("How can I understand the uncertainty I feel right now?");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   await capturePage(page, testInfo, "shuffle-deal");
-  await page.getByRole("button", { name: "Finish shuffling" }).click();
-  const cutDeck = page.getByTestId("ritual-cut-deck");
-  const cutBounds = await cutDeck.boundingBox();
-  if (!cutBounds) throw new Error("The immersive cut deck is not visible.");
-  await cutDeck.click({
-    position: { x: cutBounds.width / 2, y: cutBounds.height / 2 },
-  });
+  await page.getByRole("button", { name: "Gather the cards" }).click();
+  for (let index = 1; index <= 3; index += 1)
+    await page
+      .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
+      .press("Enter");
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();

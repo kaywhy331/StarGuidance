@@ -10,6 +10,7 @@ import {
   type ApplicationRepositories,
   type RepositoryUser,
   type StoredProfileVersion,
+  type StoredRelationshipProfileVersion,
 } from "@starguidance/database";
 
 import type { ProfileCalculation } from "./profile-engine";
@@ -27,6 +28,9 @@ import { getDecryptionKeys, getEncryptionKey, getRepositoriesForUser } from "./r
 export type SensitiveDataClass =
   | "profile-input"
   | "profile-calculations"
+  | "related-person-profile-input"
+  | "related-person-profile-calculations"
+  | "related-person-reading-lens"
   | "reading-question"
   | "draw-ceremony"
   | "draw-server-seed"
@@ -86,21 +90,25 @@ export function persistenceFor(user: Pick<RepositoryUser, "id">): RequestPersist
   };
 }
 
-export async function saveProfileVersion(
-  user: Pick<RepositoryUser, "id">,
+const DEFAULT_PROFILE_SYSTEMS: readonly ProfileTrait["sourceSystem"][] = [
+  "numerology",
+  "dreamspell",
+  "westernAstrology",
+  "bazi",
+  "planetaryAngularity",
+  "nineStarKi",
+];
+
+function buildStoredProfileVersion(
+  persistence: RequestPersistence,
   input: BirthProfileInput,
   calculation: ProfileCalculation,
-  enabledSystems: readonly ProfileTrait["sourceSystem"][] = [
-    "numerology",
-    "dreamspell",
-    "westernAstrology",
-    "bazi",
-    "planetaryAngularity",
-    "nineStarKi",
-  ],
-): Promise<ProfileSnapshot> {
-  const persistence = persistenceFor(user);
-  const active = await persistence.repositories.birthProfiles.getActive(user.id);
+  enabledSystems: readonly ProfileTrait["sourceSystem"][],
+  profileId: string,
+  version: number,
+  inputClass: "profile-input" | "related-person-profile-input",
+  calculationClass: "profile-calculations" | "related-person-profile-calculations",
+): StoredProfileVersion {
   const enabled = new Set(enabledSystems);
   const { traits, tensions, convergences } = filterProfileOntologyBySystem(
     calculation,
@@ -108,8 +116,8 @@ export async function saveProfileVersion(
   );
   const snapshot: ProfileSnapshot = {
     id: randomUUID(),
-    profileId: active?.snapshot.profileId ?? randomUUID(),
-    version: (active?.snapshot.version ?? 0) + 1,
+    profileId,
+    version,
     completeness: getProfileCompleteness(input),
     ontologyVersion: calculation.ontology_version,
     traits,
@@ -179,12 +187,58 @@ export async function saveProfileVersion(
     }),
   ];
   const profile: StoredProfileVersion = {
-    encryptedInput: persistence.encrypt(JSON.stringify(input), "profile-input"),
-    encryptedCalculations: persistence.encrypt(JSON.stringify(calculation), "profile-calculations"),
+    encryptedInput: persistence.encrypt(JSON.stringify(input), inputClass),
+    encryptedCalculations: persistence.encrypt(JSON.stringify(calculation), calculationClass),
     components,
     snapshot,
   };
+  return profile;
+}
+
+export async function saveProfileVersion(
+  user: Pick<RepositoryUser, "id">,
+  input: BirthProfileInput,
+  calculation: ProfileCalculation,
+  enabledSystems: readonly ProfileTrait["sourceSystem"][] = DEFAULT_PROFILE_SYSTEMS,
+): Promise<ProfileSnapshot> {
+  const persistence = persistenceFor(user);
+  const active = await persistence.repositories.birthProfiles.getActive(user.id);
+  const profile = buildStoredProfileVersion(
+    persistence,
+    input,
+    calculation,
+    enabledSystems,
+    active?.snapshot.profileId ?? randomUUID(),
+    (active?.snapshot.version ?? 0) + 1,
+    "profile-input",
+    "profile-calculations",
+  );
   return persistence.repositories.birthProfiles.saveVersion(user.id, profile);
+}
+
+export async function saveRelationshipProfileVersion(
+  user: Pick<RepositoryUser, "id">,
+  input: BirthProfileInput,
+  calculation: ProfileCalculation,
+  enabledSystems: readonly ProfileTrait["sourceSystem"][] = DEFAULT_PROFILE_SYSTEMS,
+  existing?: StoredRelationshipProfileVersion,
+): Promise<ProfileSnapshot> {
+  const persistence = persistenceFor(user);
+  const relationshipProfileId = existing?.relationshipProfileId ?? randomUUID();
+  const profile = buildStoredProfileVersion(
+    persistence,
+    input,
+    calculation,
+    enabledSystems,
+    relationshipProfileId,
+    (existing?.snapshot.version ?? 0) + 1,
+    "related-person-profile-input",
+    "related-person-profile-calculations",
+  );
+  return persistence.repositories.relationshipProfiles.saveVersion(user.id, {
+    ...profile,
+    relationshipProfileId,
+  });
 }
 
 export async function recordAudit(

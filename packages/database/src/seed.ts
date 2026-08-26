@@ -187,6 +187,26 @@ try {
         "grounded concise continuation of the same locked reading",
       ],
       [
+        "reader-voice-v8",
+        "concise direct consultation with separate minimized relationship context",
+      ],
+      [
+        "follow-up-reader-voice-v8",
+        "same-draw continuation carrying minimized relationship context",
+      ],
+      [
+        "deterministic-fallback-v8",
+        "relationship-aware credential-free consultation using locked cards",
+      ],
+      [
+        "reader-voice-v8-grounded",
+        "relationship-aware consultation with concrete observable emphasis",
+      ],
+      [
+        "follow-up-reader-voice-v8-grounded",
+        "grounded same-draw continuation carrying relationship context",
+      ],
+      [
         "reader-voice-v4-grounded",
         "question-first connected live narrator with concrete observable emphasis",
       ],
@@ -221,9 +241,9 @@ try {
       },
       {
         domain: "prompts",
-        version: 4,
+        version: 5,
         payload: {
-          bundleId: "reader-voice-v7",
+          bundleId: "reader-voice-v8",
           safetyPolicyVersion: "question-safety-v2",
         },
       },

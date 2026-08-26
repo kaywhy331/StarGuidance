@@ -43,29 +43,74 @@ test("onboarding keeps required and optional birth details in one private form",
   await expect(form.getByLabel("Birth time")).toBeEnabled();
 });
 
-test("the exact question and immutable spread positions are confirmed before shuffling", async ({
+test("an explicitly mentioned saved person contributes only a minimized locked lens", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await createAccountAndProfileViaApi(page);
+  await page.goto("/people");
+  await page.getByLabel("Full birth name *").fill("John Smith");
+  await page.getByLabel("Date of birth *").fill("1991-06-12");
+  await page.getByLabel("Birth city / country").fill("Seattle, United States");
+  await page
+    .getByLabel(/I have this person's permission to store their birth details privately/i)
+    .check();
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/people",
+  );
+  await page.getByRole("button", { name: "Add person" }).click();
+  expect((await saved).status()).toBe(201);
+  await expect(page.getByText("@john-smith", { exact: true })).toBeVisible();
+
+  const ceremony = await prepareReadingViaApi(page, {
+    question: "Why has @john-smith been distant lately?",
+    personalizationMode: "personalized_tarot",
+  });
+  expect(ceremony.spread.id).toBe("relationship");
+  const finalized = await finalizeReadingViaApi(page, ceremony);
+  await completeRevealViaApi(page, finalized.readingId, ceremony.spread.positions.length, 0);
+
+  const exported = await page.evaluate(async () => {
+    const response = await fetch("/api/privacy/export", { cache: "no-store" });
+    return { status: response.status, body: await response.json() };
+  });
+  expect(exported.status).toBe(200);
+  const locked = exported.body.readings.find(
+    (reading: { id: string }) => reading.id === finalized.readingId,
+  ).relatedPersonLens;
+  expect(locked.profiles[0]).toMatchObject({
+    profileId: expect.any(String),
+    snapshotId: expect.any(String),
+    mention: "@john-smith",
+  });
+  expect(locked.profiles[0].traitStatements.length).toBeGreaterThan(0);
+  expect(JSON.stringify(locked)).not.toMatch(/1991-06-12|Seattle|John Smith|birthDate/i);
+});
+
+test("one question directly prepares an automatic spread without exposing card assignments", async ({
   page,
 }) => {
   await createAccountAndProfileViaApi(page);
-  const question = "Does my colleague secretly intend to undermine me?";
-  await page.getByLabel("Your private question").fill(question);
-  await page.getByRole("button", { name: "Review my question" }).click();
-
-  const confirmation = page.getByTestId("question-confirmation");
-  await expect(confirmation).toContainText(question);
-  await expect(confirmation).toContainText(/more open, user-centered/i);
-  await expect(page.getByRole("button", { name: "Use this reformulation" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Confirm this question" })).toBeVisible();
-  await expect(page.getByTestId("spread-position-preview")).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Confirm this question" }).click();
-  const preview = page.getByTestId("spread-position-preview");
-  await expect(preview).toContainText("The positions are fixed before any card is known");
-  await expect(preview.getByRole("listitem")).toHaveCount(3);
-  await expect(preview).toContainText("Situation");
-  await expect(preview).toContainText("Challenge");
-  await expect(preview).toContainText("Direction");
-  await expect(page.getByRole("button", { name: "Begin the shuffle" })).toHaveCount(0);
+  const question = "How can I work with the tension I feel around this project?";
+  await expect(
+    page.getByRole("heading", { name: "What question did you have for the stars today?" }),
+  ).toBeVisible();
+  await expect(page.getByText("Set your intention", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Your question for the stars").fill(question);
+  const prepared = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/readings" &&
+      response.request().postData()?.includes('"action":"prepare"') === true,
+  );
+  await page.getByRole("button", { name: "Send question" }).click();
+  const response = await prepared;
+  expect(response.status()).toBe(201);
+  const payload = await response.json();
+  expect(payload.ceremony.spread.id).toBe("three-card");
+  expect(JSON.stringify(payload)).not.toMatch(/"cardId"|"assignments"|"orientation"/);
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
 });
 
 test("preparation commits the ritual but finalization atomically creates the first card records", async ({
@@ -180,21 +225,21 @@ const spreadContracts = [
   {
     id: "three-card",
     count: 3,
-    question: "How may this work decision develop over the next month?",
+    question: "How can I understand the uncertainty I feel about work right now?",
     trajectory: true,
     alternate: false,
   },
   {
     id: "crossroads",
     count: 5,
-    question: "What should I understand about the two paths in this work decision?",
+    question: "Should I choose the promotion or remain in my current role?",
     trajectory: false,
     alternate: true,
   },
   {
     id: "outlook",
     count: 7,
-    question: "How may this work transition develop over the next month?",
+    question: "How may my work transition unfold over the coming months?",
     trajectory: true,
     alternate: false,
   },

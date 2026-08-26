@@ -12,12 +12,12 @@ function prepareThroughSpread(actor: ReadingActor) {
   actor.send({ type: "CONFIRM_SPREAD" });
 }
 
-function reachLockedDraw(actor: ReadingActor, cut = false) {
+function reachLockedDraw(actor: ReadingActor) {
   prepareThroughSpread(actor);
   actor.send({ type: "SAFETY_APPROVED" });
   actor.send({ type: "FOCUS_COMPLETE" });
   actor.send({ type: "SHUFFLE_COMPLETE" });
-  actor.send({ type: cut ? "CUT" : "SKIP_CUT" });
+  actor.send({ type: "SELECTION_COMPLETE" });
   expect(actor.getSnapshot().value).toBe("drawFinalizing");
   actor.send({ type: "DRAW_LOCKED" });
 }
@@ -36,23 +36,21 @@ describe("committed-draw reading lifecycle", () => {
     expect(actor.getSnapshot().value).toBe("focusing");
   });
 
-  it("places both a chosen cut and no-cut skip in drawFinalizing before drawLocked", () => {
-    for (const cut of [false, true]) {
-      const actor = createActor(readingMachine).start();
-      reachLockedDraw(actor, cut);
-      expect(actor.getSnapshot().value).toBe("drawLocked");
-    }
+  it("places a completed fan selection in drawFinalizing before drawLocked", () => {
+    const actor = createActor(readingMachine).start();
+    reachLockedDraw(actor);
+    expect(actor.getSnapshot().value).toBe("drawLocked");
   });
 
-  it("returns to optionalCut when atomic finalization fails", () => {
+  it("returns to card selection when atomic finalization fails", () => {
     const actor = createActor(readingMachine).start();
     prepareThroughSpread(actor);
     actor.send({ type: "SAFETY_APPROVED" });
     actor.send({ type: "FOCUS_COMPLETE" });
     actor.send({ type: "SHUFFLE_COMPLETE" });
-    actor.send({ type: "CUT" });
+    actor.send({ type: "SELECTION_COMPLETE" });
     actor.send({ type: "FINALIZATION_FAILED" });
-    expect(actor.getSnapshot().value).toBe("optionalCut");
+    expect(actor.getSnapshot().value).toBe("selectingCards");
   });
 
   it("does not begin whole-spread interpretation until all cards are revealed", () => {

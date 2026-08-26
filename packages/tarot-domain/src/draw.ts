@@ -4,6 +4,7 @@ import type { DrawAssignment, LockedDraw, ReversalMode, Spread, TarotCard } from
 
 export const SHUFFLE_VERSION = "fisher-yates-csprng-v1" as const;
 export const COMMITTED_SHUFFLE_VERSION = "fisher-yates-committed-v2" as const;
+export const USER_PICK_SHUFFLE_VERSION = "fisher-yates-committed-user-pick-v3" as const;
 export const DRAW_ENTROPY_VERSION = "hmac-sha256-domain-stream-v1" as const;
 export const DRAW_SEED_BYTES = 32;
 
@@ -158,6 +159,7 @@ export function finalizeCommittedDraw(input: {
   readonly serverSeedCommitment: string;
   readonly clientNonce: string;
   readonly cutIndex: number;
+  readonly selectedIndexes?: readonly number[];
   readonly reversalMode: ReversalMode;
   readonly now?: Date;
 }): LockedDraw {
@@ -171,6 +173,20 @@ export function finalizeCommittedDraw(input: {
     input.cutIndex >= input.cards.length
   )
     throw new Error("Cut index must be within the deck");
+  const selectedIndexes =
+    input.selectedIndexes ?? input.spread.positions.map((_, positionIndex) => positionIndex);
+  if (selectedIndexes.length !== input.spread.positions.length)
+    throw new Error("Selected card count must match the spread");
+  if (
+    new Set(selectedIndexes).size !== selectedIndexes.length ||
+    selectedIndexes.some(
+      (selectedIndex) =>
+        !Number.isInteger(selectedIndex) ||
+        selectedIndex < 0 ||
+        selectedIndex >= input.cards.length,
+    )
+  )
+    throw new Error("Selected card positions must be unique and within the deck");
 
   const serverSeed = canonicalBytes(input.serverSeed, "serverSeed");
   const clientNonce = canonicalBytes(input.clientNonce, "clientNonce");
@@ -196,7 +212,7 @@ export function finalizeCommittedDraw(input: {
   const orientationRandom = streamRandomInt(deriveStreamKey({ ...common, domain: "orientation" }));
   const assignments: DrawAssignment[] = input.spread.positions.map((position, order) => ({
     positionId: position.id,
-    cardId: (cutDeck[order] as TarotCard).id,
+    cardId: (cutDeck[selectedIndexes[order] as number] as TarotCard).id,
     orientation:
       input.reversalMode === "reversals_enabled" &&
       input.spread.allowReversals &&
@@ -211,7 +227,7 @@ export function finalizeCommittedDraw(input: {
     deckVersion: input.deckVersion,
     spreadId: input.spread.id,
     spreadVersion: input.spread.version,
-    shuffleVersion: COMMITTED_SHUFFLE_VERSION,
+    shuffleVersion: input.selectedIndexes ? USER_PICK_SHUFFLE_VERSION : COMMITTED_SHUFFLE_VERSION,
     assignments: Object.freeze(assignments.map((assignment) => Object.freeze(assignment))),
     proof: Object.freeze({
       entropyVersion: DRAW_ENTROPY_VERSION,
@@ -219,6 +235,9 @@ export function finalizeCommittedDraw(input: {
       clientNonceHash: hashDrawClientNonce(input.clientNonce),
       cutIndex: input.cutIndex,
       reversalMode: input.reversalMode,
+      ...(input.selectedIndexes
+        ? { selectedIndexes: Object.freeze([...input.selectedIndexes]) }
+        : {}),
     }),
     lockedAt: (input.now ?? new Date()).toISOString(),
   });

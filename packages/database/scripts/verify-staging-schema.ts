@@ -38,6 +38,8 @@ const USER_OWNED_TABLES = [
   "profile_snapshots",
   "profile_components",
   "profile_traits",
+  "relationship_profiles",
+  "relationship_profile_snapshots",
   "reading_sessions",
   "reading_draws",
   "reading_outputs",

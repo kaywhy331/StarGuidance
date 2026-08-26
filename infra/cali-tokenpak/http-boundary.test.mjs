@@ -81,6 +81,7 @@ function inferencePayload(overrides = {}) {
           answerPositionId: cards[2].positionId,
           cards,
           readerLens: ["You commit quickly once a direction feels right."],
+          relationshipLens: [],
         }),
       },
     ],

@@ -67,6 +67,7 @@ const readingPayload = {
   answerPositionId: cards[2].positionId,
   cards,
   readerLens: ["You commit quickly once a direction feels right."],
+  relationshipLens: [],
 };
 const originalReading = {
   directAnswer: "A deliberate step is taking shape.",
@@ -183,8 +184,8 @@ describe("gateway security primitives", () => {
       expect(() => validateInferencePayload(Buffer.from(JSON.stringify(payload)))).toThrow();
   });
 
-  it("accepts every concise grounded prompt through the reviewed boundary", () => {
-    const grounded = RUNTIME_PROMPT_BUNDLES["reader-voice-v7-grounded"];
+  it("accepts every relationship-aware grounded prompt through the reviewed boundary", () => {
+    const grounded = RUNTIME_PROMPT_BUNDLES["reader-voice-v8-grounded"];
     for (const systemPrompt of [grounded.reading, grounded.guardedReading])
       expect(
         validateInferencePayload(Buffer.from(JSON.stringify(requestPayload({ systemPrompt }))))

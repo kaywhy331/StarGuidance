@@ -90,6 +90,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
     "bee71d381cd1a2206d428841f9d795fbe7e2c8cf8833a50e2e4c78c5f5ce452e",
   "0025_committed_draw_lifecycle":
     "cfd7055877f764cf098108223c977b8f9658076e7b67bc9da08c93ec669bbb8c",
+  "0026_relationship_profiles": "bf9c00a7e1b1e2446425bc499ff506b828d142efe3b6495a1efa7e0b5c01d557",
 };
 
 describe("migration history", () => {
@@ -259,6 +260,18 @@ describe("migration history", () => {
     expect(sql).toMatch(
       /alter\s+table\s+"reading_sessions"\s+add\s+column\s+"configuration"\s+jsonb/i,
     );
+    expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+(?:table|column)/i);
+  });
+
+  it("adds encrypted relationship profiles and a locked minimized reading lens (0026)", () => {
+    const sql = executableSql("0026_relationship_profiles");
+    expect(sql).toMatch(/create\s+table\s+"relationship_profiles"/i);
+    expect(sql).toMatch(/create\s+table\s+"relationship_profile_snapshots"/i);
+    expect(sql).toMatch(/encrypted_input"\s+text\s+not\s+null/i);
+    expect(sql).toMatch(/encrypted_calculations"\s+text\s+not\s+null/i);
+    expect(sql).toMatch(/encrypted_related_person_lens"\s+text/i);
+    expect(sql).toMatch(/relationship_profile_snapshots_owner/i);
+    expect(sql).toMatch(/force\s+row\s+level\s+security/i);
     expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+(?:table|column)/i);
   });
 

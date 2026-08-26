@@ -10,6 +10,7 @@ export const readingStateNames = [
   "safetyApproved",
   "focusing",
   "shuffling",
+  "selectingCards",
   "optionalCut",
   "drawFinalizing",
   "drawLocked",
@@ -41,6 +42,7 @@ export const readingMachine = setup({
       | { type: "CONTINUE_AS_REFLECTION" }
       | { type: "FOCUS_COMPLETE" }
       | { type: "SHUFFLE_COMPLETE" }
+      | { type: "SELECTION_COMPLETE" }
       | { type: "CUT" }
       | { type: "SKIP_CUT" }
       | { type: "DRAW_LOCKED" }
@@ -86,10 +88,13 @@ export const readingMachine = setup({
     },
     safetyApproved: { always: "focusing" },
     focusing: { on: { FOCUS_COMPLETE: "shuffling" } },
-    shuffling: { on: { SHUFFLE_COMPLETE: "optionalCut" } },
+    shuffling: { on: { SHUFFLE_COMPLETE: "selectingCards" } },
+    selectingCards: { on: { SELECTION_COMPLETE: "drawFinalizing" } },
+    /** Historical recovery state for ceremonies prepared by the cut-based
+     * interface. New readings use selectingCards. */
     optionalCut: { on: { CUT: "drawFinalizing", SKIP_CUT: "drawFinalizing" } },
     drawFinalizing: {
-      on: { DRAW_LOCKED: "drawLocked", FINALIZATION_FAILED: "optionalCut" },
+      on: { DRAW_LOCKED: "drawLocked", FINALIZATION_FAILED: "selectingCards" },
     },
     drawLocked: { on: { BEGIN_DEAL: "dealing" } },
     dealing: { on: { DEALT: "awaitingReveal" } },

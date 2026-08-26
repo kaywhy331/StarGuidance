@@ -11,6 +11,7 @@ import {
   type StoredFeedback,
   type StoredOrder,
   type StoredProfileVersion,
+  type StoredRelationshipProfileVersion,
   type StoredReading,
   type StoredReport,
 } from "@starguidance/database";
@@ -52,6 +53,8 @@ export interface LocalStore {
   profileTraits: Map<string, ProfileTraitRecord[]>;
   feedback: Map<string, StoredFeedback>;
   profileSnapshots: Map<string, LocalProfileVersion>;
+  relationshipProfileRoots: Map<string, { userId: string; activeSnapshotId: string }>;
+  relationshipProfileSnapshots: Map<string, StoredRelationshipProfileVersion>;
   idempotency: Map<string, string>;
   webhookEvents: Map<
     string,
@@ -89,6 +92,8 @@ export const localStore: LocalStore =
     profileTraits: new Map(),
     feedback: new Map(),
     profileSnapshots: new Map(),
+    relationshipProfileRoots: new Map(),
+    relationshipProfileSnapshots: new Map(),
     idempotency: new Map(),
     webhookEvents: new Map(),
     auditEvents: [],
