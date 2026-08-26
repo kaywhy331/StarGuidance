@@ -93,7 +93,8 @@ describe("reading audio route", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("audio/mpeg");
+    expect(response.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
+    expect(response.headers.get("x-reading-audio-format")).toBe("audio/mpeg");
     expect(response.headers.get("cache-control")).toBe("private, no-store, no-transform");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([73, 68, 51]));
     expect(mocks.stream).toHaveBeenCalledWith(

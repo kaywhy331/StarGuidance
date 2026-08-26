@@ -9,6 +9,7 @@ import { QuestionComposer } from "../session/[id]/question-composer";
 import type { DealtCardView } from "../session/[id]/reading-types";
 import { useRitualAmbience } from "../session/[id]/ritual-audio";
 import { RitualControls } from "../session/[id]/ritual-controls";
+import { TarotSpreadStage } from "../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 
@@ -44,6 +45,20 @@ export function SanctuaryVisualPreview({
         toggleAmbience={() => setAmbience((enabled) => !enabled)}
         toggleSound={() => setSound((enabled) => !enabled)}
       />
+      {!journeyComplete && (
+        <section
+          aria-label="Preview of the locked tarot spread during the reading"
+          className="sanctuary-stage has-reading-journey"
+        >
+          <TarotSpreadStage
+            activeIndex={null}
+            cards={cards}
+            focusMode={null}
+            reducedMotion={false}
+            revealed={new Set(cards.map((_, index) => index))}
+          />
+        </section>
+      )}
       <div
         className={`oracle-console-stack ${journeyComplete ? "is-actions" : "is-reading"}`}
         data-focus-stage={journeyComplete ? "actions" : "reading"}

@@ -883,11 +883,13 @@ export function GuestReadingExperience({
       state.matches("complete")) &&
     Boolean(reading?.result);
   const cardsVisible =
-    !transcriptVisible &&
+    !journeyComplete &&
     (state.matches("awaitingReveal") ||
       state.matches("revealing") ||
       state.matches("fullSpreadReady") ||
-      state.matches("interpretationStreaming"));
+      state.matches("interpretationStreaming") ||
+      state.matches("followUpAvailable") ||
+      state.matches("complete"));
   const activeRevealCard = activeReveal === null ? undefined : reading?.cards[activeReveal];
   const readingFocusStage = transcriptVisible
     ? journeyComplete
@@ -1274,7 +1276,7 @@ export function GuestReadingExperience({
 
       {(state.matches("dealing") || cardsVisible) && (
         <section
-          className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""}`}
+          className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${transcriptVisible && !journeyComplete ? "has-reading-journey" : ""}`}
         >
           {state.matches("dealing") && reading && (
             <div className="sanctuary-deal-ritual" data-testid="guest-deal">

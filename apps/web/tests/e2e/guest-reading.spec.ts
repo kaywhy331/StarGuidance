@@ -129,7 +129,8 @@ test("a visitor completes a causal free reading before signup and continues with
   );
   await expect(completeStory).not.toContainText("whose function is");
   await expect(completeStory).not.toContainText("current pattern begins with");
-  await expect(page.getByTestId("tarot-spread-stage")).toHaveCount(0);
+  await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   await expect(signupGate).toHaveCount(0);
   await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
     "data-reading-focus",

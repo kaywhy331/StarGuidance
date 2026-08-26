@@ -9,6 +9,7 @@ export function PhysicalTarotCard({
   card,
   focusMode,
   index,
+  narrationActive = false,
   revealed,
   reducedMotion,
   onReveal,
@@ -16,6 +17,7 @@ export function PhysicalTarotCard({
   card: DealtCardView;
   focusMode: "reveal" | "reading" | null;
   index: number;
+  narrationActive?: boolean;
   revealed: boolean;
   reducedMotion: boolean;
   /** Present only while this specific card is still face down and eligible for
@@ -146,7 +148,7 @@ export function PhysicalTarotCard({
     <figure
       className={`physical-card-figure ${active ? "is-cinematic-subject" : ""} ${
         focusMode === "reading" ? "is-reading-subject" : ""
-      }`}
+      } ${narrationActive ? "is-narration-active" : ""}`}
       data-spread-column={card.placement.column}
       data-spread-row={card.placement.row}
       data-spread-rotation={card.placement.rotation}

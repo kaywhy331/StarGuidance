@@ -438,7 +438,8 @@ test("refresh, replay, and same-question clarification preserve the exact locked
   await page.goto(`/session/${finalized.readingId}`);
   await page.reload();
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("tarot-spread-stage")).toHaveCount(0);
+  await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
     "data-reading-focus",
     "reading",

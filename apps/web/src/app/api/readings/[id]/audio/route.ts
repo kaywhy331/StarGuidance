@@ -73,7 +73,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return new Response(stream, {
       headers: {
         "cache-control": "private, no-store, no-transform",
-        "content-type": "audio/mpeg",
+        "content-type": "text/event-stream; charset=utf-8",
+        "x-reading-audio-format": "audio/mpeg",
         "x-accel-buffering": "no",
         "x-content-type-options": "nosniff",
       },

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { createBoundedFetch } from "./bounded-fetch";
 
-const FISH_AUDIO_TTS_URL = "https://api.fish.audio/v1/tts";
+const FISH_AUDIO_TTS_URL = "https://api.fish.audio/v1/tts/stream/with-timestamp";
 const DEFAULT_TIMEOUT_MS = 45_000;
 
 const fishAudioModelSchema = z.enum(["s1", "s2-pro", "s2.1-pro", "s2.1-pro-free"]);
@@ -28,6 +28,7 @@ export class ReadingAudioProviderError extends Error {
 
 export interface ReadingAudioProvider {
   readonly id: "fish-audio";
+  /** Fish SSE containing ordered base64 MP3 chunks and cumulative word alignments. */
   stream(text: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>>;
 }
 
@@ -92,7 +93,7 @@ export class FishAudioReadingProvider implements ReadingAudioProvider {
         method: "POST",
         cache: "no-store",
         headers: {
-          accept: "audio/mpeg",
+          accept: "text/event-stream",
           authorization: `Bearer ${this.configuration.apiKey}`,
           "content-type": "application/json",
           model: this.configuration.model,
@@ -118,7 +119,11 @@ export class FishAudioReadingProvider implements ReadingAudioProvider {
       throw new ReadingAudioProviderError("READING_AUDIO_UPSTREAM_UNAVAILABLE");
     }
 
-    if (!response.ok || !response.body) {
+    if (
+      !response.ok ||
+      !response.body ||
+      !response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")
+    ) {
       await response.body?.cancel().catch(() => undefined);
       throw new ReadingAudioProviderError("READING_AUDIO_UPSTREAM_UNAVAILABLE");
     }

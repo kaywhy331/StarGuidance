@@ -3462,6 +3462,22 @@ body {
   filter: drop-shadow(0 1.6rem 2.8rem rgb(0 0 0 / 0.72));
 }
 
+.physical-card-figure.is-narration-active {
+  z-index: 5;
+  filter: drop-shadow(0 0 0.65rem rgb(112 224 207 / 0.72))
+    drop-shadow(0 0 1.8rem rgb(115 101 236 / 0.58));
+}
+
+.physical-card-figure.is-narration-active .physical-card-front {
+  border-color: rgb(231 215 158 / 0.96);
+  animation: narration-card-aura 2.4s ease-in-out infinite;
+}
+
+.physical-card-figure.is-narration-active .card-sheen {
+  opacity: 0.72;
+  transform: translateX(28%) rotate(8deg);
+}
+
 .physical-card-figure.is-cinematic-positioned {
   transform: translate3d(var(--cinematic-x), var(--cinematic-y), 10rem)
     rotate(var(--spread-rotation, 0deg)) scale(var(--cinematic-scale));
@@ -4220,6 +4236,31 @@ body {
 .oracle-word.is-visible {
   top: 0;
   opacity: 1;
+}
+
+.oracle-word.is-current {
+  color: #fff1bd;
+  text-shadow:
+    0 0 0.6rem rgb(245 213 135 / 0.46),
+    0 2px 12px #000;
+}
+
+.reading-complete-story[data-narration-active="true"] > [data-narration-state] {
+  transition:
+    opacity 480ms ease,
+    filter 480ms ease,
+    transform 480ms cubic-bezier(0.2, 0.78, 0.2, 1);
+}
+
+.reading-complete-story[data-narration-active="true"] > [data-narration-state="pending"] {
+  opacity: 0.12;
+  filter: blur(1px);
+  transform: translateY(0.5rem);
+}
+
+.reading-complete-story[data-narration-active="true"] > [data-narration-state="active"],
+.guided-passage[data-narration-state="active"] {
+  animation: narrated-passage-arrive 620ms ease-out both;
 }
 
 .reading-result-overview {
@@ -6186,6 +6227,32 @@ body {
   from {
     opacity: 0;
     transform: translateY(0.7rem);
+  }
+}
+
+@keyframes narrated-passage-arrive {
+  from {
+    opacity: 0.36;
+    transform: translateY(0.45rem);
+  }
+}
+
+@keyframes narration-card-aura {
+  0%,
+  100% {
+    box-shadow:
+      0 1.2rem 2.7rem rgb(0 0 0 / 0.56),
+      0 0 0 1px rgb(255 255 255 / 0.07) inset,
+      0 0 1rem rgb(96 223 201 / 0.46),
+      0 0 2.4rem rgb(112 92 235 / 0.3);
+  }
+
+  50% {
+    box-shadow:
+      0 1.2rem 2.7rem rgb(0 0 0 / 0.56),
+      0 0 0 1px rgb(255 255 255 / 0.09) inset,
+      0 0 1.8rem rgb(115 233 211 / 0.72),
+      0 0 3.5rem rgb(127 94 242 / 0.5);
   }
 }
 
@@ -8423,6 +8490,28 @@ body {
   translate: -50% 0;
 }
 
+.mystic-sanctuary[data-reading-focus="reading"] .sanctuary-stage.has-reading-journey {
+  z-index: 16;
+  top: max(4.1rem, calc(env(safe-area-inset-top) + 3.55rem));
+  right: clamp(0.75rem, 3vw, 2rem);
+  bottom: auto;
+  left: clamp(0.75rem, 3vw, 2rem);
+  height: clamp(7.5rem, 21dvh, 12rem);
+  pointer-events: none;
+}
+
+.mystic-sanctuary[data-reading-focus="reading"]
+  .sanctuary-stage.has-reading-journey
+  .tarot-spread-stage {
+  width: min(100%, 54rem);
+  transform: none;
+}
+
+.mystic-sanctuary[data-reading-focus="reading"]:has(.sanctuary-stage.has-reading-journey)
+  .oracle-console-stack {
+  top: max(clamp(12rem, 26dvh, 15.5rem), calc(env(safe-area-inset-top) + 11rem));
+}
+
 .mystic-sanctuary[data-reading-focus="reading"] .oracle-transcript-shell {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
@@ -8621,6 +8710,18 @@ body {
     width: calc(100vw - 0.75rem);
   }
 
+  .mystic-sanctuary[data-reading-focus="reading"] .sanctuary-stage.has-reading-journey {
+    top: max(3.7rem, calc(env(safe-area-inset-top) + 3.25rem));
+    right: 0.35rem;
+    left: 0.35rem;
+    height: clamp(6.4rem, 18dvh, 9rem);
+  }
+
+  .mystic-sanctuary[data-reading-focus="reading"]:has(.sanctuary-stage.has-reading-journey)
+    .oracle-console-stack {
+    top: max(clamp(10.25rem, 23dvh, 12rem), calc(env(safe-area-inset-top) + 9.3rem));
+  }
+
   .mystic-sanctuary[data-reading-focus="reading"] .oracle-transcript {
     padding: 0.9rem;
     border-radius: 0.9rem;
@@ -8654,6 +8755,13 @@ body {
   }
 
   .oracle-word {
+    transition: none;
+  }
+
+  .physical-card-figure.is-narration-active .physical-card-front,
+  .reading-complete-story[data-narration-active="true"] > [data-narration-state],
+  .guided-passage[data-narration-state="active"] {
+    animation: none;
     transition: none;
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createOracleStreamEvents } from "@starguidance/ai";
@@ -20,6 +20,7 @@ import {
 import type { ReadingPayload } from "../../session/[id]/reading-types";
 import { useRitualAmbience } from "../../session/[id]/ritual-audio";
 import { RitualControls } from "../../session/[id]/ritual-controls";
+import { TarotSpreadStage } from "../../session/[id]/tarot-spread-stage";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 
@@ -48,6 +49,7 @@ export function ReadingResultScene({
   const [outcomeComment, setOutcomeComment] = useState("");
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [journeyComplete, setJourneyComplete] = useState(false);
+  const [narratingCardIndexes, setNarratingCardIndexes] = useState<readonly number[]>([]);
   const [continuationMode, setContinuationMode] = useState<ReadingContinuationMode>("choice");
   const {
     ambience,
@@ -97,11 +99,16 @@ export function ReadingResultScene({
     });
   }, [journeyComplete, reading, readingId]);
 
-  const previewEvents = reading?.result
-    ? createOracleStreamEvents(reading.result).filter(
-        (event): event is PhaseEvent => event.type === "phase",
-      )
-    : [];
+  const previewEvents = useMemo(
+    () =>
+      reading?.result
+        ? createOracleStreamEvents(reading.result).filter(
+            (event): event is PhaseEvent => event.type === "phase",
+          )
+        : [],
+    [reading],
+  );
+  const revealedCardIndexes = new Set(reading?.cards.map((_, index) => index) ?? []);
 
   const submitFollowUp = async () => {
     if (!reading || !followUp.trim()) return;
@@ -252,6 +259,22 @@ export function ReadingResultScene({
         toggleSound={toggleSound}
       />
 
+      {!journeyComplete && (
+        <section
+          aria-label="Your locked tarot spread remains present during the reading"
+          className="sanctuary-stage has-reading-journey"
+        >
+          <TarotSpreadStage
+            activeIndex={null}
+            cards={reading.cards}
+            focusMode={null}
+            narratingIndexes={narratingCardIndexes}
+            reducedMotion={reducedMotion}
+            revealed={revealedCardIndexes}
+          />
+        </section>
+      )}
+
       <div
         className={`oracle-console-stack ${journeyComplete ? "is-actions" : "is-reading"}`}
         data-focus-stage={journeyComplete ? "actions" : "reading"}
@@ -261,6 +284,14 @@ export function ReadingResultScene({
             active
             cards={reading.cards}
             onJourneyCompleteChange={setJourneyComplete}
+            onNarratedCardIndexesChange={(indexes) =>
+              setNarratingCardIndexes((current) =>
+                current.length === indexes.length &&
+                current.every((value, index) => value === indexes[index])
+                  ? current
+                  : [...indexes],
+              )
+            }
             onRetry={() => undefined}
             {...(reading.personalization ? { personalization: reading.personalization } : {})}
             previewEvents={previewEvents}

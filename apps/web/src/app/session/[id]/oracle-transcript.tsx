@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   oracleStreamEventSchema,
   type OracleStreamEvent,
   type ReadingResult,
 } from "@starguidance/contracts";
 
-import { ReadingAudioPlayer } from "./reading-audio-player";
+import {
+  countNarrationWords,
+  ReadingAudioPlayer,
+  type ReadingNarrationSnapshot,
+} from "./reading-audio-player";
 import type { DealtCardView, ReadingPersonalization } from "./reading-types";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
@@ -15,6 +19,41 @@ type StreamState = "idle" | "streaming" | "complete" | "failed";
 
 export function monotonicVisibleWordCount(current: number, requested: number, total: number) {
   return Math.min(total, Math.max(current, requested));
+}
+
+export function narrationWordTokens(text: string): readonly string[] {
+  return text.match(/\S+\s*/gu) ?? (text ? [text] : []);
+}
+
+function NarratedPassage({
+  active,
+  currentWord,
+  text,
+  visibleWords,
+}: {
+  active: boolean;
+  currentWord: boolean;
+  text: string;
+  visibleWords: number;
+}) {
+  if (!active) return <p className="oracle-entry-text">{text}</p>;
+  const words = narrationWordTokens(text);
+  return (
+    <p aria-label={text} className="oracle-entry-text">
+      <span aria-hidden="true" className="oracle-word-stream">
+        {words.map((word, index) => (
+          <span
+            className={`oracle-word ${index < visibleWords ? "is-visible" : ""} ${
+              currentWord && index === visibleWords - 1 ? "is-current" : ""
+            }`}
+            key={`${index}:${word}`}
+          >
+            {word}
+          </span>
+        ))}
+      </span>
+    </p>
+  );
 }
 
 export function OracleTranscript({
@@ -28,6 +67,7 @@ export function OracleTranscript({
   retryToken,
   audioEnabled,
   onActiveCardChange,
+  onNarratedCardIndexesChange,
   onJourneyCompleteChange,
   onRetry,
   onStateChange,
@@ -44,6 +84,7 @@ export function OracleTranscript({
   retryToken: number;
   audioEnabled: boolean;
   onActiveCardChange?: (index: number | null) => void;
+  onNarratedCardIndexesChange?: (indexes: readonly number[]) => void;
   onJourneyCompleteChange?: (complete: boolean) => void;
   onRetry: () => void;
   onStateChange?: (state: StreamState) => void;
@@ -55,6 +96,12 @@ export function OracleTranscript({
   const [completeView, setCompleteView] = useState(Boolean(previewEvents));
   const [journeyComplete, setJourneyComplete] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+  const [narration, setNarration] = useState<ReadingNarrationSnapshot>({
+    sectionIndex: null,
+    state: "idle",
+    visibleWordCount: 0,
+    wordCount: 0,
+  });
   const entriesRef = useRef(entries);
   const onJourneyCompleteChangeRef = useRef(onJourneyCompleteChange);
   const onStateChangeRef = useRef(onStateChange);
@@ -167,6 +214,21 @@ export function OracleTranscript({
     onActiveCardChange?.(completeView || activeCardIndex < 0 ? null : activeCardIndex);
   }, [activeCardIndex, completeView, onActiveCardChange]);
 
+  const narratedCardIndexes = useMemo(() => {
+    if (narration.state !== "playing" || narration.sectionIndex === null) return [];
+    const entry = entries[narration.sectionIndex];
+    if (!entry) return [];
+    const positionIds = entry.cardPositionIds;
+    if (!positionIds?.length) return cards.map((_, index) => index);
+    return positionIds
+      .map((positionId) => cards.findIndex((card) => card.positionId === positionId))
+      .filter((index) => index >= 0);
+  }, [cards, entries, narration.sectionIndex, narration.state]);
+
+  useEffect(() => {
+    onNarratedCardIndexesChange?.(narratedCardIndexes);
+  }, [narratedCardIndexes, onNarratedCardIndexesChange]);
+
   const move = (offset: number) => {
     setActiveIndex((current) => {
       const next = Math.max(0, Math.min(current + offset, entries.length - 1));
@@ -192,6 +254,28 @@ export function OracleTranscript({
       move(entries.length);
     }
   };
+
+  const narrationSequencing =
+    !reducedMotion &&
+    narration.sectionIndex !== null &&
+    ["loading", "playing", "paused", "ended"].includes(narration.state);
+  const narrationStateFor = (index: number) => {
+    if (!narrationSequencing || narration.sectionIndex === null) return undefined;
+    if (index < narration.sectionIndex) return "complete";
+    if (index > narration.sectionIndex) return "pending";
+    return narration.state === "ended" ? "complete" : "active";
+  };
+  const visiblePassageWords = (entry: PhaseEvent, index: number) => {
+    if (!narrationSequencing || narration.sectionIndex === null) return Number.POSITIVE_INFINITY;
+    if (index < narration.sectionIndex) return Number.POSITIVE_INFINITY;
+    if (index > narration.sectionIndex) return 0;
+    return Math.max(0, narration.visibleWordCount - countNarrationWords(`${entry.heading}.`));
+  };
+  const directEntryIndex = Math.max(
+    0,
+    entries.findIndex(({ phase }) => phase === "directAnswer"),
+  );
+  const directEntry = entries[directEntryIndex];
 
   return (
     <section
@@ -220,6 +304,7 @@ export function OracleTranscript({
             continuous={completeView}
             enabled={audioEnabled}
             entries={entries}
+            onNarrationChange={setNarration}
             readingId={readingId}
             target={target}
           />
@@ -240,20 +325,46 @@ export function OracleTranscript({
       >
         {completeView ? (
           <>
-            <article className="reading-complete-story" data-testid="reading-complete-story">
-              <header>
+            <article
+              className="reading-complete-story"
+              data-narration-active={narrationSequencing ? "true" : "false"}
+              data-testid="reading-complete-story"
+            >
+              <header data-narration-state={narrationStateFor(directEntryIndex)}>
                 <p className="reading-section-eyebrow">Your reading</p>
                 <h2>What the cards indicate</h2>
-                <p>{result.directAnswer}</p>
+                <NarratedPassage
+                  active={narrationSequencing}
+                  currentWord={
+                    narration.state === "playing" && narration.sectionIndex === directEntryIndex
+                  }
+                  text={result.directAnswer}
+                  visibleWords={
+                    directEntry
+                      ? visiblePassageWords(directEntry, directEntryIndex)
+                      : Number.POSITIVE_INFINITY
+                  }
+                />
               </header>
-              {entries
-                .filter(({ phase }) => phase !== "directAnswer")
-                .map((entry) => (
-                  <section data-phase={entry.phase} key={`${target}:${entry.sequence}`}>
+              {entries.map((entry, index) =>
+                entry.phase === "directAnswer" ? null : (
+                  <section
+                    data-narration-state={narrationStateFor(index)}
+                    data-phase={entry.phase}
+                    key={`${target}:${entry.sequence}`}
+                  >
                     <h3>{entry.heading}</h3>
-                    <p>{entry.text}</p>
+                    <NarratedPassage
+                      active={narrationSequencing}
+                      currentWord={
+                        narration.state === "playing" && narration.sectionIndex === index
+                      }
+                      text={entry.text}
+                      visibleWords={visiblePassageWords(entry, index)}
+                    />
                   </section>
-                ))}
+                ),
+              )}
             </article>
             {streamState === "complete" && !journeyComplete && (
               <button
@@ -268,14 +379,23 @@ export function OracleTranscript({
             )}
           </>
         ) : activeEntry ? (
-          <article className="oracle-entry guided-passage is-active" data-phase={activeEntry.phase}>
+          <article
+            className="oracle-entry guided-passage is-active"
+            data-narration-state={narrationStateFor(activeIndex)}
+            data-phase={activeEntry.phase}
+          >
             <p className="reading-section-eyebrow">
               {activeEntry.cardPositionIds?.length
                 ? "What this card contributes"
                 : "What the cards indicate"}
             </p>
             <h2>{activeEntry.heading}</h2>
-            <p>{activeEntry.text}</p>
+            <NarratedPassage
+              active={narrationSequencing && narration.sectionIndex === activeIndex}
+              currentWord={narration.state === "playing"}
+              text={activeEntry.text}
+              visibleWords={visiblePassageWords(activeEntry, activeIndex)}
+            />
             <nav aria-label="Reading sections" className="reading-journey-navigation">
               <button
                 aria-label="Previous reading passage"

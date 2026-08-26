@@ -84,8 +84,8 @@ test("the visual preview renders the spread-aware result and evidence contract",
   );
   expect(atmosphericTransferBytes).toBeGreaterThan(0);
   expect(atmosphericTransferBytes).toBeLessThan(350_000);
-  await expect(page.getByTestId("tarot-spread-stage")).toHaveCount(0);
-  await expect(page.locator(".physical-tarot-card")).toHaveCount(0);
+  await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
   await expect(page.locator(".question-composer")).toHaveCount(0);
   await expect(page.getByTestId("reading-journey")).toHaveAttribute(
     "data-loaded-section-count",
