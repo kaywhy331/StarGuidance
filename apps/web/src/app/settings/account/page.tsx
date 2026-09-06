@@ -1,5 +1,7 @@
 "use client";
 
+import { setMotionPreference } from "@/lib/motion-preference";
+
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -50,6 +52,7 @@ export default function AccountSettingsPage() {
       const body = (await response.json()) as AccountSettingsPayload & { error?: string };
       if (!response.ok) return setError(body.error ?? "Account settings could not be saved.");
       setPayload(body);
+      setMotionPreference(body.settings.reducedMotion);
       setNotice("Account settings saved.");
     } finally {
       setSaving(false);

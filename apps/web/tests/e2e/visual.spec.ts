@@ -71,7 +71,7 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
     .getByLabel("Your question for the stars")
     .fill("How can I understand the uncertainty I feel right now?");
   await page.getByRole("button", { name: "Send question" }).click();
-  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
+  await expect(page.locator(".casino-card-shell")).toHaveCount(12);
   await capturePage(page, testInfo, "shuffle-deal");
   await page.getByRole("button", { name: "Gather the cards" }).click();
   await expect(

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HeroDepth, MotionReveal, MotionToggle } from "./site-motion";
 
 const previewCards = [
   { label: "The threshold", glyph: "✦", rotation: "home-card--left" },
@@ -22,13 +23,16 @@ export default function HomePage() {
     <main className="home-shell">
       <nav aria-label="Primary navigation" className="home-nav">
         <Brand />
-        <Link className="sg-button sg-button--quiet sg-button--compact" href="/sign-in">
-          Sign in
-        </Link>
+        <div className="home-nav__actions">
+          <MotionToggle />
+          <Link className="sg-button sg-button--quiet sg-button--compact" href="/sign-in">
+            Sign in
+          </Link>
+        </div>
       </nav>
 
       <section className="home-hero">
-        <div className="home-hero__copy">
+        <MotionReveal className="home-hero__copy">
           <p className="eyebrow">
             <span aria-hidden="true">✦</span> A private space for reflection
           </p>
@@ -61,9 +65,9 @@ export default function HomePage() {
               <span aria-hidden="true">◇</span> Your data stays yours
             </li>
           </ul>
-        </div>
+        </MotionReveal>
 
-        <div aria-label="A three-card reflective spread" className="home-oracle">
+        <HeroDepth>
           <div aria-hidden="true" className="home-oracle__halo" />
           <p className="home-oracle__whisper">A moment to notice what is already moving</p>
           <div className="home-card-stage">
@@ -82,28 +86,36 @@ export default function HomePage() {
             <span>Draw integrity</span>
             <small>Question and profile never choose the cards</small>
           </div>
-        </div>
+        </HeroDepth>
       </section>
 
       <section aria-label="How StarGuidance works" className="home-passage">
-        <article>
-          <span>01</span>
-          <h2>Experience it first</h2>
-          <p>
-            Take one private, birthday-personalized reading before deciding whether to create an
-            account.
-          </p>
-        </article>
-        <article>
-          <span>02</span>
-          <h2>Meet an unaltered draw</h2>
-          <p>Secure randomness locks every card and reversal before any interpretation begins.</p>
-        </article>
-        <article>
-          <span>03</span>
-          <h2>Continue only if it helps</h2>
-          <p>Sign up to ask the same cards a follow-up and unlock saved, personalized readings.</p>
-        </article>
+        <MotionReveal>
+          <article>
+            <span>01</span>
+            <h2>Experience it first</h2>
+            <p>
+              Take one private, birthday-personalized reading before deciding whether to create an
+              account.
+            </p>
+          </article>
+        </MotionReveal>
+        <MotionReveal>
+          <article>
+            <span>02</span>
+            <h2>Meet an unaltered draw</h2>
+            <p>Secure randomness locks every card and reversal before any interpretation begins.</p>
+          </article>
+        </MotionReveal>
+        <MotionReveal>
+          <article>
+            <span>03</span>
+            <h2>Continue only if it helps</h2>
+            <p>
+              Sign up to ask the same cards a follow-up and unlock saved, personalized readings.
+            </p>
+          </article>
+        </MotionReveal>
       </section>
 
       <p className="home-disclaimer">

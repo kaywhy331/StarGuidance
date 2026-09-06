@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const REDUCED_MOTION_KEY = "sg:reading:reduced-motion";
+import {
+  savedMotionPreference,
+  setMotionPreference,
+  useMotionPreference,
+} from "./motion-preference";
 const SOUND_KEY = "sg:reading:sound";
 const AMBIENCE_KEY = "sg:reading:ambience";
 const NARRATION_KEY = "sg:reading:narration";
@@ -13,9 +17,9 @@ export interface ReadingPreferenceSeed {
   reducedMotion: boolean;
 }
 
-function storedBoolean(storage: Storage, key: string): boolean | undefined {
+function storedBoolean(key: string): boolean | undefined {
   try {
-    const value = storage.getItem(key);
+    const value = window.localStorage.getItem(key);
     return value === "true" ? true : value === "false" ? false : undefined;
   } catch {
     return undefined;
@@ -32,34 +36,26 @@ function persistBoolean(key: string, value: boolean) {
 
 export function useReadingPreferences(initial?: ReadingPreferenceSeed) {
   const [displayName, setDisplayName] = useState(initial?.displayName ?? "Reader");
-  const [reducedMotion, setReducedMotion] = useState(() => {
-    if (initial) return initial.reducedMotion;
-    if (typeof window === "undefined") return false;
-    return (
-      storedBoolean(window.localStorage, REDUCED_MOTION_KEY) ??
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    );
-  });
+  const { reducedMotion, systemReducedMotion } = useMotionPreference();
   const [sound, setSound] = useState(() =>
     initial
       ? initial.soundEnabled
       : typeof window === "undefined"
         ? true
-        : (storedBoolean(window.localStorage, SOUND_KEY) ?? true),
+        : (storedBoolean(SOUND_KEY) ?? true),
   );
   const [ambience, setAmbience] = useState(() =>
-    typeof window === "undefined"
-      ? false
-      : (storedBoolean(window.localStorage, AMBIENCE_KEY) ?? false),
+    typeof window === "undefined" ? false : (storedBoolean(AMBIENCE_KEY) ?? false),
   );
   const [narration, setNarration] = useState(() =>
-    typeof window === "undefined"
-      ? false
-      : (storedBoolean(window.localStorage, NARRATION_KEY) ?? false),
+    typeof window === "undefined" ? false : (storedBoolean(NARRATION_KEY) ?? false),
   );
 
   useEffect(() => {
-    if (initial) return;
+    if (initial) {
+      if (savedMotionPreference() === undefined) setMotionPreference(initial.reducedMotion);
+      return;
+    }
     let active = true;
     void fetch("/api/settings", { cache: "no-store" })
       .then(async (response) => {
@@ -71,9 +67,9 @@ export function useReadingPreferences(initial?: ReadingPreferenceSeed) {
         if (!active) return;
         setDisplayName(payload.settings.displayName);
         if (payload.settingsPersisted) {
-          setReducedMotion(payload.settings.reducedMotion);
+          if (savedMotionPreference() === undefined)
+            setMotionPreference(payload.settings.reducedMotion);
           setSound(payload.settings.soundEnabled);
-          persistBoolean(REDUCED_MOTION_KEY, payload.settings.reducedMotion);
           persistBoolean(SOUND_KEY, payload.settings.soundEnabled);
         }
       })
@@ -82,16 +78,6 @@ export function useReadingPreferences(initial?: ReadingPreferenceSeed) {
       active = false;
     };
   }, [initial]);
-
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const handleChange = (event: MediaQueryListEvent) => {
-      if (storedBoolean(window.localStorage, REDUCED_MOTION_KEY) === undefined)
-        setReducedMotion(event.matches);
-    };
-    query.addEventListener("change", handleChange);
-    return () => query.removeEventListener("change", handleChange);
-  }, []);
 
   const persistRemote = useCallback((nextReducedMotion: boolean, nextSound: boolean) => {
     void fetch("/api/settings", {
@@ -106,13 +92,11 @@ export function useReadingPreferences(initial?: ReadingPreferenceSeed) {
   }, []);
 
   const toggleReducedMotion = useCallback(() => {
-    setReducedMotion((current) => {
-      const next = !current;
-      persistBoolean(REDUCED_MOTION_KEY, next);
-      persistRemote(next, sound);
-      return next;
-    });
-  }, [persistRemote, sound]);
+    if (systemReducedMotion) return;
+    const next = !reducedMotion;
+    setMotionPreference(next);
+    persistRemote(next, sound);
+  }, [persistRemote, reducedMotion, sound, systemReducedMotion]);
   const toggleSound = useCallback(() => {
     setSound((current) => {
       const next = !current;

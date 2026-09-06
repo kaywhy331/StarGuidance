@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import "@fontsource-variable/cormorant";
 import "@fontsource-variable/cormorant/wght-italic.css";
 import "@fontsource-variable/manrope";
 
 import "./globals.css";
+import "./motion.css";
+import { motionTiming } from "@/lib/motion";
+import { SiteMotion } from "./site-motion";
 import { SiteAtmosphere } from "./site-atmosphere";
 import { AppNav } from "./app-nav";
 import { ProductTelemetryBeacon } from "./product-telemetry-beacon";
@@ -25,7 +28,15 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     process.env.ENABLE_VISUAL_PREVIEW === "true";
 
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      data-motion="reduced"
+      style={
+        Object.fromEntries(
+          Object.entries(motionTiming).map(([key, value]) => [`--motion-${key}`, `${value}ms`]),
+        ) as CSSProperties
+      }
+    >
       <head>
         {suppressHostPreviewDrawer && (
           <script
@@ -38,16 +49,18 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         )}
       </head>
       <body>
-        <SiteAtmosphere />
-        <ProductTelemetryBeacon />
-        <a className="skip-link" href="#main-content">
-          Skip to content
-        </a>
-        <AppNav />
-        <div id="main-content" tabIndex={-1}>
-          {children}
-        </div>
-        <SiteFooter />
+        <SiteMotion>
+          <SiteAtmosphere />
+          <ProductTelemetryBeacon />
+          <a className="skip-link" href="#main-content">
+            Skip to content
+          </a>
+          <AppNav />
+          <div id="main-content" tabIndex={-1}>
+            {children}
+          </div>
+          <SiteFooter />
+        </SiteMotion>
       </body>
     </html>
   );

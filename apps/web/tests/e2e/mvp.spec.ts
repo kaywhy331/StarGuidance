@@ -110,7 +110,7 @@ test("one question directly prepares an automatic spread without exposing card a
   const payload = await response.json();
   expect(payload.ceremony.spread.id).toBe("three-card");
   expect(JSON.stringify(payload)).not.toMatch(/"cardId"|"assignments"|"orientation"/);
-  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
+  await expect(page.locator(".casino-card-shell")).toHaveCount(12);
 });
 
 test("preparation commits the ritual but finalization atomically creates the first card records", async ({

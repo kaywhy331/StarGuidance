@@ -29,6 +29,8 @@ import { CasinoWashDeck } from "../session/[id]/shuffle-shells";
 const CEREMONY_STORAGE_KEY = "starguidance:pending-draw-ceremony:v2";
 const LEGACY_CEREMONY_STORAGE_KEY = "starguidance:pending-draw-ceremony:v1";
 
+import { motionTiming } from "@/lib/motion";
+
 type CeremonyStage = "focusing" | "shuffling" | "selectingCards" | "optionalCut";
 
 interface PendingCeremonyReceipt {
@@ -290,7 +292,7 @@ export function ReadingChooser({
       return;
     const timer = window.setTimeout(
       () => void finalizeDraw(selectedIndexes),
-      reducedMotion ? 0 : 850,
+      reducedMotion ? 0 : motionTiming.cardTravel,
     );
     return () => window.clearTimeout(timer);
   }, [ceremony, finalizeDraw, loading, reducedMotion, selectedIndexes, state]);

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { SanctuaryBackground } from "./sanctuary-backdrop";
 import { AtmosphericLayers } from "./atmospheric-layers";
 
 export type ReadingFocusStage = "ambient" | "cards" | "reading" | "actions";
@@ -22,8 +23,6 @@ export function MysticSanctuaryScene({
   focusStage?: ReadingFocusStage;
   testId?: string;
 }) {
-  const readingBackdrop = backdrop === "starry-reading";
-
   return (
     <main
       className="mystic-sanctuary"
@@ -34,52 +33,7 @@ export function MysticSanctuaryScene({
       data-ritual-phase={phase}
       data-testid={testId}
     >
-      <picture className="sanctuary-background">
-        <source
-          media="(max-width: 767px)"
-          srcSet={
-            readingBackdrop
-              ? "/art/reading/starry-night-mobile-v1.avif"
-              : "/art/sanctuary/cosmic-gothic-mobile-v1.avif"
-          }
-          type="image/avif"
-        />
-        <source
-          media="(max-width: 767px)"
-          srcSet={
-            readingBackdrop
-              ? "/art/reading/starry-night-mobile-v1.webp"
-              : "/art/sanctuary/cosmic-gothic-mobile-v1.webp"
-          }
-          type="image/webp"
-        />
-        <source
-          srcSet={
-            readingBackdrop
-              ? "/art/reading/starry-night-desktop-v1.avif"
-              : "/art/sanctuary/cosmic-gothic-desktop-v1.avif"
-          }
-          type="image/avif"
-        />
-        <source
-          srcSet={
-            readingBackdrop
-              ? "/art/reading/starry-night-desktop-v1.webp"
-              : "/art/sanctuary/cosmic-gothic-desktop-v1.webp"
-          }
-          type="image/webp"
-        />
-        <img
-          alt=""
-          decoding="async"
-          fetchPriority="high"
-          src={
-            readingBackdrop
-              ? "/art/reading/starry-night-desktop-v1.webp"
-              : "/art/sanctuary/cosmic-gothic-desktop-v1.webp"
-          }
-        />
-      </picture>
+      <SanctuaryBackground backdrop={backdrop} />
       <AtmosphericLayers reducedMotion={reducedMotion} />
       <div className="sanctuary-content">{children}</div>
     </main>

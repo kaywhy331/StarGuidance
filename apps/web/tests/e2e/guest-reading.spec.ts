@@ -41,7 +41,7 @@ test("a visitor completes a causal free reading before signup and continues with
     "data-ritual-phase",
     "shuffling",
   );
-  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
+  await expect(page.locator(".casino-card-shell")).toHaveCount(12);
   const nonceBeforeStir = await page.evaluate(() => {
     const pending = JSON.parse(sessionStorage.getItem("sg:guest-reading:v2") ?? "{}") as {
       clientNonce?: string;

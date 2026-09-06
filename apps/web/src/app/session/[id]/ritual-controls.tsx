@@ -1,5 +1,7 @@
 "use client";
 
+import { useMotionPreference } from "@/lib/motion-preference";
+
 import { useState } from "react";
 import Link from "next/link";
 
@@ -41,6 +43,7 @@ export function RitualControls({
   toggleReducedMotion?: () => void;
   toggleSound: () => void;
 }) {
+  const { systemReducedMotion } = useMotionPreference();
   const [audioOpen, setAudioOpen] = useState(false);
   const motionState = animationManaged ? "managed" : reducedMotion ? "on" : "off";
   const availableAudioLayers =
@@ -71,7 +74,8 @@ export function RitualControls({
             aria-label={`Reduced motion ${motionState}`}
             aria-pressed={reducedMotion}
             className="ritual-hud__toggle"
-            disabled={animationManaged}
+            disabled={animationManaged || systemReducedMotion}
+            title={systemReducedMotion ? "Reduced motion follows your device setting" : undefined}
             onClick={toggleReducedMotion}
             type="button"
           >

@@ -39,7 +39,11 @@ import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
 import { CasinoWashDeck } from "../session/[id]/shuffle-shells";
 import { TarotSpreadStage } from "../session/[id]/tarot-spread-stage";
 
+import { useMotionPreference } from "@/lib/motion-preference";
+import { motionTiming } from "@/lib/motion";
+
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
+
 type CeremonyStage = "focusing" | "shuffling" | "selectingCards" | "optionalCut";
 
 type PendingGuestSession =
@@ -167,7 +171,7 @@ export function GuestReadingExperience({
     guidance: string;
   }>();
   const [guardedPrompt, setGuardedPrompt] = useState<{ category: SafetyCategory }>();
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const { reducedMotion, systemReducedMotion, setReducedMotion } = useMotionPreference();
   const [dealtCount, setDealtCount] = useState(0);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const revealedRef = useRef<ReadonlySet<number>>(revealed);
@@ -190,14 +194,6 @@ export function GuestReadingExperience({
   const consentsReady = termsAccepted && privacyAccepted && ageConfirmed;
   const intakeReady = consentsReady && Boolean(birthDate) && Boolean(question.trim());
   const readingPreviewEvents = useMemo(() => (reading ? phaseEvents(reading) : []), [reading]);
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReducedMotion(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
 
   useEffect(() => {
     if (bootstrapped.current) return;
@@ -369,8 +365,8 @@ export function GuestReadingExperience({
     const dealNext = (index: number) => {
       setDealtCount(index + 1);
       if (index + 1 < reading.cards.length)
-        timers.push(window.setTimeout(() => dealNext(index + 1), 650));
-      else timers.push(window.setTimeout(() => send({ type: "DEALT" }), 450));
+        timers.push(window.setTimeout(() => dealNext(index + 1), motionTiming.dealInterval));
+      else timers.push(window.setTimeout(() => send({ type: "DEALT" }), motionTiming.dealSettle));
     };
     timers.push(window.setTimeout(() => dealNext(0), 100));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
@@ -515,7 +511,7 @@ export function GuestReadingExperience({
       return;
     const timer = window.setTimeout(
       () => void finalizeDraw(selectedIndexes),
-      reducedMotion ? 0 : 850,
+      reducedMotion ? 0 : motionTiming.cardTravel,
     );
     return () => window.clearTimeout(timer);
   }, [ceremony, finalizeDraw, loading, reducedMotion, selectedIndexes, state]);
@@ -907,8 +903,17 @@ export function GuestReadingExperience({
         <Link className="guest-reading-brand" href="/">
           <span aria-hidden="true">✦</span> StarGuidance
         </Link>
-        <button onClick={() => setReducedMotion((current) => !current)} type="button">
-          {reducedMotion ? "Use gentle motion" : "Reduce motion"}
+        <button
+          aria-pressed={reducedMotion}
+          disabled={systemReducedMotion}
+          onClick={() => setReducedMotion(!reducedMotion)}
+          type="button"
+        >
+          {systemReducedMotion
+            ? "Motion reduced · device setting"
+            : reducedMotion
+              ? "Use gentle motion"
+              : "Reduce motion"}
         </button>
       </header>
 

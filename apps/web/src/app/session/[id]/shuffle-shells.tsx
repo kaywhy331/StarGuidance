@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 
+import { motionTiming } from "@/lib/motion";
+
 export const TAROT_DECK_SIZE = 78;
-export const SHUFFLE_SHELL_COUNT = TAROT_DECK_SIZE;
+// Visual shells never represent, select, or mutate real card identities.
+export const SHUFFLE_SHELL_COUNT = 12;
 
 type RitualStyle = CSSProperties & Record<`--${string}`, string | number>;
 
@@ -122,6 +125,8 @@ function shellStyle(
     "--target-bottom": `${target?.bottom ?? wash.fanBottom}%`,
     "--target-rotation": `${target?.rotation ?? wash.fanRotation}deg`,
     "--picked-order": selectedOrder ?? -1,
+    "--pick-x": `${(target?.left ?? wash.fanLeft) - wash.fanLeft}cqw`,
+    "--pick-y": `${wash.fanBottom - (target?.bottom ?? wash.fanBottom)}cqh`,
   };
 }
 
@@ -152,7 +157,10 @@ export function CasinoWashDeck({
 
   useEffect(() => {
     if (phase !== "selecting" || reducedMotion) return;
-    const timer = window.setTimeout(() => setFanOpened(true), 1_850);
+    const timer = window.setTimeout(
+      () => setFanOpened(true),
+      motionTiming.fan + (TAROT_DECK_SIZE - 1) * motionTiming.fanStagger,
+    );
     return () => window.clearTimeout(timer);
   }, [phase, reducedMotion]);
   const fanReady = phase === "selecting" && (reducedMotion || fanOpened);
@@ -178,33 +186,36 @@ export function CasinoWashDeck({
       data-testid="casino-wash-deck"
     >
       <div aria-hidden={phase === "washing"} className="casino-card-field">
-        {Array.from({ length: TAROT_DECK_SIZE }, (_, index) => {
-          const selectedOrder = selectedIndexes.indexOf(index);
-          const selected = selectedOrder >= 0;
-          const style = shellStyle(index, cycle, selected ? selectedOrder : undefined, positions);
-          if (phase === "washing")
-            return <i className="casino-card-shell" key={index} style={style} />;
-          return (
-            <button
-              aria-label={
-                selected
-                  ? `Card ${index + 1} selected for ${positions[selectedOrder]?.displayName ?? `position ${selectedOrder + 1}`}`
-                  : `Choose face-down card ${index + 1}`
-              }
-              className={`casino-card-shell ${selected ? "is-picked" : ""} ${
-                pointerHoveredIndex === index ? "is-pointer-hovered" : ""
-              }`}
-              data-card-index={index}
-              disabled={!fanReady || selected || selectedIndexes.length >= positions.length}
-              key={index}
-              onClick={() => {
-                select(index);
-              }}
-              style={style}
-              type="button"
-            />
-          );
-        })}
+        {Array.from(
+          { length: phase === "washing" ? SHUFFLE_SHELL_COUNT : TAROT_DECK_SIZE },
+          (_, index) => {
+            const selectedOrder = selectedIndexes.indexOf(index);
+            const selected = selectedOrder >= 0;
+            const style = shellStyle(index, cycle, selected ? selectedOrder : undefined, positions);
+            if (phase === "washing")
+              return <i className="casino-card-shell" key={`${cycle}-${index}`} style={style} />;
+            return (
+              <button
+                aria-label={
+                  selected
+                    ? `Card ${index + 1} selected for ${positions[selectedOrder]?.displayName ?? `position ${selectedOrder + 1}`}`
+                    : `Choose face-down card ${index + 1}`
+                }
+                className={`casino-card-shell ${selected ? "is-picked" : ""} ${
+                  pointerHoveredIndex === index ? "is-pointer-hovered" : ""
+                }`}
+                data-card-index={index}
+                disabled={!fanReady || selected || selectedIndexes.length >= positions.length}
+                key={index}
+                onClick={() => {
+                  select(index);
+                }}
+                style={style}
+                type="button"
+              />
+            );
+          },
+        )}
         {phase === "selecting" && (
           <div
             aria-hidden="true"
