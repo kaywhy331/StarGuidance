@@ -1,0 +1,358 @@
+/* StarGuidance motion language: arrive, settle, reveal, then rest.
+ * Durations are injected from lib/motion.ts. No motion owns navigation or data. */
+:root {
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-travel: cubic-bezier(0.4, 0, 0.2, 1);
+  scroll-padding-top: 6rem;
+}
+
+/* A route never translates: its fixed ritual scene keeps the viewport as its
+ * containing block. Navigation and focus are not held behind an exit animation. */
+html[data-motion="full"] .route-arrival {
+  animation: sg-route-arrive var(--motion-arrival) var(--ease-settle);
+}
+
+.route-loading {
+  display: grid;
+  min-height: 65svh;
+  place-items: center;
+}
+
+.route-loading .sg-loading {
+  animation: sg-route-arrive var(--motion-arrival) 160ms both;
+}
+
+.sg-loading__star {
+  animation: sg-loading-breathe 1.8s ease-in-out infinite;
+}
+
+.home-nav__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.site-motion-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 0.72rem/1.4 var(--font-body);
+  cursor: pointer;
+  transition:
+    color var(--motion-feedback),
+    border-color var(--motion-feedback);
+}
+
+.site-motion-toggle[aria-pressed="true"] {
+  color: var(--aqua);
+}
+
+.site-motion-toggle:disabled {
+  cursor: default;
+}
+
+.home-hero {
+  perspective: 1000px;
+}
+
+.home-passage [data-motion-reveal] {
+  min-width: 0;
+}
+
+/* Atmosphere opens once and settles; it never competes with long-form text. */
+.site-atmosphere__aurora {
+  animation: sg-atmosphere-settle 4s var(--ease-settle) both;
+}
+
+.site-atmosphere__orbit,
+.home-oracle__halo,
+.sanctuary-phase-gate i,
+.sanctuary-phase-gate span,
+.sanctuary-sigil,
+.mist,
+.sanctuary-particles i {
+  animation: none;
+}
+
+.mystic-sanctuary[data-ritual-phase] .sanctuary-light {
+  animation: sg-atmosphere-settle 3s var(--ease-settle) both;
+}
+
+.sanctuary-particles i {
+  opacity: 0.22;
+}
+
+.sanctuary-background {
+  opacity: 0;
+  transition: opacity var(--motion-reveal) var(--ease-travel);
+}
+
+.sanctuary-background[data-active="true"] {
+  opacity: 1;
+}
+
+.sanctuary-background img {
+  transition:
+    opacity var(--motion-reveal) var(--ease-travel),
+    transform 1.2s var(--ease-settle);
+}
+
+/* Readable navigation remains sticky in the report. Scroll is native; only
+ * nonessential hero art gets a small view-linked offset where supported. */
+.pattern-atlas-shell section[id] {
+  scroll-margin-top: 6rem;
+}
+
+@supports (animation-timeline: view()) {
+  @media (min-width: 900px) and (hover: hover) and (prefers-reduced-motion: no-preference) {
+    html[data-motion="full"] .home-card-stage {
+      animation: sg-hero-parallax linear both;
+      animation-timeline: view();
+      animation-range: entry 0% exit 100%;
+    }
+  }
+}
+
+/* Pointer effects acknowledge intent without moving the target away. */
+.sg-button,
+.casino-gather-action,
+.sanctuary-control-group button,
+.site-nav-links a,
+.sg-field__control {
+  transition-duration: var(--motion-feedback);
+  transition-timing-function: var(--ease-settle);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .site-motion-toggle:not(:disabled):hover {
+    border-color: var(--line-bright);
+    color: var(--ink);
+  }
+
+  html[data-motion="full"] .sg-button:not(:disabled):hover {
+    transform: translateY(-2px);
+  }
+
+  html[data-motion="full"] .sg-button:not(:disabled):active {
+    transform: translateY(0) scale(0.985);
+  }
+
+  .pattern-atlas-index a:hover {
+    color: var(--gold-bright);
+  }
+}
+
+/* Twelve moving shells suggest the deck. All 78 choices exist in the fan.
+ * The fan's entrance animates only transforms, never 78 layout positions. */
+.casino-card-field {
+  container-type: size;
+}
+
+.casino-wash-deck.is-washing .casino-card-shell {
+  animation-duration: 3.6s;
+  animation-iteration-count: 1;
+  animation-delay: 0s;
+  animation-fill-mode: both;
+  will-change: auto;
+}
+
+.casino-wash-deck.is-selecting .casino-card-shell {
+  animation-name: sg-fan-open;
+  animation-duration: var(--motion-fan);
+  animation-timing-function: var(--ease-settle);
+  animation-delay: calc(var(--shell-index) * var(--motion-fanStagger));
+  transition:
+    transform var(--motion-cardTravel) var(--ease-settle),
+    border-color var(--motion-feedback),
+    box-shadow var(--motion-feedback);
+}
+
+.casino-wash-deck.is-selecting .casino-card-shell.is-picked {
+  /* Keep the layout anchor fixed and fly with a transform. */
+  left: var(--fan-left);
+  bottom: var(--fan-bottom);
+  bottom: var(--fan-bottom);
+  transform: translateX(-50%) translate(var(--pick-x), var(--pick-y)) rotate(var(--target-rotation))
+    scale(1.18);
+}
+
+.tarot-spread-stage.is-dealing .physical-card-figure {
+  animation-duration: var(--motion-cardTravel);
+  animation-timing-function: var(--ease-settle);
+}
+
+.physical-card-figure,
+.tarot-spread-stage.is-cinematic-review .physical-card-figure {
+  transition:
+    transform var(--motion-cardTravel) var(--ease-settle),
+    opacity var(--motion-arrival);
+  will-change: auto;
+}
+
+.physical-card-inner {
+  transition: transform var(--motion-cardFlip) var(--ease-travel);
+}
+
+.physical-card-figure.is-cinematic-subject .physical-tarot-card.is-revealed .physical-card-inner {
+  transition-delay: 100ms;
+}
+
+.physical-tarot-card.is-revealable {
+  animation: none;
+}
+
+.physical-card-figure.is-narration-active .physical-card-front {
+  animation: none;
+  border-color: var(--gold-bright);
+}
+
+.cinematic-card-scrim {
+  backdrop-filter: none;
+  transition: opacity var(--motion-arrival) var(--ease-travel);
+}
+
+.cinematic-card-scrim.is-visible {
+  backdrop-filter: none;
+}
+
+.ritual-ready-action,
+.guided-reveal-panel,
+.oracle-entry,
+.guided-passage {
+  animation-duration: var(--motion-arrival);
+  animation-delay: 0ms;
+  animation-timing-function: var(--ease-settle);
+}
+
+.ritual-audio-panel,
+.sg-modal[open] {
+  animation: sg-panel-arrive var(--motion-arrival) var(--ease-settle);
+}
+
+html[data-page-visibility="hidden"] *,
+html[data-page-visibility="hidden"] *::before,
+html[data-page-visibility="hidden"] *::after {
+  animation-play-state: paused !important;
+}
+
+/* In-app quiet mode has the same reach as the OS setting. Keep final card
+ * transforms: rotateY(180deg) is content state, not decoration. */
+html[data-motion="reduced"],
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  scroll-behavior: auto !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+html[data-motion="reduced"] .sg-button:hover,
+html[data-motion="reduced"] .sg-button:active {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .home-nav__actions {
+    gap: 0;
+  }
+  .home-nav .site-motion-toggle {
+    max-width: 8rem;
+    font-size: 0.65rem;
+  }
+}
+
+@media print {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  [data-motion-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .site-motion-toggle {
+    display: none;
+  }
+}
+
+@keyframes sg-route-arrive {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sg-panel-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sg-loading-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes sg-atmosphere-settle {
+  from {
+    opacity: 0.3;
+  }
+  to {
+    opacity: 0.6;
+  }
+}
+
+@keyframes sg-hero-parallax {
+  from {
+    translate: 0 12px;
+  }
+  to {
+    translate: 0 -12px;
+  }
+}
+
+@keyframes sg-fan-open {
+  from {
+    opacity: 0.5;
+    transform: translateX(-50%) translateY(24px) rotate(0deg) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) rotate(var(--fan-rotation));
+  }
+}

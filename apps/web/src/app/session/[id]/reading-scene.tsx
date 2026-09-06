@@ -7,6 +7,7 @@ import { GUARDED_CATEGORIES, type SafetyCategory } from "@starguidance/ai";
 import type { FollowUpResult, ReadingResult } from "@starguidance/contracts";
 import { readingMachine } from "@starguidance/reading-machine";
 
+import { motionTiming } from "@/lib/motion";
 import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
 import { emitBrowserProductEvent } from "@/lib/product-telemetry-client";
 import {
@@ -168,8 +169,8 @@ export function ReadingScene({
       setDealtCount(index + 1);
       if (soundEnabled.current) playRitualSound("deal", index);
       if (index + 1 < reading.cards.length)
-        timers.push(window.setTimeout(() => dealNext(index + 1), 850));
-      else timers.push(window.setTimeout(() => send({ type: "DEALT" }), 650));
+        timers.push(window.setTimeout(() => dealNext(index + 1), motionTiming.dealInterval));
+      else timers.push(window.setTimeout(() => send({ type: "DEALT" }), motionTiming.dealSettle));
     };
     timers.push(window.setTimeout(() => dealNext(0), 0));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
@@ -190,7 +191,7 @@ export function ReadingScene({
       const timer = window.setTimeout(() => setReadyPromptVisible(true), 0);
       return () => window.clearTimeout(timer);
     }
-    const timer = window.setTimeout(() => setReadyPromptVisible(true), 2_500);
+    const timer = window.setTimeout(() => setReadyPromptVisible(true), motionTiming.readyPause);
     return () => window.clearTimeout(timer);
   }, [cutIndex, motionOff, persistRitualProgress, reading, send, state]);
 

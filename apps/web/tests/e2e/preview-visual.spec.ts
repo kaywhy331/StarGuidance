@@ -71,7 +71,7 @@ test("the visual preview renders the spread-aware result and evidence contract",
   await expect
     .poll(() =>
       sanctuary
-        .locator(".sanctuary-background img")
+        .locator('.sanctuary-background[data-active="true"] img')
         .evaluate((image: HTMLImageElement) => image.currentSrc),
     )
     .toContain(`/art/reading/starry-night-${mobileViewport ? "mobile" : "desktop"}-v1.`);

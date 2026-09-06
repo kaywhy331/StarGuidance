@@ -1,4 +1,6 @@
 "use client";
+
+import { MotionReveal } from "../../site-motion";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -262,21 +264,23 @@ export function ReportView({ reportId }: { reportId: string }) {
               {chapter.sections.map((section) => {
                 const ordinal = document.sections.findIndex(({ key }) => key === section.key) + 1;
                 return (
-                  <section
-                    className="pattern-atlas-section"
-                    data-unavailable={Boolean(section.unavailable)}
-                    id={`atlas-section-${section.key}`}
-                    key={section.key}
-                  >
-                    <header>
-                      <span>{String(ordinal).padStart(2, "0")}</span>
-                      <div>
-                        <h3>{section.title}</h3>
-                        <p>{section.statusLabel ?? "Source-backed pattern"}</p>
-                      </div>
-                    </header>
-                    <p>{section.body}</p>
-                  </section>
+                  <MotionReveal key={section.key}>
+                    <section
+                      className="pattern-atlas-section"
+                      data-unavailable={Boolean(section.unavailable)}
+                      id={`atlas-section-${section.key}`}
+                      key={section.key}
+                    >
+                      <header>
+                        <span>{String(ordinal).padStart(2, "0")}</span>
+                        <div>
+                          <h3>{section.title}</h3>
+                          <p>{section.statusLabel ?? "Source-backed pattern"}</p>
+                        </div>
+                      </header>
+                      <p>{section.body}</p>
+                    </section>
+                  </MotionReveal>
                 );
               })}
             </div>

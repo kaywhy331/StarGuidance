@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { MotionToggle } from "./site-motion";
 
 export function SiteFooter() {
   const pathname = usePathname();
@@ -26,6 +27,7 @@ export function SiteFooter() {
         <nav aria-label="Legal navigation">
           <Link href="/terms">Terms &amp; reading guide</Link>
           <Link href="/privacy">Privacy notice</Link>
+          {pathname !== "/" && pathname !== "/free-reading" && <MotionToggle />}
         </nav>
       </div>
     </footer>

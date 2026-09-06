@@ -281,7 +281,7 @@ export async function beginReadingThroughUi(page: Page, options: { question?: st
     "data-ritual-phase",
     "shuffling",
   );
-  await expect(page.getByTestId("casino-wash-deck").locator(".casino-card-shell")).toHaveCount(78);
+  await expect(page.getByTestId("casino-wash-deck").locator(".casino-card-shell")).toHaveCount(12);
   await page.getByRole("button", { name: "Gather the cards" }).click();
   const finalization = page.waitForResponse(
     (response) =>

@@ -69,3 +69,5 @@ Fish Audio reading voice is also default-off. A signed-in reading shows its Audi
 - [Mobile completed reading](docs/screenshots/completed-reading-mobile-chromium.png)
 
 See [architecture](docs/ARCHITECTURE.md), [immersive UX review](docs/IMMERSIVE-UX.md), [Must-requirement traceability](docs/REQUIREMENTS-TRACEABILITY.md), [security](docs/SECURITY.md), [AI gateway and tunnel security](docs/AI-GATEWAY-SECURITY.md), [Cali TokenPak pilot](docs/CALI-TOKENPAK-PILOT.md), [operations and recovery](docs/OPERATIONS.md), [commerce verification](docs/COMMERCE.md), [calculation status](docs/PROFILE-CALCULATIONS.md), [draw integrity](docs/TAROT-INTEGRITY.md), and [known production gates](docs/KNOWN-GAPS.md).
+
+The [motion system](docs/MOTION-SYSTEM.md) defines route arrivals, loading, native scroll choreography, card timing, depth, and accessible alternatives. See the [motion validation receipt](docs/MOTION-VALIDATION.md) for browser evidence and review commands.

@@ -5,14 +5,14 @@ import {
   casinoPickTarget,
   casinoWashLayout,
   SHUFFLE_SHELL_COUNT,
+  TAROT_DECK_SIZE,
 } from "./shuffle-shells";
 
 describe("casino wash possibility field", () => {
   it("accounts for all 78 cards with distinct wash destinations", () => {
-    const layouts = Array.from({ length: SHUFFLE_SHELL_COUNT }, (_, index) =>
-      casinoWashLayout(index),
-    );
-    expect(SHUFFLE_SHELL_COUNT).toBe(78);
+    const layouts = Array.from({ length: TAROT_DECK_SIZE }, (_, index) => casinoWashLayout(index));
+    expect(TAROT_DECK_SIZE).toBe(78);
+    expect(SHUFFLE_SHELL_COUNT).toBeLessThanOrEqual(12);
     expect(
       new Set(layouts.map(({ washAX, washAY }) => `${washAX.toFixed(4)}:${washAY.toFixed(4)}`)),
     ).toHaveLength(78);
