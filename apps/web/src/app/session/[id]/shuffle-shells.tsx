@@ -23,8 +23,9 @@ export const CASINO_PICK_SCALE = 1.18;
  * background, so it is fetched while the fan is open to keep the handoff
  * seamless. */
 export const CASINO_CARD_BACK_AVIF = "/art/tarot/v2/celestial-gothic-back-v1.avif";
-// Visual shells never represent, select, or mutate real card identities.
-export const SHUFFLE_SHELL_COUNT = 12;
+// Visual shells never represent, select, or mutate real card identities. The
+// wash moves the whole deck so the count on stage is the count in the deck.
+export const SHUFFLE_SHELL_COUNT = TAROT_DECK_SIZE;
 
 type RitualStyle = CSSProperties & Record<`--${string}`, string | number>;
 

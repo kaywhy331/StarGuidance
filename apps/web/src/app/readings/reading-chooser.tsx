@@ -328,9 +328,11 @@ export function ReadingChooser({
       loading
     )
       return;
+    // Let the last pick finish its flight before the draw locks and the
+    // picked shells are measured for the dealt cards.
     const timer = window.setTimeout(
       () => void finalizeDraw(selectedIndexes),
-      reducedMotion ? 0 : motionTiming.cardTravel,
+      reducedMotion ? 0 : motionTiming.pickFlight + 80,
     );
     return () => window.clearTimeout(timer);
   }, [ceremony, finalizeDraw, loading, reducedMotion, selectedIndexes, state]);

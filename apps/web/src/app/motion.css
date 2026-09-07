@@ -174,13 +174,23 @@ html[data-motion="full"] .route-arrival {
     box-shadow var(--motion-feedback);
 }
 
+/* Once the fan has opened, release the entrance animation so it no longer
+ * owns `transform`. A pick then changes the base transform and starts a real
+ * transition; a swapped-out animation never would. Hover feedback stays quick. */
+.casino-wash-deck.is-ready .casino-card-shell:not(.is-picked) {
+  animation: none;
+  transition-duration: var(--motion-feedback);
+}
+
 .casino-wash-deck.is-selecting .casino-card-shell.is-picked {
-  /* Keep the layout anchor fixed and fly with a transform. */
+  /* Keep the layout anchor fixed and fly with a transform. The flight is
+   * slower than a deal so the card is seen leaving the arch and arriving. */
   left: var(--fan-left);
-  bottom: var(--fan-bottom);
   bottom: var(--fan-bottom);
   transform: translateX(-50%) translate(var(--pick-x), var(--pick-y)) rotate(var(--target-rotation))
     scale(1.18);
+  transition-duration: var(--motion-pickFlight), var(--motion-feedback), var(--motion-feedback);
+  transition-timing-function: var(--ease-travel);
 }
 
 .tarot-spread-stage {

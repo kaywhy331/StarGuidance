@@ -12,8 +12,8 @@ export const motionTiming = {
   washHold: 320,
   /** One wash pass: scatter across three planar destinations, then re-stack. */
   wash: 3000,
-  /** Each of the twelve wash shells leaves the pile this much after the last. */
-  washStagger: 40,
+  /** Each of the 78 wash shells leaves the pile this much after the last. */
+  washStagger: 12,
   /** The re-stacked pile settles before it travels. */
   stack: 240,
   /** In quiet mode the pile rests, unanimated, long enough to be stirred. */
@@ -22,6 +22,8 @@ export const motionTiming = {
   gather: 700,
   fan: 960,
   fanStagger: 2,
+  /** A picked card lifts out of the arch, then slides into its spread slot. */
+  pickFlight: 900,
 } as const;
 
 export const motionEase = {

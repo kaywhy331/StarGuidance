@@ -266,7 +266,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   const preparation = (await preparationResponse.json()) as {
     ceremony: { spread: { positions: readonly unknown[] } };
   };
-  await expect(page.locator(".casino-card-shell")).toHaveCount(12);
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   await scan("reading shuffle");
   // The scan covers semantics and reflow, not decorative timing. Use the
   // persisted reduced-motion path before opening the fan so hosted WebKit

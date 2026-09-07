@@ -15,7 +15,7 @@ describe("casino wash possibility field", () => {
   it("accounts for all 78 cards with distinct wash destinations", () => {
     const layouts = Array.from({ length: TAROT_DECK_SIZE }, (_, index) => casinoWashLayout(index));
     expect(TAROT_DECK_SIZE).toBe(78);
-    expect(SHUFFLE_SHELL_COUNT).toBeLessThanOrEqual(12);
+    expect(SHUFFLE_SHELL_COUNT).toBe(TAROT_DECK_SIZE);
     expect(
       new Set(layouts.map(({ washAX, washAY }) => `${washAX.toFixed(4)}:${washAY.toFixed(4)}`)),
     ).toHaveLength(78);

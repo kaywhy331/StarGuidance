@@ -57,8 +57,8 @@ test("the cards a reader picks are the cards that get dealt, with no cut between
   const picked = page.locator(".casino-card-shell.is-picked");
   await expect(picked).toHaveCount(cardCount);
   await expect(page.getByText("Locking your selected cards…")).toBeVisible();
-  // The last pick travels for 620 ms; measure once it has settled.
-  await page.waitForTimeout(700);
+  // The last pick lifts and slides for 900 ms; measure once it has settled.
+  await page.waitForTimeout(1_050);
   const shells = await picked.evaluateAll((elements) =>
     elements.map((element) => {
       const rect = element.getBoundingClientRect();
