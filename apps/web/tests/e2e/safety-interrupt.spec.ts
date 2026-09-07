@@ -57,10 +57,15 @@ test("a guarded question is acknowledged before the commitment and can continue 
   await expect(
     page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
   ).toBeEnabled({ timeout: 10_000 });
-  for (let index = 1; index <= cardCount; index += 1)
+  const fan = page.getByTestId("casino-wash-deck");
+  for (let index = 1; index <= cardCount; index += 1) {
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
       .press("Enter");
+    // Wait for React to commit each keyboard selection before pressing the
+    // next card; a busy WebKit runner can otherwise drop a pick.
+    await expect(fan).toHaveAttribute("data-selected-count", String(index));
+  }
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   await revealAllThroughUi(page);
   await expect(page.getByTestId("reading-journey")).toHaveAttribute("data-state", "complete", {

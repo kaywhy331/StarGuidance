@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/auth";
 import { persistenceFor } from "@/lib/persistence";
+import { readingAudioAvailable } from "@/lib/reading-audio";
 import { readingEntitlementDecision } from "@/lib/reading-policy";
 import { getRuntimeConfiguration } from "@/lib/runtime-configuration";
 
@@ -24,6 +25,7 @@ export default async function ReadingsPage() {
   return (
     <ReadingChooser
       access={access}
+      audioAvailable={readingAudioAvailable()}
       animationVariant={
         runtimeConfiguration.features.animationsEnabled
           ? runtimeConfiguration.features.animationVariant

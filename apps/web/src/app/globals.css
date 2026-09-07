@@ -3384,55 +3384,27 @@ body {
   white-space: nowrap;
 }
 
-.sanctuary-deal-ritual {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  place-items: center;
-  width: 100%;
-  min-height: 0;
-  text-align: center;
+/* One spread carries the whole ritual. Before the deal each card holds where
+ * the reader's picked shell sat; the deal carries it into its slot; later
+ * layout changes glide the whole stage with a FLIP transform instead of a cut. */
+.tarot-spread-stage.is-dealing .physical-card-figure.is-awaiting-deal {
+  opacity: var(--deal-origin-opacity, 1);
+  pointer-events: none;
+  transform: translate3d(var(--deal-origin-x, 0px), var(--deal-origin-y, 0px), 0)
+    rotate(var(--spread-rotation, 0deg)) scale(var(--deal-origin-scale, 0.94));
+  transition: none;
 }
 
-.sanctuary-centered-deck {
-  position: absolute;
+.spread-slot-ghost {
   z-index: 0;
-  top: 50%;
-  left: 50%;
-  width: clamp(4.5rem, 8vw, 6.5rem);
-  aspect-ratio: 2 / 3;
-  translate: -50% -50%;
+  pointer-events: none;
+  visibility: hidden;
 }
 
-.sanctuary-centered-deck span {
-  position: absolute;
-  inset: 0;
-  border: 1px solid rgb(238 210 132 / 0.58);
-  border-radius: 0.42rem;
-  background: url("/art/tarot/v2/celestial-gothic-back-v1.webp") center / cover;
-  box-shadow: 0 18px 44px rgb(0 0 0 / 0.58);
-}
-
-.sanctuary-centered-deck span:nth-child(1) {
-  translate: -0.32rem 0.22rem;
-  rotate: -3deg;
-}
-
-.sanctuary-centered-deck span:nth-child(2) {
-  translate: 0.28rem 0.14rem;
-  rotate: 2.5deg;
-}
-
-.sanctuary-deal-ritual .tarot-spread-stage {
-  z-index: 2;
-  grid-row: 1;
-  align-self: center;
+.tarot-spread-stage.is-dealing .physical-card-figure.is-measuring {
   transform: none;
-}
-
-.tarot-spread-stage.is-dealing .physical-card-figure {
-  animation: sanctuary-guided-deal 780ms cubic-bezier(0.16, 0.82, 0.2, 1) both;
+  transition: none;
+  visibility: hidden;
 }
 
 .ritual-deal-status {
@@ -3460,26 +3432,29 @@ body {
   gap: clamp(0.28rem, 1.1vw, 0.9rem);
   width: min(100%, 72rem);
   max-height: 100%;
-  transform: translateY(-1vh);
+  transform: translate3d(var(--stage-flip-x, 0px), var(--stage-flip-y, 0px), 0)
+    scale(var(--stage-flip-scale, 1));
+  transform-origin: center center;
+  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tarot-spread-stage.is-flip-start {
+  transition: none;
 }
 
 .ritual-card-layout {
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   place-items: center;
   width: 100%;
   height: 100%;
   min-height: 0;
-}
-
-.sanctuary-stage.is-reflecting .ritual-card-layout {
-  grid-template-rows: minmax(0, 1fr) auto;
   gap: clamp(0.8rem, 2.5vh, 1.5rem);
 }
 
-.sanctuary-stage.is-reflecting .tarot-spread-stage {
+.ritual-card-layout .tarot-spread-stage {
   grid-row: 1;
   align-self: center;
-  transform: none;
 }
 
 .ritual-question-reflection {
@@ -3859,7 +3834,6 @@ body {
 .mystic-sanctuary[data-reduced-motion="true"] .sanctuary-shuffle-shells.is-mixing i,
 .mystic-sanctuary[data-reduced-motion="true"] .shuffle-card-stream,
 .mystic-sanctuary[data-reduced-motion="true"] .immersive-cut-deck__packet,
-.mystic-sanctuary[data-reduced-motion="true"] .tarot-spread-stage.is-dealing .physical-card-figure,
 .mystic-sanctuary[data-reduced-motion="true"] .ritual-ready-action,
 .mystic-sanctuary[data-reduced-motion="true"] .guided-reveal-panel {
   animation: none !important;
@@ -6712,19 +6686,6 @@ body {
   }
 }
 
-@keyframes sanctuary-guided-deal {
-  from {
-    opacity: 0;
-    transform: translate3d(var(--deal-origin-x), var(--deal-origin-y), 5rem) rotate(8deg)
-      scale(0.94);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) rotate(var(--spread-rotation, 0deg)) scale(1);
-  }
-}
-
 @keyframes ritual-ready-arrive {
   from {
     opacity: 0;
@@ -8589,7 +8550,7 @@ body {
     left: 0.5rem;
   }
 
-  .sanctuary-stage.is-reflecting .ritual-card-layout {
+  .ritual-card-layout {
     gap: 0.55rem;
   }
 
@@ -8996,7 +8957,6 @@ body {
 
 .mystic-sanctuary[data-reading-focus="cards"] .tarot-spread-stage {
   width: min(100%, 82rem);
-  transform: none;
 }
 
 .mystic-sanctuary[data-reading-focus="cards"] .physical-card-figure {
