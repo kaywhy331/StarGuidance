@@ -185,9 +185,12 @@ html[data-motion="full"] .route-arrival {
     scale(1.18);
 }
 
-.tarot-spread-stage.is-dealing .physical-card-figure {
-  animation-duration: var(--motion-cardTravel);
-  animation-timing-function: var(--ease-settle);
+.tarot-spread-stage {
+  transition: transform var(--motion-cardTravel) var(--ease-settle);
+}
+
+.tarot-spread-stage.is-flip-start {
+  transition: none;
 }
 
 .physical-card-figure,

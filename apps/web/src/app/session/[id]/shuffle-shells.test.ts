@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CASINO_PICK_SCALE,
   casinoFanIndex,
   casinoPickTarget,
   casinoWashLayout,
+  fieldTargetsForSlots,
   SHUFFLE_SHELL_COUNT,
+  spreadLayoutFor,
   TAROT_DECK_SIZE,
 } from "./shuffle-shells";
 
@@ -54,5 +57,59 @@ describe("casino wash possibility field", () => {
   it("rejects indexes outside the complete deck", () => {
     expect(() => casinoWashLayout(-1)).toThrow(RangeError);
     expect(() => casinoWashLayout(78)).toThrow(RangeError);
+  });
+});
+
+describe("spread slot targeting", () => {
+  const positions = [
+    {
+      id: "a",
+      displayName: "A",
+      order: 0,
+      placement: { column: 0, row: 0, rotation: 0, layer: 0 },
+    },
+    {
+      id: "b",
+      displayName: "B",
+      order: 1,
+      placement: { column: 2, row: 4, rotation: 90, layer: 1 },
+    },
+  ];
+
+  it("derives the dealt grid from the ceremony", () => {
+    expect(spreadLayoutFor({ id: "horseshoe", version: "horseshoe-v3", positions })).toEqual({
+      columns: 3,
+      rows: 5,
+      kind: "horseshoe",
+    });
+    expect(spreadLayoutFor({ id: "single", version: "v1", positions: [positions[0]!] })).toEqual({
+      columns: 1,
+      rows: 1,
+      kind: "centered",
+    });
+  });
+
+  it("maps measured slots to field-relative anchors that center the picked shell", () => {
+    const field = { left: 100, bottom: 700, width: 1000, height: 600 };
+    const slots = [
+      { positionId: "a", centerX: 350, centerY: 300, width: 80, height: 120 },
+      { positionId: "b", centerX: 600, centerY: 460, width: 80, height: 120 },
+    ];
+    const targets = fieldTargetsForSlots(slots, positions, field, 60)!;
+    expect(targets["a"]!.left).toBeCloseTo(25);
+    expect(targets["b"]!.left).toBeCloseTo(50);
+    expect(targets["b"]!.rotation).toBe(90);
+    // Shell bottom edge sits half a shell (less the scale lift) below the slot center.
+    const lift = (CASINO_PICK_SCALE - 1) * 60 * 0.42;
+    expect(targets["a"]!.bottom).toBeCloseTo(((700 - (300 + 30 - lift)) / 600) * 100);
+  });
+
+  it("falls back when a slot or the field is missing", () => {
+    expect(
+      fieldTargetsForSlots([], positions, { left: 0, bottom: 1, width: 1, height: 1 }, 1),
+    ).toBe(undefined);
+    expect(
+      fieldTargetsForSlots([], positions, { left: 0, bottom: 0, width: 0, height: 0 }, 1),
+    ).toBe(undefined);
   });
 });

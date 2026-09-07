@@ -36,8 +36,17 @@ import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../session/[id]/question-composer";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
-import { CasinoWashDeck } from "../session/[id]/shuffle-shells";
-import { TarotSpreadStage } from "../session/[id]/tarot-spread-stage";
+import {
+  CasinoWashDeck,
+  measureCasinoPickHandoff,
+  spreadLayoutFor,
+} from "../session/[id]/shuffle-shells";
+import type { CardHandoffOrigin } from "../session/[id]/stage-flip";
+import {
+  SpreadSlotGhost,
+  TarotSpreadStage,
+  type SpreadSlot,
+} from "../session/[id]/tarot-spread-stage";
 
 import { useMotionPreference } from "@/lib/motion-preference";
 import { motionTiming } from "@/lib/motion";
@@ -173,6 +182,10 @@ export function GuestReadingExperience({
   const [guardedPrompt, setGuardedPrompt] = useState<{ category: SafetyCategory }>();
   const { reducedMotion, systemReducedMotion, setReducedMotion } = useMotionPreference();
   const [dealtCount, setDealtCount] = useState(0);
+  /** Where the picked shells sat when the draw locked; the dealt cards begin
+   * there so the chosen cards and the spread read as the same cards. */
+  const [handoff, setHandoff] = useState<readonly CardHandoffOrigin[]>();
+  const [slots, setSlots] = useState<readonly SpreadSlot[]>();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const revealedRef = useRef<ReadonlySet<number>>(revealed);
   const [activeReveal, setActiveReveal] = useState<number | null>(null);
@@ -475,6 +488,8 @@ export function GuestReadingExperience({
         const payload = guestReadingResponseSchema.safeParse(await response.json());
         if (!response.ok || !payload.success)
           throw new Error("The committed draw could not be finalized.");
+        // Measure while the picked shells are still on screen.
+        setHandoff(reducedMotion ? undefined : measureCasinoPickHandoff(ceremony.spread.positions));
         setReading(payload.data.reading);
         setReceipt(payload.data.receipt);
         setTrialUsed(true);
@@ -498,7 +513,7 @@ export function GuestReadingExperience({
         setLoading(false);
       }
     },
-    [ceremony, deviceId, loading, send],
+    [ceremony, deviceId, loading, reducedMotion, send],
   );
 
   useEffect(() => {
@@ -868,9 +883,18 @@ export function GuestReadingExperience({
       state.matches("followUpAvailable") ||
       state.matches("complete")) &&
     Boolean(reading?.result);
+  // The locked cards take the stage the moment the fan lets go of them and
+  // hold where the reader placed them until each is dealt into its slot.
+  const dealing = Boolean(reading) && (state.matches("drawLocked") || state.matches("dealing"));
+  const deckVisible =
+    state.matches("shuffling") ||
+    state.matches("selectingCards") ||
+    state.matches("drawFinalizing") ||
+    (state.matches("drawLocked") && !reading);
   const cardsVisible =
     !journeyComplete &&
-    (state.matches("awaitingReveal") ||
+    (dealing ||
+      state.matches("awaitingReveal") ||
       state.matches("revealing") ||
       state.matches("fullSpreadReady") ||
       state.matches("interpretationStreaming") ||
@@ -1129,7 +1153,14 @@ export function GuestReadingExperience({
         </section>
       )}
 
-      {(state.matches("shuffling") || state.matches("selectingCards")) && ceremony && (
+      {deckVisible && ceremony && (
+        <SpreadSlotGhost
+          layout={spreadLayoutFor(ceremony.spread)}
+          onMeasure={setSlots}
+          positions={ceremony.spread.positions}
+        />
+      )}
+      {deckVisible && ceremony && (
         <section className="reading-entry-stage casino-wash-stage">
           <CasinoWashDeck
             onFinishWash={() => {
@@ -1146,50 +1177,44 @@ export function GuestReadingExperience({
             positions={ceremony.spread.positions}
             reducedMotion={reducedMotion}
             selectedIndexes={selectedIndexes}
+            slots={slots}
           />
         </section>
       )}
 
-      {state.matches("drawFinalizing") && (
-        <div className="sanctuary-loading" role="status">
-          <span aria-hidden="true">✦</span> Locking your selected cards…
-        </div>
-      )}
-
-      {(state.matches("dealing") || cardsVisible) && (
+      {cardsVisible && reading && (
         <section
-          className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${transcriptVisible && !journeyComplete ? "has-reading-journey" : ""}`}
+          className={`sanctuary-stage ${dealing ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${transcriptVisible && !journeyComplete ? "has-reading-journey" : ""}`}
         >
-          {state.matches("dealing") && reading && (
-            <div className="sanctuary-deal-ritual" data-testid="guest-deal">
-              <TarotSpreadStage
-                activeIndex={null}
-                cards={reading.cards}
-                dealing
-                focusMode={null}
-                reducedMotion={reducedMotion}
-                revealed={revealed}
-                visibleCount={dealtCount}
-              />
-              <p className="ritual-deal-status" role="status">
-                {dealtCount === 0
-                  ? "The locked deck is centered."
-                  : `Dealing card ${dealtCount} of ${reading.cards.length} into its fixed position…`}
-              </p>
-            </div>
-          )}
-          {cardsVisible && reading && (
-            <div className="ritual-card-layout">
+          {
+            <div className="ritual-card-layout" data-testid={dealing ? "guest-deal" : undefined}>
               <TarotSpreadStage
                 activeIndex={activeReveal}
                 cards={reading.cards}
+                dealing={dealing}
                 focusMode={activeReveal === null ? null : "reveal"}
+                handoff={handoff}
+                layoutKey={[
+                  dealing ? "dealing" : "",
+                  state.matches("awaitingReveal") ? "reflecting" : "",
+                  state.matches("revealing") ? "revealing" : "",
+                  transcriptVisible && !journeyComplete ? "journey" : "",
+                  readingFocusStage,
+                ].join("|")}
                 reducedMotion={reducedMotion}
                 revealed={revealed}
+                settledCount={dealtCount}
                 onReveal={
                   state.matches("revealing") && activeReveal === null ? revealCard : undefined
                 }
               />
+              {dealing && (
+                <p className="ritual-deal-status" role="status">
+                  {dealtCount === 0
+                    ? "Your chosen cards are locked in place."
+                    : `Dealing card ${dealtCount} of ${reading.cards.length} into its fixed position…`}
+                </p>
+              )}
               {state.matches("awaitingReveal") && (
                 <div className="ritual-question-reflection" data-testid="guest-question-reflection">
                   <span>Hold your question at the center</span>
@@ -1228,7 +1253,7 @@ export function GuestReadingExperience({
                   </div>
                 )}
             </div>
-          )}
+          }
           {state.matches("revealing") && activeRevealCard && activeReveal !== null && (
             <div className="guided-reveal-panel" data-testid="guest-guided-reveal-panel">
               <p className="guided-reveal-description">{activeRevealCard.positionName}</p>

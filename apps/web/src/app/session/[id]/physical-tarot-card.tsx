@@ -4,9 +4,21 @@
 import { useLayoutEffect, useRef, type CSSProperties } from "react";
 
 import type { DealtCardView } from "./reading-types";
+import { settleStageFlip } from "./stage-flip";
+
+/** The pose a card holds before it is dealt: an offset from its own slot. */
+export interface DealOrigin {
+  readonly x: string;
+  readonly y: string;
+  readonly scale: number;
+  readonly opacity: number;
+}
 
 export function PhysicalTarotCard({
   card,
+  dealOrigin,
+  dealPose = "settled",
+  figureRef: forwardFigureRef,
   focusMode,
   index,
   narrationActive = false,
@@ -15,6 +27,11 @@ export function PhysicalTarotCard({
   onReveal,
 }: {
   card: DealtCardView;
+  dealOrigin?: DealOrigin | undefined;
+  /** `measuring` renders the card hidden in its resting slot for one layout
+   * pass; `awaiting` holds it at `dealOrigin`; `settled` rests in the slot. */
+  dealPose?: "measuring" | "awaiting" | "settled";
+  figureRef?: ((node: HTMLElement | null) => void) | undefined;
   focusMode: "reveal" | "reading" | null;
   index: number;
   narrationActive?: boolean;
@@ -24,7 +41,11 @@ export function PhysicalTarotCard({
    * intentional click/tap/keyboard reveal (PRD UX-006). Omitted once revealed. */
   onReveal?: (() => void) | undefined;
 }) {
-  const figureRef = useRef<HTMLElement>(null);
+  const figureRef = useRef<HTMLElement | null>(null);
+  const setFigureRef = (node: HTMLElement | null) => {
+    figureRef.current = node;
+    forwardFigureRef?.(node);
+  };
   // The element renders as a real <button> while it's an eligible reveal
   // target and a static <div role="img"> once revealed, so the ref has to
   // accept either concrete element; a callback ref keeps each branch's own
@@ -42,8 +63,14 @@ export function PhysicalTarotCard({
     "--spread-row": card.placement.row + 1,
     "--spread-rotation": `${card.placement.rotation}deg`,
     "--spread-layer": card.placement.layer,
-    "--deal-origin-x": `${((card.spreadLayout.columns - 1) / 2 - card.placement.column) * 6.5}rem`,
-    "--deal-origin-y": `${((card.spreadLayout.rows - 1) / 2 - card.placement.row) * 8.5}rem`,
+    ...(dealOrigin
+      ? {
+          "--deal-origin-x": dealOrigin.x,
+          "--deal-origin-y": dealOrigin.y,
+          "--deal-origin-scale": dealOrigin.scale,
+          "--deal-origin-opacity": dealOrigin.opacity,
+        }
+      : {}),
   } as CSSProperties;
 
   useLayoutEffect(() => {
@@ -54,6 +81,8 @@ export function PhysicalTarotCard({
     const cardElement = cardRef.current;
     if (!cardElement) return;
     const positionCard = () => {
+      // A spread mid-glide would be measured somewhere between two layouts.
+      settleStageFlip(figureElement.closest<HTMLElement>(".tarot-spread-stage"));
       const bounds = cardElement.getBoundingClientRect();
       const stageBounds = figureElement.closest(".sanctuary-stage")?.getBoundingClientRect();
       const compact = window.innerWidth < 768;
@@ -148,11 +177,19 @@ export function PhysicalTarotCard({
     <figure
       className={`physical-card-figure ${active ? "is-cinematic-subject" : ""} ${
         focusMode === "reading" ? "is-reading-subject" : ""
-      } ${narrationActive ? "is-narration-active" : ""}`}
+      } ${narrationActive ? "is-narration-active" : ""} ${
+        dealPose === "awaiting"
+          ? "is-awaiting-deal"
+          : dealPose === "measuring"
+            ? "is-measuring"
+            : ""
+      }`}
+      data-deal-pose={dealPose === "settled" ? undefined : dealPose}
+      data-spread-order={index}
       data-spread-column={card.placement.column}
       data-spread-row={card.placement.row}
       data-spread-rotation={card.placement.rotation}
-      ref={figureRef}
+      ref={setFigureRef}
       style={focalStyle}
     >
       {revealable ? (

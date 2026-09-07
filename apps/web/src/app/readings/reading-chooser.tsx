@@ -20,11 +20,23 @@ import {
 } from "@/lib/client-draw-entropy";
 import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
 
-import { MysticSanctuaryScene } from "../session/[id]/mystic-sanctuary-scene";
+import {
+  SanctuaryFrame,
+  SanctuaryFrameHost,
+  type AnimationVariant,
+} from "../session/[id]/mystic-sanctuary-scene";
+import { ReadingScene } from "../session/[id]/reading-scene";
+import type { ReadingPayload } from "../session/[id]/reading-types";
 import { playRitualSound, useRitualAmbience } from "../session/[id]/ritual-audio";
 import { RitualControls } from "../session/[id]/ritual-controls";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
-import { CasinoWashDeck } from "../session/[id]/shuffle-shells";
+import {
+  CasinoWashDeck,
+  measureCasinoPickHandoff,
+  spreadLayoutFor,
+} from "../session/[id]/shuffle-shells";
+import type { CardHandoffOrigin } from "../session/[id]/stage-flip";
+import { SpreadSlotGhost, type SpreadSlot } from "../session/[id]/tarot-spread-stage";
 
 const CEREMONY_STORAGE_KEY = "starguidance:pending-draw-ceremony:v2";
 const LEGACY_CEREMONY_STORAGE_KEY = "starguidance:pending-draw-ceremony:v1";
@@ -53,20 +65,31 @@ function clearPendingCeremony() {
 export function ReadingChooser({
   access,
   animationVariant = "immersive-v1",
+  audioAvailable = false,
   initialPreferences,
   sigilSeed,
 }: {
   access: ReadingEntitlementDecision;
-  animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
+  animationVariant?: AnimationVariant;
+  audioAvailable?: boolean;
   initialPreferences?: ReadingPreferenceSeed;
   sigilSeed: string;
 }) {
   const router = useRouter();
   const [state, send] = useMachine(readingMachine);
+  /** Once the draw is locked the reading continues in this same scene: the
+   * picked cards stay where they are and become the dealt spread. A route
+   * change would unmount them and deal a second, unrelated-looking set. */
+  const [locked, setLocked] = useState<{
+    readingId: string;
+    reading: ReadingPayload;
+    handoff: readonly CardHandoffOrigin[] | undefined;
+  }>();
   const [question, setQuestion] = useState("");
   const [confirmedQuestion, setConfirmedQuestion] = useState("");
   const [ceremony, setCeremony] = useState<DrawCeremony>();
   const [selectedIndexes, setSelectedIndexes] = useState<number[]>([]);
+  const [slots, setSlots] = useState<readonly SpreadSlot[]>();
   const [message, setMessage] = useState<string>();
   const [retained, setRetained] = useState<{ readingId: string; availableAt: string }>();
   const [loading, setLoading] = useState(false);
@@ -269,7 +292,22 @@ export function ReadingChooser({
         clearPendingCeremony();
         if (sound) playRitualSound("deal");
         send({ type: "DRAW_LOCKED" });
-        router.push(`/session/${payload.readingId}`);
+        const readingId = payload.readingId;
+        let reading: ReadingPayload | undefined;
+        try {
+          const recovered = await fetch(`/api/readings/${readingId}`, { cache: "no-store" });
+          if (recovered.ok)
+            reading = ((await recovered.json()) as { reading: ReadingPayload }).reading;
+        } catch {
+          // The session route below recovers the locked draw on its own.
+        }
+        if (!reading) {
+          router.push(`/session/${readingId}`);
+          return;
+        }
+        const handoff = measureCasinoPickHandoff(ceremony.spread.positions);
+        window.history.replaceState(null, "", `/session/${readingId}`);
+        setLocked({ readingId, reading, handoff });
       } catch (cause) {
         send({ type: "FINALIZATION_FAILED" });
         setMessage(
@@ -306,9 +344,17 @@ export function ReadingChooser({
     );
 
   const readingSetupFocus =
-    state.matches("shuffling") || state.matches("selectingCards") || state.matches("drawFinalizing")
+    state.matches("shuffling") ||
+    state.matches("selectingCards") ||
+    state.matches("drawFinalizing") ||
+    state.matches("drawLocked")
       ? "cards"
       : "ambient";
+  const deckVisible =
+    state.matches("shuffling") ||
+    state.matches("selectingCards") ||
+    state.matches("drawFinalizing") ||
+    state.matches("drawLocked");
 
   const saveCurrentCeremony = (stage: CeremonyStage, picks = selectedIndexes) => {
     if (!ceremony) return;
@@ -332,140 +378,161 @@ export function ReadingChooser({
   };
 
   return (
-    <MysticSanctuaryScene
+    <SanctuaryFrameHost
       animationVariant={animationVariant}
-      backdrop={readingSetupFocus === "cards" ? "starry-reading" : "sanctuary"}
-      focusStage={readingSetupFocus}
-      phase={String(state.value)}
-      reducedMotion={reducedMotion}
+      initialFrame={{
+        backdrop: "sanctuary",
+        focusStage: "ambient",
+        phase: String(state.value),
+        reducedMotion,
+      }}
       testId="mystic-sanctuary-scene"
     >
-      <RitualControls
-        ambience={ambience}
-        animationManaged={animationManaged}
-        controlsLabel="Reading setup controls"
-        displayName={displayName}
-        exitHref="/profile"
-        narration={narration}
-        reducedMotion={reducedMotion}
-        sigilSeed={sigilSeed}
-        sound={sound}
-        toggleAmbience={toggleAmbience}
-        toggleNarration={toggleNarration}
-        toggleReducedMotion={toggleReducedMotion}
-        toggleSound={toggleSound}
-      />
-
-      {state.matches("questionDrafting") && (
-        <section className="minimal-question-stage">
-          <h1>What question did you have for the stars today?</h1>
-          <form
-            className="minimal-question-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void prepareRitual();
-            }}
-          >
-            <textarea
-              aria-label="Your question for the stars"
-              autoFocus
-              disabled={access.outcome !== "granted" || loading}
-              maxLength={500}
-              onChange={(event) => setQuestion(event.target.value)}
-              value={question}
-            />
-            <button disabled={!question.trim() || loading} type="submit">
-              <span className="sr-only">Send question</span>
-              <span aria-hidden="true">➤</span>
-            </button>
-          </form>
-        </section>
-      )}
-
-      {state.matches("highStakesQuestion") && guardedPrompt && (
-        <section className="reading-entry-stage reading-question-stage">
-          <div className="ritual-moment" data-safety-category={guardedPrompt.category}>
-            <p className="ritual-status" role="status">
-              The cards cannot establish this as fact. They can still reflect on evidence,
-              preparation, boundaries, and your choices.
-            </p>
-            <div className="ritual-action-group">
-              <button
-                className="ritual-action"
-                disabled={loading}
-                onClick={() => void prepareRitual(true)}
-                type="button"
-              >
-                {loading ? "Preparing reflection…" : "Continue as reflection"}
-              </button>
-              <button
-                className="ritual-action"
-                onClick={() => {
-                  setGuardedPrompt(undefined);
-                  send({ type: "REVISE_QUESTION" });
-                }}
-                type="button"
-              >
-                Revise the question
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {(state.matches("shuffling") || state.matches("selectingCards")) && ceremony && (
-        <section className="reading-entry-stage casino-wash-stage">
-          <CasinoWashDeck
-            onFinishWash={() => {
-              saveCurrentCeremony("selectingCards");
-              if (sound) playRitualSound("gather");
-              send({ type: "SHUFFLE_COMPLETE" });
-            }}
-            onSelect={(index) => {
-              const next = [...selectedIndexes, index];
-              setSelectedIndexes(next);
-              saveCurrentCeremony("selectingCards", next);
-              if (sound) playRitualSound("reveal", next.length - 1);
-            }}
-            onStir={stirPendingDeck}
-            phase={state.matches("shuffling") ? "washing" : "selecting"}
-            positions={ceremony.spread.positions}
+      {locked ? (
+        <ReadingScene
+          animationVariant={animationVariant}
+          audioAvailable={audioAvailable}
+          handoff={locked.handoff}
+          initialReading={locked.reading}
+          {...(initialPreferences ? { initialPreferences } : {})}
+          readingId={locked.readingId}
+        />
+      ) : (
+        <SanctuaryFrame
+          backdrop={readingSetupFocus === "cards" ? "starry-reading" : "sanctuary"}
+          focusStage={readingSetupFocus}
+          phase={String(state.value)}
+          reducedMotion={reducedMotion}
+        >
+          <RitualControls
+            ambience={ambience}
+            animationManaged={animationManaged}
+            controlsLabel="Reading setup controls"
+            displayName={displayName}
+            exitHref="/profile"
+            narration={narration}
             reducedMotion={reducedMotion}
-            selectedIndexes={selectedIndexes}
+            sigilSeed={sigilSeed}
+            sound={sound}
+            toggleAmbience={toggleAmbience}
+            toggleNarration={toggleNarration}
+            toggleReducedMotion={toggleReducedMotion}
+            toggleSound={toggleSound}
           />
-        </section>
-      )}
 
-      {state.matches("drawFinalizing") && (
-        <div className="sanctuary-loading" role="status">
-          <span aria-hidden="true">✦</span>
-          Locking your selected cards…
-        </div>
-      )}
+          {state.matches("questionDrafting") && (
+            <section className="minimal-question-stage">
+              <h1>What question did you have for the stars today?</h1>
+              <form
+                className="minimal-question-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void prepareRitual();
+                }}
+              >
+                <textarea
+                  aria-label="Your question for the stars"
+                  autoFocus
+                  disabled={access.outcome !== "granted" || loading}
+                  maxLength={500}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  value={question}
+                />
+                <button disabled={!question.trim() || loading} type="submit">
+                  <span className="sr-only">Send question</span>
+                  <span aria-hidden="true">➤</span>
+                </button>
+              </form>
+            </section>
+          )}
 
-      {access.outcome === "limitReached" && access.windowEndsAt && (
-        <p className="sanctuary-error" role="status">
-          Your included reading allowance renews{" "}
-          <time dateTime={access.windowEndsAt}>
-            {new Date(access.windowEndsAt).toLocaleString()}
-          </time>
-          .
-        </p>
-      )}
-      {message && (
-        <div className="sanctuary-error" role="alert">
-          <p>{message}</p>
-          {retained && (
-            <p>
-              <Link href={`/reading/${retained.readingId}`}>Open the retained reading</Link> ·
-              another draw becomes available{" "}
-              <time dateTime={retained.availableAt}>
-                {new Date(retained.availableAt).toLocaleString()}
+          {state.matches("highStakesQuestion") && guardedPrompt && (
+            <section className="reading-entry-stage reading-question-stage">
+              <div className="ritual-moment" data-safety-category={guardedPrompt.category}>
+                <p className="ritual-status" role="status">
+                  The cards cannot establish this as fact. They can still reflect on evidence,
+                  preparation, boundaries, and your choices.
+                </p>
+                <div className="ritual-action-group">
+                  <button
+                    className="ritual-action"
+                    disabled={loading}
+                    onClick={() => void prepareRitual(true)}
+                    type="button"
+                  >
+                    {loading ? "Preparing reflection…" : "Continue as reflection"}
+                  </button>
+                  <button
+                    className="ritual-action"
+                    onClick={() => {
+                      setGuardedPrompt(undefined);
+                      send({ type: "REVISE_QUESTION" });
+                    }}
+                    type="button"
+                  >
+                    Revise the question
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {deckVisible && ceremony && (
+            <SpreadSlotGhost
+              layout={spreadLayoutFor(ceremony.spread)}
+              onMeasure={setSlots}
+              positions={ceremony.spread.positions}
+            />
+          )}
+          {deckVisible && ceremony && (
+            <section className="reading-entry-stage casino-wash-stage">
+              <CasinoWashDeck
+                onFinishWash={() => {
+                  saveCurrentCeremony("selectingCards");
+                  if (sound) playRitualSound("gather");
+                  send({ type: "SHUFFLE_COMPLETE" });
+                }}
+                onSelect={(index) => {
+                  const next = [...selectedIndexes, index];
+                  setSelectedIndexes(next);
+                  saveCurrentCeremony("selectingCards", next);
+                  if (sound) playRitualSound("reveal", next.length - 1);
+                }}
+                onStir={stirPendingDeck}
+                phase={state.matches("shuffling") ? "washing" : "selecting"}
+                positions={ceremony.spread.positions}
+                reducedMotion={reducedMotion}
+                selectedIndexes={selectedIndexes}
+                slots={slots}
+              />
+            </section>
+          )}
+
+          {access.outcome === "limitReached" && access.windowEndsAt && (
+            <p className="sanctuary-error" role="status">
+              Your included reading allowance renews{" "}
+              <time dateTime={access.windowEndsAt}>
+                {new Date(access.windowEndsAt).toLocaleString()}
               </time>
+              .
             </p>
           )}
-        </div>
+          {message && (
+            <div className="sanctuary-error" role="alert">
+              <p>{message}</p>
+              {retained && (
+                <p>
+                  <Link href={`/reading/${retained.readingId}`}>Open the retained reading</Link> ·
+                  another draw becomes available{" "}
+                  <time dateTime={retained.availableAt}>
+                    {new Date(retained.availableAt).toLocaleString()}
+                  </time>
+                </p>
+              )}
+            </div>
+          )}
+        </SanctuaryFrame>
       )}
-    </MysticSanctuaryScene>
+    </SanctuaryFrameHost>
   );
 }

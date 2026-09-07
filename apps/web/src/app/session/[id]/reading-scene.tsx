@@ -16,7 +16,7 @@ import {
   type RitualProgress,
 } from "@/lib/ritual-progress";
 
-import { MysticSanctuaryScene } from "./mystic-sanctuary-scene";
+import { SanctuaryFrame, type AnimationVariant } from "./mystic-sanctuary-scene";
 import { OracleTranscript } from "./oracle-transcript";
 import { QuestionComposer } from "./question-composer";
 import { ReadingClosure, ReadingSealed, type ReadingContinuationMode } from "./reading-closure";
@@ -24,21 +24,30 @@ import type { ReadingPayload } from "./reading-types";
 import { playRitualSound, useRitualAmbience } from "./ritual-audio";
 import { RitualControls } from "./ritual-controls";
 import { SafetyInterruptContent } from "./safety-interrupt-panel";
+import type { CardHandoffOrigin } from "./stage-flip";
 import { TarotSpreadStage } from "./tarot-spread-stage";
 
 export function ReadingScene({
   audioAvailable = false,
   animationVariant = "immersive-v1",
+  handoff,
   initialPreferences,
+  initialReading,
   readingId,
 }: {
   audioAvailable?: boolean;
-  animationVariant?: "immersive-v1" | "quiet-v1" | "disabled";
+  animationVariant?: AnimationVariant;
+  /** Where the reader's picked cards sit on screen when the scene takes over
+   * from selection. The dealt cards begin exactly there. */
+  handoff?: readonly CardHandoffOrigin[] | undefined;
   initialPreferences?: ReadingPreferenceSeed;
+  /** The locked reading when the scene continues a selection in place, so the
+   * spread is on screen from the first frame instead of after a fetch. */
+  initialReading?: ReadingPayload | undefined;
   readingId: string;
 }) {
   const [state, send] = useMachine(readingMachine);
-  const [reading, setReading] = useState<ReadingPayload>();
+  const [reading, setReading] = useState<ReadingPayload | undefined>(initialReading);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const revealedRef = useRef<ReadonlySet<number>>(revealed);
   const [dealtCount, setDealtCount] = useState(0);
@@ -109,6 +118,7 @@ export function ReadingScene({
   );
 
   useEffect(() => {
+    if (initialReading) return;
     void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Unable to recover this reading.");
@@ -127,7 +137,7 @@ export function ReadingScene({
       .catch((cause: unknown) =>
         setError(cause instanceof Error ? cause.message : "Unable to recover this reading."),
       );
-  }, [readingId]);
+  }, [initialReading, readingId]);
 
   useEffect(() => {
     if (!reading || bootstrapped.current) return;
@@ -355,7 +365,7 @@ export function ReadingScene({
 
   if (error && !reading)
     return (
-      <MysticSanctuaryScene
+      <SanctuaryFrame
         animationVariant={animationVariant}
         backdrop="starry-reading"
         focusStage="ambient"
@@ -368,12 +378,12 @@ export function ReadingScene({
           {error}
           <Link href="/history">Return to reading history</Link>
         </div>
-      </MysticSanctuaryScene>
+      </SanctuaryFrame>
     );
 
-  if (!reading || state.matches("idle") || state.matches("readingCreated"))
+  if (!reading)
     return (
-      <MysticSanctuaryScene
+      <SanctuaryFrame
         animationVariant={animationVariant}
         backdrop="starry-reading"
         focusStage="cards"
@@ -384,7 +394,7 @@ export function ReadingScene({
         <div className="sanctuary-loading" role="status">
           <span aria-hidden="true">✦</span>Recovering your locked draw…
         </div>
-      </MysticSanctuaryScene>
+      </SanctuaryFrame>
     );
 
   const activeRevealCard = activeReveal === null ? undefined : reading.cards[activeReveal];
@@ -393,9 +403,16 @@ export function ReadingScene({
       state.matches("followUpAvailable") ||
       state.matches("complete")) &&
     Boolean(reading.result);
+  // The locked cards are on stage from the first frame: they hold where the
+  // reader placed them until the deal carries each into its slot.
+  const dealing =
+    state.matches("idle") ||
+    state.matches("readingCreated") ||
+    state.matches("drawLocked") ||
+    state.matches("dealing");
   const cardsVisible =
     !journeyComplete &&
-    (state.matches("dealing") ||
+    (dealing ||
       state.matches("awaitingReveal") ||
       state.matches("revealing") ||
       state.matches("fullSpreadReady") ||
@@ -410,9 +427,16 @@ export function ReadingScene({
     : cardsVisible
       ? "cards"
       : "ambient";
+  const stageLayoutKey = [
+    dealing ? "dealing" : "",
+    state.matches("awaitingReveal") ? "reflecting" : "",
+    state.matches("revealing") ? "revealing" : "",
+    transcriptVisible && !journeyComplete ? "journey" : "",
+    readingFocusStage,
+  ].join("|");
 
   return (
-    <MysticSanctuaryScene
+    <SanctuaryFrame
       animationVariant={animationVariant}
       backdrop="starry-reading"
       focusStage={readingFocusStage}
@@ -455,7 +479,7 @@ export function ReadingScene({
 
       <section
         aria-live="polite"
-        className={`sanctuary-stage ${state.matches("dealing") ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${activeReveal === null ? "" : "has-cinematic-review"} ${transcriptVisible && !journeyComplete ? "has-reading-journey" : ""}`}
+        className={`sanctuary-stage ${dealing ? "is-dealing" : ""} ${state.matches("awaitingReveal") ? "is-reflecting" : ""} ${state.matches("revealing") ? "is-guided-reveal" : ""} ${activeReveal === null ? "" : "has-cinematic-review"} ${transcriptVisible && !journeyComplete ? "has-reading-journey" : ""}`}
       >
         {state.matches("sessionExpired") && (
           <div className="ritual-moment">
@@ -474,43 +498,30 @@ export function ReadingScene({
           </div>
         )}
 
-        {state.matches("dealing") && (
-          <div className="sanctuary-deal-ritual" data-testid="guided-deal">
-            <div aria-hidden="true" className="sanctuary-centered-deck">
-              <span />
-              <span />
-              <span />
-            </div>
-            <TarotSpreadStage
-              activeIndex={null}
-              cards={reading.cards}
-              dealing
-              focusMode={null}
-              reducedMotion={motionOff}
-              revealed={revealed}
-              visibleCount={dealtCount}
-            />
-            <p className="ritual-deal-status" role="status">
-              {dealtCount === 0
-                ? "The locked deck is centered."
-                : `Dealing card ${dealtCount} of ${reading.cards.length} into its fixed position…`}
-            </p>
-          </div>
-        )}
-
-        {cardsVisible && !state.matches("dealing") && (
-          <div className="ritual-card-layout">
+        {cardsVisible && (
+          <div className="ritual-card-layout" data-testid={dealing ? "guided-deal" : undefined}>
             <TarotSpreadStage
               activeIndex={activeReveal}
               cards={reading.cards}
+              dealing={dealing}
               focusMode={activeReveal === null ? null : "reveal"}
+              handoff={motionOff ? undefined : handoff}
+              layoutKey={stageLayoutKey}
               narratingIndexes={narratingCardIndexes}
               reducedMotion={motionOff}
               revealed={revealed}
+              settledCount={dealtCount}
               onReveal={
                 state.matches("revealing") && activeReveal === null ? revealCard : undefined
               }
             />
+            {dealing && (
+              <p className="ritual-deal-status" role="status">
+                {dealtCount === 0
+                  ? "Your chosen cards are locked in place."
+                  : `Dealing card ${dealtCount} of ${reading.cards.length} into its fixed position…`}
+              </p>
+            )}
             {state.matches("awaitingReveal") && (
               <div className="ritual-question-reflection" data-testid="question-reflection">
                 <span>Hold your question at the center</span>
@@ -714,6 +725,6 @@ export function ReadingScene({
           </p>
         )}
       </div>
-    </MysticSanctuaryScene>
+    </SanctuaryFrame>
   );
 }
