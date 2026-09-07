@@ -202,12 +202,15 @@ function shellStyle(
   selectedOrder: number | undefined,
   positions: readonly CasinoPickTarget[],
   fieldTargets: Record<string, FieldTarget> | undefined,
+  field: { width: number; height: number } | undefined,
 ): RitualStyle {
   const wash = casinoWashLayout(index, cycle);
   const targetPosition = selectedOrder === undefined ? undefined : positions[selectedOrder];
   const target = targetPosition
     ? (fieldTargets?.[targetPosition.id] ?? casinoPickTarget(targetPosition, positions))
     : undefined;
+  const pickX = (target?.left ?? wash.fanLeft) - wash.fanLeft;
+  const pickY = wash.fanBottom - (target?.bottom ?? wash.fanBottom);
   return {
     "--shell-index": index,
     "--wash-a-x": `${wash.washAX}vw`,
@@ -226,8 +229,12 @@ function shellStyle(
     "--target-bottom": `${target?.bottom ?? wash.fanBottom}%`,
     "--target-rotation": `${target?.rotation ?? wash.fanRotation}deg`,
     "--picked-order": selectedOrder ?? -1,
-    "--pick-x": `${(target?.left ?? wash.fanLeft) - wash.fanLeft}cqw`,
-    "--pick-y": `${wash.fanBottom - (target?.bottom ?? wash.fanBottom)}cqh`,
+    // The flight is a transform from the fan anchor. Once the field has been
+    // measured, resolve it in pixels from that same measurement: WebKit can
+    // resolve container units against a stale size when the target changes
+    // during a resize, which leaves the card short of its slot.
+    "--pick-x": field ? `${(pickX / 100) * field.width}px` : `${pickX}cqw`,
+    "--pick-y": field ? `${(pickY / 100) * field.height}px` : `${pickY}cqh`,
   };
 }
 
@@ -341,6 +348,7 @@ export function CasinoWashDeck({
               selected ? selectedOrder : undefined,
               positions,
               fieldTargets,
+              fieldTargets ? fieldBox : undefined,
             );
             if (phase === "washing")
               return <i className="casino-card-shell" key={`${cycle}-${index}`} style={style} />;
