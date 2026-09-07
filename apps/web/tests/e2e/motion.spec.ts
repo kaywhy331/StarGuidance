@@ -130,7 +130,7 @@ test("bounded shuffle settles, restarts on intent, and all 78 fan cards remain k
   );
   expect(prepared.status()).toBe(201);
   const { ceremony } = (await prepared.json()) as { ceremony: PreparedCeremony };
-  await expect(page.locator(".casino-card-shell")).toHaveCount(12);
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   // Phase-specific legacy rules must not extend the new bounded atmosphere.
   await expect(page.locator(".sanctuary-light")).toHaveCSS("animation-duration", "3s");
   // Stirring restarts the wash on explicit input while the pile is on stage.

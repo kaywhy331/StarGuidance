@@ -3051,12 +3051,12 @@ body {
   z-index: calc(var(--shell-index) + 1);
   top: 48%;
   left: 50%;
-  transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 5.5) * 0.4deg));
+  transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 38.5) * 0.06deg));
   animation: casino-wash-scramble var(--motion-wash, 3s) cubic-bezier(0.42, 0.04, 0.28, 0.98) both;
   animation-delay: calc(
-    var(--motion-washHold, 320ms) + var(--shell-index) * var(--motion-washStagger, 40ms)
+    var(--motion-washHold, 320ms) + var(--shell-index) * var(--motion-washStagger, 12ms)
   );
-  will-change: transform, opacity;
+  will-change: transform;
 }
 
 .casino-wash-actions {
@@ -3134,11 +3134,13 @@ body {
   pointer-events: auto;
 }
 
+/* A pick lifts straight up out of the arch (the `translate` property, which
+ * composes with the flight on `transform`), then slides into its slot. */
 .casino-wash-deck.is-selecting .casino-card-shell.is-picked {
   z-index: calc(220 + var(--picked-order));
   bottom: var(--target-bottom);
   left: var(--target-left);
-  animation: none;
+  animation: casino-pick-lift var(--motion-pickFlight, 900ms) cubic-bezier(0.4, 0, 0.2, 1) both;
   border-color: rgb(238 219 161 / 0.92);
   box-shadow:
     0 0 1.25rem rgb(106 224 204 / 0.48),
@@ -3152,7 +3154,7 @@ body {
 }
 
 .casino-wash-deck.motion-off.is-washing .casino-card-shell {
-  transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 5.5) * 0.4deg));
+  transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 38.5) * 0.06deg));
 }
 
 .casino-pick-progress {
@@ -6598,11 +6600,11 @@ body {
   0%,
   100% {
     opacity: 1;
-    transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 5.5) * 0.4deg));
+    transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 38.5) * 0.06deg));
   }
 
   22% {
-    opacity: 0.86;
+    opacity: 0.92;
     transform: translate(-50%, -50%) translate(var(--wash-a-x), var(--wash-a-y))
       rotate(var(--wash-rotation-a)) scale(0.92);
   }
@@ -6614,9 +6616,23 @@ body {
   }
 
   74% {
-    opacity: 0.86;
+    opacity: 0.92;
     transform: translate(-50%, -50%) translate(var(--wash-c-x), var(--wash-c-y))
       rotate(var(--wash-rotation-c)) scale(0.95);
+  }
+}
+
+@keyframes casino-pick-lift {
+  0% {
+    translate: 0 0;
+  }
+
+  30% {
+    translate: 0 -2.8rem;
+  }
+
+  100% {
+    translate: 0 0;
   }
 }
 

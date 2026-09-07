@@ -151,7 +151,7 @@ test("a birthday-based free reading remains causal and continues through passwor
     "data-ritual-phase",
     "shuffling",
   );
-  await expect(page.locator(".casino-card-shell")).toHaveCount(12);
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
 
   const finalization = page.waitForResponse(
     (response) =>

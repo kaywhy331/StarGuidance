@@ -281,7 +281,7 @@ export async function beginReadingThroughUi(page: Page, options: { question?: st
     "data-ritual-phase",
     "shuffling",
   );
-  await expect(page.getByTestId("casino-wash-deck").locator(".casino-card-shell")).toHaveCount(12);
+  await expect(page.getByTestId("casino-wash-deck").locator(".casino-card-shell")).toHaveCount(78);
   // The wash re-stacks and opens the fan on its own; no gather action exists.
   const finalization = page.waitForResponse(
     (response) =>

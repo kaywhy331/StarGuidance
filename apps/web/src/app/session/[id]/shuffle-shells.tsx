@@ -23,8 +23,9 @@ export const CASINO_PICK_SCALE = 1.18;
  * background, so it is fetched while the fan is open to keep the handoff
  * seamless. */
 export const CASINO_CARD_BACK_AVIF = "/art/tarot/v2/celestial-gothic-back-v1.avif";
-// Visual shells never represent, select, or mutate real card identities.
-export const SHUFFLE_SHELL_COUNT = 12;
+// Visual shells never represent, select, or mutate real card identities. The
+// wash moves the whole deck so the count on stage is the count in the deck.
+export const SHUFFLE_SHELL_COUNT = TAROT_DECK_SIZE;
 
 type RitualStyle = CSSProperties & Record<`--${string}`, string | number>;
 
@@ -136,6 +137,23 @@ export function casinoPickTarget(
     bottom: 48 + (1 - verticalRatio) * (rows === 1 ? 0 : 26),
     rotation: position.placement.rotation,
   };
+}
+
+/** Resolve once every picked shell's flight (its transition and lift
+ * animation) has finished, or after `maxWait` on a stalled renderer, so the
+ * shells can be measured at rest. */
+export async function awaitCasinoPickFlights(
+  root: ParentNode = document,
+  maxWait = 1_500,
+): Promise<void> {
+  const flights = [...root.querySelectorAll<HTMLElement>(".casino-card-shell.is-picked")].flatMap(
+    (shell) => shell.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+  );
+  if (flights.length === 0) return;
+  await Promise.race([
+    Promise.all(flights),
+    new Promise<void>((resolve) => window.setTimeout(resolve, maxWait)),
+  ]);
 }
 
 /** Where each picked shell currently sits on screen, keyed by the spread
