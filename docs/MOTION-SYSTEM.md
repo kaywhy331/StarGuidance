@@ -6,19 +6,21 @@ This document describes the implemented system and the rules for extending it. T
 
 ## Movement vocabulary
 
-| Role                     | Duration           | Easing / displacement                      | Purpose                                                   |
-| ------------------------ | ------------------ | ------------------------------------------ | --------------------------------------------------------- |
-| Feedback                 | 160 ms             | Settle; at most 2 px                       | Acknowledge hover, press, focus, and field state.         |
-| Arrival                  | 320 ms             | Settle; opacity, or 6 px for a small panel | Establish a route, prompt, or opened control.             |
-| Section reveal           | 560 ms             | Settle; 12 px upward, opacity 0.3 → 1      | Introduce one coherent block of content.                  |
-| Card travel              | 620 ms             | Settle                                     | Move a selected/dealt card into its position.             |
-| Card flip                | 720 ms             | Travel; rotateY 0 → 180 degrees            | Give a user-requested reveal physical weight.             |
-| Deal interval            | 420 ms             | Overlap each 620 ms flight                 | Keep larger spreads from becoming a long wait.            |
-| Deal settle              | 620 ms             | Last flight completes                      | Make reveal controls available after the last card lands. |
-| Ready pause              | 480 ms             | No movement                                | Brief punctuation before the signed-in ready prompt.      |
-| Fan arrival              | 960 ms + 2 ms/card | Settle; 24 px and a small rotation         | Open all 78 choices, ready within 1,114 ms.               |
-| Image crossfade          | 560 ms             | Travel; opacity only                       | Carry the atmosphere from intake into the reading.        |
-| Decorative pointer depth | Spring             | stiffness 110, damping 24, mass 0.8        | Maximum ±2° pitch and ±3° yaw on the landing artwork.     |
+| Role                     | Duration                                          | Easing / displacement                       | Purpose                                                   |
+| ------------------------ | ------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------- |
+| Feedback                 | 160 ms                                            | Settle; at most 2 px                        | Acknowledge hover, press, focus, and field state.         |
+| Arrival                  | 320 ms                                            | Settle; opacity, or 6 px for a small panel  | Establish a route, prompt, or opened control.             |
+| Section reveal           | 560 ms                                            | Settle; 12 px upward, opacity 0.3 → 1       | Introduce one coherent block of content.                  |
+| Card travel              | 620 ms                                            | Settle                                      | Move a selected/dealt card into its position.             |
+| Card flip                | 720 ms                                            | Travel; rotateY 0 → 180 degrees             | Give a user-requested reveal physical weight.             |
+| Deal interval            | 420 ms                                            | Overlap each 620 ms flight                  | Keep larger spreads from becoming a long wait.            |
+| Deal settle              | 620 ms                                            | Last flight completes                       | Make reveal controls available after the last card lands. |
+| Ready pause              | 480 ms                                            | No movement                                 | Brief punctuation before the signed-in ready prompt.      |
+| Wash                     | 320 ms hold, 3 s pass, 40 ms/shell, 240 ms settle | Planar; scatter from and return to one pile | Shuffle twelve shells and visibly re-stack the deck.      |
+| Pile to corner           | 700 ms                                            | Settle; transform from the fan anchor       | Carry the re-stacked pile to the lower left.              |
+| Fan arrival              | 960 ms + 2 ms/card                                | Settle; opens from the corner pile          | Open all 78 choices, ready within 1,814 ms of the pile.   |
+| Image crossfade          | 560 ms                                            | Travel; opacity only                        | Carry the atmosphere from intake into the reading.        |
+| Decorative pointer depth | Spring                                            | stiffness 110, damping 24, mass 0.8         | Maximum ±2° pitch and ±3° yaw on the landing artwork.     |
 
 **Settle:** `cubic-bezier(0.22, 1, 0.36, 1)` — quick intent, a soft landing. **Travel:** `cubic-bezier(0.4, 0, 0.2, 1)` — controlled acceleration and deceleration. Avoid bounce, elastic overshoot, flashing, and dramatic camera moves. Use the spring only for decorative depth.
 
@@ -54,8 +56,8 @@ No per-frame blur, saturation, or object-position animation. The existing small 
 
 ### Shuffle, fan, cut, deal, reveal
 
-1. **Shuffle:** twelve lightweight visual shells suggest the full deck. Their 3.6 s transform choreography settles once. Stir restarts it on explicit input. “Gather the cards” is available immediately; the reader can skip the remaining visual movement. Visual shell identity has no relationship to card identity or random selection.
-2. **Fan:** all 78 real selection indexes remain available. A 960 ms transform/opacity entrance plus a 2 ms stagger settles before selection enables. Each card remains a labeled native button. Pointer position highlights the existing fan choice; touch can tap or drag, and keyboard can activate any choice. A highlight lifts a card without changing its selected identity.
+1. **Shuffle:** twelve lightweight visual shells suggest the full deck. The deck rests as one pile at center stage for 320 ms, then each shell leaves the pile 40 ms after the previous one, crosses three planar destinations over 3 s, and returns to the pile, so the deck visibly re-stacks. Stirring (tap or drag the deck) restarts the wash and contributes entropy. There is no gather action: 240 ms after the pile re-stacks the fan takes over on its own. Quiet mode shows the resting pile for 900 ms, still stirrable, then swaps directly to the fan. Visual shell identity has no relationship to card identity or random selection.
+2. **Fan:** all 78 real selection indexes remain available. Each fan card begins on the very pile the wash re-stacked, slides with it to the lower-left corner over 700 ms, then opens into the arch over 960 ms with a 2 ms stagger; the whole entrance is a transform from the card's own fan anchor, and selection enables once the last card settles. Each card remains a labeled native button. Pointer position highlights the existing fan choice; touch can tap or drag, and keyboard can activate any choice. A highlight lifts a card without changing its selected identity.
 3. **Selection:** a chosen card flies over 620 ms to the exact slot it will occupy once dealt, measured from an invisible copy of the spread grid that uses the dealt layout's own classes; a proportional layout stands in until that measurement exists. Container-relative translations respond to viewport changes without animating layout positions. The input protocol, entropy contribution, optional cut, and server draw lock remain unchanged. The picked cards stay on screen while the draw locks; there is no loading screen, route change, or second deck between selection and the deal.
 4. **Optional cut:** preserve the existing intentional cut control and its 720 ms packet separation. Quiet mode swaps directly to the resulting arrangement. Cutting is never required to proceed.
 5. **Deal:** the locked spread mounts once and stays mounted through the reading. Each dealt card first appears exactly where its picked shell sat (measured from the fan before it unmounts, matched by spread position) and then travels 620 ms into its slot, each flight beginning 420 ms after the previous card. The final card settles before the next prompt. Guest and signed-in flows use the same tokens; the signed-in flow continues in the same scene and updates the URL with `history.replaceState`. A recovered ritual with no handoff deals from the center of the spread. Existing skip/recovery paths bypass ceremony delays.

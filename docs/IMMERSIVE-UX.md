@@ -37,7 +37,7 @@ A second refinement pass addressed the ten remaining experience gaps found durin
 - All essential ritual actions are native buttons or links with visible focus treatment.
 - Every unrevealed locked position remains selectable by touch, pointer, Tab, Enter, and Space; Reveal All is explicit.
 - Reduced motion disables ornamental movement and cinematic transitions without skipping content.
-- `Gather the cards` moves the wash to a keyboard-accessible fan; the reader then selects exactly the recommended spread count before finalization.
+- The wash re-stacks itself and opens into a keyboard-accessible fan with no gather click; the reader then selects exactly the recommended spread count before finalization.
 - Card effects, ambient room tone, and cloud narration are independently optional. Preferences persist, but voice generation starts only from the reading-surface play button.
 - The compact reading view presents one passage at a time beside the spread and does not expose result or follow-up controls before the final passage is deliberately finished.
 - Horizontal mobile rails use scroll snap but retain normal DOM reading order.

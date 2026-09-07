@@ -228,6 +228,12 @@ function shellStyle(
     "--target-left": `${target?.left ?? wash.fanLeft}%`,
     "--target-bottom": `${target?.bottom ?? wash.fanBottom}%`,
     "--target-rotation": `${target?.rotation ?? wash.fanRotation}deg`,
+    // The fan entrance is a transform from the fan anchor back to the two
+    // piles it came from: center stage, then the lower-left corner.
+    "--pile-x": `${50 - wash.fanLeft}cqw`,
+    "--pile-y": `calc(${wash.fanBottom - 52}cqh + 50%)`,
+    "--corner-x": `${7 - wash.fanLeft}cqw`,
+    "--corner-y": `${wash.fanBottom - 4}cqh`,
     "--picked-order": selectedOrder ?? -1,
     // The flight is a transform from the fan anchor. Once the field has been
     // measured, resolve it in pixels from that same measurement: WebKit can
@@ -260,6 +266,10 @@ export function CasinoWashDeck({
   onStir?: () => void;
 }) {
   const [cycle, setCycle] = useState(0);
+  const finishWash = useRef(onFinishWash);
+  useEffect(() => {
+    finishWash.current = onFinishWash;
+  }, [onFinishWash]);
   const fieldRef = useRef<HTMLDivElement>(null);
   const [fieldBox, setFieldBox] = useState<{
     left: number;
@@ -278,6 +288,22 @@ export function CasinoWashDeck({
   useEffect(() => {
     if (phase === "selecting") preload(CASINO_CARD_BACK_AVIF, { as: "image", type: "image/avif" });
   }, [phase]);
+
+  // The wash is one continuous scene: the pile scatters, re-stacks, and the
+  // stacked deck is handed straight to the fan. Stirring restarts the wash.
+  useEffect(() => {
+    if (phase !== "washing") return;
+    const timer = window.setTimeout(
+      () => finishWash.current(),
+      reducedMotion
+        ? motionTiming.quietWashHold
+        : motionTiming.washHold +
+            motionTiming.wash +
+            (SHUFFLE_SHELL_COUNT - 1) * motionTiming.washStagger +
+            motionTiming.stack,
+    );
+    return () => window.clearTimeout(timer);
+  }, [cycle, phase, reducedMotion]);
 
   // The field's box is external layout state: observing it reports the
   // initial size at once and again whenever the viewport changes.
@@ -310,7 +336,7 @@ export function CasinoWashDeck({
     if (phase !== "selecting" || reducedMotion) return;
     const timer = window.setTimeout(
       () => setFanOpened(true),
-      motionTiming.fan + (TAROT_DECK_SIZE - 1) * motionTiming.fanStagger,
+      motionTiming.gather + motionTiming.fan + (TAROT_DECK_SIZE - 1) * motionTiming.fanStagger,
     );
     return () => window.clearTimeout(timer);
   }, [phase, reducedMotion]);
@@ -433,9 +459,9 @@ export function CasinoWashDeck({
           >
             <span>Wash again</span>
           </button>
-          <button className="casino-gather-action" onClick={onFinishWash} type="button">
-            Gather the cards
-          </button>
+          <p aria-live="polite" className="casino-pick-progress" role="status">
+            Shuffling the deck… tap it to stir again
+          </p>
         </div>
       ) : (
         <p aria-live="polite" className="casino-pick-progress" role="status">

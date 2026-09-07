@@ -152,7 +152,6 @@ test("a birthday-based free reading remains causal and continues through passwor
     "shuffling",
   );
   await expect(page.locator(".casino-card-shell")).toHaveCount(12);
-  await page.getByRole("button", { name: "Gather the cards" }).click();
 
   const finalization = page.waitForResponse(
     (response) =>

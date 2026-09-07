@@ -3044,13 +3044,18 @@ body {
   transform-origin: 50% 92%;
 }
 
+/* The wash starts and ends as one pile at center stage. Each shell leaves
+ * the pile a beat after the previous one and returns the same way, so the
+ * deck visibly re-stacks before the fan takes it. */
 .casino-wash-deck.is-washing .casino-card-shell {
   z-index: calc(var(--shell-index) + 1);
   top: 48%;
   left: 50%;
-  opacity: 0.88;
-  animation: casino-wash-scramble 4.8s cubic-bezier(0.42, 0.04, 0.28, 0.98) infinite;
-  animation-delay: calc(var(--shell-index) * -47ms);
+  transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 5.5) * 0.4deg));
+  animation: casino-wash-scramble var(--motion-wash, 3s) cubic-bezier(0.42, 0.04, 0.28, 0.98) both;
+  animation-delay: calc(
+    var(--motion-washHold, 320ms) + var(--shell-index) * var(--motion-washStagger, 40ms)
+  );
   will-change: transform, opacity;
 }
 
@@ -3081,23 +3086,6 @@ body {
   outline-offset: -0.5rem;
 }
 
-.casino-gather-action {
-  position: absolute;
-  z-index: 2;
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
-  left: 50%;
-  min-width: 11rem;
-  padding: 0.78rem 1.25rem;
-  border: 1px solid rgb(236 211 142 / 0.66);
-  border-radius: 999px;
-  background: rgb(3 13 20 / 0.82);
-  box-shadow: 0 0 2rem rgb(102 209 191 / 0.18);
-  color: #f2dfaa;
-  cursor: pointer;
-  pointer-events: auto;
-  translate: -50% 0;
-}
-
 .casino-wash-deck.is-selecting .casino-card-shell {
   z-index: calc(var(--shell-index) + 1);
   bottom: var(--fan-bottom);
@@ -3105,8 +3093,9 @@ body {
   cursor: pointer;
   pointer-events: none;
   transform: translateX(-50%) rotate(var(--fan-rotation));
-  animation: casino-gather-stack-fan 1.75s cubic-bezier(0.2, 0.76, 0.18, 1) both;
-  animation-delay: calc(var(--shell-index) * 2ms);
+  animation: casino-gather-stack-fan calc(var(--motion-gather, 700ms) + var(--motion-fan, 960ms))
+    cubic-bezier(0.2, 0.76, 0.18, 1) both;
+  animation-delay: calc(var(--shell-index) * var(--motion-fanStagger, 2ms));
   transition:
     left 780ms cubic-bezier(0.16, 0.82, 0.2, 1),
     bottom 780ms cubic-bezier(0.16, 0.82, 0.2, 1),
@@ -3163,9 +3152,7 @@ body {
 }
 
 .casino-wash-deck.motion-off.is-washing .casino-card-shell {
-  opacity: 0.76;
-  transform: translate(-50%, -50%) translate(var(--wash-a-x), var(--wash-a-y))
-    rotate(var(--wash-rotation-a)) scale(0.9);
+  transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 5.5) * 0.4deg));
 }
 
 .casino-pick-progress {
@@ -6610,49 +6597,46 @@ body {
 @keyframes casino-wash-scramble {
   0%,
   100% {
-    opacity: 0.72;
-    transform: translate(-50%, -50%) translate(var(--wash-a-x), var(--wash-a-y))
-      rotate(var(--wash-rotation-a)) scale(0.9);
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(calc((var(--shell-index) - 5.5) * 0.4deg));
   }
 
-  32% {
+  22% {
+    opacity: 0.86;
+    transform: translate(-50%, -50%) translate(var(--wash-a-x), var(--wash-a-y))
+      rotate(var(--wash-rotation-a)) scale(0.92);
+  }
+
+  48% {
     opacity: 0.98;
     transform: translate(-50%, -50%) translate(var(--wash-b-x), var(--wash-b-y))
       rotate(var(--wash-rotation-b)) scale(1.02);
   }
 
-  66% {
-    opacity: 0.82;
+  74% {
+    opacity: 0.86;
     transform: translate(-50%, -50%) translate(var(--wash-c-x), var(--wash-c-y))
       rotate(var(--wash-rotation-c)) scale(0.95);
   }
 }
 
+/* Transform-only: the layout anchor is always the fan slot. The card begins
+ * on the center pile the wash just re-stacked, slides with the pile to the
+ * lower-left corner, then opens into the arch. */
 @keyframes casino-gather-stack-fan {
   0% {
-    bottom: 48%;
-    left: 50%;
-    opacity: 0.84;
-    transform: translate(-50%, 50%) translate(var(--wash-c-x), var(--wash-c-y))
-      rotate(var(--wash-rotation-c)) scale(0.94);
+    opacity: 1;
+    transform: translateX(-50%) translate(var(--pile-x), var(--pile-y))
+      rotate(calc((var(--shell-index) - 38.5) * 0.06deg));
   }
 
   42% {
-    bottom: 44%;
-    left: 50%;
     opacity: 1;
-    transform: translate(-50%, 50%) rotate(calc((var(--shell-index) - 39) * 0.08deg)) scale(0.98);
-  }
-
-  64% {
-    bottom: 4%;
-    left: 7%;
-    transform: translateX(-50%) rotate(calc((var(--shell-index) - 39) * 0.06deg)) scale(0.96);
+    transform: translateX(-50%) translate(var(--corner-x), var(--corner-y))
+      rotate(calc((var(--shell-index) - 38.5) * 0.05deg)) scale(0.98);
   }
 
   100% {
-    bottom: var(--fan-bottom);
-    left: var(--fan-left);
     opacity: 1;
     transform: translateX(-50%) rotate(var(--fan-rotation));
   }
