@@ -282,7 +282,7 @@ export async function beginReadingThroughUi(page: Page, options: { question?: st
     "shuffling",
   );
   await expect(page.getByTestId("casino-wash-deck").locator(".casino-card-shell")).toHaveCount(12);
-  await page.getByRole("button", { name: "Gather the cards" }).click();
+  // The wash re-stacks and opens the fan on its own; no gather action exists.
   const finalization = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -292,7 +292,7 @@ export async function beginReadingThroughUi(page: Page, options: { question?: st
   const cardCount = preparedBody.ceremony.spread.positions.length;
   await expect(
     page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
-  ).toBeEnabled({ timeout: 10_000 });
+  ).toBeEnabled({ timeout: 20_000 });
   for (let index = 0; index < cardCount; index += 1)
     await page
       .getByRole("button", { name: `Choose face-down card ${index + 1}`, exact: true })

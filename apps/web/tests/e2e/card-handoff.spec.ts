@@ -34,10 +34,9 @@ test("the cards a reader picks are the cards that get dealt, with no cut between
   const scene = page.getByTestId("mystic-sanctuary-scene");
   const sceneElement = await scene.elementHandle();
 
-  await page.getByRole("button", { name: "Gather the cards" }).click();
   await expect(
     page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
-  ).toBeEnabled({ timeout: 10_000 });
+  ).toBeEnabled({ timeout: 20_000 });
 
   // Hold the locked reading's recovery so the picked shells can be measured
   // and captured while they are still the only cards on screen. Full-page

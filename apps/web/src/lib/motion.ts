@@ -8,6 +8,18 @@ export const motionTiming = {
   dealInterval: 420,
   dealSettle: 620,
   readyPause: 480,
+  /** The deck rests as one pile before the wash scatters it. */
+  washHold: 320,
+  /** One wash pass: scatter across three planar destinations, then re-stack. */
+  wash: 3000,
+  /** Each of the twelve wash shells leaves the pile this much after the last. */
+  washStagger: 40,
+  /** The re-stacked pile settles before it travels. */
+  stack: 240,
+  /** In quiet mode the pile rests, unanimated, long enough to be stirred. */
+  quietWashHold: 900,
+  /** The pile slides from center to the lower-left corner. */
+  gather: 700,
   fan: 960,
   fanStagger: 2,
 } as const;

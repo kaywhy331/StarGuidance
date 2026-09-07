@@ -38,7 +38,7 @@ test("a guarded question is acknowledged before the commitment and can continue 
   expect(preflight.status()).toBe(409);
   expect(await preflight.json()).not.toHaveProperty("readingId");
   await expect(page.getByText(/The cards cannot establish this as fact/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Gather the cards" })).toHaveCount(0);
+  await expect(page.getByTestId("casino-wash-deck")).toHaveCount(0);
 
   const acknowledgedResponse = page.waitForResponse(
     (candidate) =>
@@ -52,11 +52,10 @@ test("a guarded question is acknowledged before the commitment and can continue 
   const acknowledgedBody = await acknowledged.json();
   expect(JSON.stringify(acknowledgedBody)).not.toMatch(/"cardId"|"assignments"/);
 
-  await page.getByRole("button", { name: "Gather the cards" }).click();
   const cardCount = acknowledgedBody.ceremony.spread.positions.length as number;
   await expect(
     page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
-  ).toBeEnabled({ timeout: 10_000 });
+  ).toBeEnabled({ timeout: 20_000 });
   const fan = page.getByTestId("casino-wash-deck");
   for (let index = 1; index <= cardCount; index += 1) {
     await page

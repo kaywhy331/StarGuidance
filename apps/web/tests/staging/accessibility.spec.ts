@@ -275,11 +275,10 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   if ((await motionControl.getAttribute("aria-pressed")) !== "true")
     await motionControl.dispatchEvent("click");
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Gather the cards" }).click();
   const fan = page.getByTestId("casino-wash-deck");
   await expect(
     page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
-  ).toBeEnabled({ timeout: 10_000 });
+  ).toBeEnabled({ timeout: 20_000 });
   await scan("card selection fan");
   const readingResponsePromise = page
     .waitForResponse(

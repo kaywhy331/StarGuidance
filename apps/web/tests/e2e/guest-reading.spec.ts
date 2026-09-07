@@ -59,7 +59,6 @@ test("a visitor completes a causal free reading before signup and continues with
   expect(entropyAfterStir.clientNonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(entropyAfterStir.clientNonce).not.toBe(nonceBeforeStir);
   expect(entropyAfterStir.stirCount).toBe(1);
-  await page.getByRole("button", { name: "Gather the cards" }).click();
   const finalized = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&

@@ -124,7 +124,6 @@ html[data-motion="full"] .route-arrival {
 
 /* Pointer effects acknowledge intent without moving the target away. */
 .sg-button,
-.casino-gather-action,
 .sanctuary-control-group button,
 .site-nav-links a,
 .sg-field__control {
@@ -158,16 +157,15 @@ html[data-motion="full"] .route-arrival {
 }
 
 .casino-wash-deck.is-washing .casino-card-shell {
-  animation-duration: 3.6s;
+  animation-duration: var(--motion-wash);
   animation-iteration-count: 1;
-  animation-delay: 0s;
   animation-fill-mode: both;
   will-change: auto;
 }
 
 .casino-wash-deck.is-selecting .casino-card-shell {
-  animation-name: sg-fan-open;
-  animation-duration: var(--motion-fan);
+  animation-name: casino-gather-stack-fan;
+  animation-duration: calc(var(--motion-gather) + var(--motion-fan));
   animation-timing-function: var(--ease-settle);
   animation-delay: calc(var(--shell-index) * var(--motion-fanStagger));
   transition:
@@ -346,16 +344,5 @@ html[data-motion="reduced"] .sg-button:active {
   }
   to {
     translate: 0 -12px;
-  }
-}
-
-@keyframes sg-fan-open {
-  from {
-    opacity: 0.5;
-    transform: translateX(-50%) translateY(24px) rotate(0deg) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) rotate(var(--fan-rotation));
   }
 }

@@ -133,35 +133,24 @@ test("bounded shuffle settles, restarts on intent, and all 78 fan cards remain k
   await expect(page.locator(".casino-card-shell")).toHaveCount(12);
   // Phase-specific legacy rules must not extend the new bounded atmosphere.
   await expect(page.locator(".sanctuary-light")).toHaveCSS("animation-duration", "3s");
-  await expect
-    .poll(
-      () =>
-        page
-          .locator(".casino-card-shell")
-          .evaluateAll(
-            (elements) =>
-              elements
-                .flatMap((element) => element.getAnimations())
-                .filter((animation) => animation.playState === "running").length,
-          ),
-      { timeout: 7_000 },
-    )
-    .toBe(0);
+  // Stirring restarts the wash on explicit input while the pile is on stage.
   await page.getByRole("button", { name: "Stir all 78 cards" }).click();
-  await expect
-    .poll(() =>
-      page
-        .locator(".casino-card-shell")
-        .evaluateAll(
-          (elements) =>
-            elements
-              .flatMap((element) => element.getAnimations())
-              .filter((animation) => animation.playState === "running").length,
-        ),
-    )
-    .toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Gather the cards" }).click();
-  await expect(page.getByRole("button", { name: /^Choose face-down card / })).toHaveCount(78);
+  const runningShellAnimations = () =>
+    page
+      .locator(".casino-card-shell")
+      .evaluateAll(
+        (elements) =>
+          elements
+            .flatMap((element) => element.getAnimations())
+            .filter((animation) => animation.playState === "running").length,
+      );
+  await expect.poll(runningShellAnimations).toBeGreaterThan(0);
+  // The wash re-stacks, hands the pile to the fan, and every finite entrance
+  // settles without any further click.
+  await expect(page.getByRole("button", { name: /^Choose face-down card / })).toHaveCount(78, {
+    timeout: 20_000,
+  });
+  await expect.poll(runningShellAnimations, { timeout: 15_000 }).toBe(0);
   const first = page.getByRole("button", { name: "Choose face-down card 1", exact: true });
   await expect(first).toBeEnabled();
   await first.press("Enter");
