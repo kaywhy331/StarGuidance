@@ -31,6 +31,7 @@ import { playRitualSound, useRitualAmbience } from "../session/[id]/ritual-audio
 import { RitualControls } from "../session/[id]/ritual-controls";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
 import {
+  awaitCasinoPickFlights,
   CasinoWashDeck,
   measureCasinoPickHandoff,
   spreadLayoutFor,
@@ -305,6 +306,7 @@ export function ReadingChooser({
           router.push(`/session/${readingId}`);
           return;
         }
+        await awaitCasinoPickFlights();
         const handoff = measureCasinoPickHandoff(ceremony.spread.positions);
         window.history.replaceState(null, "", `/session/${readingId}`);
         setLocked({ readingId, reading, handoff });

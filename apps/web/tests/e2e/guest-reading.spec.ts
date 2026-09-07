@@ -11,7 +11,6 @@ test("a visitor completes a causal free reading before signup and continues with
   await expect(freeReading).toHaveAttribute("href", "/free-reading");
   await freeReading.click();
 
-  await page.getByRole("button", { name: "Reduce motion" }).click();
   await expect(page.getByLabel("Your birthday")).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Your birthday").fill("1990-01-15");
   await page.getByLabel(/I agree to the Terms/i).check();
@@ -59,6 +58,10 @@ test("a visitor completes a causal free reading before signup and continues with
   expect(entropyAfterStir.clientNonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(entropyAfterStir.clientNonce).not.toBe(nonceBeforeStir);
   expect(entropyAfterStir.stirCount).toBe(1);
+  // The stir above needs the full-motion wash window; the rest of the journey
+  // runs on the persisted quiet path.
+  await page.getByRole("button", { name: "Reduce motion" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   const finalized = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -68,7 +71,7 @@ test("a visitor completes a causal free reading before signup and continues with
   const cardCount = preparedBody.ceremony.spread.positions.length as number;
   await expect(
     page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
-  ).toBeEnabled({ timeout: 10_000 });
+  ).toBeEnabled({ timeout: 20_000 });
   const fanSurface = page.getByTestId("casino-fan-hit-surface");
   const fanBounds = await fanSurface.boundingBox();
   if (!fanBounds) throw new Error("The casino fan selection surface is not visible.");

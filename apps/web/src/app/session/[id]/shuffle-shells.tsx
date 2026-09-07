@@ -139,6 +139,23 @@ export function casinoPickTarget(
   };
 }
 
+/** Resolve once every picked shell's flight (its transition and lift
+ * animation) has finished, or after `maxWait` on a stalled renderer, so the
+ * shells can be measured at rest. */
+export async function awaitCasinoPickFlights(
+  root: ParentNode = document,
+  maxWait = 1_500,
+): Promise<void> {
+  const flights = [...root.querySelectorAll<HTMLElement>(".casino-card-shell.is-picked")].flatMap(
+    (shell) => shell.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+  );
+  if (flights.length === 0) return;
+  await Promise.race([
+    Promise.all(flights),
+    new Promise<void>((resolve) => window.setTimeout(resolve, maxWait)),
+  ]);
+}
+
 /** Where each picked shell currently sits on screen, keyed by the spread
  * position it was picked for. Measure before the deck unmounts so the dealt
  * cards can appear exactly where the reader placed their choices. */

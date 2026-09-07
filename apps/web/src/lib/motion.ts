@@ -16,8 +16,9 @@ export const motionTiming = {
   washStagger: 12,
   /** The re-stacked pile settles before it travels. */
   stack: 240,
-  /** In quiet mode the pile rests, unanimated, long enough to be stirred. */
-  quietWashHold: 900,
+  /** In quiet mode the pile rests, unanimated, long enough to read the
+   * status and stir. */
+  quietWashHold: 1800,
   /** The pile slides from center to the lower-left corner. */
   gather: 700,
   fan: 960,

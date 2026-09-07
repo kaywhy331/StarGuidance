@@ -37,6 +37,7 @@ import { OracleTranscript } from "../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../session/[id]/question-composer";
 import { SafetyInterruptPanel } from "../session/[id]/safety-interrupt-panel";
 import {
+  awaitCasinoPickFlights,
   CasinoWashDeck,
   measureCasinoPickHandoff,
   spreadLayoutFor,
@@ -488,7 +489,8 @@ export function GuestReadingExperience({
         const payload = guestReadingResponseSchema.safeParse(await response.json());
         if (!response.ok || !payload.success)
           throw new Error("The committed draw could not be finalized.");
-        // Measure while the picked shells are still on screen.
+        // Measure while the picked shells are still on screen, once at rest.
+        if (!reducedMotion) await awaitCasinoPickFlights();
         setHandoff(reducedMotion ? undefined : measureCasinoPickHandoff(ceremony.spread.positions));
         setReading(payload.data.reading);
         setReceipt(payload.data.receipt);
