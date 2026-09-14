@@ -12,6 +12,6 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "xstate": "5.32.5"
+    "xstate": "5.32.6"
   }
 }
