@@ -13,7 +13,7 @@ export default async function ReadingsPage() {
   try {
     user = await requireUser();
   } catch {
-    redirect("/sign-in");
+    redirect("/sign-in?next=%2Freadings");
   }
   if (user.requiresPolicyReconsent) redirect("/consent");
   if (!user.profile) redirect("/onboarding");

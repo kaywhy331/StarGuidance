@@ -261,7 +261,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   await page
     .getByLabel("Your question for the stars")
     .fill("What deserves my attention now as I decide my next step?");
-  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Draw my cards" }).click();
   const preparationResponse = await preparationPromise;
   const preparation = (await preparationResponse.json()) as {
     ceremony: { spread: { positions: readonly unknown[] } };
@@ -271,7 +271,7 @@ test("critical deployed flows pass automated WCAG rules", async () => {
   // The scan covers semantics and reflow, not decorative timing. Use the
   // persisted reduced-motion path before opening the fan so hosted WebKit
   // scheduling cannot postpone the fan-ready timer beyond the assertion.
-  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  const motionControl = page.getByRole("button", { name: /^Motion:/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true")
     await motionControl.dispatchEvent("click");
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
@@ -293,9 +293,9 @@ test("critical deployed flows pass automated WCAG rules", async () => {
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
       .press("Enter");
-    if (index < preparation.ceremony.spread.positions.length)
-      await expect(fan).toHaveAttribute("data-selected-count", String(index));
+    await expect(fan).toHaveAttribute("data-selected-count", String(index));
   }
+  await page.getByRole("button", { name: "These are my cards" }).click();
   const readingResponse = await readingResponsePromise;
   try {
     await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, {

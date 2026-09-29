@@ -2,11 +2,13 @@
 
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type PointerEvent,
 } from "react";
 import { preload } from "react-dom";
@@ -26,6 +28,13 @@ export const CASINO_CARD_BACK_AVIF = "/art/tarot/v2/celestial-gothic-back-v1.avi
 // Visual shells never represent, select, or mutate real card identities. The
 // wash moves the whole deck so the count on stage is the count in the deck.
 export const SHUFFLE_SHELL_COUNT = TAROT_DECK_SIZE;
+
+/** Horizontal margin of the fan, in percent of the card field. */
+export const FAN_MARGIN = 7;
+/** Height of the fan's outer cards above the field's bottom edge, in percent. */
+export const FAN_BASE = 12;
+/** Where the washed pile gathers before it opens (percent from the bottom). */
+const GATHER_BOTTOM = FAN_BASE + 9;
 
 type RitualStyle = CSSProperties & Record<`--${string}`, string | number>;
 
@@ -88,9 +97,12 @@ export function casinoWashLayout(index: number, cycle = 0): CasinoWashLayout {
     rotationA: -95 + noise(seed + 7) * 190,
     rotationB: -120 + noise(seed + 8) * 240,
     rotationC: -105 + noise(seed + 9) * 210,
-    fanLeft: 4 + fanRatio * 92,
-    fanBottom: 3.5 + Math.sin(fanRatio * Math.PI) * 8,
-    fanRotation: -13 + fanRatio * 26,
+    // The arch keeps a margin on both sides (so its outer cards, tilted on
+    // their bottom pivot, stay on a phone screen) and sits above the bottom
+    // edge so the composition is balanced instead of hugging the floor.
+    fanLeft: FAN_MARGIN + fanRatio * (100 - FAN_MARGIN * 2),
+    fanBottom: FAN_BASE + Math.sin(fanRatio * Math.PI) * 7,
+    fanRotation: -11 + fanRatio * 22,
   };
 }
 
@@ -114,6 +126,69 @@ export function spreadLayoutFor(spread: {
           ? "horizontal"
           : "legacy";
   return { columns, rows, kind };
+}
+
+const COUNT_WORDS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+] as const;
+
+/** "A three-card spread: Situation · Challenge · Guidance" */
+export function spreadAnnouncement(positions: readonly { displayName: string }[]): string {
+  const count = COUNT_WORDS[positions.length] ?? String(positions.length);
+  return `A ${count}-card spread: ${positions.map(({ displayName }) => displayName).join(" · ")}`;
+}
+
+/** A uniformly random index among `available`, from the browser's CSPRNG.
+ * Selection indexes only choose among positions of the already-committed,
+ * server-seeded permutation, so this never influences which cards exist. */
+export function randomAvailableIndex(
+  available: readonly number[],
+  random: (buffer: Uint32Array) => Uint32Array = (buffer) => crypto.getRandomValues(buffer),
+): number | undefined {
+  if (available.length === 0) return undefined;
+  const range = available.length;
+  // Rejection sampling keeps every remaining card equally likely.
+  const limit = Math.floor(0x1_0000_0000 / range) * range;
+  const buffer = new Uint32Array(1);
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const value = random(buffer)[0]!;
+    if (value < limit) return available[value % range];
+  }
+  return available[0];
+}
+
+/** The next index in `direction` that is not picked, or `from` itself. */
+export function nextAvailableIndex(
+  from: number,
+  direction: number,
+  picked: readonly number[],
+  size = TAROT_DECK_SIZE,
+): number {
+  let candidate = from;
+  for (let step = 0; step < size; step += 1) {
+    candidate = Math.min(size - 1, Math.max(0, candidate + direction));
+    if (!picked.includes(candidate)) return candidate;
+    if (candidate === 0 || candidate === size - 1) break;
+  }
+  if (!picked.includes(from)) return from;
+  // Search the other way when the edge was reached.
+  candidate = from;
+  for (let step = 0; step < size; step += 1) {
+    candidate = Math.min(size - 1, Math.max(0, candidate - Math.sign(direction || 1)));
+    if (!picked.includes(candidate)) return candidate;
+    if (candidate === 0 || candidate === size - 1) break;
+  }
+  return from;
 }
 
 export function casinoFanIndex(clientX: number, surfaceLeft: number, surfaceWidth: number): number {
@@ -247,11 +322,12 @@ function shellStyle(
     "--target-bottom": `${target?.bottom ?? wash.fanBottom}%`,
     "--target-rotation": `${target?.rotation ?? wash.fanRotation}deg`,
     // The fan entrance is a transform from the fan anchor back to the two
-    // piles it came from: center stage, then the lower-left corner.
+    // piles it came from: center stage, then the gathered deck resting just
+    // above the middle of where the arch will open.
     "--pile-x": `${50 - wash.fanLeft}cqw`,
     "--pile-y": `calc(${wash.fanBottom - 52}cqh + 50%)`,
-    "--corner-x": `${7 - wash.fanLeft}cqw`,
-    "--corner-y": `${wash.fanBottom - 4}cqh`,
+    "--corner-x": `${50 - wash.fanLeft}cqw`,
+    "--corner-y": `${wash.fanBottom - GATHER_BOTTOM}cqh`,
     "--picked-order": selectedOrder ?? -1,
     // The flight is a transform from the fan anchor. Once the field has been
     // measured, resolve it in pixels from that same measurement: WebKit can
@@ -271,6 +347,9 @@ export function CasinoWashDeck({
   onFinishWash,
   onSelect,
   onStir,
+  onDeselect,
+  onConfirm,
+  confirming = false,
 }: {
   phase: "washing" | "selecting";
   positions: readonly CasinoPickTarget[];
@@ -282,6 +361,13 @@ export function CasinoWashDeck({
   onFinishWash: () => void;
   onSelect: (index: number) => void;
   onStir?: () => void;
+  /** Lets a picked card be put back into the fan until the reader confirms. */
+  onDeselect?: (index: number) => void;
+  /** When present, a full selection waits for an explicit "These are my
+   * cards" instead of the caller locking it automatically. */
+  onConfirm?: () => void;
+  /** The confirmed selection is being kept; picks can no longer change. */
+  confirming?: boolean;
 }) {
   const [cycle, setCycle] = useState(0);
   const finishWash = useRef(onFinishWash);
@@ -298,21 +384,38 @@ export function CasinoWashDeck({
   }>();
   const [fanOpened, setFanOpened] = useState(false);
   const [pointerHoveredIndex, setPointerHoveredIndex] = useState<number>();
-  const pointerStart = useRef<{ pointerId: number; y: number; index: number } | undefined>(
-    undefined,
-  );
+  /** Touch: the card lifted by the first tap, taken by the second. */
+  const [armedIndex, setArmedIndex] = useState<number>();
+  const [focusIndex, setFocusIndex] = useState(0);
+  const pendingFocus = useRef(false);
+  const pointerStart = useRef<
+    { pointerId: number; y: number; index: number; pointerType: string } | undefined
+  >(undefined);
   const suppressSurfaceClick = useRef(false);
+  const instructionsId = useId();
+  const washFinished = useRef(false);
 
   useEffect(() => {
     if (phase === "selecting") preload(CASINO_CARD_BACK_AVIF, { as: "image", type: "image/avif" });
   }, [phase]);
 
+  const completeWash = () => {
+    if (washFinished.current) return;
+    washFinished.current = true;
+    finishWash.current();
+  };
+
   // The wash is one continuous scene: the pile scatters, re-stacks, and the
-  // stacked deck is handed straight to the fan. Stirring restarts the wash.
+  // stacked deck is handed straight to the fan. "Keep shuffling" restarts it.
   useEffect(() => {
     if (phase !== "washing") return;
+    washFinished.current = false;
     const timer = window.setTimeout(
-      () => finishWash.current(),
+      () => {
+        if (washFinished.current) return;
+        washFinished.current = true;
+        finishWash.current();
+      },
       reducedMotion
         ? motionTiming.quietWashHold
         : motionTiming.washHold +
@@ -359,11 +462,37 @@ export function CasinoWashDeck({
     return () => window.clearTimeout(timer);
   }, [phase, reducedMotion]);
   const fanReady = phase === "selecting" && (reducedMotion || fanOpened);
+  const selectionFull = selectedIndexes.length >= positions.length;
+  const canReturn = Boolean(onDeselect) && fanReady && !confirming;
+
+  // After a pick, keyboard focus continues at the next card still in the fan.
+  useEffect(() => {
+    if (!pendingFocus.current) return;
+    pendingFocus.current = false;
+    const button = fieldRef.current?.querySelector<HTMLButtonElement>(
+      `[data-card-index="${focusIndex}"]`,
+    );
+    if (button && !button.disabled) button.focus();
+  }, [focusIndex, selectedIndexes]);
 
   const select = (index: number) => {
-    if (!fanReady || selectedIndexes.includes(index) || selectedIndexes.length >= positions.length)
-      return;
+    if (!fanReady || selectedIndexes.includes(index) || selectionFull || confirming) return;
+    setArmedIndex(undefined);
+    const picked = [...selectedIndexes, index];
+    const next = nextAvailableIndex(index, 1, picked);
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && fieldRef.current?.contains(active))
+      pendingFocus.current = true;
+    setFocusIndex(next);
     onSelect(index);
+  };
+
+  const chooseForMe = () => {
+    const available = Array.from({ length: TAROT_DECK_SIZE }, (_, index) => index).filter(
+      (index) => !selectedIndexes.includes(index),
+    );
+    const index = randomAvailableIndex(available);
+    if (index !== undefined) select(index);
   };
 
   const surfaceIndex = (clientX: number, surface: HTMLDivElement) => {
@@ -371,16 +500,64 @@ export function CasinoWashDeck({
     return casinoFanIndex(clientX, bounds.left, bounds.width);
   };
 
+  const moveFocus = (target: number, direction: number) => {
+    const clamped = Math.min(TAROT_DECK_SIZE - 1, Math.max(0, target));
+    const index = selectedIndexes.includes(clamped)
+      ? nextAvailableIndex(clamped, direction, selectedIndexes)
+      : clamped;
+    pendingFocus.current = true;
+    setFocusIndex(index);
+  };
+
+  const handleFanKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!fanReady) return;
+    const offsets: Record<string, [number, number]> = {
+      ArrowRight: [focusIndex + 1, 1],
+      ArrowDown: [focusIndex + 1, 1],
+      ArrowLeft: [focusIndex - 1, -1],
+      ArrowUp: [focusIndex - 1, -1],
+      PageDown: [focusIndex + 10, 1],
+      PageUp: [focusIndex - 10, -1],
+      Home: [0, 1],
+      End: [TAROT_DECK_SIZE - 1, -1],
+    };
+    const move = offsets[event.key];
+    if (!move) return;
+    event.preventDefault();
+    moveFocus(move[0], move[1]);
+  };
+
+  const currentPosition = positions[selectedIndexes.length];
+  const prompt = !fanReady
+    ? "Gathering the deck into a fan…"
+    : selectionFull
+      ? onConfirm
+        ? confirming
+          ? "Keeping your chosen cards…"
+          : "These are your cards. Tap one to put it back, or keep them."
+        : "Keeping your chosen cards…"
+      : `Choose the card for ${currentPosition?.displayName ?? `position ${selectedIndexes.length + 1}`} (${selectedIndexes.length + 1} of ${positions.length})`;
+  const tabStop = selectedIndexes.includes(focusIndex)
+    ? nextAvailableIndex(focusIndex, 1, selectedIndexes)
+    : focusIndex;
+
   return (
     <div
-      aria-label={phase === "washing" ? "Casino wash shuffle" : "Choose cards from the fan"}
       className={`casino-wash-deck is-${phase} ${fanReady ? "is-ready" : ""} ${
         reducedMotion ? "motion-off" : ""
-      }`}
+      } ${canReturn ? "can-return" : ""}`}
       data-selected-count={selectedIndexes.length}
       data-testid="casino-wash-deck"
     >
-      <div aria-hidden={phase === "washing"} className="casino-card-field" ref={fieldRef}>
+      <div
+        aria-describedby={phase === "selecting" ? instructionsId : undefined}
+        aria-hidden={phase === "washing"}
+        aria-label={phase === "selecting" ? prompt : undefined}
+        className="casino-card-field"
+        onKeyDown={phase === "selecting" ? handleFanKeyDown : undefined}
+        ref={fieldRef}
+        role={phase === "selecting" ? "group" : undefined}
+      >
         {Array.from(
           { length: phase === "washing" ? SHUFFLE_SHELL_COUNT : TAROT_DECK_SIZE },
           (_, index) => {
@@ -396,24 +573,36 @@ export function CasinoWashDeck({
             );
             if (phase === "washing")
               return <i className="casino-card-shell" key={`${cycle}-${index}`} style={style} />;
+            const positionName =
+              positions[selectedOrder]?.displayName ?? `position ${selectedOrder + 1}`;
             return (
               <button
                 aria-label={
                   selected
-                    ? `Card ${index + 1} selected for ${positions[selectedOrder]?.displayName ?? `position ${selectedOrder + 1}`}`
+                    ? canReturn
+                      ? `Card ${index + 1}, chosen for ${positionName}. Put it back`
+                      : `Card ${index + 1} selected for ${positionName}`
                     : `Choose face-down card ${index + 1}`
                 }
                 className={`casino-card-shell ${selected ? "is-picked" : ""} ${
                   pointerHoveredIndex === index ? "is-pointer-hovered" : ""
-                }`}
+                } ${armedIndex === index ? "is-armed" : ""}`}
                 data-card-index={index}
                 data-picked-order={selected ? selectedOrder : undefined}
-                disabled={!fanReady || selected || selectedIndexes.length >= positions.length}
+                disabled={selected ? !canReturn : !fanReady || selectionFull || confirming}
                 key={index}
                 onClick={() => {
+                  if (selected) {
+                    if (canReturn) onDeselect?.(index);
+                    return;
+                  }
                   select(index);
                 }}
+                onFocus={() => {
+                  if (!selected) setFocusIndex(index);
+                }}
                 style={style}
+                tabIndex={!selected && index === tabStop ? 0 : -1}
                 type="button"
               />
             );
@@ -435,29 +624,47 @@ export function CasinoWashDeck({
             onPointerCancel={() => {
               pointerStart.current = undefined;
               suppressSurfaceClick.current = false;
+              setPointerHoveredIndex(undefined);
             }}
             onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
               if (!event.isPrimary || !fanReady) return;
               event.currentTarget.setPointerCapture(event.pointerId);
+              const index = surfaceIndex(event.clientX, event.currentTarget);
               pointerStart.current = {
                 pointerId: event.pointerId,
                 y: event.clientY,
-                index: surfaceIndex(event.clientX, event.currentTarget),
+                index,
+                pointerType: event.pointerType,
               };
+              if (event.pointerType !== "mouse") setPointerHoveredIndex(index);
             }}
             onPointerLeave={() => setPointerHoveredIndex(undefined)}
             onPointerMove={(event: PointerEvent<HTMLDivElement>) => {
               if (!fanReady) return;
+              // Touch browses only while pressed; a mouse browses on hover.
+              if (event.pointerType !== "mouse" && !pointerStart.current) return;
               const index = surfaceIndex(event.clientX, event.currentTarget);
               setPointerHoveredIndex((current) => (current === index ? current : index));
             }}
             onPointerUp={(event: PointerEvent<HTMLDivElement>) => {
               const start = pointerStart.current;
               pointerStart.current = undefined;
-              if (start?.pointerId === event.pointerId && start.y - event.clientY >= 28) {
+              if (start?.pointerId !== event.pointerId) return;
+              // A flick upward takes the card it started on, on any pointer.
+              if (start.y - event.clientY >= 28) {
                 suppressSurfaceClick.current = true;
+                setPointerHoveredIndex(undefined);
                 select(start.index);
+                return;
               }
+              if (start.pointerType === "mouse") return;
+              // Touch and pen: the first release lifts a card, a second tap on
+              // that same card takes it — no accidental picks while browsing.
+              suppressSurfaceClick.current = true;
+              const index = surfaceIndex(event.clientX, event.currentTarget);
+              setPointerHoveredIndex(undefined);
+              if (armedIndex !== undefined && Math.abs(armedIndex - index) <= 1) select(armedIndex);
+              else setArmedIndex(selectedIndexes.includes(index) ? undefined : index);
             }}
           />
         )}
@@ -465,30 +672,75 @@ export function CasinoWashDeck({
 
       {phase === "washing" ? (
         <div className="casino-wash-actions">
-          <button
-            aria-label="Stir all 78 cards"
-            className="casino-stir-surface"
-            data-testid="immersive-shuffle-deck"
-            onClick={() => {
-              setCycle((current) => current + 1);
-              onStir?.();
-            }}
-            type="button"
-          >
-            <span>Wash again</span>
-          </button>
           <p aria-live="polite" className="casino-pick-progress" role="status">
-            Shuffling the deck… tap it to stir again
+            <strong>{spreadAnnouncement(positions)}</strong>
+            <span>Shuffling the deck…</span>
           </p>
+          <div className="casino-wash-choices">
+            <button
+              className="ritual-action is-quiet"
+              data-testid="immersive-shuffle-deck"
+              onClick={() => {
+                washFinished.current = false;
+                setCycle((current) => current + 1);
+                onStir?.();
+              }}
+              type="button"
+            >
+              Keep shuffling
+            </button>
+            <button className="ritual-action" onClick={completeWash} type="button">
+              I’m ready to draw
+            </button>
+          </div>
         </div>
       ) : (
-        <p aria-live="polite" className="casino-pick-progress" role="status">
-          {!fanReady
-            ? "The deck is gathering and opening into a fan…"
-            : selectedIndexes.length >= positions.length
-              ? "Locking your selected cards…"
-              : `Choose card ${selectedIndexes.length + 1} of ${positions.length}`}
-        </p>
+        <div className="casino-select-actions">
+          <p aria-live="polite" className="casino-pick-progress" role="status">
+            <strong>{prompt}</strong>
+            {fanReady && !selectionFull && (
+              <span className="casino-pick-hint">
+                <span className="casino-pick-hint--coarse">
+                  {armedIndex === undefined
+                    ? "Slide along the fan, then tap a card twice to take it"
+                    : "Tap the lifted card again to take it"}
+                </span>
+                <span className="casino-pick-hint--fine">
+                  Click a card to take it · arrow keys browse the fan
+                </span>
+              </span>
+            )}
+          </p>
+          <p className="sr-only" id={instructionsId}>
+            Use the arrow keys, Page Up, Page Down, Home, and End to move through the face-down
+            cards. Press Enter or Space to take a card.
+          </p>
+          {fanReady && (
+            <div className="casino-select-buttons">
+              {!selectionFull && (
+                <button
+                  className="ritual-action is-quiet"
+                  disabled={confirming}
+                  onClick={chooseForMe}
+                  type="button"
+                >
+                  Choose for me
+                </button>
+              )}
+              {onConfirm && selectionFull && (
+                <button
+                  className="ritual-action"
+                  data-testid="confirm-selected-cards"
+                  disabled={confirming}
+                  onClick={onConfirm}
+                  type="button"
+                >
+                  {confirming ? "Keeping your cards…" : "These are my cards"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

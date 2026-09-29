@@ -123,7 +123,7 @@ export async function reviewAndConfirmQuestion(page: Page, question: string) {
       new URL(response.url()).pathname === "/api/readings" &&
       response.request().postData()?.includes('"action":"prepare"') === true,
   );
-  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Draw my cards" }).click();
   return prepareResponse;
 }
 
@@ -297,13 +297,15 @@ export async function beginReadingThroughUi(page: Page, options: { question?: st
     await page
       .getByRole("button", { name: `Choose face-down card ${index + 1}`, exact: true })
       .press("Enter");
+  // A full selection waits for the reader's explicit confirmation.
+  await page.getByRole("button", { name: "These are my cards" }).click();
   expect((await finalization).status()).toBe(201);
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   return page.url().split("/").at(-1) as string;
 }
 
 export async function revealAllThroughUi(page: Page) {
-  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  const motionControl = page.getByRole("button", { name: /^Motion:/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true")
     await motionControl.dispatchEvent("click");
   await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(

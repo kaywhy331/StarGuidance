@@ -94,6 +94,9 @@ export function SpreadSlotGhost({
               }
             >
               <span className="physical-tarot-card" />
+              <figcaption className="physical-card-caption">
+                <span className="physical-card-caption__position">{position.displayName}</span>
+              </figcaption>
             </figure>
           ))}
         </section>
@@ -114,6 +117,7 @@ export function TarotSpreadStage({
   revealed,
   reducedMotion,
   onReveal,
+  revealDescribedBy,
   settledCount = cards.length,
 }: {
   activeIndex: number | null;
@@ -136,6 +140,9 @@ export function TarotSpreadStage({
    * (click/tap/keyboard). Omit to render every card as a static, already-
    * settled view with no reveal affordance. */
   onReveal?: ((index: number) => void) | undefined;
+  /** Id of an element with how-to-reveal instructions, added to each
+   * face-down card's description. */
+  revealDescribedBy?: string | undefined;
   settledCount?: number;
 }) {
   const stageRef = useRef<HTMLElement>(null);
@@ -212,6 +219,7 @@ export function TarotSpreadStage({
             key={`${card.positionId}-${card.cardId}`}
             narrationActive={narratingIndexes.includes(index)}
             onReveal={onReveal && !revealed.has(index) ? () => onReveal(index) : undefined}
+            revealDescribedBy={revealDescribedBy}
             reducedMotion={reducedMotion}
             revealed={revealed.has(index)}
           />

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  cardRevealLine,
   createInterpretationProvider,
   classifyFollowUpScope,
   classifyQuestion,
@@ -17,6 +18,7 @@ import {
   relatedPersonProviderContext,
 } from "@/lib/related-person-lens";
 import { tryRecordProductEvent } from "@/lib/product-telemetry";
+import { ritualSessionExpired } from "@/lib/ritual-progress";
 import { followUpLimit, followUpLimitMessage } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "@/lib/runtime";
@@ -99,6 +101,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           // reflection and never written to a URL, log, or analytics payload.
           question: owned.persistence.decrypt(reading.encryptedQuestion, "reading-question"),
           spreadId: reading.spreadId,
+          spreadName: spread?.name,
           // The immutable snapshot this reading was drawn against. Later profile
           // versions never move it, and a caller cannot otherwise tell which
           // version of themselves a past reading interpreted.
@@ -128,19 +131,16 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
             if (!card) throw new Error("Locked draw references unavailable card content.");
             const themes =
               assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes;
-            const reversalFacet =
-              assignment.orientation === "reversed" ? card.reversalFacets?.[0] : undefined;
+            const positionName =
+              position?.displayName ?? assignment.positionId.replaceAll("-", " ");
             return {
               cardId: card.id,
               name: card.name,
               orientation: assignment.orientation,
               themes,
-              baselineMeaning:
-                assignment.orientation === "reversed"
-                  ? `In ${position?.displayName ?? "this position"}, ${card.name} reversed may show a ${reversalFacet ?? "blocked or internalized"} expression of ${themes.slice(0, 2).join(" and ")}.`
-                  : `In ${position?.displayName ?? "this position"}, ${card.name} highlights ${themes.slice(0, 2).join(" and ")}.`,
+              baselineMeaning: cardRevealLine(card, assignment.orientation, positionName),
               positionId: assignment.positionId,
-              positionName: position?.displayName ?? assignment.positionId.replaceAll("-", " "),
+              positionName,
               positionDescription:
                 position?.description ?? "How this card meets the focus of your reading.",
               placement: position?.placement ?? {
@@ -169,11 +169,16 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           entitlementDecision: reading.entitlementDecision,
           ritualProgress: reading.ritualProgress,
           expiresAt: reading.expiresAt,
-          sessionExpired:
-            reading.ritualProgress?.phase !== "complete" &&
-            Date.now() >= Date.parse(reading.expiresAt),
+          sessionExpired: ritualSessionExpired(reading),
           safetyClassification: reading.safetyClassification,
-          followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
+          // Like the main question, each follow-up question is returned only
+          // to its owner in this no-store response so the reading can show
+          // what was asked above what the cards answered.
+          followUps: reading.followUps.map(({ id, result, encryptedQuestion }) => ({
+            id,
+            result,
+            question: owned.persistence.decrypt(encryptedQuestion, "follow-up-question"),
+          })),
           followUpLimit: configuredFollowUpLimit,
           followUpsRemaining: Math.max(0, configuredFollowUpLimit - reading.followUps.length),
           feedbackSubmitted: feedback.some(({ kind }) => kind === "experience"),
@@ -235,17 +240,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { persistence, reading, user } = owned;
     assertCurrentPolicyConsents(user);
-    await assertRateLimit(`reading-action:${reading.userId}`, 15);
+    // Ritual progress only records which already-locked cards the reader has
+    // turned over. A ten-card spread writes a dozen of these in a minute, so
+    // they get their own, looser bucket instead of exhausting the one that
+    // guards AI generation (retry, follow-up). Both stay bounded.
+    const progressWrite =
+      typeof body === "object" && body !== null && "action" in body && body.action === "progress";
+    await assertRateLimit(
+      progressWrite ? `reading-progress:${reading.userId}` : `reading-action:${reading.userId}`,
+      progressWrite ? 60 : 15,
+    );
     const input = actionSchema.parse(body);
     if (input.action === "progress") {
-      if (
-        reading.ritualProgress?.phase !== "complete" &&
-        Date.now() >= Date.parse(reading.expiresAt)
-      )
-        return NextResponse.json(
-          { error: "This ritual session has expired. Its locked cards remain in history." },
-          { status: 410 },
-        );
+      // No expiry check here on purpose: every reading in this table already
+      // has its cards locked (createLocked), so revealing them after the
+      // session window changes nothing about the draw. Refusing it only
+      // stranded readers mid-reveal with no way to reach their interpretation.
       const revealedIndexes = [...new Set(input.revealedIndexes)].sort((a, b) => a - b);
       if (revealedIndexes.some((index) => index >= reading.draw.assignments.length))
         return NextResponse.json({ error: "Invalid ritual progress." }, { status: 422 });
@@ -257,7 +267,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           previous.revealedIndexes.some((index) => !revealedIndexes.includes(index)))
       )
         return NextResponse.json(
-          { error: "Ritual progress cannot move backward or change the recorded cut." },
+          { error: "This reading has already moved further along." },
           { status: 409 },
         );
       if (
@@ -267,7 +277,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         revealedIndexes.length !== reading.draw.assignments.length
       )
         return NextResponse.json(
-          { error: "Every locked card must be revealed before the ritual is complete." },
+          { error: "Turn over every card before opening the whole reading." },
           { status: 422 },
         );
       const progress = ritualProgressSchema.parse({
@@ -357,7 +367,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     activeFollowUpLimit = configuredFollowUpLimit;
     if (!reading.result)
       return NextResponse.json(
-        { error: "The original reading must be complete before asking a follow-up." },
+        { error: "Your reading is still being written. Ask a follow-up once it has arrived." },
         { status: 409 },
       );
     const fullSpreadReady =
@@ -368,7 +378,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       reading.ritualProgress.revealedIndexes.length === reading.draw.assignments.length;
     if (!fullSpreadReady)
       return NextResponse.json(
-        { error: "Reveal the complete spread before asking a clarification." },
+        { error: "Turn over every card before asking a follow-up." },
         { status: 409 },
       );
     const originalQuestion = persistence.decrypt(reading.encryptedQuestion, "reading-question");
@@ -381,7 +391,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json(
         {
           error:
-            "That changes the subject, decision, person, or time horizon. Start a new reading so the new question can receive its own confirmed spread and draw.",
+            "That sounds like a new question — a different subject, person, or time frame. It deserves its own cards, so start a new reading for it.",
           newReadingRequired: true,
           reason: followUpScope.reason,
         },
@@ -458,7 +468,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
     return NextResponse.json(
-      { error: status === 401 ? "Authentication required." : "Invalid follow-up." },
+      {
+        error:
+          status === 401
+            ? "Authentication required."
+            : "That request could not be completed. Please try again.",
+      },
       { status },
     );
   }

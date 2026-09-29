@@ -61,11 +61,11 @@ async function createReading(page: Page): Promise<void> {
   await page
     .getByLabel("Your question for the stars")
     .fill("How can I understand the uncertainty I feel right now?");
-  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Draw my cards" }).click();
   // This test validates reflow and keyboard operation, not decorative timing.
   // Enable the persisted reduced-motion path before opening the fan so a busy
   // WebKit runner cannot throttle the fan-opening timer past the assertion.
-  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  const motionControl = page.getByRole("button", { name: /^Motion:/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true")
     await motionControl.dispatchEvent("click");
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");
@@ -78,10 +78,10 @@ async function createReading(page: Page): Promise<void> {
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
       .press("Enter");
     // Wait for React to commit each keyboard selection before pressing the
-    // next card. The final selection immediately replaces the fan with the
-    // locking state, so its successful commit is proven by navigation below.
-    if (index < 3) await expect(fan).toHaveAttribute("data-selected-count", String(index));
+    // next card.
+    await expect(fan).toHaveAttribute("data-selected-count", String(index));
   }
+  await page.getByRole("button", { name: "These are my cards" }).press("Enter");
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   // Keep the accessibility suite fast while exercising the same centered,
   // reader-controlled sequence through standard buttons.
@@ -94,7 +94,7 @@ async function createReading(page: Page): Promise<void> {
   });
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "I’m ready", exact: true }).dispatchEvent("click");
-  await page.getByRole("button", { name: "Reveal All" }).dispatchEvent("click");
+  await page.getByRole("button", { name: "Reveal all" }).dispatchEvent("click");
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -144,12 +144,11 @@ test("the account-free reading threshold exposes valid automated WCAG semantics"
   ).toEqual([]);
 
   await page.getByLabel("Your birthday").fill("1990-01-15");
-  await page.getByLabel(/I agree to the Terms/i).check();
-  await page.getByLabel(/I have read the Privacy Notice/i).check();
   await page
-    .getByLabel(/I confirm that I am at least 18/i)
+    .getByLabel(/I’m 18 or older, I agree to the Terms/i)
     .evaluate((checkbox: HTMLInputElement) => checkbox.click());
-  await expect(page.getByLabel("Your question for the stars")).toBeVisible();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByLabel("What would you like to ask the cards?")).toBeVisible();
   scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   expect(
     scan.violations

@@ -11,7 +11,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   try {
     user = await requireUser();
   } catch {
-    redirect("/sign-in");
+    redirect(`/sign-in?next=${encodeURIComponent(`/session/${(await params).id}`)}`);
   }
   if (user.requiresPolicyReconsent) redirect("/consent");
   const runtimeConfiguration = await getRuntimeConfiguration();
