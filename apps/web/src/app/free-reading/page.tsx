@@ -1,12 +1,9 @@
-import { spreads } from "@starguidance/tarot-content";
-
 import { requireUser } from "@/lib/auth";
-import { FREE_GUEST_SPREAD_IDS } from "@/lib/guest-reading-contract";
 
 import { GuestReadingExperience } from "./guest-reading-experience";
 
 export const metadata = {
-  title: "Free Tarot Reading · StarGuidance",
+  title: "Free Tarot Reading",
   description:
     "Experience one private, birthday-personalized tarot reading before choosing whether to create an account.",
 };
@@ -34,17 +31,6 @@ export default async function FreeReadingPage({
       continueRequested={(Array.isArray(continuation) ? continuation[0] : continuation) === "1"}
       hasProfile={hasProfile}
       requiresPolicyReconsent={requiresPolicyReconsent}
-      spreads={spreads
-        .filter(({ id }) => FREE_GUEST_SPREAD_IDS.some((guestId) => guestId === id))
-        .map(({ id, version, name, purpose, estimatedMinutes, positions }) => ({
-          id: id as (typeof FREE_GUEST_SPREAD_IDS)[number],
-          version,
-          name,
-          purpose,
-          estimatedMinutes,
-          count: positions.length,
-          positions,
-        }))}
     />
   );
 }

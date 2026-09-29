@@ -8,12 +8,15 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { z } from "zod";
 import {
   birthDateSchema,
   drawCeremonySchema,
+  personalizationModeSchema,
   questionClassificationSchema,
   readingConfigurationSchema,
+  reversalModeSchema,
   spreadCapabilitySnapshotSchema,
   spreadPositionSnapshotSchema,
   type DrawCeremony,
@@ -27,7 +30,9 @@ import {
 } from "@starguidance/tarot-domain";
 
 import {
+  GUEST_HANDOFF_PATTERN,
   guestDeviceIdSchema,
+  guestDrawSchema,
   guestReceiptPayloadSchema,
   type GuestReceiptPayload,
 } from "./guest-reading-contract";
@@ -41,8 +46,30 @@ export type GuestTrialKeySource =
 
 const RECEIPT_CONTEXT = Buffer.from("starguidance:guest-reading-receipt:v2", "utf8");
 const CEREMONY_CONTEXT = Buffer.from("starguidance:guest-draw-ceremony:v1", "utf8");
+const HANDOFF_CONTEXT = Buffer.from("starguidance:guest-reading-handoff:v1", "utf8");
 const netlifySiteIdSchema = z.string().uuid();
 const netlifyReviewIdSchema = z.string().regex(/^[1-9]\d{0,19}$/);
+
+/**
+ * The exact inputs that locked this browser's free draw. Recording them in the
+ * signed trial marker makes finalize idempotent per ceremony without server
+ * state: a repeated finalize for the same ceremony recomputes the identical
+ * draw from the sealed server seed plus these recorded inputs, whatever nonce
+ * or picks the repeat request carries. It never enables a second, different
+ * draw.
+ */
+const markerDrawSchema = z
+  .object({
+    ceremonyId: z.string().uuid(),
+    clientNonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    cutIndex: z.number().int().min(0).max(77),
+    selectedIndexes: z.array(z.number().int().min(0).max(77)).min(1).max(10).optional(),
+    lockedAt: z.string().datetime(),
+    pureTarotFallback: z.boolean().optional(),
+  })
+  .strict();
+
+export type GuestTrialMarkerDraw = z.infer<typeof markerDrawSchema>;
 
 const markerSchema = z
   .object({
@@ -50,8 +77,11 @@ const markerSchema = z
     deviceHash: z.string().regex(/^[a-f0-9]{64}$/),
     issuedAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
+    draw: markerDrawSchema.optional(),
   })
   .strict();
+
+export type GuestTrialMarker = z.infer<typeof markerSchema>;
 
 export class GuestTrialConfigurationError extends Error {
   constructor() {
@@ -120,7 +150,9 @@ function guestSecret(): Buffer {
   return guestSecretResolution().secret;
 }
 
-function derivedKey(purpose: "device" | "marker" | "network" | "receipt" | "ceremony"): Buffer {
+function derivedKey(
+  purpose: "device" | "marker" | "network" | "receipt" | "ceremony" | "handoff",
+): Buffer {
   return createHmac("sha256", guestSecret())
     .update(`starguidance:guest-key:${purpose}:v1`)
     .digest();
@@ -154,15 +186,43 @@ function deviceHash(deviceId: string): string {
     .digest("hex");
 }
 
-export function issueGuestTrialMarker(deviceId: string, now = Date.now()): string {
+export function issueGuestTrialMarker(
+  deviceId: string,
+  now = Date.now(),
+  draw?: GuestTrialMarkerDraw,
+): string {
   const payload = markerSchema.parse({
     version: "guest-trial-marker-v1",
     deviceHash: deviceHash(deviceId),
     issuedAt: new Date(now).toISOString(),
     expiresAt: new Date(now + GUEST_TRIAL_COOKIE_TTL_SECONDS * 1_000).toISOString(),
+    ...(draw ? { draw } : {}),
   });
   const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   return `v1.${encoded}.${hmac(`marker:${encoded}`).toString("base64url")}`;
+}
+
+/** Returns the verified marker payload for this browser, or undefined. */
+export function readGuestTrialMarker(
+  marker: string | undefined,
+  deviceId: string,
+  now = Date.now(),
+): GuestTrialMarker | undefined {
+  if (!marker) return undefined;
+  const [version, encoded, signature, extra] = marker.split(".");
+  if (version !== "v1" || !encoded || !signature || extra) return undefined;
+  try {
+    const encodedPayload = decodeCanonicalBase64url(encoded);
+    const decodedSignature = decodeCanonicalBase64url(signature);
+    if (!encodedPayload || !decodedSignature) return undefined;
+    if (!safeEqual(decodedSignature, hmac(`marker:${encoded}`))) return undefined;
+    const payload = markerSchema.parse(JSON.parse(encodedPayload.toString("utf8")));
+    return payload.deviceHash === deviceHash(deviceId) && Date.parse(payload.expiresAt) > now
+      ? payload
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function verifyGuestTrialMarker(
@@ -170,19 +230,7 @@ export function verifyGuestTrialMarker(
   deviceId: string,
   now = Date.now(),
 ): boolean {
-  if (!marker) return false;
-  const [version, encoded, signature, extra] = marker.split(".");
-  if (version !== "v1" || !encoded || !signature || extra) return false;
-  try {
-    const encodedPayload = decodeCanonicalBase64url(encoded);
-    const decodedSignature = decodeCanonicalBase64url(signature);
-    if (!encodedPayload || !decodedSignature) return false;
-    if (!safeEqual(decodedSignature, hmac(`marker:${encoded}`))) return false;
-    const payload = markerSchema.parse(JSON.parse(encodedPayload.toString("utf8")));
-    return payload.deviceHash === deviceHash(deviceId) && Date.parse(payload.expiresAt) > now;
-  } catch {
-    return false;
-  }
+  return readGuestTrialMarker(marker, deviceId, now) !== undefined;
 }
 
 const guestPrivateCeremonySchema = z
@@ -191,7 +239,7 @@ const guestPrivateCeremonySchema = z
     deviceHash: z.string().regex(/^[a-f0-9]{64}$/),
     readingId: z.string().uuid(),
     deckVersion: z.string().min(1),
-    birthDate: birthDateSchema,
+    birthDate: birthDateSchema.optional(),
     question: z.string().min(1).max(500),
     questionClassification: questionClassificationSchema,
     configuration: readingConfigurationSchema,
@@ -274,7 +322,7 @@ export function publicGuestDrawCeremony(
 export function issueGuestDrawCeremony(input: {
   deviceId: string;
   deckVersion: string;
-  birthDate: string;
+  birthDate?: string | undefined;
   question: string;
   questionClassification: QuestionClassification;
   configuration: ReadingConfiguration;
@@ -288,7 +336,7 @@ export function issueGuestDrawCeremony(input: {
     deviceHash: deviceHash(input.deviceId),
     readingId: randomUUID(),
     deckVersion: input.deckVersion,
-    birthDate: input.birthDate,
+    ...(input.birthDate ? { birthDate: input.birthDate } : {}),
     question: input.question,
     questionClassification: input.questionClassification,
     configuration: input.configuration,
@@ -386,6 +434,81 @@ export function verifyGuestReadingReceipt(
       "utf8",
     );
     const payload = guestReceiptPayloadSchema.parse(JSON.parse(plaintext));
+    return Date.parse(payload.expiresAt) > now ? payload : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A compact, encrypted reference to a guest reading, small enough to ride in a
+ * confirmation-email link (the full receipt is ~10 KB). It carries the locked
+ * draw and the inputs needed to regenerate the deterministic interpretation,
+ * never the birthday. Redeeming it still requires a signed-in account.
+ */
+const handoffPayloadSchema = z
+  .object({
+    version: z.literal("guest-reading-handoff-v1"),
+    readingId: z.string().uuid(),
+    question: z.string().min(1).max(500),
+    questionClassification: questionClassificationSchema,
+    reversalMode: reversalModeSchema,
+    personalizationMode: personalizationModeSchema,
+    readerLens: z.array(z.string().min(1)).max(4).readonly(),
+    draw: guestDrawSchema,
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+  })
+  .strict();
+
+export type GuestReadingHandoff = z.infer<typeof handoffPayloadSchema>;
+
+export function issueGuestReadingHandoff(receipt: GuestReceiptPayload): string {
+  const payload = handoffPayloadSchema.parse({
+    version: "guest-reading-handoff-v1",
+    readingId: receipt.readingId,
+    question: receipt.question,
+    questionClassification: receipt.questionClassification,
+    reversalMode: receipt.configuration.reversalMode,
+    personalizationMode: receipt.configuration.personalizationMode,
+    readerLens: receipt.readerLens,
+    draw: receipt.draw,
+    createdAt: receipt.createdAt,
+    expiresAt: receipt.expiresAt,
+  });
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", derivedKey("handoff"), nonce);
+  cipher.setAAD(HANDOFF_CONTEXT);
+  const ciphertext = Buffer.concat([
+    cipher.update(deflateRawSync(Buffer.from(JSON.stringify(payload), "utf8"))),
+    cipher.final(),
+  ]);
+  return [
+    "h1",
+    nonce.toString("base64url"),
+    ciphertext.toString("base64url"),
+    cipher.getAuthTag().toString("base64url"),
+  ].join(".");
+}
+
+export function verifyGuestReadingHandoff(
+  token: string,
+  now = Date.now(),
+): GuestReadingHandoff | undefined {
+  if (token.length > 8_192 || !GUEST_HANDOFF_PATTERN.test(token)) return undefined;
+  const [, nonceValue = "", ciphertextValue = "", tagValue = ""] = token.split(".");
+  try {
+    const nonce = decodeCanonicalBase64url(nonceValue);
+    const ciphertext = decodeCanonicalBase64url(ciphertextValue);
+    const tag = decodeCanonicalBase64url(tagValue);
+    if (!nonce || !ciphertext || !tag || nonce.length !== 12 || tag.length !== 16) return undefined;
+    const decipher = createDecipheriv("aes-256-gcm", derivedKey("handoff"), nonce);
+    decipher.setAAD(HANDOFF_CONTEXT);
+    decipher.setAuthTag(tag);
+    const compressed = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    const payload = handoffPayloadSchema.parse(
+      JSON.parse(inflateRawSync(compressed, { maxOutputLength: 32_768 }).toString("utf8")),
+    );
     return Date.parse(payload.expiresAt) > now ? payload : undefined;
   } catch {
     return undefined;

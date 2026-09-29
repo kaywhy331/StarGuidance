@@ -11,10 +11,15 @@ import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } f
 import { guestContinuationInputSchema } from "@/lib/guest-reading-contract";
 import {
   GuestTrialConfigurationError,
+  issueGuestReadingHandoff,
+  issueGuestReadingReceipt,
+  verifyGuestReadingHandoff,
   verifyGuestReadingReceipt,
 } from "@/lib/guest-reading-security";
-import { guestReadingDisplay } from "@/lib/guest-reading-server";
+import { guestReadingDisplay, receiptPayloadFromHandoff } from "@/lib/guest-reading-server";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
+
+const expiredMessage = "Your saved guest reading expired after 7 days.";
 
 function noStore(response: NextResponse): NextResponse {
   response.headers.set("cache-control", "private, no-store");
@@ -42,17 +47,34 @@ export async function POST(request: Request) {
     const user = await requireUser();
     assertCurrentPolicyConsents(user);
     await assertRateLimit(`guest-continuation:${user.id}`, 8, 60 * 60 * 1_000);
+    if (input.action === "redeem") {
+      // A confirmation email opened in another browser carries only the
+      // compact handoff; rebuild the same cards and hand this browser a full
+      // receipt so follow-ups work here too.
+      const handoff = verifyGuestReadingHandoff(input.handoff);
+      if (!handoff)
+        return noStore(
+          NextResponse.json({ error: expiredMessage, expired: true }, { status: 410 }),
+        );
+      const payload = await receiptPayloadFromHandoff(handoff);
+      const issued = issueGuestReadingReceipt(payload, Date.parse(payload.createdAt));
+      return noStore(
+        NextResponse.json({
+          reading: guestReadingDisplay(payload, { includeResult: true }),
+          receipt: issued.receipt,
+          handoff: input.handoff,
+        }),
+      );
+    }
     const receipt = verifyGuestReadingReceipt(input.receipt);
     if (!receipt)
-      return noStore(
-        NextResponse.json(
-          { error: "This guest-reading handoff has expired or changed." },
-          { status: 410 },
-        ),
-      );
+      return noStore(NextResponse.json({ error: expiredMessage, expired: true }, { status: 410 }));
     if (input.action === "recover")
       return noStore(
-        NextResponse.json({ reading: guestReadingDisplay(receipt, { includeResult: true }) }),
+        NextResponse.json({
+          reading: guestReadingDisplay(receipt, { includeResult: true }),
+          handoff: issueGuestReadingHandoff(receipt),
+        }),
       );
 
     const safety = classifyQuestion(input.question);
@@ -66,8 +88,7 @@ export async function POST(request: Request) {
       return noStore(
         NextResponse.json(
           {
-            error:
-              "That is a new subject or time horizon. Begin a new reading instead of changing this locked guest draw.",
+            error: "That’s a new question — it deserves its own fresh cards.",
             newReadingRequired: true,
             reason: scope.reason,
           },
@@ -103,14 +124,14 @@ export async function POST(request: Request) {
     if (error instanceof GuestTrialConfigurationError)
       return noStore(
         NextResponse.json(
-          { error: "Guest-reading continuation is not configured." },
+          { error: "Saved guest readings aren’t available right now." },
           { status: 503 },
         ),
       );
     if (error instanceof Error && error.message === POLICY_RECONSENT_REQUIRED)
       return noStore(
         NextResponse.json(
-          { error: "Review the current service policies before asking a follow-up." },
+          { error: "Please review our updated policies before asking a follow-up." },
           { status: 428 },
         ),
       );
@@ -123,11 +144,14 @@ export async function POST(request: Request) {
       );
     if (error instanceof z.ZodError)
       return noStore(
-        NextResponse.json({ error: "The guest-reading continuation is invalid." }, { status: 422 }),
+        NextResponse.json(
+          { error: "Something in that request didn’t look right. Please try again." },
+          { status: 422 },
+        ),
       );
     return noStore(
       NextResponse.json(
-        { error: "The same-draw follow-up could not be prepared." },
+        { error: "These cards couldn’t answer just now. Please try again." },
         { status: 500 },
       ),
     );

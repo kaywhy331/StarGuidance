@@ -8,6 +8,8 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/lib/guest-date-lens", () => ({ guestDateLensStatements: dateLens.statements }));
 
+import { SAFETY_USER_MESSAGES } from "@starguidance/ai";
+
 import { GUEST_DEVICE_HEADER, guestReadingResponseSchema } from "@/lib/guest-reading-contract";
 import { issueGuestTrialMarker } from "@/lib/guest-reading-security";
 import { resetRequestSecurityForTests } from "@/lib/request-security";
@@ -55,6 +57,13 @@ async function prepare() {
   return payload.ceremony;
 }
 
+function trialCookieFrom(response: Response): string {
+  const header = response.headers.get("set-cookie") ?? "";
+  const match = /starguidance_guest_trial=([^;]+)/.exec(header);
+  if (!match?.[1]) throw new Error("The finalize response did not set the trial marker.");
+  return decodeURIComponent(match[1]);
+}
+
 async function finalize(ceremonyToken: string, cutIndex = 0) {
   return POST(request({ action: "finalize", ceremonyToken, clientNonce, cutIndex }));
 }
@@ -80,7 +89,7 @@ describe("free guest committed-draw lifecycle", () => {
     const response = await GET(request({}));
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({
-      error: expect.stringMatching(/not configured/i),
+      error: expect.stringMatching(/aren’t available/i),
     });
   });
 
@@ -154,6 +163,16 @@ describe("free guest committed-draw lifecycle", () => {
     expect(dateLens.statements).not.toHaveBeenCalled();
   });
 
+  it("lets Pure Tarot begin without a birthday but requires one for personalization", async () => {
+    const { birthDate: _omitted, ...withoutBirthday } = prepareInput;
+    void _omitted;
+    const pure = await POST(request({ ...withoutBirthday, personalizationMode: "pure_tarot" }));
+    expect(pure.status).toBe(201);
+    const personalized = await POST(request(withoutBirthday));
+    expect(personalized.status).toBe(422);
+    expect(await personalized.json()).toMatchObject({ error: expect.stringMatching(/birthday/i) });
+  });
+
   it("offers a reformulation without silently replacing a binary question", async () => {
     const question = "Will they definitely choose me?";
     const response = await POST(request({ action: "review", question }));
@@ -177,7 +196,11 @@ describe("free guest committed-draw lifecycle", () => {
     const crisis = await POST(request({ ...prepareInput, question: "I want to die" }));
     expect(crisis.status).toBe(422);
     expect(await crisis.json()).toMatchObject({
-      safety: { category: "selfHarmCrisis", interrupt: true },
+      safety: {
+        category: "selfHarmCrisis",
+        interrupt: true,
+        userMessage: SAFETY_USER_MESSAGES.selfHarmCrisis,
+      },
     });
     expect(crisis.headers.get("set-cookie")).toBeNull();
 
@@ -197,5 +220,116 @@ describe("free guest committed-draw lifecycle", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ error: expect.stringMatching(/birthday/i) });
     expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("replays the same locked draw when finalize repeats for the same ceremony", async () => {
+    const ceremony = await prepare();
+    const first = await POST(
+      request({
+        action: "finalize",
+        ceremonyToken: ceremony.token,
+        clientNonce,
+        cutIndex: 0,
+        selectedIndexes: [4, 9, 60],
+      }),
+    );
+    expect(first.status).toBe(201);
+    const original = guestReadingResponseSchema.parse(await first.json());
+    cookie.value = trialCookieFrom(first);
+
+    // The response was lost: the browser repeats finalize with the same inputs.
+    const repeated = await POST(
+      request({
+        action: "finalize",
+        ceremonyToken: ceremony.token,
+        clientNonce,
+        cutIndex: 0,
+        selectedIndexes: [4, 9, 60],
+      }),
+    );
+    expect(repeated.status).toBe(200);
+    const replay = guestReadingResponseSchema.parse(await repeated.json());
+    expect(replay.replayed).toBe(true);
+    expect(replay.reading.draw).toEqual(original.reading.draw);
+    expect(replay.reading.createdAt).toBe(original.reading.createdAt);
+    expect(replay.reading.receiptExpiresAt).toBe(original.reading.receiptExpiresAt);
+    expect(repeated.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("never re-rolls: a different nonce or picks after finalize return the first draw", async () => {
+    const ceremony = await prepare();
+    const first = await POST(
+      request({
+        action: "finalize",
+        ceremonyToken: ceremony.token,
+        clientNonce,
+        cutIndex: 0,
+        selectedIndexes: [1, 2, 3],
+      }),
+    );
+    const original = guestReadingResponseSchema.parse(await first.json());
+    cookie.value = trialCookieFrom(first);
+
+    const reroll = await POST(
+      request({
+        action: "finalize",
+        ceremonyToken: ceremony.token,
+        clientNonce: Buffer.alloc(32, 99).toString("base64url"),
+        cutIndex: 12,
+        selectedIndexes: [70, 71, 72],
+      }),
+    );
+    const replay = guestReadingResponseSchema.parse(await reroll.json());
+    expect(reroll.status).toBe(200);
+    expect(replay.reading.draw.assignments).toEqual(original.reading.draw.assignments);
+    expect(replay.reading.draw.proof).toEqual(original.reading.draw.proof);
+
+    // Restoring the pending ceremony after a reload also hands back that draw.
+    const restored = await POST(request({ action: "restore", ceremonyToken: ceremony.token }));
+    expect(restored.status).toBe(200);
+    const restoredBody = guestReadingResponseSchema.parse(await restored.json());
+    expect(restoredBody.reading.draw.assignments).toEqual(original.reading.draw.assignments);
+    expect(restoredBody.reading.result).toBeUndefined();
+  });
+
+  it("does not replay a different ceremony once the free reading is used", async () => {
+    const used = await prepare();
+    const other = await prepare();
+    const first = await finalize(used.token);
+    cookie.value = trialCookieFrom(first);
+    const response = await finalize(other.token);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ signupRequired: true });
+  });
+
+  it("reads the same cards as Pure Tarot when the birthday lens is unavailable", async () => {
+    const ceremony = await prepare();
+    const response = await POST(
+      request({
+        action: "finalize",
+        ceremonyToken: ceremony.token,
+        clientNonce,
+        cutIndex: 0,
+        pureTarotFallback: true,
+      }),
+    );
+    expect(response.status).toBe(201);
+    const body = guestReadingResponseSchema.parse(await response.json());
+    expect(body.personalizationFallback).toBe(true);
+    expect(body.reading.configuration.personalizationMode).toBe("pure_tarot");
+    expect(dateLens.statements).not.toHaveBeenCalled();
+
+    cookie.value = trialCookieFrom(response);
+    const replay = guestReadingResponseSchema.parse(await (await finalize(ceremony.token)).json());
+    expect(replay.personalizationFallback).toBe(true);
+    expect(replay.reading.draw.assignments).toEqual(body.reading.draw.assignments);
+  });
+
+  it("returns a compact handoff small enough for a confirmation link", async () => {
+    const ceremony = await prepare();
+    const body = guestReadingResponseSchema.parse(await (await finalize(ceremony.token)).json());
+    expect(body.handoff).toMatch(/^h1\./);
+    expect(body.handoff!.length).toBeLessThan(3_000);
+    expect(body.handoff).not.toContain(prepareInput.birthDate);
   });
 });

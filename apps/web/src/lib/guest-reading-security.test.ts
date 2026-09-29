@@ -6,8 +6,11 @@ import {
   GuestTrialConfigurationError,
   guestTrialKeySource,
   guestTrialNetworkRateLimitKey,
+  issueGuestReadingHandoff,
   issueGuestReadingReceipt,
   issueGuestTrialMarker,
+  readGuestTrialMarker,
+  verifyGuestReadingHandoff,
   verifyGuestReadingReceipt,
   verifyGuestTrialMarker,
 } from "./guest-reading-security";
@@ -108,7 +111,68 @@ describe("guest reading receipts", () => {
   });
 });
 
+describe("guest reading handoffs", () => {
+  it("round-trips a compact encrypted handoff without the question in clear text", () => {
+    const issued = issueGuestReadingReceipt(basePayload, now);
+    const receipt = verifyGuestReadingReceipt(issued.receipt, now)!;
+    const handoff = issueGuestReadingHandoff(receipt);
+
+    expect(handoff.length).toBeLessThan(issued.receipt.length);
+    expect(handoff).not.toContain("transition");
+    expect(verifyGuestReadingHandoff(handoff, now)).toMatchObject({
+      readingId: basePayload.readingId,
+      question: basePayload.question,
+      draw: basePayload.draw,
+      expiresAt: issued.expiresAt,
+    });
+  });
+
+  it("rejects tampered and expired handoffs", () => {
+    const issued = issueGuestReadingReceipt(basePayload, now);
+    const handoff = issueGuestReadingHandoff(verifyGuestReadingReceipt(issued.receipt, now)!);
+    const tampered = `${handoff.slice(0, 20)}${handoff[20] === "A" ? "B" : "A"}${handoff.slice(21)}`;
+
+    expect(verifyGuestReadingHandoff(tampered, now)).toBeUndefined();
+    expect(verifyGuestReadingHandoff(handoff, Date.parse(issued.expiresAt) + 1)).toBeUndefined();
+    expect(verifyGuestReadingHandoff(issued.receipt, now)).toBeUndefined();
+  });
+});
+
 describe("guest trial markers", () => {
+  it("records the exact inputs that locked the draw, signed with the marker", () => {
+    const device = "298741d3-1dc1-4563-9a4f-52a4cfa0be67";
+    const draw = {
+      ceremonyId: "6f6cc82f-f795-4684-a545-a31bdc01ca42",
+      clientNonce: Buffer.alloc(32, 5).toString("base64url"),
+      cutIndex: 0,
+      selectedIndexes: [3, 14, 15],
+      lockedAt: "2026-08-21T20:00:00.000Z",
+    };
+    const marker = issueGuestTrialMarker(device, now, draw);
+
+    expect(readGuestTrialMarker(marker, device, now)?.draw).toEqual(draw);
+    expect(verifyGuestTrialMarker(marker, device, now)).toBe(true);
+    // Swapping in a different recorded draw breaks the signature.
+    const [version, encoded, signature] = marker.split(".");
+    const forged = JSON.parse(Buffer.from(encoded!, "base64url").toString("utf8")) as {
+      draw: { selectedIndexes: number[] };
+    };
+    forged.draw.selectedIndexes = [0, 1, 2];
+    const forgedMarker = [
+      version,
+      Buffer.from(JSON.stringify(forged), "utf8").toString("base64url"),
+      signature,
+    ].join(".");
+    expect(readGuestTrialMarker(forgedMarker, device, now)).toBeUndefined();
+  });
+
+  it("still accepts markers issued before draws were recorded", () => {
+    const device = "298741d3-1dc1-4563-9a4f-52a4cfa0be67";
+    const marker = issueGuestTrialMarker(device, now);
+    expect(readGuestTrialMarker(marker, device, now)?.draw).toBeUndefined();
+    expect(verifyGuestTrialMarker(marker, device, now)).toBe(true);
+  });
+
   it("binds the signed marker to the browser-generated device ID", () => {
     const device = "298741d3-1dc1-4563-9a4f-52a4cfa0be67";
     const marker = issueGuestTrialMarker(device, now);

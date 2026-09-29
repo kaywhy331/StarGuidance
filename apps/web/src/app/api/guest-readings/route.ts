@@ -3,13 +3,11 @@ import { NextResponse } from "next/server";
 import {
   classifyQuestion,
   classifyQuestionContext,
-  DeterministicFallbackProvider,
   GUARDED_CATEGORIES,
   recommendSpreadId,
   reviewTarotQuestion,
 } from "@starguidance/ai";
-import { DECK_VERSION, findSpread, spreads, tarotCards } from "@starguidance/tarot-content";
-import { finalizeCommittedDraw } from "@starguidance/tarot-domain";
+import { DECK_VERSION, findSpread, spreads } from "@starguidance/tarot-content";
 import { z } from "zod";
 
 import { readingConfiguration } from "@/lib/draw-ceremony";
@@ -18,7 +16,7 @@ import {
   GUEST_DEVICE_HEADER,
   guestDeviceIdSchema,
   guestReadingActionSchema,
-  guestReceiptPayloadSchema,
+  type GuestReceiptPayload,
 } from "@/lib/guest-reading-contract";
 import {
   assertGuestTrialConfigured,
@@ -27,15 +25,16 @@ import {
   GuestTrialConfigurationError,
   guestTrialNetworkRateLimitKey,
   issueGuestDrawCeremony,
+  issueGuestReadingHandoff,
   issueGuestReadingReceipt,
   issueGuestTrialMarker,
   publicGuestDrawCeremony,
+  readGuestTrialMarker,
   verifyGuestDrawCeremony,
   verifyGuestReadingReceipt,
-  verifyGuestTrialMarker,
+  type GuestTrialMarkerDraw,
 } from "@/lib/guest-reading-security";
-import { guestDateLensStatements } from "@/lib/guest-date-lens";
-import { guestReadingDisplay } from "@/lib/guest-reading-server";
+import { guestReadingDisplay, lockGuestReceiptPayload } from "@/lib/guest-reading-server";
 import {
   assertRateLimit,
   assertSameOrigin,
@@ -57,12 +56,14 @@ function guestDevice(request: Request): string {
 async function markerState(request: Request) {
   const deviceId = guestDevice(request);
   const marker = (await cookies()).get(GUEST_TRIAL_COOKIE)?.value;
-  return {
-    deviceId,
-    marker,
-    valid: verifyGuestTrialMarker(marker, deviceId),
-  };
+  const payload = readGuestTrialMarker(marker, deviceId);
+  return { deviceId, marker, payload, valid: payload !== undefined };
 }
+
+const ceremonyExpiredMessage =
+  "This shuffle rested too long and has closed. Let’s begin again with fresh cards.";
+const spreadChangedMessage =
+  "This spread changed since you began. Let’s begin again with fresh cards.";
 
 export async function GET(request: Request) {
   try {
@@ -79,15 +80,34 @@ export async function GET(request: Request) {
     if (error instanceof GuestTrialConfigurationError)
       return noStore(
         NextResponse.json(
-          { error: "Free readings are not configured for this deployment." },
+          { error: "Free readings aren’t available here right now." },
           { status: 503 },
         ),
       );
     return noStore(
-      NextResponse.json({ error: "A browser trial ID is required." }, { status: 422 }),
+      NextResponse.json({ error: "Please refresh the page and try again." }, { status: 422 }),
     );
   }
 }
+
+function lockedResponse(
+  payload: GuestReceiptPayload,
+  options: { status: number; replayed?: boolean; personalizationFallback?: boolean },
+): NextResponse {
+  const issued = issueGuestReadingReceipt(payload, Date.parse(payload.createdAt));
+  return NextResponse.json(
+    {
+      reading: guestReadingDisplay(payload),
+      receipt: issued.receipt,
+      handoff: issueGuestReadingHandoff(payload),
+      ...(options.replayed ? { replayed: true } : {}),
+      ...(options.personalizationFallback ? { personalizationFallback: true } : {}),
+    },
+    { status: options.status },
+  );
+}
+
+const alreadyUsedMessage = "You’ve had your free reading in this browser.";
 
 export async function POST(request: Request) {
   try {
@@ -110,10 +130,7 @@ export async function POST(request: Request) {
     if (input.action === "review") {
       if (marker.marker)
         return noStore(
-          NextResponse.json(
-            { error: "This browser's free reading has already been used.", signupRequired: true },
-            { status: 409 },
-          ),
+          NextResponse.json({ error: alreadyUsedMessage, signupRequired: true }, { status: 409 }),
         );
       return noStore(NextResponse.json({ review: reviewTarotQuestion(input.question) }));
     }
@@ -121,13 +138,16 @@ export async function POST(request: Request) {
     if (input.action === "recover" || input.action === "reveal") {
       if (!marker.marker || !marker.valid)
         return noStore(
-          NextResponse.json({ error: "The guest-reading marker is unavailable." }, { status: 410 }),
+          NextResponse.json(
+            { error: "We couldn’t find your free reading in this browser." },
+            { status: 410 },
+          ),
         );
       const receipt = verifyGuestReadingReceipt(input.receipt);
       if (!receipt)
         return noStore(
           NextResponse.json(
-            { error: "This guest reading has expired or changed." },
+            { error: "Your saved guest reading expired after 7 days." },
             { status: 410 },
           ),
         );
@@ -135,8 +155,29 @@ export async function POST(request: Request) {
         NextResponse.json({
           reading: guestReadingDisplay(receipt, { includeResult: input.action === "reveal" }),
           receipt: input.receipt,
+          handoff: issueGuestReadingHandoff(receipt),
         }),
       );
+    }
+
+    // A browser whose marker already records this exact ceremony gets that
+    // same locked draw back — from restore or from a repeated finalize — so a
+    // lost finalize response never costs the free reading, and a second
+    // finalize with a different nonce can never re-roll the cards.
+    if ((input.action === "restore" || input.action === "finalize") && marker.payload?.draw) {
+      const ceremony = verifyGuestDrawCeremony(input.ceremonyToken, marker.deviceId);
+      if (ceremony && marker.payload.draw.ceremonyId === ceremony.readingId) {
+        if (ceremony.deckVersion !== DECK_VERSION)
+          return noStore(NextResponse.json({ error: spreadChangedMessage }, { status: 409 }));
+        const payload = await lockGuestReceiptPayload(ceremony, marker.payload.draw);
+        return noStore(
+          lockedResponse(payload, {
+            status: 200,
+            replayed: true,
+            personalizationFallback: marker.payload.draw.pureTarotFallback === true,
+          }),
+        );
+      }
     }
 
     if (marker.marker)
@@ -144,8 +185,8 @@ export async function POST(request: Request) {
         NextResponse.json(
           {
             error: marker.valid
-              ? "This browser's free reading has already been used."
-              : "This browser's trial marker could not be verified.",
+              ? alreadyUsedMessage
+              : "We couldn’t confirm this browser’s free reading.",
             signupRequired: true,
           },
           { status: 409 },
@@ -157,18 +198,20 @@ export async function POST(request: Request) {
     if (input.action === "restore") {
       const ceremony = verifyGuestDrawCeremony(input.ceremonyToken, marker.deviceId);
       if (!ceremony)
-        return noStore(
-          NextResponse.json(
-            { error: "The pending guest ritual expired or changed." },
-            { status: 410 },
-          ),
-        );
+        return noStore(NextResponse.json({ error: ceremonyExpiredMessage }, { status: 410 }));
       return noStore(
         NextResponse.json({ ceremony: publicGuestDrawCeremony(ceremony, input.ceremonyToken) }),
       );
     }
 
     if (input.action === "prepare") {
+      if (input.personalizationMode === "personalized_tarot" && !input.birthDate)
+        return noStore(
+          NextResponse.json(
+            { error: "Add your birthday, or turn off birthday personalization." },
+            { status: 422 },
+          ),
+        );
       const questionClassification = classifyQuestionContext(input.question);
       const safety = classifyQuestion(input.question);
       if (safety.interrupt) return noStore(NextResponse.json({ safety }, { status: 422 }));
@@ -194,7 +237,7 @@ export async function POST(request: Request) {
       const { ceremony } = issueGuestDrawCeremony({
         deviceId: marker.deviceId,
         deckVersion: DECK_VERSION,
-        birthDate: input.birthDate,
+        birthDate: input.personalizationMode === "personalized_tarot" ? input.birthDate : undefined,
         question: input.question,
         questionClassification,
         configuration,
@@ -205,89 +248,37 @@ export async function POST(request: Request) {
 
     const ceremony = verifyGuestDrawCeremony(input.ceremonyToken, marker.deviceId);
     if (!ceremony)
-      return noStore(
-        NextResponse.json(
-          { error: "The pending guest ritual expired or changed." },
-          { status: 410 },
-        ),
-      );
+      return noStore(NextResponse.json({ error: ceremonyExpiredMessage }, { status: 410 }));
     const spread = findSpread(ceremony.spread.id, ceremony.spread.version);
     if (!spread || ceremony.deckVersion !== DECK_VERSION)
-      return noStore(
-        NextResponse.json(
-          { error: "The prepared free spread is no longer available." },
-          { status: 409 },
-        ),
-      );
-    const lockedSpread = {
-      ...spread,
-      positions: ceremony.configuration.positions,
-      capabilities: ceremony.configuration.capabilities,
-    };
-    const draw = finalizeCommittedDraw({
-      cards: tarotCards,
-      deckVersion: ceremony.deckVersion,
-      spread: lockedSpread,
-      sessionId: ceremony.readingId,
-      serverSeed: ceremony.serverSeed,
-      serverSeedCommitment: ceremony.serverSeedCommitment,
+      return noStore(NextResponse.json({ error: spreadChangedMessage }, { status: 409 }));
+    const recorded: GuestTrialMarkerDraw = {
+      ceremonyId: ceremony.readingId,
       clientNonce: input.clientNonce,
       cutIndex: input.cutIndex,
-      ...(input.selectedIndexes ? { selectedIndexes: input.selectedIndexes } : {}),
-      reversalMode: ceremony.configuration.reversalMode,
-    });
-    const relevantTraitStatements =
+      ...(input.selectedIndexes ? { selectedIndexes: [...input.selectedIndexes] } : {}),
+      lockedAt: new Date().toISOString(),
+      ...(input.pureTarotFallback &&
       ceremony.configuration.personalizationMode === "personalized_tarot"
-        ? await guestDateLensStatements(
-            ceremony.birthDate,
-            ceremony.question,
-            ceremony.questionClassification,
-          )
-        : [];
-    const generated = await new DeterministicFallbackProvider().generateWithProvenance({
-      draw,
-      configuration: ceremony.configuration,
-      question: ceremony.question,
-      questionClassification: ceremony.questionClassification,
-      relevantTraitStatements,
+        ? { pureTarotFallback: true }
+        : {}),
+    };
+    const receiptPayload = await lockGuestReceiptPayload(ceremony, recorded);
+    const response = lockedResponse(receiptPayload, {
+      status: 201,
+      personalizationFallback: recorded.pureTarotFallback === true,
     });
-    const createdAt = new Date().toISOString();
-    const issued = issueGuestReadingReceipt(
+    response.cookies.set(
+      GUEST_TRIAL_COOKIE,
+      issueGuestTrialMarker(marker.deviceId, Date.now(), recorded),
       {
-        readingId: draw.id,
-        question: ceremony.question,
-        questionClassification: ceremony.questionClassification,
-        configuration: ceremony.configuration,
-        readerLens: relevantTraitStatements,
-        draw,
-        result: generated.result,
-        createdAt,
+        httpOnly: true,
+        maxAge: GUEST_TRIAL_COOKIE_TTL_SECONDS,
+        path: "/",
+        sameSite: "strict",
+        secure: process.env.APP_ENV !== "test",
       },
-      Date.parse(createdAt),
     );
-    const receiptPayload = guestReceiptPayloadSchema.parse({
-      version: "guest-reading-receipt-v2",
-      readingId: draw.id,
-      question: ceremony.question,
-      questionClassification: ceremony.questionClassification,
-      configuration: ceremony.configuration,
-      readerLens: relevantTraitStatements,
-      draw,
-      result: generated.result,
-      createdAt,
-      expiresAt: issued.expiresAt,
-    });
-    const response = NextResponse.json(
-      { reading: guestReadingDisplay(receiptPayload), receipt: issued.receipt },
-      { status: 201 },
-    );
-    response.cookies.set(GUEST_TRIAL_COOKIE, issueGuestTrialMarker(marker.deviceId), {
-      httpOnly: true,
-      maxAge: GUEST_TRIAL_COOKIE_TTL_SECONDS,
-      path: "/",
-      sameSite: "strict",
-      secure: process.env.APP_ENV !== "test",
-    });
     return noStore(response);
   } catch (error) {
     const security = requestSecurityFailure(error);
@@ -301,23 +292,32 @@ export async function POST(request: Request) {
     if (error instanceof GuestTrialConfigurationError)
       return noStore(
         NextResponse.json(
-          { error: "Free readings are not configured for this deployment." },
+          { error: "Free readings aren’t available here right now." },
           { status: 503 },
         ),
       );
     if (error instanceof Error && error.message === "GUEST_DATE_LENS_UNAVAILABLE")
       return noStore(
         NextResponse.json(
-          { error: "Birthday personalization is temporarily unavailable." },
+          {
+            error: "Birthday personalization is temporarily unavailable.",
+            birthdayLensUnavailable: true,
+          },
           { status: 503 },
         ),
       );
     if (error instanceof z.ZodError)
       return noStore(
-        NextResponse.json({ error: "The free-reading request is invalid." }, { status: 422 }),
+        NextResponse.json(
+          { error: "Something in that request didn’t look right. Please try again." },
+          { status: 422 },
+        ),
       );
     return noStore(
-      NextResponse.json({ error: "The free reading could not be prepared." }, { status: 500 }),
+      NextResponse.json(
+        { error: "The cards couldn’t be laid out just now. Please try again." },
+        { status: 500 },
+      ),
     );
   }
 }
