@@ -24,6 +24,25 @@ function safeNext(url: URL): string {
     : "/onboarding";
 }
 
+type AccountLinkFlow = "signup" | "recovery";
+
+/** Which email this link came from, so sign-in can explain a failure accurately. */
+function linkFlow(url: URL, next: string): AccountLinkFlow | undefined {
+  const explicit = url.searchParams.get("flow");
+  if (explicit === "signup" || explicit === "recovery") return explicit;
+  const otpType = url.searchParams.get("type");
+  if (otpType === "recovery") return "recovery";
+  if (otpType === "signup" || otpType === "email") return "signup";
+  return next.startsWith("/reset-password") ? "recovery" : undefined;
+}
+
+function linkError(
+  code: "invalid-link" | "expired-link" | "link-browser" | "service-unavailable",
+  flow: AccountLinkFlow | undefined,
+): string {
+  return `/sign-in?error=${code}${flow ? `&flow=${flow}` : ""}`;
+}
+
 function redirect(request: Request, path: string): NextResponse {
   const internalOrigin = new URL(request.url).origin;
   const configuredOrigin = process.env.NEXT_PUBLIC_APP_URL;
@@ -52,7 +71,8 @@ export async function GET(request: Request) {
   const tokenHash = url.searchParams.get("token_hash");
   const otpType = url.searchParams.get("type");
   const next = safeNext(url);
-  if (getRuntimeAdapter() !== "supabase") return redirect(request, "/sign-in?error=invalid-link");
+  const flow = linkFlow(url, next);
+  if (getRuntimeAdapter() !== "supabase") return redirect(request, linkError("invalid-link", flow));
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -66,11 +86,11 @@ export async function GET(request: Request) {
         token_hash: tokenHash,
         type: otpType as SupportedEmailOtpType,
       });
-      if (error) return redirect(request, "/sign-in?error=expired-link");
+      if (error) return redirect(request, linkError("expired-link", flow));
       const response = redirect(request, next);
       if (otpType === "recovery") {
         const { data, error: userError } = await supabase.auth.getUser();
-        if (userError || !data.user) return redirect(request, "/sign-in?error=expired-link");
+        if (userError || !data.user) return redirect(request, linkError("expired-link", flow));
         response.cookies.set(RECOVERY_SESSION_COOKIE, issueRecoveryReceipt(data.user.id), {
           httpOnly: true,
           maxAge: RECOVERY_SESSION_TTL_SECONDS,
@@ -82,18 +102,18 @@ export async function GET(request: Request) {
       return response;
     }
 
-    if (!code) return redirect(request, "/sign-in?error=invalid-link");
+    if (!code) return redirect(request, linkError("invalid-link", flow));
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error)
       return redirect(
         request,
-        next.startsWith("/reset-password") ? "/sign-in?error=invalid-link" : next,
+        next.startsWith("/reset-password") ? linkError("invalid-link", "recovery") : next,
       );
     return redirect(
       request,
-      isMissingVerifier(error) ? "/sign-in?error=link-browser" : "/sign-in?error=expired-link",
+      linkError(isMissingVerifier(error) ? "link-browser" : "expired-link", flow),
     );
   } catch {
-    return redirect(request, "/sign-in?error=service-unavailable");
+    return redirect(request, linkError("service-unavailable", flow));
   }
 }

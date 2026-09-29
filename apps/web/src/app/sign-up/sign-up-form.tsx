@@ -1,11 +1,93 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Field } from "@starguidance/design-system";
+import { Button, Field, PasswordField } from "@starguidance/design-system";
 
+import { sendJson } from "@/lib/client-request";
 import { POLICY_VERSIONS } from "@/lib/policies";
+
+import { AccountMessage } from "./account-threshold";
+
+const PASSWORD_MISMATCH = "These passwords don't match yet. Please type the same password twice.";
+
+/**
+ * Shown once an account is waiting for email confirmation. It replaces the
+ * form entirely so the next step is unmistakable.
+ */
+export function ConfirmationPending({
+  email,
+  nextPath,
+}: {
+  email?: string | undefined;
+  nextPath?: string | undefined;
+}) {
+  const [resending, setResending] = useState(false);
+  const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
+
+  const signInHref = nextPath ? `/sign-in?next=${encodeURIComponent(nextPath)}` : "/sign-in";
+
+  return (
+    <section aria-labelledby="confirmation-pending-heading" className="account-pending">
+      <span aria-hidden="true" className="account-pending__mark">
+        ✉
+      </span>
+      <h3 id="confirmation-pending-heading" ref={headingRef} tabIndex={-1}>
+        Check your email
+      </h3>
+      <p>
+        {email ? (
+          <>
+            We sent a confirmation link to <strong>{email}</strong>.
+          </>
+        ) : (
+          "We sent you a confirmation link."
+        )}{" "}
+        Open it on this device to confirm your email and you&apos;ll be signed straight in.
+      </p>
+      <p className="account-pending__hint">
+        It can take a minute or two to arrive. If you can&apos;t find it, look in your spam or
+        promotions folder.
+      </p>
+      {error ? <AccountMessage tone="error">{error}</AccountMessage> : null}
+      {notice ? <AccountMessage tone="success">{notice}</AccountMessage> : null}
+      <div className="account-pending__actions">
+        {email ? (
+          <Button
+            disabled={resending}
+            onClick={async () => {
+              setResending(true);
+              setError(undefined);
+              setNotice(undefined);
+              const result = await sendJson("/api/auth", "POST", {
+                action: "resend-confirmation",
+                email,
+                next: nextPath,
+              });
+              setResending(false);
+              if (!result.ok) return setError(result.error);
+              setNotice("A fresh confirmation email is on its way.");
+            }}
+            type="button"
+            variant="secondary"
+          >
+            {resending ? "Sending…" : "Resend confirmation email"}
+          </Button>
+        ) : null}
+        <Link className="sg-button sg-button--quiet" href={signInHref}>
+          Open sign in
+        </Link>
+      </div>
+    </section>
+  );
+}
 
 export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
   const router = useRouter();
@@ -17,9 +99,27 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
     confirmPassword: "",
   });
   const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
+  const [mismatch, setMismatch] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
+  const stepHeadingRef = useRef<HTMLLegendElement>(null);
+  const firstRender = useRef(true);
+
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    stepHeadingRef.current?.focus();
+    setAnnouncement(
+      step === "identity" ? "Step 1 of 2: your details." : "Step 2 of 2: a few agreements.",
+    );
+  }, [step]);
+
+  if (pendingEmail) return <ConfirmationPending email={pendingEmail} nextPath={nextPath} />;
+
+  const confirmError = mismatch ? PASSWORD_MISMATCH : undefined;
 
   return (
     <form
@@ -27,12 +127,13 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
       onSubmit={async (event) => {
         event.preventDefault();
         setError(undefined);
-        setNotice(undefined);
         if (step === "identity") {
           if (identity.password !== identity.confirmPassword) {
-            setError("Passwords must match before you continue.");
+            setMismatch(true);
+            document.getElementById("confirmPassword")?.focus();
             return;
           }
+          setMismatch(false);
           setStep("permission");
           return;
         }
@@ -48,30 +149,25 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
           marketingVersion: POLICY_VERSIONS.marketing,
         };
         setSubmitting(true);
-        const response = await fetch("/api/auth", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+        const result = await sendJson<{ authenticated?: boolean; pending?: boolean }>(
+          "/api/auth",
+          "POST",
+          {
             action: "sign-up",
             email: identity.email,
             password: identity.password,
             displayName: identity.displayName,
             consents,
             next: nextPath,
-          }),
-        });
-        const payload = (await response.json()) as {
-          authenticated?: boolean;
-          pending?: boolean;
-          error?: string;
-        };
-        setSubmitting(false);
-        if (!response.ok) return setError(payload.error ?? "Unable to create the account.");
-        if (payload.pending) {
+          },
+        );
+        if (!result.ok) {
+          setSubmitting(false);
+          return setError(result.error);
+        }
+        if (result.data.pending) {
+          setSubmitting(false);
           setPendingEmail(identity.email);
-          setNotice(
-            "Account created. Check your email once to confirm it, then sign in with your password.",
-          );
           return;
         }
         router.push(nextPath ?? "/onboarding");
@@ -80,25 +176,22 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
     >
       <ol aria-label="Account creation progress" className="account-form-progress">
         <li aria-current={step === "identity" ? "step" : undefined}>
-          <span>01</span> Your key
+          <span>01</span> Your details
         </li>
         <li aria-current={step === "permission" ? "step" : undefined}>
-          <span>02</span> Permission
+          <span>02</span> Agreements
         </li>
       </ol>
-      {error ? (
-        <p
-          aria-live="assertive"
-          className="rounded-2xl border border-rose-300/30 bg-rose-950/30 p-3 text-sm text-rose-100"
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
+      <p aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
+      {error ? <AccountMessage tone="error">{error}</AccountMessage> : null}
       {step === "identity" ? (
         <fieldset className="account-form-stage">
-          <legend>Choose how you return</legend>
-          <p>Nothing entered here is used to select cards.</p>
+          <legend ref={stepHeadingRef} tabIndex={-1}>
+            How you&apos;ll sign in
+          </legend>
+          <p>Your email and password are just for getting back in.</p>
           <Field
             autoComplete="email"
             label="Email"
@@ -110,7 +203,7 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
           />
           <Field
             autoComplete="nickname"
-            hint="Used in the reading experience; separate from your private birth name."
+            hint="What we'll call you in your readings. It can differ from your birth name."
             label="Display name"
             maxLength={80}
             name="displayName"
@@ -119,29 +212,38 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
             value={identity.displayName}
           />
           <div className="account-password-grid">
-            <Field
+            <PasswordField
               autoComplete="new-password"
-              hint="Use 12–72 characters."
+              hint="Use 12–72 characters. A short phrase is easy to remember."
               label="Password"
               maxLength={72}
               minLength={12}
               name="password"
-              onChange={(event) => setIdentity({ ...identity, password: event.target.value })}
+              onChange={(event) => {
+                setIdentity({ ...identity, password: event.target.value });
+                if (mismatch && event.target.value === identity.confirmPassword) setMismatch(false);
+              }}
               required
-              type="password"
               value={identity.password}
             />
-            <Field
+            <PasswordField
               autoComplete="new-password"
+              error={confirmError}
               label="Confirm password"
               maxLength={72}
               minLength={12}
               name="confirmPassword"
-              onChange={(event) =>
-                setIdentity({ ...identity, confirmPassword: event.target.value })
+              onBlur={() =>
+                setMismatch(
+                  identity.confirmPassword.length > 0 &&
+                    identity.password !== identity.confirmPassword,
+                )
               }
+              onChange={(event) => {
+                setIdentity({ ...identity, confirmPassword: event.target.value });
+                if (mismatch && event.target.value === identity.password) setMismatch(false);
+              }}
               required
-              type="password"
               value={identity.confirmPassword}
             />
           </div>
@@ -155,10 +257,12 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
         </fieldset>
       ) : (
         <fieldset className="account-form-stage account-permission-stage">
-          <legend>Open this space with permission</legend>
+          <legend ref={stepHeadingRef} tabIndex={-1}>
+            A few agreements
+          </legend>
           <p>
-            Review the three required commitments. Product updates stay off and can be enabled later
-            in Account settings.
+            Please tick all three to continue. We won&apos;t send you product news unless you turn
+            it on later in Account settings.
           </p>
           <div className="account-identity-receipt" role="note">
             <span aria-hidden="true">◈</span>
@@ -171,13 +275,13 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
             <label>
               <input name="termsAccepted" required type="checkbox" />
               <span>
-                I agree to the versioned <Link href="/terms">Terms</Link>.
+                I agree to the <Link href="/terms">Terms</Link>.
               </span>
             </label>
             <label>
               <input name="privacyAccepted" required type="checkbox" />
               <span>
-                I have read the versioned <Link href="/privacy">Privacy Notice</Link>.
+                I have read the <Link href="/privacy">Privacy Notice</Link>.
               </span>
             </label>
             <label>
@@ -186,47 +290,20 @@ export function SignUpForm({ nextPath }: { nextPath?: string | undefined }) {
             </label>
           </div>
           <div className="account-form-actions">
-            <Button onClick={() => setStep("identity")} type="button" variant="quiet">
+            <Button
+              disabled={submitting}
+              onClick={() => setStep("identity")}
+              type="button"
+              variant="quiet"
+            >
               ← Back
             </Button>
-            <Button disabled={submitting || Boolean(notice)} type="submit">
+            <Button disabled={submitting} type="submit">
               {submitting ? "Creating account…" : "Create private account"}
             </Button>
           </div>
         </fieldset>
       )}
-      {notice ? (
-        <div className="grid gap-3">
-          <p aria-live="polite" className="text-sm leading-6 text-emerald-100">
-            {notice}
-          </p>
-          <Button
-            disabled={submitting || !pendingEmail}
-            onClick={async () => {
-              if (!pendingEmail) return;
-              setSubmitting(true);
-              setError(undefined);
-              const response = await fetch("/api/auth", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  action: "resend-confirmation",
-                  email: pendingEmail,
-                  next: nextPath,
-                }),
-              });
-              const payload = (await response.json()) as { error?: string };
-              setSubmitting(false);
-              if (!response.ok)
-                return setError(payload.error ?? "Unable to resend confirmation just now.");
-              setNotice("If this account still needs confirmation, a fresh message is on its way.");
-            }}
-            type="button"
-          >
-            {submitting ? "Resending…" : "Resend confirmation email"}
-          </Button>
-        </div>
-      ) : null}
     </form>
   );
 }

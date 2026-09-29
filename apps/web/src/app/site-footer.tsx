@@ -21,13 +21,17 @@ export function SiteFooter() {
           <span aria-hidden="true" className="site-footer__star">
             ✦
           </span>
-          <p>StarGuidance</p>
+          <p>
+            <Link className="site-footer__brand" href="/">
+              StarGuidance
+            </Link>
+          </p>
           <small>Private reflection. Unaltered cards. Your agency intact.</small>
         </div>
         <nav aria-label="Legal navigation">
           <Link href="/terms">Terms &amp; reading guide</Link>
           <Link href="/privacy">Privacy notice</Link>
-          {pathname !== "/" && pathname !== "/free-reading" && <MotionToggle />}
+          {pathname !== "/free-reading" && <MotionToggle />}
         </nav>
       </div>
     </footer>

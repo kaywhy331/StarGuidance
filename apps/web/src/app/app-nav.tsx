@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useId, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
+import { sendJson } from "@/lib/client-request";
+
 const links = [
   ["Read", "/readings", "✦"],
   ["History", "/history", "◴"],
@@ -12,6 +14,12 @@ const links = [
   ["People", "/people", "♊"],
   ["Account", "/settings/account", "○"],
   ["Privacy", "/settings/privacy", "◈"],
+] as const;
+
+const anonymousLinks = [
+  ["Free reading", "/free-reading", "✦"],
+  ["Sign in", "/sign-in", "○"],
+  ["Sign up", "/sign-up", "◇"],
 ] as const;
 
 const hiddenRoutes = [
@@ -25,12 +33,13 @@ const hiddenRoutes = [
   "/reset-password",
 ] as const;
 
-export function AppNav() {
+export function AppNav({ signedIn = false }: { signedIn?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const menuId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const [signOutError, setSignOutError] = useState<string>();
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -79,7 +88,7 @@ export function AppNav() {
 
         <div className="site-nav-panel" data-open={menuOpen} id={menuId}>
           <div className="site-nav-links">
-            {links.map(([label, href, glyph]) => (
+            {(signedIn ? links : anonymousLinks).map(([label, href, glyph]) => (
               <Link
                 aria-current={pathname.startsWith(href) ? "page" : undefined}
                 href={href}
@@ -91,23 +100,28 @@ export function AppNav() {
               </Link>
             ))}
           </div>
-          <button
-            className="site-sign-out"
-            onClick={async () => {
-              setSignOutError(undefined);
-              const response = await fetch("/api/auth", { method: "DELETE" });
-              if (!response.ok) {
-                const payload = (await response.json()) as { error?: string };
-                setSignOutError(payload.error ?? "Sign-out failed.");
-                return;
-              }
-              router.push("/");
-              router.refresh();
-            }}
-            type="button"
-          >
-            Sign out
-          </button>
+          {signedIn ? (
+            <button
+              className="site-sign-out"
+              disabled={signingOut}
+              onClick={async () => {
+                setSignOutError(undefined);
+                setSigningOut(true);
+                const result = await sendJson("/api/auth", "DELETE");
+                setSigningOut(false);
+                if (!result.ok) {
+                  setSignOutError(result.error);
+                  return;
+                }
+                setMenuOpen(false);
+                router.push("/");
+                router.refresh();
+              }}
+              type="button"
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
+          ) : null}
           {signOutError ? (
             <span className="site-nav-error" role="alert">
               {signOutError}

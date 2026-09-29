@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { HeroDepth, MotionReveal, MotionToggle } from "./site-motion";
+import { hasSessionHint } from "./session-hint";
+import { HeroDepth, MotionReveal } from "./site-motion";
 
 const previewCards = [
   { label: "The threshold", glyph: "✦", rotation: "home-card--left" },
@@ -18,16 +19,22 @@ function Brand() {
   );
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  const signedIn = await hasSessionHint();
   return (
     <main className="home-shell">
       <nav aria-label="Primary navigation" className="home-nav">
         <Brand />
         <div className="home-nav__actions">
-          <MotionToggle />
-          <Link className="sg-button sg-button--quiet sg-button--compact" href="/sign-in">
-            Sign in
-          </Link>
+          {signedIn ? (
+            <Link className="sg-button sg-button--quiet sg-button--compact" href="/readings">
+              Your readings
+            </Link>
+          ) : (
+            <Link className="sg-button sg-button--quiet sg-button--compact" href="/sign-in">
+              Sign in
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -38,31 +45,48 @@ export default function HomePage() {
           </p>
           <h1>
             Your pattern, held gently.
-            <span>A genuinely random draw.</span>
+            <span>A reading that meets you where you are.</span>
           </h1>
           <p className="home-hero__lede">
-            Experience one genuinely random reading before creating an account. If you choose to
-            stay, a private birth profile can deepen future interpretations—never which cards
-            appear.
+            Bring what&apos;s on your mind. The cards answer, read in light of your birthday, so the
+            reading speaks to you rather than to anyone. It is a calm place to think things through,
+            not a forecast to obey.
           </p>
           <div className="home-hero__actions">
-            <Link className="sg-button sg-button--primary" href="/free-reading">
-              <span>Free Reading</span>
-              <span aria-hidden="true">↗</span>
-            </Link>
-            <Link className="sg-button sg-button--secondary" href="/sign-up">
-              Sign up
-            </Link>
+            {signedIn ? (
+              <>
+                <Link className="sg-button sg-button--primary" href="/readings">
+                  <span>Continue to your readings</span>
+                  <span aria-hidden="true">→</span>
+                </Link>
+                <Link className="sg-button sg-button--secondary" href="/history">
+                  History
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link className="sg-button sg-button--primary" href="/free-reading">
+                  <span>Free Reading</span>
+                  <span aria-hidden="true">→</span>
+                </Link>
+                <Link className="sg-button sg-button--secondary" href="/sign-up">
+                  Sign up
+                </Link>
+              </>
+            )}
           </div>
-          <ul aria-label="Privacy commitments" className="home-trust-list">
+          <p className="home-hero__trust">
+            The cards fall as they fall — nothing you share can steer them.
+          </p>
+          <ul aria-label="What to expect" className="home-trust-list">
             <li>
               <span aria-hidden="true">◇</span> Birth time optional
             </li>
             <li>
-              <span aria-hidden="true">◇</span> Cards locked before interpretation
+              <span aria-hidden="true">◇</span> First reading free, no account
             </li>
             <li>
-              <span aria-hidden="true">◇</span> Your data stays yours
+              <span aria-hidden="true">◇</span> Your details stay private
             </li>
           </ul>
         </MotionReveal>
@@ -83,8 +107,8 @@ export default function HomePage() {
           </div>
           <div className="home-oracle__seal">
             <span aria-hidden="true">✦</span>
-            <span>Draw integrity</span>
-            <small>Question and profile never choose the cards</small>
+            <span>Held privately</span>
+            <small>Your question and your details stay yours</small>
           </div>
         </HeroDepth>
       </section>
@@ -93,18 +117,21 @@ export default function HomePage() {
         <MotionReveal>
           <article>
             <span>01</span>
-            <h2>Experience it first</h2>
+            <h2>Bring your question</h2>
             <p>
-              Take one private, birthday-personalized reading before deciding whether to create an
-              account.
+              Ask about whatever is on your mind and share your birthday. Your first reading is
+              free, with no account needed.
             </p>
           </article>
         </MotionReveal>
         <MotionReveal>
           <article>
             <span>02</span>
-            <h2>Meet an unaltered draw</h2>
-            <p>Secure randomness locks every card and reversal before any interpretation begins.</p>
+            <h2>Meet your cards</h2>
+            <p>
+              Each card is read with your pattern in mind: what it shows about where you stand, and
+              one gentle way forward.
+            </p>
           </article>
         </MotionReveal>
         <MotionReveal>
@@ -112,7 +139,8 @@ export default function HomePage() {
             <span>03</span>
             <h2>Continue only if it helps</h2>
             <p>
-              Sign up to ask the same cards a follow-up and unlock saved, personalized readings.
+              Sign up to ask the same cards a follow-up, keep your readings, and let a private
+              profile deepen the ones to come.
             </p>
           </article>
         </MotionReveal>

@@ -162,6 +162,22 @@ describe("account callback", () => {
     expect(location(response).toString()).not.toContain("sensitive provider response");
   });
 
+  it("tells sign-in which email a failed link came from", async () => {
+    auth.exchangeCodeForSession.mockResolvedValue({ error: new Error("expired") });
+    const signup = await GET(request("?code=synthetic-code&next=/onboarding&flow=signup"));
+    expect(location(signup).searchParams.get("error")).toBe("expired-link");
+    expect(location(signup).searchParams.get("flow")).toBe("signup");
+
+    auth.verifyOtp.mockResolvedValue({ error: new Error("expired") });
+    const recovery = await GET(
+      request(`?token_hash=${"r".repeat(64)}&type=recovery&next=/reset-password`),
+    );
+    expect(location(recovery).searchParams.get("flow")).toBe("recovery");
+
+    const unknown = await GET(request("?code=synthetic-code&next=/onboarding&flow=elsewhere"));
+    expect(location(unknown).searchParams.get("flow")).toBeNull();
+  });
+
   it("rejects a magiclink token type now that no flow issues one", async () => {
     const response = await GET(request(`?token_hash=${"m".repeat(64)}&type=magiclink`));
 

@@ -3,25 +3,34 @@ import { z } from "zod";
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const clockPattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/** The earliest birth year a profile accepts; earlier dates are almost always typos. */
+export const EARLIEST_BIRTH_DATE = "1900-01-01";
+
 export const birthDateSchema = z
-  .string()
-  .regex(isoDatePattern, "Use an ISO date in YYYY-MM-DD format.")
+  .string({ error: "Choose your date of birth." })
+  .min(1, "Choose your date of birth.")
+  .regex(isoDatePattern, "Choose your date of birth from the calendar (YYYY-MM-DD).")
   .superRefine((birthDate, context) => {
     const parsedDate = new Date(`${birthDate}T00:00:00.000Z`);
     if (Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== birthDate) {
-      context.addIssue({ code: "custom", message: "Enter a real calendar date." });
+      context.addIssue({ code: "custom", message: "That date doesn't exist on the calendar." });
     } else if (parsedDate > new Date()) {
-      context.addIssue({ code: "custom", message: "Birth date cannot be in the future." });
+      context.addIssue({ code: "custom", message: "Your date of birth can't be in the future." });
+    } else if (birthDate < EARLIEST_BIRTH_DATE) {
+      context.addIssue({
+        code: "custom",
+        message: "Please check the year — dates of birth start from 1900.",
+      });
     }
   });
 
 const optionalBirthplaceSchema = z
   .string()
   .trim()
-  .max(200)
+  .max(200, "Please keep the birthplace under 200 characters.")
   .refine(
     (value) => value.length === 0 || value.length >= 2,
-    "Enter at least 2 characters for a birthplace.",
+    "Enter at least 2 characters for your birthplace.",
   )
   .transform((value) => value || undefined)
   .optional();
@@ -29,11 +38,18 @@ const optionalBirthplaceSchema = z
 const optionalBirthTimeSchema = z
   .string()
   .trim()
-  .refine((value) => value.length === 0 || clockPattern.test(value), "Enter a valid birth time.")
+  .refine(
+    (value) => value.length === 0 || clockPattern.test(value),
+    "Choose a birth time, or mark it as unknown.",
+  )
   .optional();
 
 export const birthProfileInputSchema = z.object({
-  fullBirthName: z.string().trim().min(1).max(200),
+  fullBirthName: z
+    .string({ error: "Please share the name you were given at birth." })
+    .trim()
+    .min(1, "Please share the name you were given at birth.")
+    .max(200, "Please keep your birth name under 200 characters."),
   birthDate: birthDateSchema,
   birthplace: optionalBirthplaceSchema,
   birthTime: optionalBirthTimeSchema,

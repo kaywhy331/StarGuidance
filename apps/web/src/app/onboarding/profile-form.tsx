@@ -3,11 +3,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { birthProfileInputSchema, type BirthProfileInput } from "@starguidance/contracts";
+import {
+  birthProfileInputSchema,
+  EARLIEST_BIRTH_DATE,
+  type BirthProfileInput,
+} from "@starguidance/contracts";
 import { Button, Field, Panel } from "@starguidance/design-system";
 import { useForm } from "react-hook-form";
 
+import { sendJson } from "@/lib/client-request";
 import { POLICY_VERSIONS } from "@/lib/policies";
+
+const CONSENT_REQUIRED =
+  "Please tick this box so we can keep your birth details privately and use them in your readings.";
 
 function UnknownToggle({
   accessibleLabel,
@@ -36,9 +44,14 @@ function UnknownToggle({
 }
 
 export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthProfileInput }) {
-  const [birthplaceUnknown, setBirthplaceUnknown] = useState(false);
-  const [birthTimeUnknown, setBirthTimeUnknown] = useState(false);
+  const [birthplaceUnknown, setBirthplaceUnknown] = useState(
+    Boolean(initialProfile) && !initialProfile?.birthplace,
+  );
+  const [birthTimeUnknown, setBirthTimeUnknown] = useState(
+    Boolean(initialProfile) && !initialProfile?.birthTime,
+  );
   const [consent, setConsent] = useState(false);
+  const [consentError, setConsentError] = useState(false);
   const [saveError, setSaveError] = useState<string>();
   /**
    * Some private saves take longer than others. Reassure the user after a few
@@ -63,34 +76,45 @@ export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthPro
       <form
         className="onboarding-form"
         noValidate
-        onSubmit={form.handleSubmit(async (profile) => {
-          setSaveError(undefined);
-          setStillWorking(false);
-          const hint = setTimeout(() => setStillWorking(true), 6_000);
-          try {
-            const response = await fetch("/api/profile", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                ...profile,
-                birthplace: birthplaceUnknown ? undefined : profile.birthplace,
-                birthTime: birthTimeUnknown ? undefined : profile.birthTime,
-                consentVersion: POLICY_VERSIONS.profilePersonalization,
-              }),
-            });
-            if (response.status === 401) return router.push("/sign-in");
-            if (response.status === 428) return router.push("/consent");
-            if (!response.ok) {
-              const payload = (await response.json()) as { error?: string };
-              setSaveError(payload.error ?? "Your private details could not be saved.");
+        onSubmit={form.handleSubmit(
+          async (profile) => {
+            setSaveError(undefined);
+            if (!consent) {
+              setConsentError(true);
+              document.getElementById("profile-consent")?.focus();
               return;
             }
-            router.push("/readings");
-          } finally {
-            clearTimeout(hint);
             setStillWorking(false);
-          }
-        })}
+            const hint = setTimeout(() => setStillWorking(true), 6_000);
+            try {
+              const result = await sendJson(
+                "/api/profile",
+                "POST",
+                {
+                  ...profile,
+                  birthplace: birthplaceUnknown ? undefined : profile.birthplace,
+                  birthTime: birthTimeUnknown ? undefined : profile.birthTime,
+                  consentVersion: POLICY_VERSIONS.profilePersonalization,
+                },
+                // Profile calculation can take a while on a cold start.
+                { timeoutMs: 60_000 },
+              );
+              if (result.status === 401) return router.push("/sign-in?next=%2Fonboarding");
+              if (result.status === 428) return router.push("/consent?next=%2Fonboarding");
+              if (!result.ok) {
+                setSaveError(result.error);
+                return;
+              }
+              router.push("/readings");
+            } finally {
+              clearTimeout(hint);
+              setStillWorking(false);
+            }
+          },
+          () => {
+            if (!consent) setConsentError(true);
+          },
+        )}
       >
         <div className="onboarding-form__stage">
           <fieldset className="onboarding-fieldset">
@@ -103,7 +127,7 @@ export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthPro
               <Field
                 autoComplete="name"
                 error={error.fullBirthName?.message}
-                hint="Enter the full name you were given at birth."
+                hint="The full name you were given at birth. We use it privately for name numerology — it's encrypted and never shown in your readings."
                 label="Full birth name *"
                 required
                 {...form.register("fullBirthName")}
@@ -114,6 +138,7 @@ export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthPro
                 hint="Enter your birthday as it appears on your birth record."
                 label="Date of birth *"
                 max={new Date().toISOString().slice(0, 10)}
+                min={EARLIEST_BIRTH_DATE}
                 required
                 type="date"
                 {...form.register("birthDate")}
@@ -186,10 +211,16 @@ export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthPro
                 and are never displayed publicly.
               </p>
             </div>
-            <label className="profile-consent">
+            <label className="profile-consent" data-invalid={consentError || undefined}>
               <input
+                aria-describedby={consentError ? "profile-consent-error" : undefined}
+                aria-invalid={consentError}
                 checked={consent}
-                onChange={(event) => setConsent(event.target.checked)}
+                id="profile-consent"
+                onChange={(event) => {
+                  setConsent(event.target.checked);
+                  if (event.target.checked) setConsentError(false);
+                }}
                 required
                 type="checkbox"
               />
@@ -198,8 +229,13 @@ export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthPro
                 reflective guidance, not factual prediction or professional advice.
               </span>
             </label>
+            {consentError ? (
+              <p className="profile-consent-error" id="profile-consent-error" role="alert">
+                {CONSENT_REQUIRED}
+              </p>
+            ) : null}
             <div className="onboarding-form__actions">
-              <Button disabled={!consent || submitting} type="submit">
+              <Button disabled={submitting} type="submit">
                 {submitting
                   ? "Saving privately…"
                   : initialProfile
@@ -209,7 +245,7 @@ export function BirthProfileForm({ initialProfile }: { initialProfile?: BirthPro
             </div>
             {submitting && stillWorking && (
               <p aria-live="polite" className="text-sm text-[#c9bfd4]">
-                Still working. Saving can take a moment when the private service starts up.
+                Still working — the first save can take a little longer. Thank you for waiting.
               </p>
             )}
             {saveError && (

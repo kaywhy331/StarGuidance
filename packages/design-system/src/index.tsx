@@ -6,6 +6,8 @@ import type {
   ReactNode,
 } from "react";
 
+export { PasswordField } from "./password-field";
+
 export function Button({
   className = "",
   type = "button",
