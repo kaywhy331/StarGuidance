@@ -6,6 +6,7 @@ import { persistenceFor, recordAudit, saveProfileVersion } from "@/lib/persisten
 import { POLICY_VERSIONS } from "@/lib/policies";
 import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { calculateProfile } from "@/lib/profile-engine";
+import { buildProfileHighlights, type ProfileHighlight } from "@/lib/report";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeConfiguration, profileReportsEnabled } from "@/lib/runtime-configuration";
 
@@ -71,7 +72,8 @@ export async function POST(request: Request) {
       });
       return NextResponse.json(
         {
-          error: "The calculation could not use these birth details.",
+          error:
+            "We couldn't read a profile from those birth details. Please check the date, place, and time, then try again.",
         },
         { status: 422 },
       );
@@ -102,7 +104,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "The private profile engine could not complete the calculation. Your profile was not changed; retry when it is available.",
+            "We couldn't finish your profile just now. Nothing was changed. Please try again in a moment.",
           reason: (error as Error).message,
         },
         { status: 503 },
@@ -110,12 +112,15 @@ export async function POST(request: Request) {
     }
     if (error instanceof z.ZodError)
       return NextResponse.json(
-        { error: "Check the four birth-profile fields and try again." },
+        {
+          error:
+            "Please check your birth name, date of birth, birthplace, and birth time, then try again.",
+        },
         { status: 422 },
       );
     if (error instanceof Error && error.message === POLICY_RECONSENT_REQUIRED)
       return NextResponse.json(
-        { error: "Review the current service policies before saving a profile." },
+        { error: "Please review the updated Terms and Privacy Notice before saving your profile." },
         { status: 428 },
       );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 503;
@@ -123,8 +128,8 @@ export async function POST(request: Request) {
       {
         error:
           status === 401
-            ? "Authentication required."
-            : "The private profile could not be saved. Your existing profile was not changed.",
+            ? "Please sign in again to continue."
+            : "We couldn't save your profile just now. Nothing was changed. Please try again.",
       },
       { status },
     );
@@ -144,12 +149,33 @@ export async function GET() {
           JSON.parse(persistence.decrypt(profile.encryptedInput, "profile-input")),
         )
       : undefined;
+    let highlights: ProfileHighlight[] = [];
+    if (profile)
+      try {
+        highlights = buildProfileHighlights(
+          profile.snapshot,
+          JSON.parse(persistence.decrypt(profile.encryptedCalculations, "profile-calculations")),
+        );
+      } catch {
+        // Highlights are a courtesy summary; the profile itself still loads.
+        highlights = [];
+      }
+    const reportsEnabled = profileReportsEnabled(runtimeConfiguration);
     return NextResponse.json({
-      profileReportsEnabled: profileReportsEnabled(runtimeConfiguration),
+      profileReportsEnabled: reportsEnabled,
+      ...(reportsEnabled
+        ? {
+            reportOffer: {
+              priceMinor: runtimeConfiguration.commerce.priceMinor,
+              currency: runtimeConfiguration.commerce.currency,
+            },
+          }
+        : {}),
       profile:
         profile && input
           ? {
               snapshot: profile.snapshot,
+              highlights,
               maskedName: `${input.fullBirthName.slice(0, 1)}${"•".repeat(
                 Math.min(input.fullBirthName.length - 1, 8),
               )}`,

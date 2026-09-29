@@ -31,28 +31,82 @@ export interface RelationshipProfileCandidate {
   readonly profile: StoredRelationshipProfileVersion;
 }
 
-export function personMentionToken(fullName: string): string {
-  const token = fullName
+function mentionSlug(value: string): string {
+  return value
     .normalize("NFKC")
     .trim()
     .toLocaleLowerCase("en-US")
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
-  return `@${token}`;
+}
+
+/**
+ * The original full-name handle (e.g. `@john-michael-smith`). It stays valid
+ * in questions forever so handles people already learned keep working.
+ */
+export function personMentionToken(fullName: string): string {
+  return `@${mentionSlug(fullName)}`;
+}
+
+function nameParts(fullName: string): string[] {
+  return mentionSlug(fullName).split("-").filter(Boolean);
+}
+
+export interface MentionCandidate {
+  readonly id: string;
+  readonly fullName: string;
+}
+
+/**
+ * Short, friendly handles derived from each person's first name: `@maya`.
+ * When two saved people share a first name, the last-name initial is added
+ * (`@john-s`), and if that still collides the full-name handle is used.
+ * Handles are derived, never stored, so no migration is needed; the full-name
+ * handle is always accepted as well.
+ */
+export function personMentionHandles(candidates: readonly MentionCandidate[]): Map<string, string> {
+  const firstOf = (name: string) => nameParts(name)[0] ?? mentionSlug(name);
+  const initialed = (name: string) => {
+    const parts = nameParts(name);
+    const last = parts.length > 1 ? parts[parts.length - 1] : undefined;
+    return last ? `${parts[0]}-${Array.from(last)[0]}` : undefined;
+  };
+  const count = (values: readonly (string | undefined)[], value: string | undefined) =>
+    values.filter((candidate) => candidate === value).length;
+  const firsts = candidates.map(({ fullName }) => firstOf(fullName));
+  const initials = candidates.map(({ fullName }) => initialed(fullName));
+  const fulls = candidates.map(({ fullName }) => mentionSlug(fullName));
+  const handles = new Map<string, string>();
+  candidates.forEach(({ id }, index) => {
+    const first = firsts[index]!;
+    const initial = initials[index];
+    const full = fulls[index]!;
+    // A short handle must not equal anyone else's full-name handle either.
+    if (count(firsts, first) === 1 && count(fulls, first) <= (first === full ? 1 : 0))
+      handles.set(id, `@${first}`);
+    else if (initial && count(initials, initial) === 1 && !fulls.includes(initial))
+      handles.set(id, `@${initial}`);
+    else handles.set(id, `@${full}`);
+  });
+  return handles;
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function isExplicitlyMentioned(question: string, fullName: string): boolean {
-  const token = personMentionToken(fullName).slice(1);
+function mentionMatcher(alternatives: readonly string[]): RegExp {
+  return new RegExp(`(^|[\\s([{])@(?:${alternatives.join("|")})(?=$|[\\s.,!?;:)'\\]}])`, "iu");
+}
+
+/** Returns the handle form the question actually used, or undefined. */
+function explicitMention(question: string, fullName: string, handle: string): string | undefined {
+  const normalized = question.normalize("NFKC");
+  const legacy = personMentionToken(fullName);
+  if (mentionMatcher([escapeRegExp(handle.slice(1))]).test(normalized)) return handle;
+  if (mentionMatcher([escapeRegExp(legacy.slice(1))]).test(normalized)) return legacy;
   const spacedName = escapeRegExp(fullName.trim()).replace(/\s+/g, "\\s+");
-  const matcher = new RegExp(
-    `(^|[\\s([{])@(?:${escapeRegExp(token)}|${spacedName})(?=$|[\\s.,!?;:)'\\]}])`,
-    "iu",
-  );
-  return matcher.test(question.normalize("NFKC"));
+  return mentionMatcher([spacedName]).test(normalized) ? handle : undefined;
 }
 
 /** Resolves explicit @mentions only. The result contains a minimized trait
@@ -61,14 +115,26 @@ export function buildRelatedPersonReadingLens(
   question: string,
   candidates: readonly RelationshipProfileCandidate[],
 ): RelatedPersonReadingLens | undefined {
+  const handles = personMentionHandles(
+    candidates.map(({ input, profile }) => ({
+      id: profile.relationshipProfileId,
+      fullName: input.fullBirthName,
+    })),
+  );
   const profiles = [...candidates]
     .sort((left, right) => right.input.fullBirthName.length - left.input.fullBirthName.length)
-    .filter(({ input }) => isExplicitlyMentioned(question, input.fullBirthName))
+    .flatMap((candidate) => {
+      const handle =
+        handles.get(candidate.profile.relationshipProfileId) ??
+        personMentionToken(candidate.input.fullBirthName);
+      const mention = explicitMention(question, candidate.input.fullBirthName, handle);
+      return mention ? [{ ...candidate, mention }] : [];
+    })
     .slice(0, 3)
-    .map(({ input, profile }) => ({
+    .map(({ profile, mention }) => ({
       profileId: profile.relationshipProfileId,
       snapshotId: profile.snapshot.id,
-      mention: personMentionToken(input.fullBirthName),
+      mention,
       traitStatements: selectReadingLens(
         question,
         profile.snapshot.traits,

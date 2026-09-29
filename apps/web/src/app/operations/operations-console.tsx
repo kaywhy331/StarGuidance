@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, LoadingState, Panel } from "@starguidance/design-system";
 
+import { requestJson, sendJson } from "@/lib/client-request";
 import type { OperationalRole } from "@/lib/operational-access";
 
 import { OperatorConfigurationPanel } from "./operator-configuration-panel";
@@ -31,13 +32,12 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
 
   const load = useCallback(async (id?: string) => {
     setMessage(undefined);
-    const response = await fetch(
+    const result = await requestJson<OperationsPayload>(
       `/api/operations${id ? `?traceId=${encodeURIComponent(id)}` : ""}`,
       { cache: "no-store" },
     );
-    const body = (await response.json()) as OperationsPayload & { error?: string };
-    if (!response.ok) return setMessage(body.error ?? "Operational diagnostics are unavailable.");
-    setPayload(body);
+    if (!result.ok) return setMessage(result.error);
+    setPayload(result.data);
   }, []);
 
   useEffect(() => {
@@ -47,20 +47,28 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
 
   const retry = async (queue: "interpretation" | "report") => {
     if (!payload?.trace) return;
-    const response = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "retry-job", queue, targetId: payload.trace.id }),
+    const result = await sendJson("/api/operations", "POST", {
+      action: "retry-job",
+      queue,
+      targetId: payload.trace.id,
     });
-    const body = (await response.json()) as { error?: string };
-    setMessage(response.ok ? "The failed job was safely requeued and audited." : body.error);
-    if (response.ok) await load(payload.trace.id);
+    setMessage(result.ok ? "The failed job was safely requeued and audited." : result.error);
+    if (result.ok) await load(payload.trace.id);
   };
 
   return (
     <div className="mt-8 grid gap-6">
       {!payload ? (
-        <LoadingState label="Loading masked operational status…" />
+        message ? (
+          <Panel role="alert">
+            <p>{message}</p>
+            <Button className="mt-4" onClick={() => void load()}>
+              Try again
+            </Button>
+          </Panel>
+        ) : (
+          <LoadingState label="Loading masked operational status…" />
+        )
       ) : (
         <>
           <Panel>

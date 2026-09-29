@@ -115,6 +115,9 @@ test("explicit narration plays, reveals words, illuminates cards, and survives r
 
   const openSectionReading = async () => {
     await page.goto(`/reading/${finalized.readingId}`);
+    // A saved reading opens on its keepsake; the passage walk is a replay.
+    await expect(page.getByTestId("reading-keepsake")).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "Replay the reading" }).click();
     await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
     await expect(page.getByRole("button", { name: "Play audio reading" })).toBeVisible();

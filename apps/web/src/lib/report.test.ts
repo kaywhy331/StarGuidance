@@ -2,11 +2,12 @@ import { CALCULATION_SYSTEM_VERSIONS } from "@starguidance/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildProfileHighlights,
   buildProfileReportSections,
   createProfileReportSource,
   type ProfileReportSource,
 } from "./report";
-import { PROFILE_REPORT_SECTION_PREVIEW } from "./report-sections";
+import { PROFILE_REPORT_SECTION_PREVIEW, splitReportSectionBody } from "./report-sections";
 
 const source: ProfileReportSource = {
   snapshot: {
@@ -187,5 +188,45 @@ describe("profile report template", () => {
     for (const key of ["astrology", "bazi", "dreamspell", "nine-star-ki", "planetary-angularity"])
       expect(sections.find((section) => section.key === key)).toMatchObject({ unavailable: true });
     expect(sections.find((section) => section.key === "numerology")?.unavailable).not.toBe(true);
+  });
+});
+
+describe("profile report plain language", () => {
+  it("keeps calculation details out of the meaning and in the technical note", () => {
+    const sections = buildProfileReportSections(source);
+    for (const section of sections) {
+      const { meaning } = splitReportSectionBody(section.body);
+      expect(meaning).not.toMatch(
+        /deterministic|snapshot v\d|Calculation v|Confidence:|°|golden reference|licens/i,
+      );
+    }
+    const numerology = sections.find(({ key }) => key === "numerology")!;
+    const split = splitReportSectionBody(numerology.body);
+    expect(split.meaning).toContain("Your Life Path number is 1");
+    expect(split.technicalNote).toContain(CALCULATION_SYSTEM_VERSIONS.numerology);
+  });
+
+  it("invites the reader to add details instead of citing licensing for unavailable systems", () => {
+    const sections = buildProfileReportSections(source);
+    const angularity = splitReportSectionBody(
+      sections.find(({ key }) => key === "planetary-angularity")!.body,
+    );
+    expect(angularity.meaning).toMatch(/^Not included in this edition\. Add your birth time/);
+    const astrology = splitReportSectionBody(sections.find(({ key }) => key === "astrology")!.body);
+    expect(astrology.meaning).not.toMatch(/ephemeris|golden|licens|Explicitly unavailable/i);
+  });
+});
+
+describe("profile highlights", () => {
+  it("shows only enabled, available systems with a plain meaning", () => {
+    const highlights = buildProfileHighlights(
+      { ...source.snapshot, enabledSystems: ["numerology", "dreamspell"] },
+      source.calculation,
+    );
+    expect(highlights.map(({ key }) => key)).toEqual(["life-path", "dreamspell"]);
+    expect(highlights[0]).toMatchObject({
+      value: "Number 1",
+      meaning: "Autonomy can be energizing.",
+    });
   });
 });

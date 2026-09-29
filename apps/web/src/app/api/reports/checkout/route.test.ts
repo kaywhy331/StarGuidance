@@ -414,7 +414,8 @@ describe("Stripe Checkout boundary", () => {
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({
-      error: "Stripe Checkout is temporarily unavailable.",
+      error:
+        "Secure checkout couldn’t be opened just now. Nothing was charged — please try again in a moment.",
     });
     expect(mocks.createOrder).not.toHaveBeenCalled();
   });

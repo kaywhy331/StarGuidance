@@ -53,7 +53,7 @@ test("display identity, reading preferences, and reversible marketing consent pe
 
   const displayName = page.getByLabel("Display name");
   const reducedMotion = page.getByLabel(/Reduce card and scene motion/i);
-  const sound = page.getByLabel(/Enable optional reading sounds/i);
+  const sound = page.getByLabel(/Card sound effects/i);
   const marketing = page.getByLabel(/Send occasional product news/i);
   await expect(displayName).toHaveValue("Reader");
   await expect(sound).toBeChecked();
@@ -101,7 +101,7 @@ test("display identity, reading preferences, and reversible marketing consent pe
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
   await expect(page.getByText("For Nova", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Reduced motion/i })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: /^Motion:/ })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

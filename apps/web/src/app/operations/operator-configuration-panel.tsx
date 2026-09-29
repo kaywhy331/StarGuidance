@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, LoadingState, Panel } from "@starguidance/design-system";
 
+import { requestJson, sendJson } from "@/lib/client-request";
+
 type ConfigurationDomain = "content" | "prompts" | "commerce" | "features" | "models";
 
 interface ConfigurationVersion {
@@ -38,11 +40,12 @@ export function OperatorConfigurationPanel() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/operations/configuration", { cache: "no-store" });
-    const body = (await response.json()) as ConfigurationPayload & { error?: string };
-    if (!response.ok) return setMessage(body.error ?? "Runtime configuration is unavailable.");
-    setPayload(body);
-    setDraft(JSON.stringify(body.effective[domain], null, 2));
+    const result = await requestJson<ConfigurationPayload>("/api/operations/configuration", {
+      cache: "no-store",
+    });
+    if (!result.ok) return setMessage(result.error);
+    setPayload(result.data);
+    setDraft(JSON.stringify(result.data.effective[domain], null, 2));
   }, [domain]);
 
   useEffect(() => {
@@ -54,20 +57,31 @@ export function OperatorConfigurationPanel() {
     setBusy(true);
     setMessage(undefined);
     try {
-      const response = await fetch("/api/operations/configuration", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const result = (await response.json()) as { error?: string };
-      setMessage(response.ok ? success : (result.error ?? "The operation did not complete."));
-      if (response.ok) await load();
+      const result = await sendJson("/api/operations/configuration", "POST", body);
+      setMessage(result.ok ? success : result.error);
+      if (result.ok) await load();
     } finally {
       setBusy(false);
     }
   };
 
-  if (!payload) return <LoadingState label="Loading governed runtime configuration…" />;
+  if (!payload)
+    return message ? (
+      <Panel role="alert">
+        <p>{message}</p>
+        <Button
+          className="mt-4"
+          onClick={() => {
+            setMessage(undefined);
+            void load();
+          }}
+        >
+          Try again
+        </Button>
+      </Panel>
+    ) : (
+      <LoadingState label="Loading governed runtime configuration…" />
+    );
 
   return (
     <div className="grid gap-6">

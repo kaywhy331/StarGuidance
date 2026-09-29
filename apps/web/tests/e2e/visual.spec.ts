@@ -64,13 +64,13 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
   await expect(
-    page.getByRole("heading", { name: "What question did you have for the stars today?" }),
+    page.getByRole("heading", { name: "What would you like to ask the cards?" }),
   ).toBeVisible();
   await capturePage(page, testInfo, "reading-selection");
   await page
     .getByLabel("Your question for the stars")
     .fill("How can I understand the uncertainty I feel right now?");
-  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Draw my cards" }).click();
   await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   await capturePage(page, testInfo, "shuffle-deal");
   await expect(
@@ -80,8 +80,9 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
       .press("Enter");
+  await page.getByRole("button", { name: "These are my cards" }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
-  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  const motionControl = page.getByRole("button", { name: /^Motion:/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
   await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toBeVisible({
@@ -106,7 +107,7 @@ test("capture the required reviewer journey", async ({ page }, testInfo) => {
   await settleVisualAssets(page);
   await captureElement(reportPreview, testInfo, "report-preview");
 
-  await reportPreview.getByRole("button", { name: "Open your full atlas" }).click();
+  await reportPreview.getByRole("button", { name: /^Purchase your pattern atlas/ }).click();
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "Your private pattern atlas" })).toBeVisible();
   await capturePage(page, testInfo, "pattern-atlas");

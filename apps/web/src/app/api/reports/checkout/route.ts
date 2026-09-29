@@ -14,6 +14,9 @@ import {
   type CommerceConfiguration,
 } from "@/lib/runtime-configuration";
 
+const CHECKOUT_UNAVAILABLE =
+  "Secure checkout couldn’t be opened just now. Nothing was charged — please try again in a moment.";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 async function recordCheckoutStarted(
@@ -125,7 +128,7 @@ export async function POST(request: Request) {
         const configuration = stripeConfiguration(runtimeConfiguration.commerce.stripePriceId);
         if (!configuration)
           return NextResponse.json(
-            { error: "Stripe Checkout requires configured test credentials." },
+            { error: "Purchases aren’t available right now. Please try again later." },
             { status: 503 },
           );
         const stripe = new Stripe(configuration.secretKey);
@@ -133,10 +136,7 @@ export async function POST(request: Request) {
         try {
           session = await stripe.checkout.sessions.retrieve(existingOrder.providerSessionId);
         } catch {
-          return NextResponse.json(
-            { error: "Stripe Checkout is temporarily unavailable." },
-            { status: 502 },
-          );
+          return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
         }
         if (session.status === "open" && session.url) {
           await recordCheckoutStarted(existingOrder.id, "stripe", runtimeConfiguration.commerce);
@@ -159,16 +159,10 @@ export async function POST(request: Request) {
               idempotencyKey: `${user.id}:${existingOrder.idempotencyKey}:resume:${existingOrder.providerSessionId}`,
             });
           } catch {
-            return NextResponse.json(
-              { error: "Stripe Checkout is temporarily unavailable." },
-              { status: 502 },
-            );
+            return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
           }
           if (!replacement.url)
-            return NextResponse.json(
-              { error: "Stripe Checkout returned an invalid session." },
-              { status: 502 },
-            );
+            return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
           const replaced = await persistence.repositories.orders.replaceProviderSession(
             user.id,
             existingOrder.id,
@@ -204,7 +198,7 @@ export async function POST(request: Request) {
       const configuration = stripeConfiguration(runtimeConfiguration.commerce.stripePriceId);
       if (!configuration)
         return NextResponse.json(
-          { error: "Stripe Checkout requires configured test credentials." },
+          { error: "Purchases aren’t available right now. Please try again later." },
           { status: 503 },
         );
       const orderId = randomUUID();
@@ -232,17 +226,11 @@ export async function POST(request: Request) {
           idempotencyKey: `${user.id}:${profile.snapshot.id}:purchase:${purchaseAttempt}`,
         });
       } catch {
-        return NextResponse.json(
-          { error: "Stripe Checkout is temporarily unavailable." },
-          { status: 502 },
-        );
+        return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
       }
       const persistedOrderId = session.metadata?.orderId;
       if (!persistedOrderId || !UUID.test(persistedOrderId) || !session.url)
-        return NextResponse.json(
-          { error: "Stripe Checkout returned an invalid session." },
-          { status: 502 },
-        );
+        return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
       await persistence.repositories.orders.create(
         {
           id: persistedOrderId,

@@ -1,28 +1,33 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createOracleStreamEvents } from "@starguidance/ai";
 import type { FollowUpResult, OracleStreamEvent } from "@starguidance/contracts";
 
+import { signInPathFor } from "@/lib/account-return";
+import { requestJson, sendJson } from "@/lib/client-request";
 import { emitBrowserProductEventOnce } from "@/lib/product-telemetry-client";
 import { useReadingPreferences, type ReadingPreferenceSeed } from "@/lib/reading-preferences";
 
 import { MysticSanctuaryScene } from "../../session/[id]/mystic-sanctuary-scene";
 import { OracleTranscript } from "../../session/[id]/oracle-transcript";
 import { QuestionComposer } from "../../session/[id]/question-composer";
+import { ReadingClosure, type ReadingContinuationMode } from "../../session/[id]/reading-closure";
 import {
-  ReadingClosure,
-  ReadingSealed,
-  type ReadingContinuationMode,
-} from "../../session/[id]/reading-closure";
+  keepsakeCardsFrom,
+  keepsakeSectionsFrom,
+  ReadingKeepsake,
+} from "../../session/[id]/reading-keepsake";
 import type { ReadingPayload } from "../../session/[id]/reading-types";
 import { useRitualAmbience } from "../../session/[id]/ritual-audio";
 import { RitualControls } from "../../session/[id]/ritual-controls";
 import { TarotSpreadStage } from "../../session/[id]/tarot-spread-stage";
+import { ReadingJournal } from "./reading-journal";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
+type FocusTarget = "closure" | "keepsake" | "transcript" | "kept";
 
 export function ReadingResultScene({
   audioAvailable = false,
@@ -40,17 +45,16 @@ export function ReadingResultScene({
   const [error, setError] = useState<string>();
   const [followUp, setFollowUp] = useState("");
   const [followUpLoading, setFollowUpLoading] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const [helpfulness, setHelpfulness] = useState(0);
-  const [resonance, setResonance] = useState(0);
-  const [comment, setComment] = useState("");
-  const [outcomeStatus, setOutcomeStatus] = useState("");
-  const [behaviorChanged, setBehaviorChanged] = useState("");
-  const [outcomeComment, setOutcomeComment] = useState("");
-  const [feedbackLoading, setFeedbackLoading] = useState(false);
-  const [journeyComplete, setJourneyComplete] = useState(false);
+  /** A saved reading opens on its keepsake; the passage walk is a replay. */
+  const [view, setView] = useState<"keepsake" | "walk">("keepsake");
   const [narratingCardIndexes, setNarratingCardIndexes] = useState<readonly number[]>([]);
   const [continuationMode, setContinuationMode] = useState<ReadingContinuationMode>("choice");
+  const [now, setNow] = useState(0);
+  const closureHeadingRef = useRef<HTMLHeadingElement>(null);
+  const keepsakeHeadingRef = useRef<HTMLHeadingElement>(null);
+  const keptHeadingRef = useRef<HTMLHeadingElement>(null);
+  const consoleRef = useRef<HTMLDivElement>(null);
+  const pendingFocus = useRef<FocusTarget | undefined>(undefined);
   const {
     ambience,
     displayName,
@@ -67,19 +71,27 @@ export function ReadingResultScene({
   useRitualAmbience(ambience, "complete");
 
   useEffect(() => {
-    void fetch(`/api/readings/${readingId}`, { cache: "no-store" })
-      .then(async (response) => {
-        if (response.status === 401) {
-          router.replace("/sign-in");
+    let active = true;
+    void requestJson<{ reading: ReadingPayload }>(`/api/readings/${readingId}`, {
+      cache: "no-store",
+    }).then((result) => {
+      if (!active) return;
+      if (!result.ok) {
+        if (result.status === 401) {
+          router.replace(signInPathFor(`/reading/${readingId}`));
           return;
         }
-        if (!response.ok) throw new Error("This reading could not be loaded.");
-        const payload = (await response.json()) as { reading: ReadingPayload };
-        setReading(payload.reading);
-      })
-      .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : "This reading could not be loaded."),
-      );
+        setError(
+          result.status === 404 ? "We couldn’t find this reading in your history." : result.error,
+        );
+        return;
+      }
+      setNow(Date.now());
+      setReading(result.data.reading);
+    });
+    return () => {
+      active = false;
+    };
   }, [readingId, router]);
 
   useEffect(() => {
@@ -92,12 +104,36 @@ export function ReadingResultScene({
   }, [reading, readingId]);
 
   useEffect(() => {
-    if (!journeyComplete || !reading?.result || reading.outcomeFeedbackSubmitted) return;
+    if (view !== "keepsake" || !reading?.result || reading.outcomeFeedbackSubmitted) return;
     emitBrowserProductEventOnce("outcome_invited", `reading:${readingId}`, {
       routeClass: "result",
       statusClass: "ready",
     });
-  }, [journeyComplete, reading, readingId]);
+  }, [view, reading, readingId]);
+
+  // Move focus to whatever the last action opened, once it is on screen.
+  useEffect(() => {
+    const target = pendingFocus.current;
+    if (!target) return;
+    const element =
+      target === "closure"
+        ? (closureHeadingRef.current ?? keepsakeHeadingRef.current)
+        : target === "keepsake"
+          ? keepsakeHeadingRef.current
+          : target === "kept"
+            ? keptHeadingRef.current
+            : consoleRef.current?.querySelector<HTMLElement>('[data-testid="oracle-transcript"]');
+    if (!element) return;
+    pendingFocus.current = undefined;
+    element.focus();
+  });
+
+  const handleJourneyComplete = useCallback((complete: boolean) => {
+    if (!complete) return;
+    pendingFocus.current = "closure";
+    setContinuationMode("choice");
+    setView("keepsake");
+  }, []);
 
   const previewEvents = useMemo(
     () =>
@@ -112,89 +148,36 @@ export function ReadingResultScene({
 
   const submitFollowUp = async () => {
     if (!reading || !followUp.trim()) return;
+    const asked = followUp.trim();
     setFollowUpLoading(true);
     setError(undefined);
     try {
-      const response = await fetch(`/api/readings/${readingId}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "followUp", question: followUp }),
-      });
-      const payload = (await response.json()) as {
-        followUp?: { id: string; result: FollowUpResult };
-        error?: string;
-        safety?: { guidance: string };
-      };
-      if (response.status === 428) {
+      const result = await sendJson<{
+        followUp?: { id: string; result: FollowUpResult; question?: string };
+      }>(`/api/readings/${readingId}`, "POST", { action: "followUp", question: followUp });
+      if (result.status === 428) {
         router.push("/consent");
         return;
       }
-      if (!response.ok || !payload.followUp)
-        throw new Error(payload.safety?.guidance ?? payload.error ?? "Unable to answer follow-up.");
+      if (!result.ok || !result.data.followUp) {
+        const safety = result.data as { safety?: { guidance?: string } };
+        setError(
+          safety.safety?.guidance ??
+            (result.ok ? "That follow-up couldn’t be answered. Please try again." : result.error),
+        );
+        return;
+      }
+      const answered = { question: asked, ...result.data.followUp };
       setReading({
         ...reading,
-        followUps: [...reading.followUps, payload.followUp],
+        followUps: [...reading.followUps, answered],
         followUpsRemaining: Math.max(0, reading.followUpsRemaining - 1),
       });
       setFollowUp("");
       setContinuationMode("choice");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to answer follow-up.");
+      pendingFocus.current = "keepsake";
     } finally {
       setFollowUpLoading(false);
-    }
-  };
-
-  const submitFeedback = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!reading || (!helpfulness && !resonance && !comment.trim())) return;
-    setFeedbackLoading(true);
-    setError(undefined);
-    try {
-      const response = await fetch(`/api/readings/${readingId}/feedback`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "experience",
-          ...(helpfulness ? { helpfulness } : {}),
-          ...(resonance ? { resonance } : {}),
-          ...(comment.trim() ? { comment: comment.trim() } : {}),
-        }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Feedback could not be saved.");
-      setReading({ ...reading, feedbackSubmitted: true });
-      setFeedbackOpen(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Feedback could not be saved.");
-    } finally {
-      setFeedbackLoading(false);
-    }
-  };
-
-  const submitOutcomeFeedback = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!reading || !outcomeStatus || !behaviorChanged) return;
-    setFeedbackLoading(true);
-    setError(undefined);
-    try {
-      const response = await fetch(`/api/readings/${readingId}/feedback`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "outcome",
-          outcomeStatus,
-          behaviorChanged: behaviorChanged === "yes",
-          ...(outcomeComment.trim() ? { comment: outcomeComment.trim() } : {}),
-        }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Outcome reflection could not be saved.");
-      setReading({ ...reading, outcomeFeedbackSubmitted: true });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Outcome reflection could not be saved.");
-    } finally {
-      setFeedbackLoading(false);
     }
   };
 
@@ -210,7 +193,7 @@ export function ReadingResultScene({
         <div className="sanctuary-loading" role={error ? "alert" : "status"}>
           <span aria-hidden="true">✦</span>
           {error ?? "Opening your finished reading…"}
-          {error && <Link href="/history">Return to reading history</Link>}
+          {error && <Link href="/history">See all your readings</Link>}
         </div>
       </MysticSanctuaryScene>
     );
@@ -227,22 +210,31 @@ export function ReadingResultScene({
       >
         <div className="sanctuary-loading" role="status">
           <span aria-hidden="true">✦</span>
-          This interpretation is not finished yet.
-          <Link href={`/session/${readingId}`}>Return to the reading scene</Link>
+          {reading.sessionExpired
+            ? "This reading was left unfinished, so it has no interpretation — but your cards are kept."
+            : "This interpretation is not finished yet."}
+          {reading.sessionExpired ? (
+            <Link href="/history">See all your readings</Link>
+          ) : (
+            <Link href={`/session/${readingId}`}>Return to the reading</Link>
+          )}
         </div>
       </MysticSanctuaryScene>
     );
   }
 
+  const walking = view === "walk";
+
   return (
     <MysticSanctuaryScene
       animationVariant={animationVariant}
       backdrop="starry-reading"
-      focusStage={journeyComplete ? "actions" : "reading"}
+      focusStage={walking ? "reading" : "actions"}
       phase="complete"
       reducedMotion={reducedMotion}
       testId="reading-result-scene"
     >
+      <h1 className="sr-only">Your saved tarot reading</h1>
       <RitualControls
         ambience={ambience}
         animationManaged={animationManaged}
@@ -259,7 +251,7 @@ export function ReadingResultScene({
         toggleSound={toggleSound}
       />
 
-      {!journeyComplete && (
+      {walking && (
         <section
           aria-label="Your locked tarot spread remains present during the reading"
           className="sanctuary-stage has-reading-journey"
@@ -276,15 +268,16 @@ export function ReadingResultScene({
       )}
 
       <div
-        className={`oracle-console-stack ${journeyComplete ? "is-actions" : "is-reading"}`}
-        data-focus-stage={journeyComplete ? "actions" : "reading"}
+        className={`oracle-console-stack ${walking ? "is-reading" : "is-actions"}`}
+        data-focus-stage={walking ? "reading" : "actions"}
+        ref={consoleRef}
       >
-        {!journeyComplete && (
+        {walking ? (
           <OracleTranscript
             active
             cards={reading.cards}
             displayName={displayName}
-            onJourneyCompleteChange={setJourneyComplete}
+            onJourneyCompleteChange={handleJourneyComplete}
             onNarratedCardIndexesChange={(indexes) =>
               setNarratingCardIndexes((current) =>
                 current.length === indexes.length &&
@@ -304,27 +297,39 @@ export function ReadingResultScene({
             audioEnabled={audioAvailable && narration}
             target="primary"
           />
-        )}
-
-        {journeyComplete && (
-          <div className="result-support-stack">
-            {reading.followUps.length > 0 && (
-              <details className="result-followups">
-                <summary>
-                  Saved follow-up{reading.followUps.length === 1 ? "" : "s"} ·{" "}
-                  {reading.followUps.length}
-                </summary>
-                {reading.followUps.map((entry) => (
-                  <p key={entry.id}>{entry.result.response}</p>
-                ))}
-              </details>
-            )}
+        ) : (
+          <>
+            <ReadingKeepsake
+              cards={keepsakeCardsFrom(reading.cards, reading.result)}
+              createdAt={reading.createdAt}
+              followUps={reading.followUps.map((entry) => ({
+                id: entry.id,
+                answer: entry.result.response,
+                ...(entry.question ? { question: entry.question } : {}),
+              }))}
+              onReplay={() => {
+                pendingFocus.current = "transcript";
+                setView("walk");
+              }}
+              question={reading.question}
+              ref={keepsakeHeadingRef}
+              replayLabel="Replay the reading"
+              sections={keepsakeSectionsFrom(reading.result)}
+              {...(reading.spreadName ? { spreadName: reading.spreadName } : {})}
+            />
 
             {continuationMode === "choice" && (
               <ReadingClosure
+                closeLabel="Keep this reading"
+                feedbackSubmitted={reading.feedbackSubmitted}
                 followUpsRemaining={reading.followUpsRemaining}
                 onAskFollowUp={() => setContinuationMode("follow-up")}
-                onClose={() => setContinuationMode("closed")}
+                onClose={() => {
+                  pendingFocus.current = "kept";
+                  setContinuationMode("closed");
+                }}
+                readingId={readingId}
+                ref={closureHeadingRef}
                 reflectionQuestion={reading.result.reflectionPrompt}
               />
             )}
@@ -332,10 +337,10 @@ export function ReadingResultScene({
             {continuationMode === "follow-up" && reading.followUpsRemaining > 0 && (
               <div className="reading-follow-up-threshold">
                 <button onClick={() => setContinuationMode("choice")} type="button">
-                  ← Return to closing reflection
+                  ← Back
                 </button>
                 <QuestionComposer
-                  hint={`${reading.followUpsRemaining} of ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? "" : "s"} remaining on these locked cards.`}
+                  hint={`${reading.followUpsRemaining} of ${reading.followUpLimit} follow-up${reading.followUpLimit === 1 ? "" : "s"} remaining on these cards.`}
                   label="Ask a follow-up using the same cards"
                   loading={followUpLoading}
                   onChange={setFollowUp}
@@ -348,126 +353,34 @@ export function ReadingResultScene({
               </div>
             )}
 
-            {continuationMode === "closed" && <ReadingSealed readingId={readingId} />}
+            {continuationMode === "closed" && (
+              <section aria-labelledby="reading-kept-heading" className="reading-kept-note">
+                <h2 id="reading-kept-heading" ref={keptHeadingRef} tabIndex={-1}>
+                  Kept in your history
+                </h2>
+                <p>This reading stays just as it was drawn. Coming back never changes its cards.</p>
+                <div>
+                  <Link href="/history">See all your readings</Link>
+                  {/* A full page load, so no half-finished ritual state carries over. */}
+                  <a href="/readings">Begin a new reading</a>
+                </div>
+              </section>
+            )}
 
-            {reading.feedbackSubmitted ? (
-              <p className="feedback-thanks">Thank you — your feedback is saved separately.</p>
-            ) : (
-              <details
-                className="reading-feedback-panel"
-                onToggle={(event) => setFeedbackOpen(event.currentTarget.open)}
-                open={feedbackOpen}
-              >
-                <summary>Share private feedback</summary>
-                <form onSubmit={submitFeedback}>
-                  <label>
-                    Helpful
-                    <select
-                      onChange={(event) => setHelpfulness(Number(event.target.value))}
-                      value={helpfulness}
-                    >
-                      <option value={0}>Not rated</option>
-                      {[1, 2, 3, 4, 5].map((value) => (
-                        <option key={value} value={value}>
-                          {value} / 5
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Resonance
-                    <select
-                      onChange={(event) => setResonance(Number(event.target.value))}
-                      value={resonance}
-                    >
-                      <option value={0}>Not rated</option>
-                      {[1, 2, 3, 4, 5].map((value) => (
-                        <option key={value} value={value}>
-                          {value} / 5
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="feedback-comment-field">
-                    Optional note
-                    <textarea
-                      maxLength={1_000}
-                      onChange={(event) => setComment(event.target.value)}
-                      rows={2}
-                      value={comment}
-                    />
-                  </label>
-                  <button
-                    disabled={feedbackLoading || (!helpfulness && !resonance && !comment.trim())}
-                    type="submit"
-                  >
-                    {feedbackLoading ? "Saving…" : "Save feedback"}
-                  </button>
-                </form>
-              </details>
-            )}
-            {reading.outcomeFeedbackSubmitted ? (
-              <p className="feedback-thanks">
-                What unfolded is saved as a separate annotation; the original reading is unchanged.
-              </p>
-            ) : (
-              <details className="reading-feedback-panel">
-                <summary>Record what unfolded later</summary>
-                <form onSubmit={submitOutcomeFeedback}>
-                  <p>
-                    This is a reflection record, not proof of prediction. It never edits the cards
-                    or the original interpretation.
-                  </p>
-                  <label>
-                    What happened?
-                    <select
-                      onChange={(event) => setOutcomeStatus(event.target.value)}
-                      required
-                      value={outcomeStatus}
-                    >
-                      <option value="">Choose one</option>
-                      <option value="occurred">Occurred</option>
-                      <option value="partial">Partly occurred</option>
-                      <option value="did_not_occur">Did not occur</option>
-                      <option value="unclear">Still unclear</option>
-                    </select>
-                  </label>
-                  <label>
-                    Did the reading influence what you did?
-                    <select
-                      onChange={(event) => setBehaviorChanged(event.target.value)}
-                      required
-                      value={behaviorChanged}
-                    >
-                      <option value="">Choose one</option>
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
-                    </select>
-                  </label>
-                  <label className="feedback-comment-field">
-                    Optional private context
-                    <textarea
-                      maxLength={1_000}
-                      onChange={(event) => setOutcomeComment(event.target.value)}
-                      rows={2}
-                      value={outcomeComment}
-                    />
-                  </label>
-                  <button
-                    disabled={feedbackLoading || !outcomeStatus || !behaviorChanged}
-                    type="submit"
-                  >
-                    {feedbackLoading ? "Saving…" : "Save outcome reflection"}
-                  </button>
-                </form>
-              </details>
-            )}
+            <ReadingJournal
+              createdAt={reading.createdAt}
+              now={now}
+              onSaved={() => setReading({ ...reading, outcomeFeedbackSubmitted: true })}
+              readingId={readingId}
+              submitted={reading.outcomeFeedbackSubmitted}
+            />
+
             {error && (
               <p className="sanctuary-error" role="alert">
                 {error}
               </p>
             )}
-          </div>
+          </>
         )}
       </div>
     </MysticSanctuaryScene>
