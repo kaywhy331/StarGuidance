@@ -109,8 +109,20 @@ a.ritual-action {
     white-space: nowrap;
   }
 
+  /* Phones show the control's name only; its state is carried by
+     aria-pressed and the pressed styling, so the row fits on one line. */
   .ritual-hud__toggle .ritual-hud__label b {
-    font-weight: 600;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  /* Stay above the card review stage if enlarged text wraps the controls. */
+  .sanctuary-controls.ritual-hud {
+    z-index: 41;
   }
 
   .sanctuary-control-group .ritual-hud__toggle {
@@ -1152,4 +1164,11 @@ a.ritual-action {
   .reading-keepsake__actions {
     display: none !important;
   }
+}
+
+/* A pressed HUD control reads as "on" at a glance, not only to assistive tech. */
+.sanctuary-controls .ritual-hud__toggle[aria-pressed="true"] {
+  border-color: rgb(240 211 147 / 0.55);
+  background: rgb(222 184 106 / 0.16);
+  color: var(--gold-bright);
 }
