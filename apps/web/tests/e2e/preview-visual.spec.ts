@@ -100,10 +100,14 @@ test("the visual preview renders the spread-aware result and evidence contract",
 
   const details = page.locator(".reading-details-drawer");
   await details.locator("summary").click();
-  await expect(details.getByRole("listitem")).toHaveCount(9);
-  await expect(details).toContainText("approved upright themes");
-  await expect(details).toContainText("approved reversed themes");
-  await expect(details).toContainText("This reading uses only the locked cards");
+  await expect(details.locator("summary")).toHaveText("Card meanings");
+  // One plain-language entry per card; no internal evidence vocabulary.
+  await expect(details.getByRole("listitem")).toHaveCount(3);
+  await expect(details.getByRole("listitem").filter({ hasText: "Reversed" })).toHaveCount(1);
+  await expect(details).not.toContainText(/approved|evidence|snapshot/i);
+  await expect(details).toContainText(
+    /never changed which cards you drew|draws only on your cards/,
+  );
 
   await page.getByRole("button", { name: "Next reading passage" }).click();
   await expect(page.getByRole("heading", { name: "Situation" })).toBeVisible();

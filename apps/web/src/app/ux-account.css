@@ -778,6 +778,7 @@
 
 .settings-switch input {
   position: absolute;
+  z-index: 1;
   right: 0;
   width: 3.1rem;
   height: 1.8rem;
@@ -789,6 +790,7 @@
 .settings-switch__track {
   position: relative;
   display: block;
+  pointer-events: none;
   width: 3.1rem;
   height: 1.8rem;
   border: 1px solid rgb(255 255 255 / 0.2);

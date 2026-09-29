@@ -412,3 +412,33 @@
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
+
+/* ---------- Reflow at 320px with enlarged text ---------- */
+/* A bare 1fr track keeps its content's minimum width, so enlarged text pushed
+   the one-column shell wider than a phone. Let every column shrink. */
+@media (max-width: 62rem) {
+  .account-threshold-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .account-threshold-shell > * {
+    min-width: 0;
+  }
+
+  .account-threshold-story h1,
+  .account-threshold-panel h2 {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 40rem) {
+  .account-threshold-brand {
+    max-width: 100%;
+    letter-spacing: 0.08em;
+    overflow-wrap: anywhere;
+  }
+
+  .account-threshold-brand > span {
+    flex: none;
+  }
+}

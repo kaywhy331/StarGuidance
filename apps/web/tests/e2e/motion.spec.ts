@@ -16,16 +16,20 @@ test("quiet mode persists across routes and the live device preference takes pre
   await toggle.click();
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   await page.getByRole("link", { name: "Free Reading", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Use gentle motion" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Motion: Reduced" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await page.reload();
-  await page.getByRole("button", { name: "Use gentle motion" }).click();
+  await page.getByRole("button", { name: "Motion: Reduced" }).click();
+  await expect(page.getByRole("button", { name: "Motion: Full" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(
-    page.getByRole("button", { name: "Motion reduced · device setting" }),
+    page.getByRole("button", { name: "Motion: Reduced (device setting)" }),
   ).toBeDisabled();
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   await expect

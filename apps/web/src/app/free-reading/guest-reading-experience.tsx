@@ -124,7 +124,7 @@ const OLDEST_BIRTH_DATE = "1900-01-01";
 const FRESH_DECK_NOTICE =
   "That shuffle rested too long, so we’ve set out a fresh deck. Your question is still here.";
 const PURE_TAROT_NOTICE =
-  "Your birthday lens is resting just now, so these cards are read as pure tarot. They are exactly the cards you chose.";
+  "We couldn’t weave in your birthday just now, so these cards are read as pure tarot. They are exactly the cards you chose.";
 
 function accountLinks(handoff: string | undefined) {
   const path =
@@ -1284,7 +1284,7 @@ function GuestReadingRitual({
               ) : followUpResult ? (
                 <p className="guest-follow-up-note" role="status">
                   {followUpResult.personalizedByPrivateProfile
-                    ? "Your birthday lens gently shaped this answer; the cards stayed exactly as drawn."
+                    ? "Your birthday gently shaped this answer; the cards stayed exactly as drawn."
                     : "This answer is pure tarot; the cards stayed exactly as drawn."}
                 </p>
               ) : (
@@ -1581,7 +1581,7 @@ function GuestReadingRitual({
       )}
 
       {showQuestion && intakeStep === "question" && (
-        <section aria-labelledby="guest-question-heading" className="minimal-question-stage">
+        <section className="minimal-question-stage">
           <h1 id="guest-question-heading" ref={questionHeadingRef} tabIndex={-1}>
             What would you like to ask the cards?
           </h1>
