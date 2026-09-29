@@ -15,7 +15,7 @@ const MENU_LINKS = [
   { href: "/history", label: "History" },
   { href: "/profile", label: "Profile" },
   { href: "/people", label: "People" },
-  { href: "/settings", label: "Settings" },
+  { href: "/settings/account", label: "Settings" },
 ] as const;
 
 /** A small account menu for the ritual screens, where the site navigation is

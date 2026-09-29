@@ -118,8 +118,31 @@ a.ritual-action {
     padding: 0 0.55rem;
   }
 
+  /* The reader's name stays visible; it gives way first when space is short. */
   .ritual-hud__reader {
+    flex: 1 1 3rem;
+    min-width: 0;
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+  }
+
+  .ritual-hud__reader :is(i, .private-sigil) {
     display: none;
+  }
+
+  /* One row at normal sizes; with enlarged text the controls wrap onto a
+     second row instead of running off the screen. */
+  .sanctuary-controls.ritual-hud {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+
+  .sanctuary-control-group.ritual-hud__actions {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-left: auto;
   }
 
   .ritual-hud__audio .ritual-hud__label {
