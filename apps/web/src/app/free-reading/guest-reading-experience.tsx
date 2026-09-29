@@ -1248,6 +1248,9 @@ function GuestReadingRitual({
               </header>
               <div
                 className="guest-continuation-keepsake"
+                data-card-assignments={continuationReading.cards
+                  .map(({ cardId, orientation }) => `${cardId}:${orientation}`)
+                  .join(" ")}
                 data-card-ids={continuationReading.cards.map(({ cardId }) => cardId).join(" ")}
                 data-testid="guest-continuation-keepsake"
               >

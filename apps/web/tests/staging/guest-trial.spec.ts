@@ -78,9 +78,15 @@ async function navigate(
 
 async function visibleAssignments(targetPage: Page): Promise<string[]> {
   const liveSpread = targetPage.getByTestId("tarot-spread-stage").locator(".physical-tarot-card");
-  const cards = (await liveSpread.count())
-    ? liveSpread
-    : targetPage.locator(".guest-locked-spread-review li");
+  const cards = (await liveSpread.count()) ? liveSpread : undefined;
+  if (!cards) {
+    // After the account handoff the reading is shown as a keepsake, whose
+    // wrapper carries the exact card:orientation pairs.
+    const recorded = await targetPage
+      .getByTestId("guest-continuation-keepsake")
+      .getAttribute("data-card-assignments");
+    return recorded ? recorded.split(" ") : [];
+  }
   return cards.evaluateAll((elements) =>
     elements.map(
       (card) =>
@@ -116,15 +122,18 @@ test("a birthday-based free reading remains causal and continues through passwor
     expect(page.getByLabel("Your birthday")).toBeVisible({ timeout: 30_000 }),
   );
 
-  await page.getByRole("button", { name: "Reduce motion" }).click();
+  await page.getByRole("button", { name: "Motion: Full" }).click();
+  await expect(page.getByRole("button", { name: "Motion: Reduced" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await page.getByLabel("Your birthday").fill("1990-01-15");
-  await page.getByLabel(/I agree to the Terms/i).check();
-  await page.getByLabel(/I have read the Privacy Notice/i).check();
   await page
-    .getByLabel(/I confirm that I am at least 18/i)
+    .getByLabel(/I’m 18 or older, I agree to the Terms/i)
     .evaluate((checkbox: HTMLInputElement) => checkbox.click());
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "What question did you have for the stars today?" }),
+    page.getByRole("heading", { name: "What would you like to ask the cards?" }),
   ).toBeVisible();
 
   const preparation = page.waitForResponse(
@@ -135,9 +144,9 @@ test("a birthday-based free reading remains causal and continues through passwor
     { timeout: 60_000 },
   );
   await page
-    .getByLabel("Your question for the stars")
+    .getByRole("textbox", { name: "What would you like to ask the cards?" })
     .fill("What can I understand about the next step in my work?");
-  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Draw my cards" }).click();
   const preparedResponse = await preparation;
   const preparedBody = (await preparedResponse.json()) as {
     ceremony: { spread: { positions: readonly unknown[] } };
@@ -168,6 +177,8 @@ test("a birthday-based free reading remains causal and continues through passwor
     await page
       .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
       .press("Enter");
+  // Nothing locks until the reader confirms the picks.
+  await page.getByTestId("confirm-selected-cards").click();
   const finalizedResponse = await finalization;
   const finalized = (await finalizedResponse.json()) as FinalizedGuestReading;
   expect(finalizedResponse.status(), "guest draw finalizes after the selected backs").toBe(201);
@@ -192,7 +203,7 @@ test("a birthday-based free reading remains causal and continues through passwor
   await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
   await expect.poll(async () => (await visibleAssignments(page))[0]).toBe(originalAssignments[0]);
   await page.getByRole("button", { name: /Return to the spread/ }).click();
-  await page.getByRole("button", { name: "Reveal All" }).click();
+  await page.getByRole("button", { name: "Turn over all cards" }).click();
 
   await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
@@ -228,7 +239,7 @@ test("a birthday-based free reading remains causal and continues through passwor
     })
     .toBe(originalAssignments[0]);
   await page.getByRole("button", { name: /Return to the spread/ }).click();
-  await page.getByRole("button", { name: "Reveal All" }).click();
+  await page.getByRole("button", { name: "Turn over all cards" }).click();
   await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
   await page.getByTestId("oracle-transcript").press("End");
@@ -236,7 +247,11 @@ test("a birthday-based free reading remains causal and continues through passwor
   await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
 
   const signInLink = page.getByRole("link", { name: "Sign in" });
-  await expect(signInLink).toHaveAttribute("href", "/sign-in?next=%2Ffree-reading%3Fcontinue%3D1");
+  // The link may also carry the sealed handoff fragment for other browsers.
+  await expect(signInLink).toHaveAttribute(
+    "href",
+    /^\/sign-in\?next=%2Ffree-reading%3Fcontinue%3D1(%23handoff%3D[A-Za-z0-9._-]+)?$/,
+  );
   await navigate(page, "/sign-in?next=%2Ffree-reading%3Fcontinue%3D1", () =>
     expect(page.getByRole("button", { name: "Sign in" })).toBeVisible({ timeout: 30_000 }),
   );
@@ -255,7 +270,7 @@ test("a birthday-based free reading remains causal and continues through passwor
   // avoids treating Netlify's injected preview-toolbar transition abort as an
   // application failure; the local browser suite covers the router transition.
   await navigate(page, "/free-reading?continue=1", () =>
-    expect(page.getByText("Same cards · account unlocked")).toBeVisible({ timeout: 60_000 }),
+    expect(page.getByText("Same cards, now in your account")).toBeVisible({ timeout: 60_000 }),
   );
   expect(await visibleAssignments(page), "account handoff preserves card and orientation").toEqual(
     originalAssignments,
@@ -275,9 +290,9 @@ test("a birthday-based free reading remains causal and continues through passwor
   const followUpResponse = await followUp;
   expect(followUpResponse.status(), "same-subject follow-up is accepted").toBe(200);
   await expect(
-    page.getByRole("heading", { name: "A clarification from the original spread" }),
+    page.getByTestId("reading-keepsake").getByRole("heading", { name: /Follow-up on these cards/ }),
   ).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/did not alter the cards/i)).toBeVisible();
+  await expect(page.getByText(/cards stayed exactly as drawn/i)).toBeVisible();
   expect(await visibleAssignments(page), "follow-up does not redraw").toEqual(originalAssignments);
 
   record({
