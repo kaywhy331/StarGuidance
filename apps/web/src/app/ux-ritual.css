@@ -1172,16 +1172,3 @@ a.ritual-action {
   background: rgb(222 184 106 / 0.16);
   color: var(--gold-bright);
 }
-
-/* WebKit's renderer can crash when the decorative phase gate transitions while
- * all 78 casino shells are animating (reproduced in Playwright's WebKit during
- * the wash-to-fan hand-off). The gate simply holds its look through the wash,
- * the pick, and the lock; it still eases between every other phase. */
-.mystic-sanctuary:is(
-    [data-ritual-phase="shuffling"],
-    [data-ritual-phase="selectingCards"],
-    [data-ritual-phase="drawFinalizing"]
-  )
-  .sanctuary-phase-gate {
-  transition: none;
-}
