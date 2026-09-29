@@ -31,7 +31,7 @@
     "@starguidance/contracts": "workspace:*",
     "@starguidance/tarot-content": "workspace:*",
     "@starguidance/tarot-domain": "workspace:*",
-    "drizzle-orm": "0.45.2",
+    "drizzle-orm": "0.45.3",
     "postgres": "3.4.9"
   },
   "devDependencies": {
