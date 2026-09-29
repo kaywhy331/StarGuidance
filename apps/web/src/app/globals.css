@@ -2043,7 +2043,7 @@ body {
   isolation: isolate;
   background: #02070c;
   color: #f7f1df;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-body);
 }
 
 .sanctuary-background,
@@ -2451,7 +2451,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
   font-size: 0.8125rem;
   letter-spacing: 0.05em;
 }
@@ -5198,7 +5198,7 @@ body {
     0 0 0 1px rgb(111 212 190 / 0.06) inset,
     0 0 2.8rem rgb(54 184 162 / 0.08);
   backdrop-filter: blur(18px) saturate(1.2);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
 }
 
 .question-composer:focus-within {
@@ -5297,7 +5297,7 @@ body {
 .safety-interrupt-panel h2 {
   margin: 0 0 0.6rem;
   color: #f5e7ba;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-size: 1.3rem;
 }
 
@@ -6047,7 +6047,7 @@ body {
     0 0 0 1px rgb(255 255 255 / 0.04) inset;
   color: #f5e7ba;
   cursor: pointer;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
 }
 
 .reading-entry-continue {
@@ -6080,7 +6080,7 @@ body {
 }
 
 .selected-ritual-summary span {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-size: 1.05rem;
 }
 
@@ -6130,7 +6130,7 @@ body {
   display: grid;
   gap: 0.8rem;
   translate: -50% -50%;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
 }
 
 .sanctuary-loading span {
@@ -7742,7 +7742,7 @@ body {
   border: 1px solid rgb(218 192 127 / 0.28);
   border-radius: 50%;
   color: #d7be7b;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
 }
 
 .report-library-volume > a > div {
@@ -9145,14 +9145,6 @@ body {
   .result-support-stack
   > :is(.result-followups, .reading-feedback-panel, .feedback-thanks) {
   order: 4;
-  opacity: 0.42;
-  transition: opacity 180ms ease;
-}
-
-.mystic-sanctuary[data-reading-focus="actions"]
-  .result-support-stack
-  > :is(.result-followups, .reading-feedback-panel, .feedback-thanks):is(:hover, :focus-within) {
-  opacity: 1;
 }
 
 .mystic-sanctuary[data-reading-focus="actions"]
