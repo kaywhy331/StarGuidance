@@ -230,9 +230,12 @@ describe("spread-aware deterministic interpretation", () => {
     });
     expect(result.cards[0]?.orientation).toBe("reversed");
     expect(
-      (card?.reversalFacets ?? []).some((facet) => result.cards[0]?.coreMeaning.includes(facet)),
+      (card?.reversalFacets ?? []).some((facet) =>
+        result.cards[0]?.supportingEvidence.join(" ").includes(`reads as ${facet}`),
+      ),
     ).toBe(true);
-    expect(result.cards[0]?.positionInterpretation).toContain("correct the pattern");
+    expect(result.cards[0]?.coreMeaning).toMatch(/^Reversed, /);
+    expect(result.cards[0]?.positionInterpretation).not.toMatch(/approved|facet/i);
     expect(result.cards[0]?.positionInterpretation).not.toContain("automatic opposite");
   });
 

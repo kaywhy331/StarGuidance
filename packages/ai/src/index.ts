@@ -16,31 +16,41 @@ import {
   type ReadingResult,
   type ReadingConfiguration,
 } from "@starguidance/contracts";
+import { tarotCards } from "@starguidance/tarot-content";
 import type { LockedDraw } from "@starguidance/tarot-domain";
 
 import {
   answerCard,
   guardedDirectAnswer,
-  guardedQuestionConnection,
   questionSubject,
   resolveDraw,
   subjectVoices,
 } from "./interpretation";
-import { spokenCardMeaning } from "./card-language";
+import {
+  cardReference,
+  positionPhrase,
+  reversalFacetSentence,
+  spokenCardMeaning,
+} from "./card-language";
 import {
   agencyNarration,
   agencySteps,
   buildQuestionFrame,
   cardNarration,
+  FALLBACK_CLOSING_NOTE,
+  followUpAction,
+  guardedCardNarration,
   likelyNarration,
   openingNarration,
   overallPatternNarration,
   reflectionQuestion,
   turningPointNarration,
+  withoutAgencyPrefix,
 } from "./fallback-narration";
 import type { RuntimePromptBundleId } from "./groq-provider";
 
 export { AUTOMATIC_SPREAD_SELECTION_VERSION, recommendSpreadId } from "./spread-selection";
+export { cardReference, cardRevealLine, positionPhrase, spokenCardMeaning } from "./card-language";
 
 export interface InterpretationProvider<TInput, TOutput> {
   readonly id: string;
@@ -48,7 +58,7 @@ export interface InterpretationProvider<TInput, TOutput> {
 }
 
 export const FALLBACK_PROVIDER_ID = "deterministic-fallback-v1" as const;
-export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v8" as const;
+export const FALLBACK_PROMPT_VERSION = "deterministic-fallback-v9" as const;
 export const READING_RESULT_SCHEMA_VERSION = "reading-result-v3" as const;
 
 export interface ReadingGenerationOutcome {
@@ -90,56 +100,135 @@ export type SafetyCategory =
   | "selfHarmCrisis"
   | "compulsiveReading";
 
+/**
+ * Crisis language is matched for recall: a false positive shows compassionate
+ * resources, while a miss can leave someone in danger without them. Ordinary
+ * figures of speech that merely contain a crisis word ("I'm dying to know",
+ * "should I end things with him") are deliberately left out.
+ */
+const selfHarmCrisisPatterns: readonly RegExp[] = [
+  /\b(?:kill(?:ing)?|harm(?:ing)?|hurt(?:ing)?|cut(?:ting)?|burn(?:ing)?|injur(?:e|ing)|hang(?:ing)?|shoot(?:ing)?|starv(?:e|ing)) myself\b/i,
+  /\bsuicid\w*|\bself[- ]?harm\w*|\bunalive\b/i,
+  /\bend (?:it all|my (?:own )?life|everything)\b|\bend things(?! (?:with|between|at|for)\b)|\btake my (?:own )?life\b/i,
+  /\boverdos\w*/i,
+  /\b(?:want|wanna|need|plan(?:ning)?|going|intend|wish|hope|ready|deserve) to die\b|\bwish i (?:could die|was dead|were dead|had never been born)\b|\bi feel like dying\b/i,
+  /\b(?:do not|don['’]?t|no longer|never) (?:want to|wanna) (?:live|be alive|exist|wake up|be here (?:anymore|any more|now)|go on(?=\s*(?:$|[.?!,;]|like this|living|anymore|any more)))/i,
+  /\b(?:cannot|can['’]?t|can not) (?:go on(?=\s*(?:$|[.?!,;]|like this|living|anymore|any more))|keep living|take (?:it|this|living) (?:anymore|any more))/i,
+  /\bbetter off (?:dead|without me)\b|\bno reason to (?:live|go on|keep going)\b/i,
+  /\b(?:any|no|what(?:['’]s| is) the) point (?:in|of|to) (?:living|life|being alive|being here|going on|carrying on)\b/i,
+  /\blife (?:is ?n['’]?t|is not|['’]s not) worth (?:living|it)\b|(?:\bnot|n['’]t) worth living\b/i,
+  /\bdisappear (?:forever|for good|permanently)\b/i,
+  /\b(?:nobody|no one|no-one) (?:would|will|is going to) (?:miss me|(?:notice|care) (?:if|when) i(?:['’]m| am| was| were)? (?:gone|dead|died|disappeared))\b/i,
+  /\b(?:sleep and )?never wake up\b|\bgive up on (?:life|living)\b/i,
+  /\bwant (?:it all|everything|the pain|this) to (?:end|stop) (?:forever|for good|permanently)\b/i,
+];
+
 const rules: readonly [SafetyCategory, RegExp][] = [
-  [
-    "selfHarmCrisis",
-    /\b(?:kill|harm|hurt) myself\b|\b(?:suicid(?:e|al)|self[- ]harm|end (?:it all|my life)|take my own life|i (?:want|need|plan|intend|wish|hope) to die|i wish i could die|i feel like dying|i (?:cannot|can['’]t) go on|(?:do not|don['’]t) want to (?:live|be alive|exist)|better off dead|wish i (?:was|were) dead|no reason to live|planning to overdose)\b/i,
-  ],
   ["pregnancy", /\b(pregnan(t|cy)|miscarriage)\b/i],
-  ["physicalDeath", /\b(will .* die|death date|going to die)\b/i],
-  ["criminalGuilt", /\b(guilty|committed (the )?crime|murdered|stole)\b/i],
-  ["infidelity", /\b(cheat(ing|ed)?|affair|unfaithful)\b/i],
-  ["medical", /\b(diagnos(e|is)|cancer|medication|medical|doctor|symptom)\b/i],
-  ["legal", /\b(lawsuit|court|legal|verdict|custody|sentence)\b/i],
-  ["financial", /\b(stock|crypto|investment|return|financial advice|buy or sell)\b/i],
-  ["mentalHealthDiagnosis", /\b(narcissist|bipolar|psychopath|mental illness|diagnose)\b/i],
+  [
+    "physicalDeath",
+    /\bwill\b[^.?!]{0,40}\bdie\b|\bdeath date\b|\bgoing to die\b|\bhow long (?:do|does|will) (?:i|he|she|they|my \w+) (?:have )?(?:left )?to live\b/i,
+  ],
+  [
+    "criminalGuilt",
+    /\b(?:is|was|are|were|am|be|found|plead(?:ed|s)?)\s+(?:\w+\s+){0,2}guilty\b|\bcommitted (?:the |a )?crime\b|\bmurder(?:ed|er)?\b|\bstole\b(?! my heart)/i,
+  ],
+  ["infidelity", /\b(cheat(ing|ed|s)?|affair|unfaithful)\b(?! (?:sheet|day|meal|code)s?\b)/i],
+  [
+    "medical",
+    /\bdiagnos(?:e|is|ed)\b|\b(?<!\ba )cancer\b(?! (?:season|sun|moon|rising|sign|man|woman))|\bmedication\b|\bmedical\b(?! (?:school|student|career|field))|\b(?:see|visit|ask|call|go to|tell) (?:a |my |the )?doctor\b|\bdoctor(?:['’]s)? (?:said|says|appointment|visit)\b|\bsymptoms?\b|\bsurgery\b|\bbiopsy\b|\btumou?r\b|\btest results\b/i,
+  ],
+  [
+    "legal",
+    /\blawsuit\b|\bsu(?:ing|ed)\b|\bcourt (?:case|date|hearing|order|battle|ruling|appearance)\b|\b(?:go(?:ing)?|went|take \w+|taking \w+|end up) (?:to|in) court\b|\b(?:family|small claims|divorce) court\b|\blegal (?:advice|action|case|trouble|issue|battle|matter|dispute|fees)\b|\bverdict\b|\bcustody\b|\b(?:prison|jail) (?:sentence|time)\b|\bsentenc(?:ed|ing)\b|\blawyer\b|\battorney\b|\b(?:on|go to|stand) trial\b|\btrial date\b|\b(?:press|criminal|drop(?:ped)?) charges\b|\bprobation\b|\bparole\b/i,
+  ],
+  [
+    "financial",
+    /\bstocks?\b(?! (?:of|up on)\b)(?<!tak(?:e|es|ing) stock)|\bshares? (?:of|in)\b|\bcrypto\w*|\bbitcoin\b|\bethereum\b|\b(?<!emotional )investments?\b|\binvest(?:ing)? (?:in|my) (?:stocks?|shares|crypto|bitcoin|the market|property|real estate|this (?:stock|coin|company|fund))\b|\breturn on (?:my |the |this )?investment\b|\b(?:investment|stock|market|portfolio) returns?\b|\bfinancial advice\b|\bbuy or sell\b|\blottery\b|\bgambl\w*|\bday trad\w*|\bforex\b/i,
+  ],
+  [
+    "mentalHealthDiagnosis",
+    /\b(narcissist\w*|bipolar|psychopath\w*|sociopath\w*|mental illness|diagnose|schizophren\w*|borderline personality)\b/i,
+  ],
   ["thirdPartyPrivateClaim", /\b(what is (he|she|they) hiding|secret motive|really thinking)\b/i],
   [
     "compulsiveReading",
-    /\b(again and again|keep redrawing|one more reading|same question again)\b/i,
+    /\bagain and again\b|\bkeep (?:re)?drawing\b|\bkeep redrawing\b|\bone more reading\b|\bsame question again\b|\b(?:asked|asking) (?:this|the same question) (?:\w+ )?(?:times|again)\b|\bfor the (?:\d+(?:st|nd|rd|th)|tenth|hundredth|millionth) time\b/i,
   ],
 ];
 
-export function classifyQuestion(question: string): {
-  category: SafetyCategory;
-  interrupt: boolean;
-  guidance: string;
-} {
-  const category = rules.find(([, pattern]) => pattern.test(question))?.[0] ?? "ordinary";
+/** Plain, warm copy the product shows a person for each safety category. */
+export const SAFETY_USER_MESSAGES: Readonly<Record<SafetyCategory, string>> = {
+  ordinary: "This is a question the cards can reflect on with you.",
+  selfHarmCrisis:
+    "It sounds like you may be carrying something very heavy right now. If you might act on thoughts of suicide or self-harm, please call emergency services or reach one of the crisis lines below — you don't have to hold this alone.",
+  compulsiveReading:
+    "It sounds like this question keeps pulling you back. Your earlier reading is still here — give it a little time to settle before asking again.",
+  medical:
+    "The cards can't diagnose or predict a health outcome. They can help you think about what to ask and how to look after yourself; a clinician is the right person for the medical answer.",
+  legal:
+    "The cards can't forecast a legal outcome. They can help you think about preparation and next steps; a qualified lawyer is the right person for the legal answer.",
+  financial:
+    "The cards can't tell you what to buy, sell, or expect back. They can help you look at your own reasoning and comfort with risk; a qualified adviser can help with the rest.",
+  pregnancy:
+    "The cards can't confirm or predict a pregnancy. A test and a clinician can answer that; the cards can keep you company in the waiting.",
+  physicalDeath:
+    "The cards don't predict deaths or timelines. They can help you focus on what matters and what is within reach right now.",
+  criminalGuilt:
+    "The cards can't decide whether someone is guilty. That belongs to evidence and due process; the cards can help you think about what is yours to do.",
+  infidelity:
+    "The cards can't say whether someone has been unfaithful. They can help you separate what you've actually seen from what you fear, and prepare for an honest conversation.",
+  mentalHealthDiagnosis:
+    "The cards can't diagnose anyone. A qualified professional can; the cards can help you name the pattern you're noticing and what you need.",
+  thirdPartyPrivateClaim:
+    "The cards can't read someone else's private thoughts. They can help you notice what is visible to you and what might be worth asking directly.",
+};
+
+export interface QuestionSafetyClassification {
+  readonly category: SafetyCategory;
+  readonly interrupt: boolean;
+  /**
+   * Model-facing instruction (prompt guidance). For `selfHarmCrisis` it is also
+   * safe to show, but new UI should prefer `userMessage`.
+   */
+  readonly guidance: string;
+  /** Plain, warm, reader-facing copy for this category. Safe to display. */
+  readonly userMessage: string;
+}
+
+export function classifyQuestion(question: string): QuestionSafetyClassification {
+  const category: SafetyCategory = selfHarmCrisisPatterns.some((pattern) => pattern.test(question))
+    ? "selfHarmCrisis"
+    : (rules.find(([, pattern]) => pattern.test(question))?.[0] ?? "ordinary");
+  const userMessage = SAFETY_USER_MESSAGES[category];
   if (category === "selfHarmCrisis")
     return {
       category,
       interrupt: true,
       guidance:
         "If you may act on thoughts of suicide or self-harm, call emergency services now or use one of the crisis resources below. You do not need to handle this alone.",
+      userMessage,
     };
   if (category === "ordinary")
     return {
       category,
       interrupt: false,
       guidance: "Use conditional, reflective language and preserve user agency.",
+      userMessage,
     };
   if (category === "compulsiveReading")
     return {
       category,
       interrupt: true,
       guidance: "Retain the prior reading, avoid a redraw, and encourage time for reflection.",
+      userMessage,
     };
   return {
     category,
     interrupt: false,
     guidance:
       "Do not claim facts or outcomes; reframe toward evidence, preparation, boundaries, choices, and qualified support where relevant.",
+    userMessage,
   };
 }
 
@@ -472,12 +561,14 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       input.configuration.personalizationMode === "personalized_tarot"
         ? input.relevantTraitStatements
         : [];
-    const named = (entry: (typeof resolved)[number]) =>
-      entry.orientation === "reversed" ? `${entry.card.name} reversed` : entry.card.name;
+    const named = (entry: (typeof resolved)[number], sentenceStart = false) =>
+      cardReference(entry.card, { sentenceStart, reversed: entry.orientation === "reversed" });
     const meaning = (entry: (typeof resolved)[number]) =>
       spokenCardMeaning(entry.card, entry.orientation);
     const byPosition = new Map(resolved.map((entry) => [entry.position.id, entry]));
     const relationshipRules = input.configuration.capabilities.linkedPositions;
+    // Shared across every card passage so no closing sentence repeats.
+    const usedSentences = new Set<string>();
     const cardResults = resolved.map((entry, index) => {
       const relationshipNotes = relationshipRules
         .filter(({ positionIds }) => positionIds.includes(entry.position.id))
@@ -496,7 +587,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
             integration: "has to be worked together with",
           }[rule.relationship];
           return [
-            `${named(entry)} in ${entry.position.displayName} ${relationshipLanguage} ${linked.map((candidate) => `${named(candidate)} in ${candidate.position.displayName}`).join(" and ")}; the contrast is between ${meaning(entry)} and ${linked.map(meaning).join(" alongside ")}.`,
+            `${named(entry, true)} in ${entry.position.displayName} ${relationshipLanguage} ${linked.map((candidate) => `${named(candidate)} in ${candidate.position.displayName}`).join(" and ")}; the contrast is between ${meaning(entry)} and ${linked.map(meaning).join(" alongside ")}.`,
           ];
         });
       const suitReinforcement =
@@ -509,31 +600,28 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
             );
       if (suitReinforcement)
         relationshipNotes.push(
-          `${entry.card.name} and ${suitReinforcement.card.name} repeat the ${entry.card.suit} current across ${entry.position.displayName} and ${suitReinforcement.position.displayName}, reinforcing ${entry.card.suit === "cups" ? "emotion and reciprocity" : entry.card.suit === "swords" ? "thought and communication" : entry.card.suit === "wands" ? "initiative and momentum" : "work, resources, and tangible follow-through"}.`,
+          `${cardReference(entry.card, { sentenceStart: true })} and ${cardReference(suitReinforcement.card)} repeat the ${entry.card.suit} current across ${entry.position.displayName} and ${suitReinforcement.position.displayName}, reinforcing ${entry.card.suit === "cups" ? "emotion and reciprocity" : entry.card.suit === "swords" ? "thought and communication" : entry.card.suit === "wands" ? "initiative and momentum" : "work, resources, and tangible follow-through"}.`,
         );
       const trait = traits.length > 0 ? traits[index % traits.length] : undefined;
-      const ordinaryPositionMeaning = cardNarration(entry, frame, index, false, trait);
+      const reversed = entry.orientation === "reversed";
+      const cardName = cardReference(entry.card, { sentenceStart: !reversed });
       return {
         positionId: entry.position.id,
         positionLabel: entry.position.displayName,
         cardId: entry.card.id,
         orientation: entry.orientation,
-        coreMeaning:
-          entry.orientation === "reversed"
-            ? `${meaning(entry)}. The approved reversal facet used here is ${entry.reversalFacet ?? "blocked"}.`
-            : `${meaning(entry)}.`,
+        // Evidence-drawer copy: plain reader language that names the card,
+        // because the drawer lists cards under their position label only.
+        coreMeaning: reversed
+          ? `Reversed, ${cardName} can point to ${meaning(entry)}.`
+          : `${cardName} speaks to ${meaning(entry)}.`,
         positionInterpretation: guarded
-          ? guardedQuestionConnection(
-              safety.category,
-              entry.position.order,
-              cardNarration(entry, frame, index, true, trait),
-            )
-          : ordinaryPositionMeaning,
+          ? guardedCardNarration(entry, index, safety.category, usedSentences)
+          : cardNarration(entry, frame, index, false, trait, usedSentences),
         relationshipNotes,
         supportingEvidence: [
-          `${entry.card.name}: approved ${entry.orientation} themes — ${entry.themes.join(", ")}.`,
-          `${entry.position.displayName}: ${entry.position.interpretiveFunction}.`,
-          ...(entry.reversalFacet ? [`Approved reversal facet: ${entry.reversalFacet}.`] : []),
+          `${capitalizeFirst(positionPhrase(entry.position.displayName))} shows ${readerFacing(entry.position.interpretiveFunction)}.`,
+          ...(entry.reversalFacet ? [reversalFacetSentence(entry.reversalFacet)] : []),
         ],
       };
     });
@@ -582,7 +670,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
     });
     const alternatePath =
       alternativeEntries.length >= 2
-        ? `${named(alternativeEntries[0]!)} asks for ${meaning(alternativeEntries[0]!)}, while ${named(alternativeEntries[1]!)} asks for ${meaning(alternativeEntries[1]!)}. The real branch is which demand fits the life you are prepared to live.`
+        ? `${named(alternativeEntries[0]!, true)} asks for ${meaning(alternativeEntries[0]!)}, while ${named(alternativeEntries[1]!)} asks for ${meaning(alternativeEntries[1]!)}. The real branch is which demand fits the life you are prepared to live.`
         : null;
     const timing = input.configuration.capabilities.timingMethod
       ? `The approved ${input.configuration.capabilities.timingMethod.id} timing method gives a window, not an exact date.`
@@ -614,8 +702,7 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       timing,
       userAgency,
       reflectionPrompt: reflectionQuestion(frame, answer),
-      uncertaintyNote:
-        "This is a conditional reading; new evidence and choices can change the direction.",
+      uncertaintyNote: FALLBACK_CLOSING_NOTE,
       personalizationLens,
       safetyFlags: safety.category === "ordinary" ? [] : [safety.category],
     });
@@ -659,23 +746,33 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
     );
     const relatedTrait = naturalTrait(relatedPerson?.relevantTraitStatements[0]);
     const answerMeaning = spokenCardMeaning(answer.card, answer.orientation);
-    const agency = input.originalResult.userAgency
-      .replace(/[.?!]+$/, "")
-      .replace(/^[A-Z]/, (letter) => letter.toLowerCase());
+    // Only speak about another person's motives when the reading is about a
+    // relationship or the follow-up actually names someone else.
+    const involvesAnotherPerson =
+      frame.subject === "relationship" ||
+      /\b(?:he|she|they|him|her|them|his|their|partner|ex|friend|boss|manager|colleague|coworker|someone)\b/i.test(
+        input.question,
+      );
     return {
       result: followUpResultSchema.parse({
         response: [
-          `Looking at ${frame.focus} through the same cards, ${answer.card.name}${answer.orientation === "reversed" ? " reversed" : ""} keeps the emphasis on ${answerMeaning}.`,
+          `Looking at ${frame.focus} through the same cards, ${cardReference(answer.card, { reversed: answer.orientation === "reversed" })} keeps the emphasis on ${answerMeaning}.`,
           originalCard
-            ? `That matters because its ${originalCard.positionLabel} passage already showed: ${originalCard.positionInterpretation}`
-            : "That is the same answer-bearing thread the original reading established.",
+            ? `It is the card in ${positionPhrase(originalCard.positionLabel)}, so it still carries the weight of the answer.`
+            : "It is the same thread the original reading followed.",
           trait
             ? `Because ${trait}, the clarification is to notice when that familiar response begins and choose from the evidence instead.`
             : "The clarification is to wait for one observable change, then respond to what actually happens rather than to the fear of what might happen.",
-          relatedPerson && relatedTrait
-            ? `With ${relatedPerson.mention}, compare that evidence with their possible tendency to ${relatedTrait}; do not assume it explains their private motives.`
-            : "Keep the other person's private motives open until their behavior or an honest conversation gives you evidence.",
-          `For now, ${agency}.`,
+          ...(relatedPerson && relatedTrait
+            ? [
+                `With ${relatedPerson.mention}, compare that evidence with their possible tendency to ${relatedTrait}; do not assume it explains their private motives.`,
+              ]
+            : involvesAnotherPerson
+              ? [
+                  "Keep the other person's private motives open until their behavior or an honest conversation gives you evidence.",
+                ]
+              : []),
+          followUpAction(frame),
         ].join(" "),
       }),
       provenance: {
@@ -685,6 +782,22 @@ export class DeterministicFallbackProvider implements ReadingInterpretationProvi
       },
     };
   }
+}
+
+function capitalizeFirst(value: string): string {
+  return value.replace(/^[a-z]/, (letter) => letter.toUpperCase());
+}
+
+/** Position functions are authored about "the user"; the reader is "you". */
+function readerFacing(value: string): string {
+  return value.replace(/\bthe user's\b/gi, "your").replace(/\bthe user\b/gi, "you");
+}
+
+/** Card heading for a passage: "Situation · Temperance, reversed". */
+function cardPassageHeading(card: ReadingResult["cards"][number]): string {
+  const name = tarotCards.find(({ id }) => id === card.cardId)?.name;
+  if (!name) return card.positionLabel;
+  return `${card.positionLabel} · ${name}${card.orientation === "reversed" ? ", reversed" : ""}`;
 }
 
 function naturalTrait(trait: string | undefined): string | undefined {
@@ -725,7 +838,7 @@ export function createOracleStreamEvents(result: ReadingResult): readonly Oracle
     },
     ...validated.cards.map((card) => ({
       phase: "cardInterpretation" as const,
-      heading: card.positionLabel,
+      heading: cardPassageHeading(card),
       // `positionInterpretation` is the reader-facing passage. The core
       // meaning and relationship evidence remain available in the details
       // drawer, but repeating them here made each card sound like a glossary
@@ -763,7 +876,7 @@ export function createOracleStreamEvents(result: ReadingResult): readonly Oracle
     {
       phase: "userAgency" as const,
       heading: "Your move",
-      text: validated.userAgency,
+      text: withoutAgencyPrefix(validated.userAgency),
     },
     {
       phase: "reflectionPrompt" as const,

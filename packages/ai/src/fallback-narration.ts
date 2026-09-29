@@ -1,7 +1,7 @@
 import type { QuestionClassification } from "@starguidance/contracts";
 
-import { spokenCardMeaning } from "./card-language";
-import type { QuestionSubject, ResolvedCard } from "./interpretation";
+import { cardReference, positionPhrase, spokenCardMeaning } from "./card-language";
+import { GUARDED_REFRAMES, type QuestionSubject, type ResolvedCard } from "./interpretation";
 
 type QuestionMode = "decision" | "forecast" | "process" | "understanding" | "general";
 
@@ -83,9 +83,34 @@ export function buildQuestionFrame(
 }
 
 function namedCard(entry: ResolvedCard, sentenceStart = false): string {
-  const name = `${entry.card.name}${entry.orientation === "reversed" ? " reversed" : ""}`;
-  if (entry.card.name.startsWith("The ")) return name;
-  return `${sentenceStart ? "The" : "the"} ${name}`;
+  return cardReference(entry.card, { sentenceStart, reversed: entry.orientation === "reversed" });
+}
+
+function capitalize(value: string): string {
+  return value.replace(/^[a-z]/, (letter) => letter.toUpperCase());
+}
+
+function lowerFirst(value: string): string {
+  return value.replace(/^[A-Z]/, (letter) => letter.toLowerCase());
+}
+
+/**
+ * Picks the first candidate sentence the reading has not already used.
+ *
+ * Every passage draws its closing line from an ordered pool (position-specific
+ * first, then generic), so the same sentence never repeats within one reading
+ * as long as the pool is larger than the spread. Deterministic: the same draw
+ * always produces the same text.
+ */
+function pickFresh(candidates: readonly string[], used?: Set<string>): string {
+  const choice = candidates.find((candidate) => !used?.has(candidate)) ?? candidates[0]!;
+  used?.add(choice);
+  return choice;
+}
+
+function rotate<T>(values: readonly T[], offset: number): T[] {
+  const start = ((offset % values.length) + values.length) % values.length;
+  return [...values.slice(start), ...values.slice(0, start)];
 }
 
 function meaning(entry: ResolvedCard): string {
@@ -144,7 +169,7 @@ export function openingNarration(
       : frame.mode === "forecast"
         ? `A direction is forming around ${frame.focus}, but it is not fixed. ${card} points toward ${cardMeaning}.`
         : frame.mode === "process"
-          ? `Your next move around ${frame.focus} begins with ${cardMeaning}. That is the clear message of ${card}.`
+          ? `For ${frame.focus}, the place to begin is ${cardMeaning}. ${card} makes that the clearest message in your spread.`
           : frame.mode === "general"
             ? `Something is ready to move, but only through ${cardMeaning}. ${card} makes that the heart of your reading.`
             : `What I see around ${frame.focus} is ${cardMeaning}. ${card} puts that at the center of your answer.`;
@@ -199,25 +224,6 @@ const matrixPositionOpeners: Readonly<Record<string, string>> = {
   "matrix-future-integration": "As the whole spread comes together",
 };
 
-function positionOpener(entry: ResolvedCard, index: number): string {
-  const exact = matrixPositionOpeners[entry.position.id];
-  if (exact) return exact;
-  const position = `${entry.position.id} ${entry.position.displayName}`.toLowerCase();
-  if (/past|foundation|history|root/.test(position))
-    return "Looking back at what set this in motion";
-  if (/present|current|situation|center|focus/.test(position)) return "Right now";
-  if (/challenge|obstacle|cross|block/.test(position)) return "At the pressure point in the spread";
-  if (/future|incoming|outcome|direction|ahead/.test(position)) return "Looking ahead";
-  if (/external|environment|surround/.test(position)) return "In the circumstances around you";
-  if (/strength|leverage|support|advice|resolution|action/.test(position))
-    return "In the part of the spread that gives you leverage";
-  if (/hope|fear/.test(position)) return "Within the hope and the fear";
-  if (/option|path/.test(position)) return `Looking at ${entry.position.displayName}`;
-  return ["Starting with this part of the spread", "Alongside that", "Then the energy changes"][
-    index % 3
-  ]!;
-}
-
 function positionConnection(entry: ResolvedCard, frame: QuestionFrame): string {
   const id = entry.position.id;
   const exact: Readonly<Record<string, string>> = {
@@ -256,25 +262,97 @@ function positionConnection(entry: ResolvedCard, frame: QuestionFrame): string {
   return `This adds another layer to ${frame.focus} rather than replacing what the earlier cards showed.`;
 }
 
+/**
+ * Second sentences for a reversed card. These stay neutral about direction:
+ * the approved facet is explained in the evidence drawer, where it can sit
+ * next to the card meaning instead of competing with it mid-passage.
+ */
+const reversedLines = [
+  "The movement here is slower or more inward, so steady it before you lean on it.",
+  "Its energy is present but not flowing freely yet; small corrections will matter more than force.",
+  "This part is still turned inward, so give it attention before you rely on it.",
+  "What this card asks for is not missing, only not yet at ease; tend it before trusting it.",
+] as const;
+
+const genericClosers = [
+  "Notice where this already shows up in what you can see.",
+  "Let what actually happens confirm this before you lean on it.",
+  "Treat this as one strand of the story rather than the whole of it.",
+  "Give this a little attention before deciding what it means for you.",
+  "It asks to be noticed more than solved.",
+  "Hold this lightly; its meaning sharpens once you act.",
+  "This is worth naming plainly, even if only to yourself.",
+  "It is part of the picture, and it can shift as you do.",
+  "Let this inform your next small step rather than the final answer.",
+  "Watch how this plays out before drawing a firm conclusion.",
+] as const;
+
+const guardedClosers = [
+  "Keep this tied to evidence, a direct conversation, and the choice that is yours.",
+  "Let it shape how you prepare and who you ask, not what you conclude.",
+  "Hold it as a reflection on your own next step, not an answer about the facts.",
+  "Use it to steady yourself, then bring the factual question to someone who can check it.",
+  "Let it point you toward support rather than toward a verdict.",
+  "Treat it as a prompt for care and preparation, not as a prediction.",
+  "Keep what you know and what you fear separate while you sit with this card.",
+  "Let this card inform your next conversation, not replace it.",
+] as const;
+
+function cardLead(entry: ResolvedCard, index: number): string {
+  const cardMeaning = meaning(entry);
+  const matrixOpener = matrixPositionOpeners[entry.position.id];
+  if (matrixOpener) return `${matrixOpener}, ${namedCard(entry)} speaks to ${cardMeaning}.`;
+  const place = positionPhrase(entry.position.displayName);
+  const frames = [
+    () => `${namedCard(entry, true)} sits in ${place} — ${cardMeaning}.`,
+    () => `In ${place}, ${namedCard(entry)} brings ${cardMeaning}.`,
+    () => `${namedCard(entry, true)} lands in ${place}, pointing to ${cardMeaning}.`,
+    () => `${capitalize(place)} holds ${namedCard(entry)}: ${cardMeaning}.`,
+  ];
+  return frames[index % frames.length]!();
+}
+
 export function cardNarration(
   entry: ResolvedCard,
   frame: QuestionFrame,
   index: number,
   guarded: boolean,
   trait?: string,
+  used?: Set<string>,
 ): string {
-  const opener = positionOpener(entry, index);
-  const verb = ["points to", "brings in", "shows", "tells me there is"][index % 4]!;
-  const sentence = `${opener}, ${namedCard(entry)} ${verb} ${meaning(entry)}.`;
+  const lead = cardLead(entry, index);
   const personal = naturalTrait(trait);
-  const finalLine = guarded
-    ? "Keep this tied to evidence, a direct conversation, and the choice that is yours."
-    : personal
-      ? `That matters here because ${personal}.`
-      : entry.orientation === "reversed"
-        ? "The movement is delayed or inward; correct the pattern before trusting it."
-        : positionConnection(entry, frame);
-  return `${sentence} ${finalLine}`;
+  const reversed = entry.orientation === "reversed";
+  const candidates = guarded
+    ? rotate(guardedClosers, index)
+    : [
+        ...(personal ? [`That matters here because ${personal}.`] : []),
+        ...(reversed ? rotate(reversedLines, index) : [positionConnection(entry, frame)]),
+        ...(reversed ? [positionConnection(entry, frame)] : []),
+        ...rotate(genericClosers, index),
+      ];
+  return `${lead} ${pickFresh(candidates, used)}`;
+}
+
+/**
+ * Card passage for a guarded question (medical, legal, and so on). It names
+ * the card and its place but deliberately leaves out the card meaning, so a
+ * reading about a pregnancy or a court case never reads as a factual answer.
+ */
+export function guardedCardNarration(
+  entry: ResolvedCard,
+  index: number,
+  category: string,
+  used?: Set<string>,
+): string {
+  const place = positionPhrase(entry.position.displayName);
+  const lead = `${namedCard(entry, true)} sits in ${place}.`;
+  const reframe = GUARDED_REFRAMES[category]?.questionConnection ?? [];
+  const candidates = [
+    ...(reframe.length > 0 ? rotate(reframe, index) : []),
+    ...rotate(guardedClosers, index),
+  ];
+  return `${lead} ${pickFresh(candidates, used)}`;
 }
 
 function naturalTrait(trait: string | undefined): string | undefined {
@@ -317,12 +395,12 @@ export function turningPointNarration(
     resolved.find((entry) => entry.position.id !== answer.position.id);
   const personal = naturalTrait(trait);
   if (!pressure) {
-    return `The turn comes when ${turningAction(frame.subject)}. ${directEvidence(frame, answer.orientation)}`;
+    return `The turn comes when ${turningAction(frame.subject)}; until then, hold the answer loosely.`;
   }
   const personalLine = personal
     ? `You may feel that sharply because ${personal}.`
     : "That tension shows where your choice can interrupt the pattern.";
-  return `${namedCard(pressure, true)} and ${namedCard(answer)} pull between ${meaning(pressure)} and ${meaning(answer)}. ${personalLine} The turn comes when ${turningAction(frame.subject)}.`;
+  return `${namedCard(pressure, true)} pulls toward ${meaning(pressure)}, while ${namedCard(answer)} points to ${meaning(answer)}. ${personalLine} The turn comes when ${turningAction(frame.subject)}.`;
 }
 
 function subjectTrajectory(frame: QuestionFrame, upright: boolean): string {
@@ -361,8 +439,9 @@ export function likelyNarration(
     wellbeing: "your energy responding to a boundary or routine that actually changes",
     general: "one observable action making the direction easier to read",
   }[frame.subject];
-  const horizon = frame.horizonLead.replace(/^[A-Z]/, (letter) => letter.toLowerCase());
-  return `If the pattern holds, ${horizon}, watch for ${firstSign}. That points toward ${subjectTrajectory(frame, answer.orientation === "upright")}.`;
+  const horizon =
+    frame.horizonLead === "As this develops" ? "" : ` ${lowerFirst(frame.horizonLead)},`;
+  return `If the pattern holds,${horizon} watch for ${firstSign}. That points toward ${subjectTrajectory(frame, answer.orientation === "upright")}.`;
 }
 
 function alternateAction(subject: QuestionSubject): string {
@@ -436,11 +515,35 @@ export function agencySteps(
   return steps;
 }
 
+/**
+ * The "Your move" section body. The section heading already says "Your move",
+ * so the body starts directly with the first step instead of repeating it.
+ */
 export function agencyNarration(steps: readonly string[]): string {
   const [first, second, third] = steps;
-  const lower = (value: string) => value.replace(/^[A-Z]/, (letter) => letter.toLowerCase());
-  return `Your move: ${lower(first ?? "name what you can verify")}; then ${lower(second ?? "take one proportionate step")}.${third ? ` Also ${lower(third)}.` : ""}`;
+  return `${capitalize(first ?? "Name what you can verify")}; then ${lowerFirst(second ?? "take one proportionate step")}.${third ? ` Also, ${lowerFirst(third)}.` : ""}`;
 }
+
+/** Strips the legacy "Your move:" prefix persisted by earlier fallback versions. */
+export function withoutAgencyPrefix(text: string): string {
+  return capitalize(text.replace(/^\s*your move:\s*/i, ""));
+}
+
+/** A closing step for a follow-up that does not repeat the original reading's wording. */
+export function followUpAction(frame: QuestionFrame): string {
+  return {
+    work: "For now, pick the one fact about ownership or timing you most need, and ask for it directly.",
+    relationship:
+      "For now, name one behavior you would need to see, and watch for it rather than for reassurance.",
+    change:
+      "For now, choose one small, reversible step that would test the option you are leaning toward.",
+    wellbeing: "For now, ease one demand on your energy and notice how you respond.",
+    general: "For now, look for the one fact or conversation that would make this less abstract.",
+  }[frame.subject];
+}
+
+export const FALLBACK_CLOSING_NOTE =
+  "Nothing here is fixed — what you notice and choose next can shift it.";
 
 export function reflectionQuestion(frame: QuestionFrame, answer: ResolvedCard): string {
   const questions: Record<QuestionSubject, string> = {
