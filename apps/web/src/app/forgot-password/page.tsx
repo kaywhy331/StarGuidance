@@ -1,19 +1,19 @@
-import { Panel } from "@starguidance/design-system";
-
+import { AccountThreshold } from "../sign-up/account-threshold";
 import { ForgotPasswordForm } from "./forgot-password-form";
+
+export const metadata = { title: "Reset your password" };
 
 export default function ForgotPasswordPage() {
   return (
-    <main className="mx-auto grid min-h-screen max-w-lg place-items-center px-6 py-16">
-      <Panel>
-        <p className="text-sm tracking-[0.2em] text-[#d8b56d] uppercase">Account recovery</p>
-        <h1 className="mt-3 text-4xl font-semibold">Reset your password.</h1>
-        <p className="mt-4 leading-7 text-[#c9bfd4]">
-          Enter the email for your StarGuidance account. Recovery links are short-lived and can be
-          used only once.
-        </p>
-        <ForgotPasswordForm />
-      </Panel>
-    </main>
+    <AccountThreshold
+      eyebrow="It happens to everyone"
+      lede="Tell us the email you signed up with and we'll send a link to choose a new password. Your readings stay exactly as they are."
+      panelEyebrow="Password help"
+      panelLede="For your safety, the link works once and only for a short while."
+      panelTitle="Reset your password."
+      title="Let's get you back in."
+    >
+      <ForgotPasswordForm />
+    </AccountThreshold>
   );
 }

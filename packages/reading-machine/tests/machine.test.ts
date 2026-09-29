@@ -53,6 +53,33 @@ describe("committed-draw reading lifecycle", () => {
     expect(actor.getSnapshot().value).toBe("selectingCards");
   });
 
+  it("can shuffle a fresh deck after finalization fails, but never after the draw locks", () => {
+    const actor = createActor(readingMachine).start();
+    prepareThroughSpread(actor);
+    actor.send({ type: "SAFETY_APPROVED" });
+    actor.send({ type: "FOCUS_COMPLETE" });
+    actor.send({ type: "SHUFFLE_COMPLETE" });
+    actor.send({ type: "SELECTION_COMPLETE" });
+    actor.send({ type: "FINALIZATION_FAILED" });
+    actor.send({ type: "RESHUFFLE" });
+    expect(actor.getSnapshot().value).toBe("shuffling");
+    const locked = createActor(readingMachine).start();
+    reachLockedDraw(locked);
+    locked.send({ type: "RESHUFFLE" });
+    expect(locked.getSnapshot().value).toBe("drawLocked");
+  });
+
+  it("reopens a finished ritual directly at its interpretation", () => {
+    const actor = createActor(readingMachine).start();
+    actor.send({ type: "START" });
+    actor.send({ type: "RESTORE_FOLLOW_UP" });
+    expect(actor.getSnapshot().value).toBe("followUpAvailable");
+    const sealed = createActor(readingMachine).start();
+    sealed.send({ type: "START" });
+    sealed.send({ type: "RESTORE_COMPLETE" });
+    expect(sealed.getSnapshot().value).toBe("complete");
+  });
+
   it("does not begin whole-spread interpretation until all cards are revealed", () => {
     const actor = createActor(readingMachine).start();
     reachLockedDraw(actor);

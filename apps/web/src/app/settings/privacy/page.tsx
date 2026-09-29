@@ -3,7 +3,21 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Field, Panel } from "@starguidance/design-system";
+import { Button, Field, Panel, PasswordField } from "@starguidance/design-system";
+
+import { signInPathFor } from "@/lib/account-return";
+import { CONNECTION_LOST_MESSAGE, sendJson } from "@/lib/client-request";
+import { SettingsNav } from "../settings-nav";
+
+type ExportState =
+  | { phase: "idle" }
+  | { phase: "preparing" }
+  | { phase: "downloaded" }
+  | { phase: "error"; message: string };
+
+function exportFileName() {
+  return `starguidance-export-${new Date().toISOString().slice(0, 10)}.json`;
+}
 
 export default function PrivacyPage() {
   const router = useRouter();
@@ -11,54 +25,127 @@ export default function PrivacyPage() {
   const [password, setPassword] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string>();
+  const [exportState, setExportState] = useState<ExportState>({ phase: "idle" });
+
+  async function downloadExport() {
+    setExportState({ phase: "preparing" });
+    let response: Response;
+    try {
+      response = await fetch("/api/privacy/export", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch {
+      setExportState({ phase: "error", message: CONNECTION_LOST_MESSAGE });
+      return;
+    }
+    if (response.status === 401) {
+      router.push(signInPathFor("/settings/privacy"));
+      return;
+    }
+    if (response.status === 429) {
+      setExportState({
+        phase: "error",
+        message:
+          "You’ve downloaded your data a few times recently. Please try again in about an hour.",
+      });
+      return;
+    }
+    if (!response.ok) {
+      setExportState({
+        phase: "error",
+        message: "We couldn’t prepare your data just now. Please try again in a moment.",
+      });
+      return;
+    }
+    try {
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = exportFileName();
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setExportState({ phase: "downloaded" });
+    } catch {
+      setExportState({
+        phase: "error",
+        message: "The download was interrupted. Please try again.",
+      });
+    }
+  }
+
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-6 py-12">
-      <h1 className="text-5xl font-semibold [overflow-wrap:anywhere]">Privacy controls</h1>
-      <Panel className="mt-8">
-        <h2 className="text-2xl">Export</h2>
-        <p className="mt-2 text-[#b8adc8]">
-          Download a readable JSON copy without internal prompts. It includes your audit/security
-          event receipts, feedback, and retained report content, including reports whose access was
-          later revoked.
+    <main className="settings-shell">
+      <header className="settings-header">
+        <p className="page-eyebrow">Settings</p>
+        <h1>Privacy</h1>
+        <p>Download everything we hold about you, or delete it.</p>
+      </header>
+      <SettingsNav />
+
+      <Panel className="settings-group">
+        <h2>Download your data</h2>
+        <p>
+          A readable copy of everything in your account: your profile and birth details, the people
+          you’ve saved, your readings and follow-ups, feedback, purchases and atlases (including any
+          you no longer have access to), and an activity log of changes made to your account.
         </p>
-        <a
-          className="mt-4 inline-flex rounded-full border border-white/15 px-5 py-3"
-          download="starguidance-export.json"
-          href="/api/privacy/export"
-        >
-          Export my data
-        </a>
+        <div className="settings-actions">
+          <Button
+            disabled={exportState.phase === "preparing"}
+            onClick={() => void downloadExport()}
+            variant="secondary"
+          >
+            {exportState.phase === "preparing" ? "Preparing your data…" : "Download my data"}
+          </Button>
+        </div>
+        <p className="settings-inline-status" role="status">
+          {exportState.phase === "downloaded"
+            ? "Downloaded. Check your browser’s downloads for the file."
+            : ""}
+        </p>
+        {exportState.phase === "error" ? (
+          <p className="settings-error" role="alert">
+            {exportState.message}
+          </p>
+        ) : null}
       </Panel>
-      <Panel className="mt-5">
-        <h2 className="text-2xl">Delete selected data</h2>
-        <p className="mt-2 text-[#b8adc8]">
-          Delete one reading from history, or remove the private profile and dependent readings
-          without deleting your login. Paid commerce and report records follow the separate finance
-          retention policy.
+
+      <Panel className="settings-group">
+        <h2>Delete part of your data</h2>
+        <p>
+          You can delete a single reading from your history, or delete your birth profile together
+          with the readings made from it. Either way your login stays, and any pattern atlases you
+          purchased stay available along with their receipts.
         </p>
-        <div className="mt-4 flex flex-wrap gap-4">
-          <Link className="underline" href="/history">
-            Manage readings
-          </Link>
-          <Link className="underline" href="/profile">
-            Manage private profile
-          </Link>
+        <div className="settings-links">
+          <Link href="/history">Manage readings →</Link>
+          <Link href="/profile">Manage your profile →</Link>
+          <Link href="/people">Manage saved people →</Link>
         </div>
       </Panel>
-      <Panel className="mt-5 border-[#6f3341]">
-        <h2 className="text-2xl">Delete account</h2>
-        <p className="mt-2 text-[#b8adc8]">
-          This permanently removes your login identity, profile snapshots, readings, reports,
-          settings, and other user-owned records. Re-enter your password and type DELETE to confirm.
+
+      <Panel className="settings-group settings-group--danger">
+        <h2>Delete your account</h2>
+        <p>
+          This permanently deletes everything: your login, profile, saved people, readings,
+          settings, and purchased atlases with their receipts. It can’t be undone. We keep only an
+          anonymous note that a deletion happened; our payment processor keeps its own records of
+          past payments.
         </p>
-        <div className="mt-4 grid gap-4">
-          <Field
+        <p>To confirm, enter your current password and type DELETE.</p>
+        <div className="settings-danger-fields">
+          <PasswordField
             autoComplete="current-password"
+            id="delete-account-password"
             label="Current password"
             maxLength={72}
             minLength={12}
+            name="currentPassword"
             onChange={(event) => setPassword(event.target.value)}
-            type="password"
             value={password}
           />
           <Field
@@ -69,37 +156,37 @@ export default function PrivacyPage() {
           />
         </div>
         <Button
-          className="mt-4"
+          className="settings-danger-button"
           disabled={deleting || confirmation !== "DELETE" || password.length < 12}
           onClick={async () => {
             setDeleting(true);
             setError(undefined);
             try {
-              const response = await fetch("/api/account", {
-                method: "DELETE",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ confirmation, password }),
-              });
-              const payload = (await response.json()) as { error?: string };
-              if (!response.ok) {
-                setError(payload.error ?? "The account could not be deleted.");
+              const result = await sendJson("/api/account", "DELETE", { confirmation, password });
+              if (!result.ok) {
+                setError(result.error);
                 return;
               }
-              router.push("/");
+              router.replace("/goodbye");
               router.refresh();
             } finally {
               setDeleting(false);
             }
           }}
+          variant="danger"
         >
-          {deleting ? "Deleting account…" : "Delete my account"}
+          {deleting ? "Deleting your account…" : "Delete my account"}
         </Button>
         {error ? (
-          <p className="mt-4 text-[#ffb7bd]" role="alert">
+          <p className="settings-error" role="alert">
             {error}
           </p>
         ) : null}
       </Panel>
+
+      <p className="settings-footer-link">
+        <Link href="/settings/account">← Account settings</Link>
+      </p>
     </main>
   );
 }

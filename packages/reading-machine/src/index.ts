@@ -48,6 +48,9 @@ export const readingMachine = setup({
       | { type: "DRAW_LOCKED" }
       | { type: "FINALIZATION_FAILED" }
       | { type: "RESTORE_LOCKED" }
+      | { type: "RESTORE_FOLLOW_UP" }
+      | { type: "RESTORE_COMPLETE" }
+      | { type: "RESHUFFLE" }
       | { type: "BEGIN_DEAL" }
       | { type: "DEALT" }
       | { type: "REVEAL" }
@@ -66,7 +69,14 @@ export const readingMachine = setup({
   states: {
     idle: { on: { START: "readingCreated" } },
     readingCreated: {
-      on: { DRAFT_QUESTION: "questionDrafting", RESTORE_LOCKED: "drawLocked" },
+      on: {
+        DRAFT_QUESTION: "questionDrafting",
+        RESTORE_LOCKED: "drawLocked",
+        /** A reading whose ritual already reached its interpretation reopens
+         * straight to it instead of replaying the deal and reveal. */
+        RESTORE_FOLLOW_UP: "followUpAvailable",
+        RESTORE_COMPLETE: "complete",
+      },
     },
     questionDrafting: { on: { CONFIRM_QUESTION: "questionConfirmed" } },
     questionConfirmed: {
@@ -89,7 +99,14 @@ export const readingMachine = setup({
     safetyApproved: { always: "focusing" },
     focusing: { on: { FOCUS_COMPLETE: "shuffling" } },
     shuffling: { on: { SHUFFLE_COMPLETE: "selectingCards" } },
-    selectingCards: { on: { SELECTION_COMPLETE: "drawFinalizing" } },
+    selectingCards: {
+      on: {
+        SELECTION_COMPLETE: "drawFinalizing",
+        /** A fresh ceremony replaces one that could not be locked. No card
+         * identity exists yet, so nothing drawn is discarded. */
+        RESHUFFLE: "shuffling",
+      },
+    },
     /** Historical recovery state for ceremonies prepared by the cut-based
      * interface. New readings use selectingCards. */
     optionalCut: { on: { CUT: "drawFinalizing", SKIP_CUT: "drawFinalizing" } },

@@ -25,6 +25,7 @@ export function PhysicalTarotCard({
   revealed,
   reducedMotion,
   onReveal,
+  revealDescribedBy,
 }: {
   card: DealtCardView;
   dealOrigin?: DealOrigin | undefined;
@@ -40,6 +41,8 @@ export function PhysicalTarotCard({
   /** Present only while this specific card is still face down and eligible for
    * intentional click/tap/keyboard reveal (PRD UX-006). Omitted once revealed. */
   onReveal?: (() => void) | undefined;
+  /** Extra description id (e.g. keyboard instructions) for the reveal button. */
+  revealDescribedBy?: string | undefined;
 }) {
   const figureRef = useRef<HTMLElement | null>(null);
   const setFigureRef = (node: HTMLElement | null) => {
@@ -194,7 +197,7 @@ export function PhysicalTarotCard({
     >
       {revealable ? (
         <button
-          aria-describedby={`card-position-${index}`}
+          aria-describedby={[`card-position-${index}`, revealDescribedBy].filter(Boolean).join(" ")}
           aria-label={`Reveal card ${index + 1}, face down`}
           className={cardClassName}
           onClick={onReveal}
@@ -219,11 +222,16 @@ export function PhysicalTarotCard({
           {inner}
         </div>
       )}
-      <figcaption className="sr-only" id={`card-position-${index}`}>
-        {card.positionName}.{" "}
-        {revealed
-          ? `${card.name}${card.orientation === "reversed" ? ", reversed" : ""}.`
-          : "Face down."}
+      {/* The position is always visible under its card, so the reader knows
+          what each place in the spread means before anything is turned. */}
+      <figcaption className="physical-card-caption" id={`card-position-${index}`}>
+        <span className="physical-card-caption__position">{card.positionName}</span>
+        <span className="sr-only">
+          .{" "}
+          {revealed
+            ? `${card.name}${card.orientation === "reversed" ? ", reversed" : ""}.`
+            : "Face down."}
+        </span>
       </figcaption>
     </figure>
   );

@@ -13,14 +13,15 @@ test("a visitor completes a causal free reading before signup and continues with
 
   await expect(page.getByLabel("Your birthday")).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Your birthday").fill("1990-01-15");
-  await page.getByLabel(/I agree to the Terms/i).check();
-  await page.getByLabel(/I have read the Privacy Notice/i).check();
   await page
-    .getByLabel(/I confirm that I am at least 18/i)
+    .getByLabel(/I’m 18 or older, I agree to the Terms/i)
     .evaluate((checkbox: HTMLInputElement) => checkbox.click());
-  await expect(
-    page.getByRole("heading", { name: "What question did you have for the stars today?" }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const questionHeading = page.getByRole("heading", {
+    name: "What would you like to ask the cards?",
+  });
+  await expect(questionHeading).toBeVisible();
+  await expect(questionHeading).toBeFocused();
   const prepared = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -28,9 +29,9 @@ test("a visitor completes a causal free reading before signup and continues with
       response.request().postData()?.includes('"action":"prepare"') === true,
   );
   await page
-    .getByLabel("Your question for the stars")
+    .getByLabel("What would you like to ask the cards?")
     .fill("What can I understand about the next step in my work?");
-  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Draw my cards" }).click();
   const preparedResponse = await prepared;
   expect(preparedResponse.status()).toBe(201);
   const preparedBody = await preparedResponse.json();
@@ -47,7 +48,7 @@ test("a visitor completes a causal free reading before signup and continues with
     };
     return pending.clientNonce;
   });
-  await page.getByRole("button", { name: "Stir all 78 cards" }).click();
+  await page.getByRole("button", { name: "Keep shuffling" }).click();
   const entropyAfterStir = await page.evaluate(() => {
     return JSON.parse(sessionStorage.getItem("sg:guest-reading:v2") ?? "{}") as {
       clientNonce?: string;
@@ -60,7 +61,7 @@ test("a visitor completes a causal free reading before signup and continues with
   expect(entropyAfterStir.stirCount).toBe(1);
   // The stir above needs the full-motion wash window; the rest of the journey
   // runs on the persisted quiet path.
-  await page.getByRole("button", { name: "Reduce motion" }).click();
+  await page.getByRole("button", { name: "Motion: Full" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   const finalized = page.waitForResponse(
     (response) =>
@@ -82,6 +83,10 @@ test("a visitor completes a causal free reading before signup and continues with
         y: fanBounds.height / 2,
       },
     });
+  // Nothing locks until the reader confirms the picks.
+  const confirmPicks = page.getByTestId("confirm-selected-cards");
+  await expect(confirmPicks).toHaveText("These are my cards");
+  await confirmPicks.click();
   const finalizedResponse = await finalized;
   expect(finalizedResponse.status()).toBe(201);
   const finalizedBody = (await finalizedResponse.json()) as {
@@ -106,7 +111,7 @@ test("a visitor completes a causal free reading before signup and continues with
     originalCards[2]!,
   );
   await page.getByRole("button", { name: /Return to the spread/ }).click();
-  await page.getByRole("button", { name: "Reveal All" }).click();
+  await page.getByRole("button", { name: "Turn over all cards" }).click();
 
   const activePassage = page.getByTestId("reading-active-passage");
   const signupGate = page.getByTestId("guest-signup-gate");
@@ -128,6 +133,10 @@ test("a visitor completes a causal free reading before signup and continues with
   await page.getByTestId("complete-reading-action").click();
   await expect(activePassage).toHaveCount(0);
   await expect(signupGate).toBeVisible();
+  // The gate never replaces the reading: the full keepsake stays beneath it.
+  await expect(page.getByTestId("reading-keepsake")).toBeVisible();
+  await expect(page.getByTestId("reading-keepsake")).toContainText("the next step in my work");
+  await expect(page.getByRole("button", { name: "Read it again" })).toBeVisible();
   await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
     "data-reading-focus",
     "actions",
@@ -149,7 +158,7 @@ test("a visitor completes a causal free reading before signup and continues with
     originalCards[2]!,
   );
   await page.getByRole("button", { name: /Return to the spread/ }).click();
-  await page.getByRole("button", { name: "Reveal All" }).click();
+  await page.getByRole("button", { name: "Turn over all cards" }).click();
   await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
   await page.getByTestId("oracle-transcript").press("End");
@@ -163,24 +172,27 @@ test("a visitor completes a causal free reading before signup and continues with
   await page.getByLabel(/^Password/).fill("synthetic-private-password");
   await page.getByLabel("Confirm password").fill("synthetic-private-password");
   await page.getByRole("button", { name: "Continue to privacy commitments" }).click();
-  await page.getByLabel(/I agree to the versioned Terms/i).check();
-  await page.getByLabel(/I have read the versioned Privacy Notice/i).check();
+  await page.getByLabel(/I agree to the Terms/i).check();
+  await page.getByLabel(/I have read the Privacy Notice/i).check();
   await page.getByLabel(/I confirm that I am at least 18/i).check();
   await page.getByRole("button", { name: "Create private account" }).click();
 
   await expect(page).toHaveURL(/\/free-reading\?continue=1$/, { timeout: 20_000 });
-  await expect(page.getByText("Same cards · account unlocked")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("Same cards, now in your account")).toBeVisible({
+    timeout: 20_000,
+  });
   const recoveredCards = await page
-    .locator(".guest-locked-spread-review li")
-    .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-card-id")));
-  expect(recoveredCards).toEqual(originalCards);
+    .getByTestId("guest-continuation-keepsake")
+    .getAttribute("data-card-ids");
+  expect(recoveredCards?.split(" ")).toEqual(originalCards);
+  await expect(page.getByTestId("reading-keepsake")).toBeVisible();
 
   await page
     .getByLabel("Ask these same cards one follow-up")
     .fill("What is one practical way to meet that same next step?");
   await page.getByRole("button", { name: "Ask the same cards" }).click();
   await expect(
-    page.getByRole("heading", { name: "A clarification from the original spread" }),
+    page.getByTestId("reading-keepsake").getByRole("heading", { name: /Follow-up on these cards/ }),
   ).toBeVisible();
-  await expect(page.getByText(/did not alter the cards/i)).toBeVisible();
+  await expect(page.getByText(/cards stayed exactly as drawn/i)).toBeVisible();
 });

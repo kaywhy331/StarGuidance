@@ -56,7 +56,8 @@ test("the cards a reader picks are the cards that get dealt, with no cut between
 
   const picked = page.locator(".casino-card-shell.is-picked");
   await expect(picked).toHaveCount(cardCount);
-  await expect(page.getByText("Locking your selected cards…")).toBeVisible();
+  // Picks can still be put back until the reader keeps them.
+  await page.getByRole("button", { name: "These are my cards" }).click();
   // Measure once every pick has finished its lift and slide.
   await expect
     .poll(

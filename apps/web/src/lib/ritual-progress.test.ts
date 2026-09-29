@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readRitualProgress, writeRitualProgress } from "./ritual-progress";
+import { readRitualProgress, ritualSessionExpired, writeRitualProgress } from "./ritual-progress";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -35,5 +35,29 @@ describe("ritual progress", () => {
     });
     storage.setItem("sg:reading-progress:reading-2", "not-json");
     expect(readRitualProgress(storage, "reading-2", 3)).toBeUndefined();
+  });
+});
+
+describe("ritual session expiry", () => {
+  const past = "2020-01-01T00:00:00.000Z";
+  const future = "2099-01-01T00:00:00.000Z";
+
+  it("never marks a reading that reached its interpretation as expired", () => {
+    expect(
+      ritualSessionExpired({ expiresAt: past, ritualProgress: { phase: "followUpAvailable" } }),
+    ).toBe(false);
+    expect(ritualSessionExpired({ expiresAt: past, ritualProgress: { phase: "complete" } })).toBe(
+      false,
+    );
+  });
+
+  it("marks only unfinished rituals past their window", () => {
+    expect(ritualSessionExpired({ expiresAt: past, ritualProgress: { phase: "revealing" } })).toBe(
+      true,
+    );
+    expect(ritualSessionExpired({ expiresAt: past })).toBe(true);
+    expect(ritualSessionExpired({ expiresAt: future, ritualProgress: { phase: "dealing" } })).toBe(
+      false,
+    );
   });
 });

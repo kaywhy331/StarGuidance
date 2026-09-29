@@ -5,7 +5,7 @@ import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { persistenceFor, recordAudit, saveRelationshipProfileVersion } from "@/lib/persistence";
 import { calculateProfile } from "@/lib/profile-engine";
-import { personMentionToken } from "@/lib/related-person-lens";
+import { personMentionHandles, personMentionToken } from "@/lib/related-person-lens";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeConfiguration } from "@/lib/runtime-configuration";
 
@@ -39,18 +39,30 @@ export async function GET() {
     const user = await requireUser();
     const persistence = persistenceFor(user);
     const profiles = await persistence.repositories.relationshipProfiles.listActive(user.id);
+    const decoded = profiles.map((profile) => ({
+      profile,
+      input: birthProfileInputSchema.parse(
+        JSON.parse(persistence.decrypt(profile.encryptedInput, "related-person-profile-input")),
+      ),
+    }));
+    const handles = personMentionHandles(
+      decoded.map(({ profile, input }) => ({
+        id: profile.relationshipProfileId,
+        fullName: input.fullBirthName,
+      })),
+    );
     return NextResponse.json(
       {
-        profiles: profiles.map((profile) => {
-          const input = birthProfileInputSchema.parse(
-            JSON.parse(persistence.decrypt(profile.encryptedInput, "related-person-profile-input")),
-          );
+        profiles: decoded.map(({ profile, input }) => {
+          const fullMention = personMentionToken(input.fullBirthName);
+          const mention = handles.get(profile.relationshipProfileId) ?? fullMention;
           return {
             id: profile.relationshipProfileId,
             snapshotId: profile.snapshot.id,
             version: profile.snapshot.version,
             name: input.fullBirthName,
-            mention: personMentionToken(input.fullBirthName),
+            mention,
+            ...(mention !== fullMention ? { fullMention } : {}),
             birthDate: input.birthDate,
             birthplace: input.birthplace,
             birthTime: input.birthTime,
@@ -65,7 +77,10 @@ export async function GET() {
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHENTICATED")
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    return NextResponse.json({ error: "People profiles could not be loaded." }, { status: 500 });
+    return NextResponse.json(
+      { error: "The people you’ve saved couldn’t be loaded just now." },
+      { status: 500 },
+    );
   }
 }
 
@@ -90,17 +105,21 @@ export async function POST(request: Request) {
       );
 
     const requestedMention = personMentionToken(input.fullBirthName);
-    const duplicate = profiles.find((profile) => {
-      if (profile.relationshipProfileId === input.profileId) return false;
-      const storedInput = birthProfileInputSchema.parse(
-        JSON.parse(persistence.decrypt(profile.encryptedInput, "related-person-profile-input")),
-      );
-      return personMentionToken(storedInput.fullBirthName) === requestedMention;
-    });
+    const others = profiles
+      .filter((profile) => profile.relationshipProfileId !== input.profileId)
+      .map((profile) => ({
+        id: profile.relationshipProfileId,
+        fullName: birthProfileInputSchema.parse(
+          JSON.parse(persistence.decrypt(profile.encryptedInput, "related-person-profile-input")),
+        ).fullBirthName,
+      }));
+    const duplicate = others.find(
+      ({ fullName }) => personMentionToken(fullName) === requestedMention,
+    );
     if (duplicate)
       return NextResponse.json(
         {
-          error: `That name already uses the mention ${requestedMention}. Edit the existing profile instead.`,
+          error: `You’ve already saved someone with this name. Edit their profile instead.`,
         },
         { status: 409 },
       );
@@ -120,14 +139,25 @@ export async function POST(request: Request) {
       "relationship_profile",
       snapshot.profileId,
     );
+    const before = personMentionHandles(others);
+    const after = personMentionHandles([
+      ...others,
+      { id: snapshot.profileId, fullName: input.fullBirthName },
+    ]);
+    const changedMentions = others.flatMap(({ id }) => {
+      const from = before.get(id);
+      const to = after.get(id);
+      return from && to && from !== to ? [{ from, to }] : [];
+    });
     return NextResponse.json(
       {
+        ...(changedMentions.length > 0 ? { changedMentions } : {}),
         profile: {
           id: snapshot.profileId,
           snapshotId: snapshot.id,
           version: snapshot.version,
           name: input.fullBirthName,
-          mention: requestedMention,
+          mention: after.get(snapshot.profileId) ?? requestedMention,
           birthDate: input.birthDate,
           birthplace: input.birthplace,
           birthTime: input.birthTime,
@@ -170,7 +200,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: profileEngineFailure
-          ? "The private profile engine could not calculate these details. Nothing was saved."
+          ? "We couldn’t work out their profile just now. Nothing was saved — please try again in a moment."
           : "The person profile could not be saved.",
       },
       { status: profileEngineFailure ? 503 : 500 },

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { z } from "zod";
 
-import { SESSION_COOKIE } from "@/lib/auth";
+import { requireUser, SESSION_COOKIE } from "@/lib/auth";
 import { safeAccountReturnPath } from "@/lib/account-return";
 import { isHostedNetlifyRuntime } from "@/lib/hosted-runtime";
 import { createLocalSession } from "@/lib/local-store";
@@ -42,7 +42,12 @@ const signupConsentSchema = z.object({
   marketingVersion: z.literal(POLICY_VERSIONS.marketing),
 });
 const requestSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("sign-in"), email: emailSchema, password: passwordSchema }),
+  z.object({
+    action: z.literal("sign-in"),
+    email: emailSchema,
+    password: passwordSchema,
+    next: z.string().optional(),
+  }),
   z.object({
     action: z.literal("sign-up"),
     email: emailSchema,
@@ -162,6 +167,26 @@ async function recordAuthFailure(
   });
 }
 
+/**
+ * Where a freshly signed-in person should land, from their existing consent
+ * and profile state: review policies only when a required one is missing,
+ * finish a profile when none exists, otherwise go where they were headed.
+ * Runs after the session cookies are written, so requireUser() (the one
+ * provisioning boundary) sees the new session. Never throws — an unknown
+ * state falls back to the consent page, which forwards anyone already current.
+ */
+async function signedInDestination(requestedNext: string | undefined): Promise<string> {
+  const next = safeAccountReturnPath(requestedNext);
+  const consentPath = next ? `/consent?next=${encodeURIComponent(next)}` : "/consent";
+  try {
+    const user = await requireUser();
+    if (user.requiresPolicyReconsent) return consentPath;
+    return next ?? (user.profile ? "/readings" : "/onboarding");
+  } catch {
+    return consentPath;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
@@ -182,14 +207,25 @@ export async function POST(request: Request) {
           : [],
         input.action === "sign-up" ? input.displayName : undefined,
       );
-      const response = NextResponse.json({ ok: true, authenticated: true });
-      response.cookies.set(SESSION_COOKIE, token, {
+      const sessionCookie = {
         httpOnly: true,
-        sameSite: "strict",
+        sameSite: "strict" as const,
         secure: false,
         maxAge: 60 * 60 * 8,
         path: "/",
+      };
+      let destination: string | undefined;
+      if (input.action === "sign-in") {
+        // Make the new session visible to requireUser() within this request.
+        (await cookies()).set(SESSION_COOKIE, token, sessionCookie);
+        destination = await signedInDestination(input.next);
+      }
+      const response = NextResponse.json({
+        ok: true,
+        authenticated: true,
+        ...(destination ? { destination } : {}),
       });
+      response.cookies.set(SESSION_COOKIE, token, sessionCookie);
       if (input.action === "sign-up")
         await tryRecordProductEvent({
           idempotencyKey: `consent:${user.id}:${POLICY_VERSIONS.terms}:${POLICY_VERSIONS.privacy}`,
@@ -218,7 +254,7 @@ export async function POST(request: Request) {
       if (recoveryFailed) {
         await recordAuthFailure("persistence");
         return NextResponse.json(
-          { error: "The private test account could not be activated. Try again shortly." },
+          { error: "We couldn't open your account just now. Please try again in a moment." },
           { status: 503 },
         );
       }
@@ -227,7 +263,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
       }
       await recordSecurityAudit(data?.user?.id, "auth.signed_in");
-      return NextResponse.json({ ok: true, authenticated: true });
+      const destination = await signedInDestination(input.next);
+      return NextResponse.json({ ok: true, authenticated: true, destination });
     }
 
     if (input.action === "update-password") {
@@ -240,7 +277,10 @@ export async function POST(request: Request) {
       ) {
         await recordAuthFailure("authorization");
         return NextResponse.json(
-          { error: "Open a fresh password-recovery email before choosing a new password." },
+          {
+            error:
+              "This reset link has expired or was opened elsewhere. Request a new one to choose a password.",
+          },
           { status: 403 },
         );
       }
@@ -248,7 +288,10 @@ export async function POST(request: Request) {
       if (error) {
         await recordAuthFailure("provider_rejected");
         return NextResponse.json(
-          { error: "The password could not be updated. Request a new recovery email." },
+          {
+            error:
+              "We couldn't save that password. Please request a new reset email and try again.",
+          },
           { status: 400 },
         );
       }
@@ -260,7 +303,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "The password was updated, but revocation of other sessions could not be confirmed. Sign in with the new password and review account activity.",
+              "Your password was updated, but we couldn't confirm you were signed out on your other devices. Sign in with your new password, then sign out anywhere you don't recognize.",
             passwordUpdated: true,
           },
           { status: 502 },
@@ -279,6 +322,7 @@ export async function POST(request: Request) {
 
     if (input.action === "resend-confirmation") {
       callbackUrl.searchParams.set("next", safeAccountReturnPath(input.next) ?? "/onboarding");
+      callbackUrl.searchParams.set("flow", "signup");
       const { error } = await supabase.auth.resend({
         type: "signup",
         email: input.email,
@@ -288,7 +332,8 @@ export async function POST(request: Request) {
         await recordAuthFailure("rate_limited");
         return NextResponse.json(
           {
-            error: "Too many confirmation emails have been requested. Try again shortly.",
+            error:
+              "We've sent several confirmation emails already. Please wait a few minutes and try again.",
             retryable: true,
           },
           { status: 429 },
@@ -301,6 +346,7 @@ export async function POST(request: Request) {
 
     if (input.action === "request-password-reset") {
       callbackUrl.searchParams.set("next", "/reset-password");
+      callbackUrl.searchParams.set("flow", "recovery");
       const { error } = await supabase.auth.resetPasswordForEmail(input.email, {
         redirectTo: callbackUrl.toString(),
       });
@@ -309,7 +355,8 @@ export async function POST(request: Request) {
           await recordAuthFailure("rate_limited");
           return NextResponse.json(
             {
-              error: "Too many recovery emails have been requested. Try again shortly.",
+              error:
+                "We've sent several reset emails already. Please wait a few minutes and try again.",
               retryable: true,
             },
             { status: 429 },
@@ -324,6 +371,7 @@ export async function POST(request: Request) {
     }
 
     callbackUrl.searchParams.set("next", safeAccountReturnPath(input.next) ?? "/onboarding");
+    callbackUrl.searchParams.set("flow", "signup");
     const metadata = signupAppMetadata({}, input.displayName, input.consents.marketingAccepted);
 
     if (privateTestingAuthEnabled()) {
@@ -341,7 +389,10 @@ export async function POST(request: Request) {
       );
       if (creationError && !existingAccount) {
         await recordAuthFailure("provider_rejected");
-        return NextResponse.json({ error: "Unable to create that account." }, { status: 400 });
+        return NextResponse.json(
+          { error: "We couldn't create that account. Please check your details and try again." },
+          { status: 400 },
+        );
       }
 
       const { result, recoveryFailed } = await signInWithPrivateTestingRecovery(
@@ -354,14 +405,17 @@ export async function POST(request: Request) {
         if (created.user) await admin.auth.admin.deleteUser(created.user.id);
         await recordAuthFailure("persistence");
         return NextResponse.json(
-          { error: "The private test account could not be activated. Try again shortly." },
+          { error: "We couldn't open your new account just now. Please try again in a moment." },
           { status: 503 },
         );
       }
       if (result.error || !result.data.user) {
         if (created.user) await admin.auth.admin.deleteUser(created.user.id);
         await recordAuthFailure("authentication");
-        return NextResponse.json({ error: "Unable to create that account." }, { status: 400 });
+        return NextResponse.json(
+          { error: "We couldn't create that account. Please check your details and try again." },
+          { status: 400 },
+        );
       }
 
       if (!created.user) {
@@ -376,7 +430,10 @@ export async function POST(request: Request) {
           await supabase.auth.signOut({ scope: "local" });
           await recordAuthFailure("persistence");
           return NextResponse.json(
-            { error: "Unable to record the required policy acknowledgements. Try again later." },
+            {
+              error:
+                "We couldn't save your agreement to the Terms and Privacy Notice. Please try again in a little while.",
+            },
             { status: 503 },
           );
         }
@@ -408,7 +465,10 @@ export async function POST(request: Request) {
         );
       }
       await recordAuthFailure("provider_rejected");
-      return NextResponse.json({ error: "Unable to create that account." }, { status: 400 });
+      return NextResponse.json(
+        { error: "We couldn't create that account. Please check your details and try again." },
+        { status: 400 },
+      );
     }
     if (data.user?.identities?.length) {
       const admin = createSupabaseAdminClient();
@@ -444,8 +504,8 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error: cleanupConfirmed
-              ? "Unable to record the required policy acknowledgements. The incomplete account was removed; try again later."
-              : "Unable to record the required policy acknowledgements. Account cleanup could not be confirmed; contact support before retrying.",
+              ? "We couldn't save your agreement to the Terms and Privacy Notice, so the unfinished account was removed. Please try again in a little while."
+              : "We couldn't save your agreement to the Terms and Privacy Notice, and we couldn't confirm the unfinished account was removed. Please contact us before trying again.",
           },
           { status: 503 },
         );
@@ -475,7 +535,7 @@ export async function POST(request: Request) {
         {
           error:
             security.status === 503
-              ? "Authentication is temporarily unavailable. Try again shortly."
+              ? "Accounts are briefly unavailable. Please try again in a moment."
               : security.error,
         },
         { status: security.status, headers: security.headers },
@@ -484,7 +544,7 @@ export async function POST(request: Request) {
     if (error instanceof RuntimeConfigurationError) {
       await recordAuthFailure("configuration");
       return NextResponse.json(
-        { error: "Authentication is not configured for this deployment." },
+        { error: "Accounts aren't available here just now. Please try again later." },
         { status: 503 },
       );
     }
@@ -492,12 +552,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Use a valid email, a password between 12 and 72 characters, and accept all required beta policies.",
+            "Please use a valid email and a password of 12 to 72 characters, and tick each required box.",
         },
         { status: 422 },
       );
     await recordAuthFailure("unclassified");
-    return NextResponse.json({ error: "Unable to complete authentication." }, { status: 400 });
+    return NextResponse.json(
+      { error: "We couldn't finish that just now. Please try again." },
+      { status: 400 },
+    );
   }
 }
 
@@ -520,7 +583,7 @@ export async function DELETE(request: Request) {
     const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error)
       return NextResponse.json(
-        { error: "The provider could not end this browser session." },
+        { error: "We couldn't sign you out just now. Please try again." },
         { status: 502 },
       );
     await recordSecurityAudit(sessionUser?.user?.id, "auth.signed_out");
@@ -536,8 +599,8 @@ export async function DELETE(request: Request) {
       {
         error:
           error instanceof RuntimeConfigurationError
-            ? "Runtime is not configured."
-            : "Sign-out failed.",
+            ? "Accounts aren't available here just now. Please try again later."
+            : "We couldn't sign you out just now. Please try again.",
       },
       { status: 503 },
     );

@@ -3,7 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Field } from "@starguidance/design-system";
+import { Button, Field, PasswordField } from "@starguidance/design-system";
+
+import { sendJson } from "@/lib/client-request";
+
+import { AccountMessage } from "../sign-up/account-threshold";
 
 export function SignInForm({
   initialError,
@@ -23,52 +27,44 @@ export function SignInForm({
         setError(undefined);
         setSubmitting(true);
         const form = new FormData(event.currentTarget);
-        const response = await fetch("/api/auth", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            action: "sign-in",
-            email: form.get("email"),
-            password: form.get("password"),
-          }),
+        const result = await sendJson<{ destination?: string }>("/api/auth", "POST", {
+          action: "sign-in",
+          email: form.get("email"),
+          password: form.get("password"),
+          next: nextPath,
         });
-        const payload = (await response.json()) as { authenticated?: boolean; error?: string };
-        setSubmitting(false);
-        if (!response.ok) return setError(payload.error ?? "Unable to sign in securely.");
-        router.push(nextPath ?? "/consent");
+        if (!result.ok) {
+          setSubmitting(false);
+          return setError(result.error);
+        }
+        const destination = result.data.destination;
+        router.push(
+          typeof destination === "string" &&
+            destination.startsWith("/") &&
+            !destination.startsWith("//")
+            ? destination
+            : (nextPath ?? "/consent"),
+        );
         router.refresh();
       }}
     >
-      {error ? (
-        <p
-          aria-live="assertive"
-          className="rounded-2xl border border-rose-300/30 bg-rose-950/30 p-3 text-sm text-rose-100"
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <AccountMessage tone="error">{error}</AccountMessage> : null}
       <Field autoComplete="email" label="Email" name="email" required type="email" />
-      <Field
+      <PasswordField
         autoComplete="current-password"
         label="Password"
         maxLength={72}
-        minLength={12}
         name="password"
         required
-        type="password"
       />
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <Link
-          className="inline-flex min-h-11 items-center text-[#d8b56d] underline-offset-4 hover:underline"
+          className="account-inline-link"
           href={nextPath ? `/sign-up?next=${encodeURIComponent(nextPath)}` : "/sign-up"}
         >
           Create an account
         </Link>
-        <Link
-          className="inline-flex min-h-11 items-center text-[#c9bfd4] underline-offset-4 hover:underline"
-          href="/forgot-password"
-        >
+        <Link className="account-inline-link account-inline-link--quiet" href="/forgot-password">
           Forgot password?
         </Link>
       </div>

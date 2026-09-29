@@ -17,6 +17,13 @@ export const GUEST_DEVICE_STORAGE_KEY = "sg:guest-device:v1";
 export const GUEST_READING_SESSION_KEY = "sg:guest-reading:v2";
 export const GUEST_READING_RECEIPT_KEY = "sg:guest-reading-receipt:v1";
 export const GUEST_TRIAL_LOCAL_MARKER_KEY = "sg:guest-trial-used:v1";
+/** Compact handoff that lets a confirmation email reopen the reading. */
+export const GUEST_READING_HANDOFF_KEY = "sg:guest-reading-handoff:v1";
+/** The question and consents being drafted (never the birthday). */
+export const GUEST_INTAKE_DRAFT_KEY = "sg:guest-intake-draft:v1";
+
+export const GUEST_HANDOFF_PATTERN = /^h1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}$/;
+export const guestHandoffSchema = z.string().max(8_192).regex(GUEST_HANDOFF_PATTERN);
 
 export const guestDeviceIdSchema = z.string().uuid();
 
@@ -25,7 +32,8 @@ export const guestReadingPrepareInputSchema = z
     action: z.literal("prepare"),
     /** Accepted for recovery-compatible clients but ignored for new routing. */
     spreadId: z.enum(FREE_GUEST_SPREAD_IDS).optional(),
-    birthDate: birthDateSchema,
+    /** Required for Personalized Tarot; Pure Tarot never asks for it. */
+    birthDate: birthDateSchema.optional(),
     question: z.string().trim().min(1).max(500),
     questionConfirmed: z.literal(true),
     reversalMode: reversalModeSchema.default("reversals_enabled"),
@@ -56,6 +64,9 @@ export const guestReadingActionSchema = z.discriminatedUnion("action", [
         .refine((indexes) => new Set(indexes).size === indexes.length)
         .readonly()
         .optional(),
+      /** Sent only after the server reported the birthday lens unavailable;
+       * the same committed cards are then read as Pure Tarot. */
+      pureTarotFallback: z.boolean().optional(),
     })
     .strict(),
   z.object({ action: z.literal("recover"), receipt: z.string().min(32).max(65_536) }).strict(),
@@ -161,7 +172,15 @@ export const guestReadingDisplaySchema = z
   .strict();
 
 export const guestReadingResponseSchema = z
-  .object({ reading: guestReadingDisplaySchema, receipt: z.string().min(32).max(65_536) })
+  .object({
+    reading: guestReadingDisplaySchema,
+    receipt: z.string().min(32).max(65_536),
+    handoff: guestHandoffSchema.optional(),
+    /** True when finalize/restore returned a draw this browser already locked. */
+    replayed: z.boolean().optional(),
+    /** True when the birthday lens was unavailable and Pure Tarot was used. */
+    personalizationFallback: z.boolean().optional(),
+  })
   .strict();
 
 export const guestReceiptPayloadSchema = z
@@ -181,6 +200,8 @@ export const guestReceiptPayloadSchema = z
 
 export const guestContinuationInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("recover"), receipt: z.string().min(32).max(65_536) }),
+  /** Reopens a reading from the compact handoff carried by a confirmation link. */
+  z.object({ action: z.literal("redeem"), handoff: guestHandoffSchema }),
   z.object({
     action: z.literal("followUp"),
     receipt: z.string().min(32).max(65_536),

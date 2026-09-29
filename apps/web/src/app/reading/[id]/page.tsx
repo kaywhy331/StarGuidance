@@ -11,7 +11,7 @@ export default async function ReadingResultPage({ params }: { params: Promise<{ 
   try {
     user = await requireUser();
   } catch {
-    redirect("/sign-in");
+    redirect(`/sign-in?next=${encodeURIComponent(`/reading/${(await params).id}`)}`);
   }
   if (user.requiresPolicyReconsent) redirect("/consent");
   const runtimeConfiguration = await getRuntimeConfiguration();

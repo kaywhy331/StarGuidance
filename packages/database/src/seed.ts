@@ -199,6 +199,10 @@ try {
         "relationship-aware credential-free consultation using locked cards",
       ],
       [
+        "deterministic-fallback-v9",
+        "warmer non-repeating credential-free consultation naming each card",
+      ],
+      [
         "reader-voice-v8-grounded",
         "relationship-aware consultation with concrete observable emphasis",
       ],

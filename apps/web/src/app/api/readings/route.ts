@@ -40,6 +40,7 @@ import {
   readingSessionTtlMs,
 } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
+import { ritualSessionExpired } from "@/lib/ritual-progress";
 import { getRuntimeAdapter } from "@/lib/runtime";
 import { getRuntimeConfiguration, interpretationRuntimeOptions } from "@/lib/runtime-configuration";
 
@@ -55,6 +56,15 @@ const prepareInputSchema = z
   })
   .strict();
 const idempotencyKeySchema = z.string().uuid();
+
+/** Up to ~120 characters, cut at a word boundary with an ellipsis. */
+function questionPreview(question: string, limit = 120): string {
+  const text = question.trim();
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, limit);
+  const boundary = cut.lastIndexOf(" ");
+  return `${(boundary > limit * 0.6 ? cut.slice(0, boundary) : cut).replace(/[\s,.;:!?—-]+$/u, "")}…`;
+}
 
 export async function POST(request: Request) {
   try {
@@ -149,7 +159,8 @@ export async function POST(request: Request) {
       if (entitlementDecision.outcome === "limitReached")
         return NextResponse.json(
           {
-            error: "Your included reading allowance is used for this window.",
+            error:
+              "You’ve used the readings included for now. Your past readings are still here to revisit.",
             entitlementDecision,
           },
           { status: 429 },
@@ -164,7 +175,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "You asked this recently. Keep the existing cards in view before starting another reading.",
+              "You asked this recently. Sit with the cards you already drew before asking again.",
             cooldownActive: true,
             retainedReadingId: retained.reading.id,
             availableAt: retained.availableAt,
@@ -301,7 +312,11 @@ export async function POST(request: Request) {
     );
     if (entitlementDecision.outcome === "limitReached")
       return NextResponse.json(
-        { error: "Your included reading allowance is used for this window.", entitlementDecision },
+        {
+          error:
+            "You’ve used the readings included for now. Your past readings are still here to revisit.",
+          entitlementDecision,
+        },
         { status: 429 },
       );
     const retained = findRetainedReading(
@@ -314,7 +329,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "You asked this recently. Keep the existing cards in view before starting another reading.",
+            "You asked this recently. Sit with the cards you already drew before asking again.",
           cooldownActive: true,
           retainedReadingId: retained.reading.id,
           availableAt: retained.availableAt,
@@ -540,6 +555,7 @@ export async function GET() {
       persistence.repositories.reports.list(user.id),
       persistence.repositories.feedback.list(user.id),
     ]);
+    const now = Date.now();
     const readings = storedReadings.map(
       ({ id, spreadId, encryptedQuestion, draw, generationStatus, createdAt }) => {
         const stored = storedReadings.find((reading) => reading.id === id)!;
@@ -553,7 +569,7 @@ export async function GET() {
           id,
           spreadId,
           spreadName: spread?.name ?? spreadId.replaceAll("-", " "),
-          questionPreview: `${question.slice(0, 48)}${question.length > 48 ? "…" : ""}`,
+          questionPreview: questionPreview(question),
           cardCount: draw.assignments.length,
           cards: draw.assignments.map(({ cardId, orientation }) => ({
             cardId,
@@ -572,6 +588,13 @@ export async function GET() {
             (entry) => entry.readingId === id && entry.kind === "outcome",
           ),
           reportStatus: report?.status ?? "not-purchased",
+          /** How far the ritual got (drawLocked … complete); undefined for
+           * readings that predate progress tracking. */
+          ritualPhase: stored.ritualProgress?.phase,
+          expiresAt: stored.expiresAt,
+          /** An unfinished ritual past its window (never true once the
+           * interpretation was reached). */
+          sessionExpired: ritualSessionExpired(stored, now),
           createdAt,
         };
       },

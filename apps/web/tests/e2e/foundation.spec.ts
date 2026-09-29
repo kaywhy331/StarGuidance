@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 
 test("landing page explains private personalization and draw integrity", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("genuinely random draw");
-  await expect(page.getByText(/never which cards appear/i)).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("meets you where you are");
+  await expect(page.getByText(/nothing you share can steer them/i)).toBeVisible();
 });
 
 test("the primary threshold remains legible and contained on a mobile viewport", async ({

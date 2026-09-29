@@ -5,8 +5,12 @@ import {
   casinoFanIndex,
   casinoPickTarget,
   casinoWashLayout,
+  FAN_MARGIN,
   fieldTargetsForSlots,
+  nextAvailableIndex,
+  randomAvailableIndex,
   SHUFFLE_SHELL_COUNT,
+  spreadAnnouncement,
   spreadLayoutFor,
   TAROT_DECK_SIZE,
 } from "./shuffle-shells";
@@ -111,5 +115,42 @@ describe("spread slot targeting", () => {
     expect(
       fieldTargetsForSlots([], positions, { left: 0, bottom: 0, width: 0, height: 0 }, 1),
     ).toBe(undefined);
+  });
+});
+
+describe("deliberate fan selection", () => {
+  it("keeps the whole arch inside the field with a margin on both sides", () => {
+    expect(casinoWashLayout(0).fanLeft).toBeCloseTo(FAN_MARGIN);
+    expect(casinoWashLayout(77).fanLeft).toBeCloseTo(100 - FAN_MARGIN);
+  });
+
+  it("announces the spread by its positions", () => {
+    expect(
+      spreadAnnouncement([
+        { displayName: "Situation" },
+        { displayName: "Challenge" },
+        { displayName: "Guidance" },
+      ]),
+    ).toBe("A three-card spread: Situation · Challenge · Guidance");
+  });
+
+  it("chooses uniformly among remaining cards, rejecting biased draws", () => {
+    const values = [0xffff_ffff, 5];
+    const random = (buffer: Uint32Array) => {
+      buffer[0] = values.shift() ?? 0;
+      return buffer;
+    };
+    // 0xffffffff is above the unbiased limit for 3 choices and is rejected.
+    expect(randomAvailableIndex([10, 20, 30], random)).toBe(30);
+    expect(randomAvailableIndex([])).toBe(undefined);
+    const index = randomAvailableIndex([4, 9]);
+    expect([4, 9]).toContain(index);
+  });
+
+  it("moves keyboard focus past cards that were already taken", () => {
+    expect(nextAvailableIndex(3, 1, [3, 4, 5])).toBe(6);
+    expect(nextAvailableIndex(6, -1, [3, 4, 5])).toBe(2);
+    expect(nextAvailableIndex(77, 1, [77])).toBe(76);
+    expect(nextAvailableIndex(0, -1, [0, 1])).toBe(2);
   });
 });

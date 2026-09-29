@@ -20,7 +20,11 @@ vi.mock("@/lib/request-security", async (importOriginal) => ({
 }));
 
 import { guestReadingDisplaySchema } from "@/lib/guest-reading-contract";
-import { issueGuestReadingReceipt } from "@/lib/guest-reading-security";
+import {
+  issueGuestReadingHandoff,
+  issueGuestReadingReceipt,
+  verifyGuestReadingReceipt,
+} from "@/lib/guest-reading-security";
 
 import { POST } from "./route";
 
@@ -139,5 +143,53 @@ describe("account-gated guest continuation", () => {
 
     expect(response.status).toBe(422);
     expect(auth.requireUser).not.toHaveBeenCalled();
+  });
+
+  it("reopens the same cards from a compact confirmation-link handoff", async () => {
+    const issued = await receipt();
+    const handoff = issueGuestReadingHandoff(verifyGuestReadingReceipt(issued)!);
+    const original = guestReadingDisplaySchema.parse(
+      (
+        (await (await POST(request({ action: "recover", receipt: issued }))).json()) as {
+          reading: unknown;
+        }
+      ).reading,
+    );
+
+    const response = await POST(request({ action: "redeem", handoff }));
+    const body = (await response.json()) as { reading: unknown; receipt: string };
+    const redeemed = guestReadingDisplaySchema.parse(body.reading);
+
+    expect(response.status).toBe(200);
+    expect(redeemed.draw).toEqual(original.draw);
+    expect(redeemed.result?.directAnswer).toBe(original.result?.directAnswer);
+    expect(redeemed.receiptExpiresAt).toBe(original.receiptExpiresAt);
+    expect(verifyGuestReadingReceipt(body.receipt)?.readingId).toBe(original.id);
+  });
+
+  it("explains an expired or unknown handoff plainly", async () => {
+    const response = await POST(
+      request({
+        action: "redeem",
+        handoff: `h1.${"A".repeat(16)}.${"B".repeat(40)}.${"C".repeat(22)}`,
+      }),
+    );
+    expect(response.status).toBe(410);
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/7 days/) });
+  });
+
+  it("asks for fresh cards when a follow-up changes the subject", async () => {
+    const response = await POST(
+      request({
+        action: "followUp",
+        receipt: await receipt(),
+        question: "I have a different question about my new relationship.",
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: "That’s a new question — it deserves its own fresh cards.",
+      newReadingRequired: true,
+    });
   });
 });

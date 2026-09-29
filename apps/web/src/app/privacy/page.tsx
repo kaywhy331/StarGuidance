@@ -1,111 +1,142 @@
-import { POLICY_EFFECTIVE_DATE, POLICY_VERSIONS } from "@/lib/policies";
+import Link from "next/link";
 
-export const metadata = { title: "Privacy notice · StarGuidance" };
+import { POLICY_EFFECTIVE_DATE } from "@/lib/policies";
 
+export const metadata = { title: "Privacy notice" };
+
+/**
+ * Each section leads with a plain summary; the precise detail sits in a
+ * "How this works" disclosure so nothing is hidden, only quieter.
+ */
 export default function PrivacyNoticePage() {
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-6 py-12">
-      <p className="text-sm tracking-[0.2em] text-[#d8b56d] uppercase">Public notice</p>
-      <h1 className="mt-3 text-5xl font-semibold">Privacy notice</h1>
-      <p className="mt-4 text-sm text-[#a99db5]">
-        Beta version {POLICY_VERSIONS.privacy} · effective {POLICY_EFFECTIVE_DATE}
-      </p>
+    <main className="policy-page">
+      <p className="page-eyebrow">Privacy</p>
+      <h1>Privacy notice</h1>
+      <p className="policy-page__meta">Last updated {POLICY_EFFECTIVE_DATE}</p>
 
-      <div className="mt-10 grid gap-8 text-[#c9bfd4]">
-        <section className="grid gap-3">
-          <h2 className="text-2xl text-white">What StarGuidance keeps</h2>
+      <section className="policy-section">
+        <h2>What StarGuidance keeps</h2>
+        <p className="policy-section__summary">
+          We keep what&apos;s needed to run your account and your readings, and your most personal
+          details are encrypted.
+        </p>
+        <details className="policy-details">
+          <summary>How this works</summary>
           <p>
-            We keep your account email, consent receipts, settings, encrypted birth-profile input,
-            versioned derived traits, encrypted reading questions and follow-ups, locked card draws,
-            reading results, and purchase or entitlement records when you use those features.
+            We keep your account email, a record of the policies you agreed to, your settings, your
+            encrypted birth-profile details, the traits calculated from them (with a record of which
+            calculation produced them), your encrypted reading questions and follow-ups, the cards
+            drawn for each reading, reading results, and purchase records when you use those
+            features.
           </p>
-        </section>
+        </details>
+      </section>
 
-        <section className="grid gap-3">
-          <h2 className="text-2xl text-white">Your free reading before signup</h2>
+      <section className="policy-section">
+        <h2>Your free reading before signing up</h2>
+        <p className="policy-section__summary">
+          You can have one reading without an account. Your birthday is used for that reading and
+          then discarded, and your question stays in an encrypted copy kept by your own browser.
+        </p>
+        <details className="policy-details">
+          <summary>How this works</summary>
           <p>
-            You can complete one birthday-personalized reading without an account. Your browser
-            creates a random device ID; StarGuidance uses it with a signed, HttpOnly trial cookie
-            and a local trial marker to remember that this browser has received its free reading.
-            This is not a hardware fingerprint.
+            Your browser creates a random device ID. StarGuidance uses it with a signed cookie that
+            page scripts cannot read, plus a marker in your browser, to remember that this browser
+            has had its free reading. This is not a hardware fingerprint.
           </p>
           <p>
-            Your birthday is sent only to StarGuidance&apos;s private calculation service. The guest
-            narrator receives a compact lens made from stable date-derived numerology traits—not the
-            raw date. The raw birthday is discarded after that request and is not placed in the
-            encrypted guest receipt, account database, session storage, local storage, URL, or
-            analytics. It never influences card selection and is not sent to an AI provider.
+            Your birthday is sent only to StarGuidance&apos;s private calculation service. The
+            reading is written from a small set of numerology traits drawn from that date — not the
+            raw date itself. The raw birthday is discarded after that request and is not placed in
+            the encrypted reading your browser keeps, the account database, browser storage, the
+            page address, or analytics. It never influences which cards are drawn and is not sent to
+            an AI service.
           </p>
           <p>
-            The guest question is processed in server memory by the deterministic narrator and is
-            not sent to an AI provider, stored in an account database, placed in a URL, or included
-            in analytics. The exact question and locked draw are returned only inside an encrypted,
-            opaque receipt held by your browser for up to seven days. A display-only copy of the
-            result is kept in session storage so an interrupted tab can recover it.
+            A free reading is written from a curated library of card meanings rather than a live AI
+            model. Your question is handled in server memory while it is written, and is not sent to
+            an AI service, stored in an account database, placed in the page address, or included in
+            analytics. The exact question and the cards drawn are returned only inside an encrypted
+            copy held by your browser for up to seven days. A display-only copy of the result is
+            kept in this tab&apos;s session storage so an interrupted tab can recover it.
           </p>
           <p>
-            A trusted edge network address may be converted immediately into a keyed digest for a
-            short abuse-prevention quota. The application does not retain the raw network address in
-            that quota. Shared networks are not treated as a permanent identity, and the signed
-            browser marker—not IP address—is the normal one-reading boundary.
+            To prevent abuse, your network address may be turned straight away into a one-way,
+            secret-keyed code used for a short limit on free readings. The raw address is not kept
+            for that limit. Shared networks are not treated as one person, and the browser marker —
+            not your IP address — is what normally limits a browser to one free reading.
           </p>
           <p>
-            If you choose to sign up or sign in, the server can decrypt the browser-held receipt to
-            recover the same cards for a follow-up. Signup never redraws them. The guest question
-            and result do not become saved account history through this handoff, and the browser
-            removes the receipt after the follow-up succeeds.
+            If you choose to sign up or sign in, the server can unlock the copy your browser holds
+            to recover the same cards for a follow-up. Signing up never redraws them. The guest
+            question and result do not become saved account history through this step, and your
+            browser deletes its copy once the follow-up succeeds.
           </p>
-        </section>
+        </details>
+      </section>
 
-        <section className="grid gap-3">
-          <h2 className="text-2xl text-white">Why it is used</h2>
+      <section className="policy-section">
+        <h2>Why it is used</h2>
+        <p className="policy-section__summary">
+          Your details are used to run your account and to personalize how readings are written —
+          never to choose your cards, and never sold.
+        </p>
+        <details className="policy-details">
+          <summary>How this works</summary>
           <p>
-            The data creates your private account, calculates and versions your profile,
-            personalizes interpretations without influencing card selection, restores reading
-            history, supports privacy requests, prevents abuse, and fulfills products you explicitly
-            request.
+            The data creates your private account, calculates and keeps a history of your profile,
+            personalizes interpretations without influencing which cards are drawn, restores your
+            reading history, supports privacy requests, prevents abuse, and fulfils products you
+            explicitly request.
           </p>
           <p>
-            Raw birth facts are encrypted before database storage. The AI boundary receives a small
-            plain-language trait lens when enabled—not your full name, exact birth facts,
-            birthplace, or raw calculation record.
+            Raw birth details are encrypted before they are stored. When AI writing is used, it
+            receives only a short, plain-language summary of traits — not your full name, exact
+            birth details, birthplace, or the raw calculation record.
           </p>
-        </section>
+        </details>
+      </section>
 
-        <section className="grid gap-3">
-          <h2 className="text-2xl text-white">Services and choices</h2>
+      <section className="policy-section">
+        <h2>Services we rely on, and your choices</h2>
+        <p className="policy-section__summary">
+          We use trusted companies to host the service, and you can export or delete your data at
+          any time from <Link href="/settings/privacy">Privacy controls</Link>.
+        </p>
+        <details className="policy-details">
+          <summary>How this works</summary>
           <p>
-            The beta uses infrastructure providers for hosting, authentication, database storage,
-            profile calculation, and optional AI or payment functions. We do not sell personal data.
-            Public-launch processor terms, regions, retention periods, and contact details still
-            require owner legal approval.
+            StarGuidance uses outside services for hosting, sign-in, database storage, profile
+            calculation, and optional AI writing or payments. We do not sell personal data.
           </p>
           <p>
             For signed-in readings, an optional Audio reading setting may be available. Turning it
-            on does not create or send audio; it only reveals a play button. When you press play,
-            StarGuidance sends that one displayed reading heading and passage to Fish Audio to make
-            speech, then requests another passage only if playback reaches it. We do not add your
-            raw birth details, profile record, account email, locked cards, or exact question to
+            on does not create or send audio; it only shows a play button. When you press play,
+            StarGuidance sends that one displayed reading heading and passage to Fish Audio to turn
+            it into speech, then requests another passage only if playback reaches it. We do not add
+            your raw birth details, profile record, account email, drawn cards, or exact question to
             that voice request, although the reading passage itself may reflect what you asked.
-            StarGuidance does not save the generated audio; listened passages remain only in that
-            browser tab for playback. Guest readings do not use this network voice service.
+            StarGuidance does not save the generated audio; listened passages stay only in that
+            browser tab for playback. Guest readings do not use this voice service.
           </p>
           <p>
             Signed-in users can export their data and delete individual readings, their private
-            profile, or the entire account from Privacy controls. Account deletion removes the Auth
-            identity and cascades through user-owned application data.
+            profile, or the entire account from Privacy controls. Deleting your account removes your
+            sign-in identity and all of the data that belongs to it.
           </p>
-        </section>
+        </details>
+      </section>
 
-        <section className="grid gap-3">
-          <h2 className="text-2xl text-white">Age and beta status</h2>
-          <p>
-            This restricted beta is for people aged 18 or older. This notice is source-controlled
-            and versioned for test consent receipts, but it is not a substitute for owner-approved
-            legal copy, launch-region review, or a published privacy contact before public release.
-          </p>
-        </section>
-      </div>
+      <section className="policy-section">
+        <h2>Age and changes</h2>
+        <p className="policy-section__summary">StarGuidance is for people aged 18 or older.</p>
+        <p>
+          StarGuidance is still in an early preview. This notice may be updated; we&apos;ll ask you
+          to review any changes before you continue.
+        </p>
+      </section>
     </main>
   );
 }

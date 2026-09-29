@@ -2,11 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Field } from "@starguidance/design-system";
+import { Button, PasswordField } from "@starguidance/design-system";
+
+import { sendJson } from "@/lib/client-request";
+
+import { AccountMessage } from "../sign-up/account-threshold";
+
+const PASSWORD_MISMATCH = "These passwords don't match yet. Please type the same password twice.";
 
 export function ResetPasswordForm() {
   const router = useRouter();
   const [error, setError] = useState<string>();
+  const [mismatch, setMismatch] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   return (
@@ -15,56 +24,57 @@ export function ResetPasswordForm() {
       onSubmit={async (event) => {
         event.preventDefault();
         setError(undefined);
-        const form = new FormData(event.currentTarget);
-        const password = String(form.get("password") ?? "");
-        if (password !== String(form.get("confirmPassword") ?? "")) {
-          setError("Passwords must match.");
+        if (password !== confirmPassword) {
+          setMismatch(true);
+          document.getElementById("confirmPassword")?.focus();
           return;
         }
         setSubmitting(true);
-        const response = await fetch("/api/auth", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "update-password", password }),
-        });
-        const payload = (await response.json()) as { error?: string; passwordUpdated?: boolean };
-        setSubmitting(false);
-        if (!response.ok && !payload.passwordUpdated)
-          return setError(payload.error ?? "Unable to update the password.");
-        router.push("/sign-in");
+        const result = await sendJson("/api/auth", "POST", { action: "update-password", password });
+        if (!result.ok && result.data.passwordUpdated !== true) {
+          setSubmitting(false);
+          return setError(result.error);
+        }
+        router.push(
+          result.ok
+            ? "/sign-in?notice=password-updated"
+            : "/sign-in?notice=password-updated-sessions",
+        );
         router.refresh();
       }}
     >
-      {error ? (
-        <p
-          aria-live="assertive"
-          className="rounded-2xl border border-rose-300/30 bg-rose-950/30 p-3 text-sm text-rose-100"
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
-      <Field
+      {error ? <AccountMessage tone="error">{error}</AccountMessage> : null}
+      <PasswordField
         autoComplete="new-password"
-        hint="Use 12–72 characters. A passphrase is easiest to remember."
+        hint="Use 12–72 characters. A short phrase is easy to remember."
         label="New password"
         maxLength={72}
         minLength={12}
         name="password"
+        onChange={(event) => {
+          setPassword(event.target.value);
+          if (mismatch && event.target.value === confirmPassword) setMismatch(false);
+        }}
         required
-        type="password"
+        value={password}
       />
-      <Field
+      <PasswordField
         autoComplete="new-password"
+        error={mismatch ? PASSWORD_MISMATCH : undefined}
         label="Confirm new password"
         maxLength={72}
         minLength={12}
         name="confirmPassword"
+        onBlur={() => setMismatch(confirmPassword.length > 0 && password !== confirmPassword)}
+        onChange={(event) => {
+          setConfirmPassword(event.target.value);
+          if (mismatch && event.target.value === password) setMismatch(false);
+        }}
         required
-        type="password"
+        value={confirmPassword}
       />
       <Button disabled={submitting} type="submit">
-        {submitting ? "Updating password…" : "Update password"}
+        {submitting ? "Saving your new password…" : "Update password"}
       </Button>
     </form>
   );

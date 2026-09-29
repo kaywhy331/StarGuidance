@@ -53,6 +53,8 @@ export interface ReadingPayload {
   /** Decrypted only for the owning reader so the ritual can return their
    * private question to them. It is never placed in a URL or analytics. */
   question: string;
+  /** Display name of the spread (e.g. "Three-card spread"), when known. */
+  spreadName?: string;
   /** The immutable profile snapshot this reading was drawn against. */
   profileSnapshotId: string;
   personalization?: ReadingPersonalization;
@@ -69,7 +71,9 @@ export interface ReadingPayload {
   sessionExpired: boolean;
   /** The category `classifyQuestion()` (@starguidance/ai) assigned at creation. */
   safetyClassification?: SafetyCategory;
-  followUps: { id: string; result: FollowUpResult }[];
+  /** `question` is the owner's decrypted follow-up question, returned only
+   * in the owner's no-store reading response. */
+  followUps: { id: string; result: FollowUpResult; question?: string }[];
   followUpLimit: number;
   followUpsRemaining: number;
   feedbackSubmitted: boolean;

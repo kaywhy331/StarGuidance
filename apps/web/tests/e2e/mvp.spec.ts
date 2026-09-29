@@ -61,7 +61,7 @@ test("an explicitly mentioned saved person contributes only a minimized locked l
   );
   await page.getByRole("button", { name: "Add person" }).click();
   expect((await saved).status()).toBe(201);
-  await expect(page.getByText("@john-smith", { exact: true })).toBeVisible();
+  await expect(page.getByText("@john", { exact: true })).toBeVisible();
 
   const ceremony = await prepareReadingViaApi(page, {
     question: "Why has @john-smith been distant lately?",
@@ -94,7 +94,7 @@ test("one question directly prepares an automatic spread without exposing card a
   await createAccountAndProfileViaApi(page);
   const question = "How can I work with the tension I feel around this project?";
   await expect(
-    page.getByRole("heading", { name: "What question did you have for the stars today?" }),
+    page.getByRole("heading", { name: "What would you like to ask the cards?" }),
   ).toBeVisible();
   await expect(page.getByText("Set your intention", { exact: true })).toHaveCount(0);
   await page.getByLabel("Your question for the stars").fill(question);
@@ -104,7 +104,7 @@ test("one question directly prepares an automatic spread without exposing card a
       new URL(response.url()).pathname === "/api/readings" &&
       response.request().postData()?.includes('"action":"prepare"') === true,
   );
-  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Draw my cards" }).click();
   const response = await prepared;
   expect(response.status()).toBe(201);
   const payload = await response.json();
@@ -186,7 +186,7 @@ test("users may choose reveal order while exposing only one locked baseline", as
     question: "What should I understand about moving this project forward?",
   });
 
-  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+  const motionControl = page.getByRole("button", { name: /^Motion:/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true")
     await motionControl.dispatchEvent("click");
   await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
@@ -405,7 +405,7 @@ for (const spreadCase of configuredSpreadCases) {
     const finalized = await finalizeReadingViaApi(page, ceremony, 20);
     await page.goto(`/session/${finalized.readingId}`);
 
-    const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
+    const motionControl = page.getByRole("button", { name: /^Motion:/ });
     await expect(motionControl).toBeVisible({ timeout: 20_000 });
     if ((await motionControl.getAttribute("aria-pressed")) !== "true")
       await motionControl.dispatchEvent("click");
@@ -558,9 +558,9 @@ test("the credential-free local report adapter still grants the test entitlement
   test.skip(testInfo.project.name.startsWith("mobile"), "The report adapter is viewport-neutral.");
   await createAccountAndProfileViaApi(page);
   await page.goto("/profile");
-  await page.getByRole("button", { name: "Get full profile report" }).click();
+  await page.getByRole("button", { name: /^Purchase your pattern atlas/ }).click();
   await expect(page).toHaveURL(/\/report\/[a-f0-9-]+$/, { timeout: 30_000 });
-  await expect(page.getByText(/local test adapter/i)).toBeVisible();
+  await expect(page.getByText(/Pattern atlas · Purchased/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Western astrology", exact: true })).toBeVisible();
-  await expect(page.locator("#atlas-section-astrology")).toContainText("Explicitly unavailable");
+  await expect(page.locator("#atlas-section-astrology")).toContainText("Not in this edition");
 });

@@ -509,7 +509,7 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     outputProvenance?.schemaVersion === "reading-result-v3";
   const deterministicProvenance =
     outputProvenance?.providerId === "deterministic-fallback-v1" &&
-    outputProvenance.promptVersion === "deterministic-fallback-v8" &&
+    outputProvenance.promptVersion === "deterministic-fallback-v9" &&
     outputProvenance.schemaVersion === "reading-result-v3";
   const configuredProvenance =
     interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
@@ -540,7 +540,7 @@ test("a reading is created against the active snapshot with a locked draw", asyn
     outputProvenance?.promptVersion ?? "",
   )
     ? "approved-live"
-    : outputProvenance?.promptVersion === "deterministic-fallback-v8"
+    : outputProvenance?.promptVersion === "deterministic-fallback-v9"
       ? "deterministic-fallback"
       : outputProvenance?.promptVersion
         ? "other"
@@ -594,7 +594,7 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   await navigateApp(pageA, `/session/${readingId}`);
   // Use the same centered reader-controlled reveal path while shortening its
   // decorative timing for the staging integrity probe.
-  const motionControl = pageA.getByRole("button", { name: /^Reduced motion/ });
+  const motionControl = pageA.getByRole("button", { name: /^Motion:/ });
   if ((await motionControl.getAttribute("aria-pressed")) !== "true")
     await motionControl.dispatchEvent("click");
   await expect(motionControl).toHaveAttribute("aria-pressed", "true");

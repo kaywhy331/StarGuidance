@@ -399,7 +399,8 @@ export function ReadingAudioPlayer({
     }
     if (playback === "error") discardCurrentSection();
     const priming = audio ? primeAudioElement(audio) : Promise.resolve();
-    void playSection(continuous ? 0 : activeIndex, priming);
+    // Continuous narration starts from the passage the reader is on.
+    void playSection(activeIndex, priming);
   };
 
   if (!enabled || entries.length === 0) return null;

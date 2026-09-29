@@ -7,6 +7,8 @@ import {
   type ReadingResult,
 } from "@starguidance/contracts";
 
+import { CONNECTION_LOST_MESSAGE, SERVER_UNAVAILABLE_MESSAGE } from "@/lib/client-request";
+
 import {
   countNarrationWords,
   ReadingAudioPlayer,
@@ -16,6 +18,43 @@ import type { DealtCardView, ReadingPersonalization } from "./reading-types";
 
 type PhaseEvent = Extract<OracleStreamEvent, { type: "phase" }>;
 type StreamState = "idle" | "streaming" | "complete" | "failed";
+
+/** No bytes for this long means the stream has stalled. */
+export const STREAM_IDLE_TIMEOUT_MS = 20_000;
+const STREAM_PAUSED_MESSAGE =
+  "The reading paused partway. What arrived is kept — you can continue.";
+
+/** Reader-facing copy for a stream request the server refused. Server
+ * `error` strings are already written for readers; anything else (HTML
+ * error pages, parse failures) gets a calm fallback, never raw text. */
+export function streamFailureMessage(status: number, serverError?: unknown): string {
+  if (status === 0) return CONNECTION_LOST_MESSAGE;
+  if (status === 401) return "Please sign in again to continue this reading.";
+  if (status === 404) return "This reading could not be found.";
+  if (status === 409)
+    return typeof serverError === "string" && serverError
+      ? serverError
+      : "Your reading isn’t ready to open yet. Please try again in a moment.";
+  if (status === 429) return "That was a lot at once. Please wait a moment, then continue.";
+  if (status >= 500) return SERVER_UNAVAILABLE_MESSAGE;
+  return STREAM_PAUSED_MESSAGE;
+}
+
+/** Parses one NDJSON line; malformed lines are skipped rather than shown. */
+export function parseStreamLine(line: string): OracleStreamEvent | undefined {
+  try {
+    const parsed = oracleStreamEventSchema.safeParse(JSON.parse(line));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** How a finished stream settles: an explicit `complete`, or — when the
+ * connection simply ended — complete only if some passages arrived. */
+export function settledStreamState(sawComplete: boolean, entryCount: number): StreamState {
+  return sawComplete || entryCount > 0 ? "complete" : "failed";
+}
 
 export function monotonicVisibleWordCount(current: number, requested: number, total: number) {
   return Math.min(total, Math.max(current, requested));
@@ -61,6 +100,7 @@ export function OracleTranscript({
   cards,
   displayName,
   personalization,
+  question,
   readingId,
   result,
   target,
@@ -72,12 +112,15 @@ export function OracleTranscript({
   onJourneyCompleteChange,
   onRetry,
   onStateChange,
+  onStreamFailure,
   previewEvents,
 }: {
   active: boolean;
   cards: readonly DealtCardView[];
   displayName?: string;
   personalization?: ReadingPersonalization;
+  /** For a follow-up: the reader's own question, shown above its answer. */
+  question?: string;
   readingId: string;
   result: ReadingResult;
   sigilSeed?: string;
@@ -90,13 +133,19 @@ export function OracleTranscript({
   onJourneyCompleteChange?: (complete: boolean) => void;
   onRetry: () => void;
   onStateChange?: (state: StreamState) => void;
+  /** Called with the HTTP status when the stream request is refused (0 for
+   * a dropped connection), e.g. so a caller can re-save reveal progress on
+   * a 409 before retrying. */
+  onStreamFailure?: (status: number) => void;
   previewEvents?: readonly PhaseEvent[];
 }) {
   const [entries, setEntries] = useState<PhaseEvent[]>(previewEvents ? [...previewEvents] : []);
   const [streamState, setStreamState] = useState<StreamState>(previewEvents ? "complete" : "idle");
   const [activeIndex, setActiveIndex] = useState(0);
   const [journeyComplete, setJourneyComplete] = useState(false);
+  const [readingMode, setReadingMode] = useState<"section" | "all">("section");
   const [announcement, setAnnouncement] = useState("");
+  const [failureMessage, setFailureMessage] = useState("");
   const [narration, setNarration] = useState<ReadingNarrationSnapshot>({
     sectionIndex: null,
     state: "idle",
@@ -106,11 +155,13 @@ export function OracleTranscript({
   const entriesRef = useRef(entries);
   const onJourneyCompleteChangeRef = useRef(onJourneyCompleteChange);
   const onStateChangeRef = useRef(onStateChange);
+  const onStreamFailureRef = useRef(onStreamFailure);
 
   useEffect(() => {
     onJourneyCompleteChangeRef.current = onJourneyCompleteChange;
     onStateChangeRef.current = onStateChange;
-  }, [onJourneyCompleteChange, onStateChange]);
+    onStreamFailureRef.current = onStreamFailure;
+  }, [onJourneyCompleteChange, onStateChange, onStreamFailure]);
 
   const updateState = useCallback((next: StreamState) => {
     setStreamState(next);
@@ -119,7 +170,7 @@ export function OracleTranscript({
 
   const completeJourney = useCallback(() => {
     setJourneyComplete(true);
-    setAnnouncement("The reading is complete. Next actions are now available.");
+    setAnnouncement("The reading is complete. What comes next is below.");
     onJourneyCompleteChangeRef.current?.(true);
   }, []);
 
@@ -149,56 +200,102 @@ export function OracleTranscript({
   useEffect(() => {
     if (!active || previewEvents) return;
     const controller = new AbortController();
-    const startTimer = window.setTimeout(() => updateState("streaming"), 0);
+    let idleTimer = 0;
+    let stalled = false;
+    const armIdleTimer = () => {
+      window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(() => {
+        stalled = true;
+        controller.abort();
+      }, STREAM_IDLE_TIMEOUT_MS);
+    };
+    const fail = (message: string) => {
+      setFailureMessage(message);
+      setAnnouncement(message);
+      updateState("failed");
+    };
+    const startTimer = window.setTimeout(() => {
+      setFailureMessage("");
+      updateState("streaming");
+    }, 0);
     void (async () => {
+      let sawComplete = false;
       try {
         const failure = window.sessionStorage.getItem("sg:e2e-stream-fail-after");
-        const response = await fetch(
-          `/api/readings/${readingId}/stream?target=${encodeURIComponent(target)}`,
-          {
-            cache: "no-store",
-            signal: controller.signal,
-            ...(failure ? { headers: { "x-e2e-stream-fail-after": failure } } : {}),
-          },
-        );
-        if (!response.ok || !response.body) throw new Error("The reading stream is unavailable.");
+        armIdleTimer();
+        let response: Response;
+        try {
+          response = await fetch(
+            `/api/readings/${readingId}/stream?target=${encodeURIComponent(target)}`,
+            {
+              cache: "no-store",
+              signal: controller.signal,
+              ...(failure ? { headers: { "x-e2e-stream-fail-after": failure } } : {}),
+            },
+          );
+        } catch {
+          if (controller.signal.aborted && !stalled) return;
+          onStreamFailureRef.current?.(0);
+          fail(stalled ? STREAM_PAUSED_MESSAGE : CONNECTION_LOST_MESSAGE);
+          return;
+        }
+        if (!response.ok || !response.body) {
+          const body = (await response.json().catch(() => ({}))) as { error?: unknown };
+          onStreamFailureRef.current?.(response.status);
+          fail(streamFailureMessage(response.status, body.error));
+          return;
+        }
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        const handle = (line: string) => {
+          if (!line.trim()) return;
+          const event = parseStreamLine(line);
+          if (!event) return;
+          if (event.type === "phase") {
+            const next = [
+              ...entriesRef.current.filter(({ sequence }) => sequence !== event.sequence),
+              event,
+            ].sort((left, right) => left.sequence - right.sequence);
+            entriesRef.current = next;
+            setEntries(next);
+          } else if (event.type === "error") {
+            window.sessionStorage.removeItem("sg:e2e-stream-fail-after");
+            fail(STREAM_PAUSED_MESSAGE);
+            sawComplete = true;
+          } else {
+            sawComplete = true;
+            updateState("complete");
+          }
+        };
         while (true) {
           const chunk = await reader.read();
+          armIdleTimer();
           buffer += decoder.decode(chunk.value, { stream: !chunk.done });
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            const event = oracleStreamEventSchema.parse(JSON.parse(line));
-            if (event.type === "phase") {
-              const next = [
-                ...entriesRef.current.filter(({ sequence }) => sequence !== event.sequence),
-                event,
-              ].sort((left, right) => left.sequence - right.sequence);
-              entriesRef.current = next;
-              setEntries(next);
-            } else if (event.type === "error") {
-              window.sessionStorage.removeItem("sg:e2e-stream-fail-after");
-              setAnnouncement(event.message);
-              updateState("failed");
-            } else {
-              updateState("complete");
-            }
+          for (const line of lines) handle(line);
+          if (chunk.done) {
+            handle(buffer);
+            break;
           }
-          if (chunk.done) break;
         }
-      } catch (cause) {
-        if (!controller.signal.aborted) {
-          setAnnouncement(cause instanceof Error ? cause.message : "The reading stream paused.");
-          updateState("failed");
+        window.clearTimeout(idleTimer);
+        if (!sawComplete) {
+          const settled = settledStreamState(false, entriesRef.current.length);
+          if (settled === "complete") updateState("complete");
+          else fail(STREAM_PAUSED_MESSAGE);
         }
+      } catch {
+        window.clearTimeout(idleTimer);
+        if (controller.signal.aborted && !stalled) return;
+        if (entriesRef.current.length > 0 && sawComplete) return;
+        fail(STREAM_PAUSED_MESSAGE);
       }
     })();
     return () => {
       window.clearTimeout(startTimer);
+      window.clearTimeout(idleTimer);
       controller.abort();
     };
   }, [active, previewEvents, readingId, retryToken, target, updateState]);
@@ -238,6 +335,7 @@ export function OracleTranscript({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (readingMode === "all") return;
     if (["ArrowRight", "ArrowDown", "PageDown"].includes(event.key)) {
       event.preventDefault();
       move(1);
@@ -273,16 +371,35 @@ export function OracleTranscript({
     setNarration(snapshot);
     if (snapshot.sectionIndex !== null) setActiveIndex(snapshot.sectionIndex);
   }, []);
-  const personalGreeting =
-    activeEntry?.phase === "directAnswer" && displayName?.trim() && displayName.trim() !== "Reader"
+  const greetingFor = (entry: PhaseEvent | undefined) =>
+    entry?.phase === "directAnswer" && displayName?.trim() && displayName.trim() !== "Reader"
       ? `For ${displayName.trim()}`
       : undefined;
+  const eyebrowFor = (entry: PhaseEvent) =>
+    greetingFor(entry) ??
+    (entry.cardPositionIds?.length ? "What this card brings" : "Your reading");
+  const onLastPassage = activeIndex >= entries.length - 1;
+  const finishable = streamState === "complete" && entries.length > 0;
+  const cardFor = (positionId: string) => cards.find((card) => card.positionId === positionId);
+
+  const passageBody = (entry: PhaseEvent, index: number, inSequence: boolean) => (
+    <>
+      <p className="reading-section-eyebrow">{eyebrowFor(entry)}</p>
+      <h2>{entry.heading}</h2>
+      <NarratedPassage
+        active={inSequence && narrationSequencing && narration.sectionIndex === index}
+        currentWord={narration.state === "playing"}
+        text={entry.text}
+        visibleWords={inSequence ? visiblePassageWords(entry, index) : Number.POSITIVE_INFINITY}
+      />
+    </>
+  );
 
   return (
     <section
       className="oracle-transcript-shell reading-journey-shell"
       data-loaded-section-count={entries.length}
-      data-reading-mode="section"
+      data-reading-mode={readingMode}
       data-journey-complete={journeyComplete ? "true" : "false"}
       data-state={streamState}
       data-testid="reading-journey"
@@ -290,7 +407,11 @@ export function OracleTranscript({
       <div className="reading-mode-bar">
         <div aria-label="Reading controls" role="group">
           <span className="reading-section-count">
-            {activeEntry ? `${activeIndex + 1} / ${entries.length}` : "Preparing"}
+            {activeEntry
+              ? readingMode === "all"
+                ? `${entries.length} passages`
+                : `${activeIndex + 1} / ${entries.length}`
+              : "Preparing"}
           </span>
           <ReadingAudioPlayer
             activeIndex={activeIndex}
@@ -302,13 +423,30 @@ export function OracleTranscript({
             target={target}
           />
         </div>
-        <span>
-          {streamState === "complete" ? "One passage at a time" : "The reading is arriving"}
-        </span>
+        <button
+          aria-pressed={readingMode === "all"}
+          className="reading-mode-toggle"
+          disabled={entries.length === 0}
+          onClick={() => setReadingMode((mode) => (mode === "all" ? "section" : "all"))}
+          type="button"
+        >
+          {readingMode === "all" ? "One passage at a time" : "Read it all at once"}
+        </button>
       </div>
 
+      {question && (
+        <p className="oracle-follow-up-question" data-testid="follow-up-question">
+          <span>You asked</span>
+          {question}
+        </p>
+      )}
+
       <div
-        aria-label="Your reading. Use the arrow keys to move through guided sections."
+        aria-label={
+          readingMode === "all"
+            ? "Your reading"
+            : "Your reading. Use the arrow keys to move between passages."
+        }
         className="oracle-transcript reading-journey-viewport"
         data-active-card-index={activeCardIndex >= 0 ? activeCardIndex : undefined}
         data-testid="oracle-transcript"
@@ -316,114 +454,122 @@ export function OracleTranscript({
         role="region"
         tabIndex={0}
       >
-        {activeEntry ? (
+        {readingMode === "all" && entries.length > 0 ? (
+          <div className="reading-all-passages">
+            {entries.map((entry, index) => (
+              <article
+                className="oracle-entry guided-passage"
+                data-phase={entry.phase}
+                key={`${target}:${entry.sequence}`}
+              >
+                {passageBody(entry, index, false)}
+              </article>
+            ))}
+            <nav aria-label="Reading sections" className="reading-journey-navigation">
+              <button
+                aria-label="Finish reading"
+                className="reading-pager-button is-primary"
+                data-testid={finishable ? "complete-reading-action" : undefined}
+                disabled={!finishable}
+                onClick={completeJourney}
+                type="button"
+              >
+                {finishable ? "Finish reading" : "The reading is still arriving…"}
+              </button>
+            </nav>
+          </div>
+        ) : activeEntry ? (
           <article
-            aria-live="polite"
             className="oracle-entry guided-passage is-active"
             data-narration-state={narrationStateFor(activeIndex)}
             data-phase={activeEntry.phase}
             data-testid="reading-active-passage"
             key={`${target}:${activeEntry.sequence}`}
           >
-            <p className="reading-section-eyebrow">
-              {personalGreeting ??
-                (activeEntry.cardPositionIds?.length
-                  ? "What this card contributes"
-                  : "Your reading")}
-            </p>
-            <h2>{activeEntry.heading}</h2>
-            <NarratedPassage
-              active={narrationSequencing && narration.sectionIndex === activeIndex}
-              currentWord={narration.state === "playing"}
-              text={activeEntry.text}
-              visibleWords={visiblePassageWords(activeEntry, activeIndex)}
-            />
+            {passageBody(activeEntry, activeIndex, true)}
             <nav aria-label="Reading sections" className="reading-journey-navigation">
               <button
                 aria-label="Previous reading passage"
+                className="reading-pager-button"
                 disabled={activeIndex === 0}
                 onClick={() => move(-1)}
                 type="button"
               >
-                ← Previous
+                <span aria-hidden="true">←</span> Previous
               </button>
-              <span>
+              <span className="reading-pager-count">
                 {activeIndex + 1} of {Math.max(1, entries.length)}
               </span>
               <button
-                aria-label={
-                  activeIndex >= entries.length - 1 && streamState === "complete"
-                    ? "Finish reading"
-                    : "Next reading passage"
-                }
-                disabled={activeIndex >= entries.length - 1 && streamState !== "complete"}
-                data-testid={
-                  activeIndex >= entries.length - 1 && streamState === "complete"
-                    ? "complete-reading-action"
-                    : undefined
-                }
+                aria-label={onLastPassage && finishable ? "Finish reading" : "Next reading passage"}
+                className={`reading-pager-button ${onLastPassage && finishable ? "is-primary" : ""}`}
+                disabled={onLastPassage && !finishable}
+                data-testid={onLastPassage && finishable ? "complete-reading-action" : undefined}
                 onClick={() => {
-                  if (activeIndex >= entries.length - 1) completeJourney();
+                  if (onLastPassage) completeJourney();
                   else move(1);
                 }}
                 type="button"
               >
-                {activeIndex >= entries.length - 1 && streamState === "complete"
-                  ? "Finish reading"
-                  : "Next →"}
+                {onLastPassage && finishable ? (
+                  "Finish reading"
+                ) : (
+                  <>
+                    Next <span aria-hidden="true">→</span>
+                  </>
+                )}
               </button>
             </nav>
           </article>
         ) : (
           <p className="stage-whisper" role="status">
-            The complete spread is gathering into an interpretation…
+            Your cards are being read together…
           </p>
         )}
 
         {streamState === "failed" && (
           <div className="generation-recovery" role="alert">
-            <p>
-              {announcement || "The reading stream paused. Received sections remain available."}
-            </p>
-            <button onClick={onRetry} type="button">
-              Continue the same reading
+            <p>{failureMessage || STREAM_PAUSED_MESSAGE}</p>
+            <button className="ritual-action" onClick={onRetry} type="button">
+              Continue the reading
             </button>
           </div>
         )}
       </div>
 
       <details className="reading-details-drawer">
-        <summary>Reading details and evidence</summary>
+        <summary>Card meanings</summary>
+        <ol>
+          {result.cards.map((card) => {
+            const dealt = cardFor(card.positionId);
+            return (
+              <li key={card.positionId}>
+                <strong>
+                  {dealt?.positionName ?? card.positionLabel}
+                  {dealt ? ` · ${dealt.name}` : ""}
+                  {card.orientation === "reversed" ? " · Reversed" : ""}
+                </strong>
+                <span>{card.coreMeaning}</span>
+                {card.positionInterpretation !== card.coreMeaning && (
+                  <span>{card.positionInterpretation}</span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
         <p>
           {result.personalizationLens
-            ? "Relevant profile traits shaped the emphasis of this reading. They never changed the locked cards or their meanings."
-            : "This reading uses only the locked cards and spread positions."}
+            ? "Parts of your profile shaped which themes this reading leaned into. They never changed which cards you drew or what they mean."
+            : "This reading draws only on your cards and where they fell in the spread."}
+          {personalization && result.personalizationLens
+            ? " Your birth details themselves were never shared with the reader."
+            : ""}
         </p>
-        <ol>
-          {result.cards.map((card) => (
-            <li key={card.positionId}>
-              <strong>{card.positionLabel}</strong>
-              <span>{card.coreMeaning}</span>
-              <ul>
-                {card.supportingEvidence.map((evidence) => (
-                  <li key={evidence}>{evidence}</li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ol>
-        {personalization && result.personalizationLens && (
-          <p>
-            Personalized reflection used a minimized private lens from profile snapshot{" "}
-            {personalization.snapshotVersion}; raw birth data was not shared with the narrator.
-          </p>
-        )}
       </details>
 
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
-      {reducedMotion && <span className="sr-only">Reduced motion is active.</span>}
     </section>
   );
 }

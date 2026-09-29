@@ -7,14 +7,25 @@ import { resolveSpreadPositions, spreads, tarotCards } from "@starguidance/tarot
 import { SanctuaryVisualPreview } from "./visual-preview";
 
 export const metadata: Metadata = {
-  title: "Sanctuary visual preview · StarGuidance",
+  title: "Sanctuary visual preview",
   robots: { index: false, follow: false },
 };
 
+const PREVIEW_ENVIRONMENTS = new Set(["development", "test", "staging"]);
+
+/**
+ * Fails closed: the synthetic preview renders only when explicitly enabled or
+ * in a named non-production environment. An unset APP_ENV counts as production.
+ */
+function visualPreviewEnabled(): boolean {
+  return (
+    process.env.ENABLE_VISUAL_PREVIEW === "true" ||
+    PREVIEW_ENVIRONMENTS.has(process.env.APP_ENV ?? "")
+  );
+}
+
 export default function VisualPreviewPage() {
-  const previewEnabled =
-    process.env.APP_ENV !== "production" || process.env.ENABLE_VISUAL_PREVIEW === "true";
-  if (!previewEnabled) notFound();
+  if (!visualPreviewEnabled()) notFound();
   const spread = spreads.find(({ id }) => id === "three-card")!;
   const positions = resolveSpreadPositions(spread, {
     topic: "change",

@@ -381,3 +381,69 @@ export function spokenCardMeaning(card: TarotCard, orientation: CardOrientation)
       : minorMeanings[card.id];
   return meaning?.[orientation] ?? fallbackMeaning(card, orientation);
 }
+
+/**
+ * How a card is named inside a sentence.
+ *
+ * Majors that already carry "The" ("The Tower") are proper names and keep it.
+ * Majors without it ("Temperance", "Wheel of Fortune") take no article at all
+ * — "the Temperance" is never right. Minor and court cards take an ordinary
+ * article ("the Five of Pentacles"), capitalized only at a sentence start.
+ */
+export function cardReference(
+  card: Pick<TarotCard, "name" | "arcana">,
+  options: { sentenceStart?: boolean; reversed?: boolean } = {},
+): string {
+  const suffix = options.reversed ? " reversed" : "";
+  if (/^the /i.test(card.name)) return `${card.name}${suffix}`;
+  if (card.arcana === "major") return `${card.name}${suffix}`;
+  return `${options.sentenceStart ? "The" : "the"} ${card.name}${suffix}`;
+}
+
+/**
+ * Reader-facing wording for the curated reversal facets. The facet word stays
+ * in the sentence so the evidence remains traceable to the approved facet,
+ * but it is explained rather than presented as taxonomy.
+ */
+const reversalFacetGloss: Readonly<Record<string, string>> = {
+  blocked: "blocked — the energy is present but cannot move freely yet",
+  internalized: "internalized — it is working inward before it shows outwardly",
+  delayed: "delayed — it is arriving, only more slowly than hoped",
+  imbalanced: "imbalanced — it is there, but tipped too far one way",
+  excessive: "excessive — there is more of it than the situation can use well",
+  deficient: "deficient — there is not yet enough of it to rely on",
+  avoided: "avoided — something here is being stepped around",
+  releasing: "releasing — an older form of it is being let go",
+  recovering: "recovering — it is slowly coming back after a hard stretch",
+};
+
+export function reversalFacetSentence(facet: string): string {
+  return `Here the reversal reads as ${reversalFacetGloss[facet] ?? facet}.`;
+}
+
+/**
+ * Phrase for a spread position inside a sentence: "your Situation",
+ * "the Present" (for names that already carry "The"), "your Conscious Stance".
+ */
+export function positionPhrase(displayName: string): string {
+  if (/^the /i.test(displayName)) return `the ${displayName.slice(4)}`;
+  if (/^(?:your|their) /i.test(displayName))
+    return displayName.replace(/^[A-Z]/, (letter) => letter.toLowerCase());
+  if (/^what /i.test(displayName)) return `the place for ${displayName.toLowerCase()}`;
+  if (displayName.includes("·")) return `the ${displayName} position`;
+  return `your ${displayName}`;
+}
+
+/**
+ * One plain reader line for a card in its position, e.g.
+ * "The Star sits in your Present — a quiet return of hope and renewal."
+ * Used by surfaces that reveal a card before the full reading exists.
+ */
+export function cardRevealLine(
+  card: TarotCard,
+  orientation: CardOrientation,
+  positionDisplayName: string,
+): string {
+  const name = cardReference(card, { sentenceStart: true, reversed: orientation === "reversed" });
+  return `${name} sits in ${positionPhrase(positionDisplayName)} — ${spokenCardMeaning(card, orientation)}.`;
+}

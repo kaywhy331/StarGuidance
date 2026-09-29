@@ -16,16 +16,20 @@ test("quiet mode persists across routes and the live device preference takes pre
   await toggle.click();
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   await page.getByRole("link", { name: "Free Reading", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Use gentle motion" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Motion: Reduced" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await page.reload();
-  await page.getByRole("button", { name: "Use gentle motion" }).click();
+  await page.getByRole("button", { name: "Motion: Reduced" }).click();
+  await expect(page.getByRole("button", { name: "Motion: Full" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(
-    page.getByRole("button", { name: "Motion reduced · device setting" }),
+    page.getByRole("button", { name: "Motion: Reduced (device setting)" }),
   ).toBeDisabled();
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   await expect
@@ -134,7 +138,7 @@ test("bounded shuffle settles, restarts on intent, and all 78 fan cards remain k
   // Phase-specific legacy rules must not extend the new bounded atmosphere.
   await expect(page.locator(".sanctuary-light")).toHaveCSS("animation-duration", "3s");
   // Stirring restarts the wash on explicit input while the pile is on stage.
-  await page.getByRole("button", { name: "Stir all 78 cards" }).click();
+  await page.getByRole("button", { name: "Keep shuffling" }).click();
   const runningShellAnimations = () =>
     page
       .locator(".casino-card-shell")
@@ -190,12 +194,13 @@ test("bounded shuffle settles, restarts on intent, and all 78 fan cards remain k
       .getByRole("button", { name: `Choose face-down card ${choice}`, exact: true })
       .press("Enter");
   }
+  await page.getByRole("button", { name: "These are my cards" }).click();
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   await expect(page.getByRole("button", { name: "I’m ready", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "I’m ready", exact: true }).click();
   await page.getByRole("button", { name: "Reveal card 1, face down" }).press("Enter");
   await expect(page.locator(".physical-card-front img")).toBeVisible();
-  await page.getByRole("button", { name: /^Reduced motion/ }).click();
+  await page.getByRole("button", { name: /^Motion:/ }).click();
   await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(1);
   await expect(page.locator(".physical-card-inner").first()).toHaveCSS("transition-duration", "0s");
 });

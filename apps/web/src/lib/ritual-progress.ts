@@ -1,3 +1,33 @@
+/** Server ritual phases in the order a reading moves through them. */
+export const ritualPhaseOrder = [
+  "drawLocked",
+  "dealing",
+  "awaitingReveal",
+  "revealing",
+  "fullSpreadReady",
+  "interpretationStreaming",
+  "followUpAvailable",
+  "complete",
+] as const;
+
+export type RitualPhase = (typeof ritualPhaseOrder)[number];
+
+export function ritualPhaseRank(phase: RitualPhase): number {
+  return ritualPhaseOrder.indexOf(phase);
+}
+
+/** An unfinished ritual past its window. A reading whose interpretation was
+ * reached (followUpAvailable or complete) is never "expired": it is simply a
+ * kept reading. */
+export function ritualSessionExpired(
+  reading: { expiresAt: string; ritualProgress?: { phase: RitualPhase } | undefined },
+  now = Date.now(),
+): boolean {
+  const phase = reading.ritualProgress?.phase;
+  if (phase && ritualPhaseRank(phase) >= ritualPhaseRank("followUpAvailable")) return false;
+  return now >= Date.parse(reading.expiresAt);
+}
+
 export interface RitualProgress {
   revealedIndexes: readonly number[];
   cutIndex: number;
