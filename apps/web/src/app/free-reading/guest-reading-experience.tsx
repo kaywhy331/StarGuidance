@@ -31,6 +31,7 @@ import {
   guestFollowUpResponseSchema,
   guestReadingDisplaySchema,
   guestReadingResponseSchema,
+  guestSaveResponseSchema,
   type GuestFollowUpResponse,
   type GuestReadingDisplay,
   type GuestReadingResponse,
@@ -437,6 +438,9 @@ function GuestReadingRitual({
     continueRequested && authenticated && !requiresPolicyReconsent,
   );
   const [continuationExpired, setContinuationExpired] = useState(false);
+  /** The history entry this account made from the reading, once saved. */
+  const [savedReadingId, setSavedReadingId] = useState<string>();
+  const [saving, setSaving] = useState(false);
   const [followUp, setFollowUp] = useState("");
   const [followUpResult, setFollowUpResult] = useState<GuestFollowUpResponse>();
   const [askedFollowUp, setAskedFollowUp] = useState<string>();
@@ -663,7 +667,11 @@ function GuestReadingRitual({
         const init = signal ? { signal } : {};
         let expired = false;
         if (storedReceipt) {
-          const response = await sendJson<{ reading?: unknown; handoff?: string }>(
+          const response = await sendJson<{
+            reading?: unknown;
+            handoff?: string;
+            savedReadingId?: string;
+          }>(
             "/api/guest-readings/continue",
             "POST",
             { action: "recover", receipt: storedReceipt },
@@ -676,6 +684,8 @@ function GuestReadingRitual({
           if (parsed?.success) {
             setReceipt(storedReceipt);
             setContinuationReading(parsed.data);
+            if (typeof response.data.savedReadingId === "string")
+              setSavedReadingId(response.data.savedReadingId);
             if (typeof response.data.handoff === "string") {
               setHandoffToken(response.data.handoff);
               writeLocal(GUEST_READING_HANDOFF_KEY, response.data.handoff);
@@ -693,7 +703,11 @@ function GuestReadingRitual({
           }
         }
         if (storedHandoff && GUEST_HANDOFF_PATTERN.test(storedHandoff)) {
-          const response = await sendJson<{ reading?: unknown; receipt?: string }>(
+          const response = await sendJson<{
+            reading?: unknown;
+            receipt?: string;
+            savedReadingId?: string;
+          }>(
             "/api/guest-readings/continue",
             "POST",
             { action: "redeem", handoff: storedHandoff },
@@ -707,6 +721,8 @@ function GuestReadingRitual({
             setReceipt(response.data.receipt);
             writeLocal(GUEST_READING_RECEIPT_KEY, response.data.receipt);
             setContinuationReading(parsed.data);
+            if (typeof response.data.savedReadingId === "string")
+              setSavedReadingId(response.data.savedReadingId);
             return;
           }
           if (response.status === 410) setContinuationExpired(true);
@@ -1171,6 +1187,36 @@ function GuestReadingRitual({
     setFollowUpResult(parsed.data);
   };
 
+  /** Keeps this reading in the account's history — only when asked. A
+   * follow-up already answered here travels with it; the server re-derives
+   * its answer from the same cards. */
+  const saveReading = async () => {
+    if (!receipt || saving) return;
+    setSaving(true);
+    clearProblem();
+    const response = await sendJson<Record<string, unknown>>(
+      "/api/guest-readings/continue",
+      "POST",
+      {
+        action: "save",
+        receipt,
+        ...(askedFollowUp && followUpResult ? { followUpQuestion: askedFollowUp } : {}),
+      },
+    );
+    setSaving(false);
+    const parsed = response.ok ? guestSaveResponseSchema.safeParse(response.data) : undefined;
+    if (parsed?.success) {
+      setSavedReadingId(parsed.data.readingId);
+      return;
+    }
+    showError(
+      response.ok ? "Your reading couldn’t be saved just now. Please try again." : response.error,
+      response.data.savedElsewhere === true
+        ? undefined
+        : [{ label: "Try again", onClick: () => void saveReading() }],
+    );
+  };
+
   const banners = (
     <>
       {problem ? <GuestProblemBanner onDismiss={clearProblem} problem={problem} /> : null}
@@ -1244,8 +1290,49 @@ function GuestReadingRitual({
               <header>
                 <p className="page-eyebrow">Same cards, now in your account</p>
                 <h1>Your free reading</h1>
-                <p>Kept here until {formatDay(continuationReading.receiptExpiresAt)}</p>
+                <p>
+                  {savedReadingId
+                    ? "Saved in your readings"
+                    : `Kept here until ${formatDay(continuationReading.receiptExpiresAt)}`}
+                </p>
               </header>
+              <section
+                aria-label="Save this reading"
+                className="guest-save-panel"
+                data-testid="guest-save-panel"
+              >
+                {/* The action leads so the link takes the button's exact place:
+                    copy of a different length above it would slide the link
+                    under a resting pointer mid-hover. */}
+                {savedReadingId ? (
+                  <>
+                    <Link
+                      className="sg-button sg-button--primary"
+                      href={`/reading/${savedReadingId}`}
+                    >
+                      Open it in my readings
+                    </Link>
+                    <p role="status">
+                      Saved to your readings. It stays in your history until you delete it.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="sg-button sg-button--primary"
+                      disabled={saving}
+                      onClick={() => void saveReading()}
+                      type="button"
+                    >
+                      {saving ? "Saving…" : "Save to my readings"}
+                    </button>
+                    <p>
+                      Keep these cards and this reading in your private history. Your question is
+                      stored encrypted, and you can delete it at any time.
+                    </p>
+                  </>
+                )}
+              </section>
               <div
                 className="guest-continuation-keepsake"
                 data-card-assignments={continuationReading.cards
@@ -1290,6 +1377,13 @@ function GuestReadingRitual({
                     ? "Your birthday gently shaped this answer; the cards stayed exactly as drawn."
                     : "This answer is pure tarot; the cards stayed exactly as drawn."}
                 </p>
+              ) : savedReadingId ? (
+                <p className="guest-follow-up-note">
+                  <Link href={`/reading/${savedReadingId}`}>
+                    Ask your follow-up in your saved reading
+                  </Link>{" "}
+                  so the answer stays with these cards.
+                </p>
               ) : (
                 <div className="guest-follow-up-composer">
                   <QuestionComposer
@@ -1307,8 +1401,9 @@ function GuestReadingRitual({
               )}
               <nav aria-label="Where to next" className="guest-continuation-next">
                 <p>
-                  Guest readings stay here rather than in your history. Begin a new reading to keep
-                  one in your account.
+                  {savedReadingId
+                    ? "Your free reading is in your history now. Begin a new reading whenever you’re ready."
+                    : "Unless you save it, this free reading stays here for 7 days. Begin a new reading whenever you’re ready."}
                 </p>
                 <div className="guest-conversion-actions">
                   <Link

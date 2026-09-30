@@ -295,6 +295,44 @@ test("a birthday-based free reading remains causal and continues through passwor
   await expect(page.getByText(/cards stayed exactly as drawn/i)).toBeVisible();
   expect(await visibleAssignments(page), "follow-up does not redraw").toEqual(originalAssignments);
 
+  // Saving is explicit and happens only now, against the migrated staging schema.
+  const save = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/guest-readings/continue" &&
+      response.request().postData()?.includes('"action":"save"') === true,
+    { timeout: 60_000 },
+  );
+  await page
+    .getByTestId("guest-save-panel")
+    .getByRole("button", { name: "Save to my readings" })
+    .click();
+  const saveResponse = await save;
+  expect(saveResponse.status(), "an explicit save keeps the guest reading in history").toBe(201);
+  const { readingId } = (await saveResponse.json()) as { readingId: string };
+  await expect(page.getByTestId("guest-save-panel").getByRole("status")).toContainText(
+    "Saved to your readings",
+    { timeout: 30_000 },
+  );
+  const savedReadingResponse = await page.request.get(`/api/readings/${readingId}`);
+  expect(savedReadingResponse.status(), "the saved reading opens from the account").toBe(200);
+  const savedReading = (await savedReadingResponse.json()) as {
+    reading: {
+      source?: string;
+      profileSnapshotId: string | null;
+      draw: { assignments: { cardId: string; orientation: string }[] };
+      followUps: unknown[];
+    };
+  };
+  expect(savedReading.reading).toMatchObject({ source: "guest_trial", profileSnapshotId: null });
+  expect(
+    savedReading.reading.draw.assignments.map(
+      ({ cardId, orientation }) => `${cardId}:${orientation}`,
+    ),
+    "the saved reading keeps every card and orientation",
+  ).toEqual(originalAssignments);
+  expect(savedReading.reading.followUps, "the answered follow-up is saved with it").toHaveLength(1);
+
   record({
     section: "Guest reading",
     check: "Birthday-based reading is available before account creation",
@@ -321,6 +359,13 @@ test("a birthday-based free reading remains causal and continues through passwor
     status: "pass",
     detail:
       "receipt recovery, authenticated continuation, and same-subject follow-up retained every card and orientation",
+  });
+  record({
+    section: "Guest reading",
+    check: "An explicit save keeps the exact guest reading in account history",
+    status: "pass",
+    detail:
+      "the saved history entry kept every card, orientation, and the answered follow-up without a profile snapshot",
   });
   completeStage("guest-trial");
 });

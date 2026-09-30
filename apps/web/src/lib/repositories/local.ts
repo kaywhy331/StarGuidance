@@ -157,8 +157,14 @@ export function createLocalRepositories(): ApplicationRepositories {
       const user = localStore.users.get(userId);
       const profileId = user?.profile?.snapshot.profileId;
       if (!user || !profileId) return false;
+      // Only readings made with the profile go with it; a saved guest reading
+      // never had a snapshot and stays until the reader deletes it.
+      const deletedReadingIds = new Set<string>();
       for (const [recordId, reading] of localStore.readings)
-        if (reading.userId === userId) localStore.readings.delete(recordId);
+        if (reading.userId === userId && reading.profileSnapshotId !== null) {
+          localStore.readings.delete(recordId);
+          deletedReadingIds.add(recordId);
+        }
       // Finance/report records outlive the private profile. Remove their
       // snapshot pointer while retaining provider reconciliation and the
       // already-generated report product.
@@ -166,7 +172,8 @@ export function createLocalRepositories(): ApplicationRepositories {
         for (const value of collection.values())
           if (value.userId === userId) value.snapshotId = null;
       for (const [feedbackId, feedback] of localStore.feedback)
-        if (feedback.userId === userId) localStore.feedback.delete(feedbackId);
+        if (feedback.userId === userId && deletedReadingIds.has(feedback.readingId))
+          localStore.feedback.delete(feedbackId);
       for (const [snapshotId, profile] of localStore.profileSnapshots)
         if (profile.snapshot.profileId === profileId) {
           localStore.profileSnapshots.delete(snapshotId);
@@ -274,8 +281,36 @@ export function createLocalRepositories(): ApplicationRepositories {
       localStore.readings.set(reading.id, structuredClone(reading));
       return structuredClone(reading);
     },
+    async importGuestReading(reading: StoredReading) {
+      if (
+        reading.source !== "guest_trial" ||
+        reading.profileSnapshotId !== null ||
+        reading.encryptedRelatedPersonLens ||
+        reading.encryptedServerSeed ||
+        !reading.result ||
+        !reading.outputProvenance
+      )
+        throw new Error("GUEST_READING_IMPORT_INVALID");
+      const existing = [...localStore.readings.values()].find(
+        (candidate) =>
+          candidate.userId === reading.userId &&
+          candidate.idempotencyKey === reading.idempotencyKey,
+      );
+      if (existing) return structuredClone(existing);
+      // Mirrors the primary key: one free reading lives in one history.
+      if (localStore.readings.has(reading.id)) throw new Error("GUEST_READING_SAVED_ELSEWHERE");
+      const stored: StoredReading = { ...structuredClone(reading), generationStatus: "ready" };
+      localStore.readings.set(stored.id, stored);
+      return structuredClone(stored);
+    },
     async get(userId: string, readingId: string) {
       return ownedReading(userId, readingId);
+    },
+    async getByIdempotencyKey(userId: string, idempotencyKey: string) {
+      const reading = [...localStore.readings.values()].find(
+        (candidate) => candidate.userId === userId && candidate.idempotencyKey === idempotencyKey,
+      );
+      return reading ? structuredClone(reading) : undefined;
     },
     async list(userId: string) {
       return [...localStore.readings.values()].filter((reading) => reading.userId === userId);

@@ -186,6 +186,13 @@ test("a visitor completes a causal free reading before signup and continues with
     .getAttribute("data-card-ids");
   expect(recoveredCards?.split(" ")).toEqual(originalCards);
   await expect(page.getByTestId("reading-keepsake")).toBeVisible();
+  // Nothing reaches account history until the reader chooses to save.
+  const savePanel = page.getByTestId("guest-save-panel");
+  await expect(savePanel.getByRole("button", { name: "Save to my readings" })).toBeVisible();
+  const historyBeforeSave = (await (await page.request.get("/api/readings")).json()) as {
+    readings: unknown[];
+  };
+  expect(historyBeforeSave.readings).toEqual([]);
 
   await page
     .getByLabel("Ask these same cards one follow-up")
@@ -195,4 +202,39 @@ test("a visitor completes a causal free reading before signup and continues with
     page.getByTestId("reading-keepsake").getByRole("heading", { name: /Follow-up on these cards/ }),
   ).toBeVisible();
   await expect(page.getByText(/cards stayed exactly as drawn/i)).toBeVisible();
+
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/guest-readings/continue" &&
+      response.request().postData()?.includes('"action":"save"') === true,
+  );
+  await savePanel.getByRole("button", { name: "Save to my readings" }).click();
+  const savedResponse = await saved;
+  expect(savedResponse.status()).toBe(201);
+  const { readingId } = (await savedResponse.json()) as { readingId: string };
+  await expect(savePanel.getByRole("status")).toContainText("Saved to your readings");
+  const stored = (await (await page.request.get(`/api/readings/${readingId}`)).json()) as {
+    reading: {
+      source?: string;
+      profileSnapshotId: string | null;
+      draw: { assignments: { cardId: string }[] };
+      followUps: unknown[];
+    };
+  };
+  expect(stored.reading).toMatchObject({ source: "guest_trial", profileSnapshotId: null });
+  expect(stored.reading.draw.assignments.map(({ cardId }) => cardId)).toEqual(originalCards);
+  // The follow-up answered before saving travels with the saved reading.
+  expect(stored.reading.followUps).toHaveLength(1);
+
+  await savePanel.getByRole("link", { name: "Open it in my readings" }).click();
+  await expect(page).toHaveURL(new RegExp(`/reading/${readingId}$`), { timeout: 20_000 });
+  const savedKeepsake = page.getByTestId("reading-keepsake");
+  await expect(savedKeepsake).toContainText("Your free reading", { timeout: 20_000 });
+  await expect(savedKeepsake).toContainText("the next step in my work");
+  await expect(
+    savedKeepsake.getByRole("heading", { name: /Follow-up on these cards/ }),
+  ).toBeVisible();
+  await page.goto("/history");
+  await expect(page.getByText(/Your free reading/)).toBeVisible({ timeout: 20_000 });
 });

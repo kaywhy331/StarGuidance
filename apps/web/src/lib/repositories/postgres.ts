@@ -91,6 +91,17 @@ function iso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+function uniqueViolation(error: unknown, constraint: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505" &&
+    "constraint_name" in error &&
+    error.constraint_name === constraint
+  );
+}
+
 function profileFromRow(row: DatabaseRow): StoredProfileVersion {
   const payload = row.derived_payload as JsonObject;
   return {
@@ -414,11 +425,15 @@ export function createPostgresRepositories(
       return userTransaction(userId, async (tx) => {
         const [profile] = await tx`select id from birth_profiles where user_id = ${userId}`;
         if (!profile) return false;
-        // Readings deliberately retain a non-null snapshot lineage and are
-        // private-profile dependants. Commerce FKs use ON DELETE SET NULL, so
-        // paid orders, entitlements, report content, and reconciliation state
-        // survive this profile-only operation.
-        await tx`delete from reading_sessions where user_id = ${userId}`;
+        // Readings made with the profile keep a non-null snapshot lineage and
+        // are its dependants. A saved guest reading was never made with it and
+        // stays until the reader deletes it. Commerce FKs use ON DELETE SET
+        // NULL, so paid orders, entitlements, report content, and
+        // reconciliation state survive this profile-only operation.
+        await tx`
+          delete from reading_sessions
+          where user_id = ${userId} and profile_snapshot_id is not null
+        `;
         await tx`delete from birth_profiles where id = ${String(profile.id)} and user_id = ${userId}`;
         return true;
       });
@@ -620,7 +635,10 @@ export function createPostgresRepositories(
       id: String(row.id),
       userId: String(row.user_id),
       idempotencyKey: String(row.idempotency_key),
-      profileSnapshotId: String(row.profile_snapshot_id),
+      profileSnapshotId: row.profile_snapshot_id ? String(row.profile_snapshot_id) : null,
+      // Read tolerantly: before migration 0027 the column does not exist and
+      // every row is an account reading.
+      ...(row.source === "guest_trial" ? { source: "guest_trial" as const } : {}),
       readingLens: row.reading_lens as StoredReading["readingLens"],
       questionClassification: questionClassificationSchema.parse(row.question_classification),
       entitlementDecision: readingEntitlementDecisionSchema.parse(row.entitlement_decision),
@@ -670,6 +688,105 @@ export function createPostgresRepositories(
       createdAt: iso(row.created_at as Date),
     };
   };
+
+  /** The rows of one saved guest reading, written in a single subject-bound
+   * transaction so the session, draw, output, and any follow-up land together. */
+  const importGuestReadingRows = (
+    reading: StoredReading,
+    result: ReadingResult,
+    provenance: ReadingOutputProvenance,
+  ) =>
+    userTransaction(reading.userId, async (tx) => {
+      const [idempotent] = await tx`
+        select * from reading_sessions
+        where user_id = ${reading.userId} and idempotency_key = ${reading.idempotencyKey}
+      `;
+      if (idempotent) return hydrateReading(tx, idempotent);
+
+      // A saved reading keeps the exact deck and spread release it was
+      // drawn from, even if that release has since been switched off for
+      // new readings — history stays viewable the same way.
+      const [content] = await tx`
+        select d.version
+        from decks d
+        cross join spreads s
+        where d.version = ${reading.draw.deckVersion}
+          and s.id = ${reading.spreadId} and s.version = ${reading.draw.spreadVersion}
+      `;
+      if (!content) throw new Error("READING_CONTENT_UNAVAILABLE");
+
+      const [created] = await tx`
+        insert into reading_sessions (
+          id, user_id, profile_snapshot_id, source, spread_id, spread_version,
+          idempotency_key, encrypted_question, reading_lens, configuration,
+          question_classification, entitlement_decision, ritual_progress, expires_at,
+          safety_classification, state, created_at
+        ) values (
+          ${reading.id}, ${reading.userId}, null, 'guest_trial', ${reading.spreadId},
+          ${reading.draw.spreadVersion}, ${reading.idempotencyKey}, ${reading.encryptedQuestion},
+          ${tx.json(json(reading.readingLens))},
+          ${tx.json(json(reading.configuration))},
+          ${tx.json(json(reading.questionClassification))},
+          ${tx.json(json(reading.entitlementDecision))},
+          ${reading.ritualProgress ? tx.json(json(reading.ritualProgress)) : null},
+          ${reading.expiresAt}, ${reading.safetyClassification}, 'ready', ${reading.createdAt}
+        )
+        on conflict (user_id, idempotency_key) do nothing
+        returning id
+      `;
+      if (!created) {
+        const [existing] = await tx`
+          select * from reading_sessions
+          where user_id = ${reading.userId} and idempotency_key = ${reading.idempotencyKey}
+        `;
+        if (!existing) throw new Error("READING_IDEMPOTENCY_CONFLICT");
+        return hydrateReading(tx, existing);
+      }
+      // The server seed was never kept past the guest ceremony, so the
+      // draw is stored with its public proof only. No interpretation job:
+      // the reading arrives with the interpretation the guest already read.
+      await tx`
+        insert into reading_draws (
+          user_id, reading_id, deck_version, shuffle_version, assignments, proof,
+          encrypted_server_seed, locked_at
+        ) values (
+          ${reading.userId}, ${reading.id}, ${reading.draw.deckVersion},
+          ${reading.draw.shuffleVersion}, ${tx.json(json(reading.draw.assignments))},
+          ${reading.draw.proof ? tx.json(json(reading.draw.proof)) : null},
+          null, ${reading.draw.lockedAt}
+        )
+      `;
+      await tx`
+        insert into reading_outputs (
+          user_id, reading_id, provider_id, prompt_version, content_version,
+          safety_policy_version, schema_version, payload, created_at
+        ) values (
+          ${reading.userId}, ${reading.id}, ${provenance.providerId},
+          ${provenance.promptVersion}, ${provenance.contentVersion ?? TAROT_CONTENT_VERSION},
+          ${provenance.safetyPolicyVersion ?? "question-safety-v2"},
+          ${provenance.schemaVersion}, ${tx.json(json(result))}, ${reading.createdAt}
+        )
+      `;
+      for (const followUp of reading.followUps)
+        await tx`
+          insert into follow_up_questions (
+            id, user_id, reading_id, encrypted_question, output, provider_id,
+            prompt_version, content_version, safety_policy_version, schema_version, created_at
+          ) values (
+            ${followUp.id}, ${reading.userId}, ${reading.id}, ${followUp.encryptedQuestion},
+            ${tx.json(json(followUpResultSchema.parse(followUp.result)))},
+            ${followUp.outputProvenance.providerId}, ${followUp.outputProvenance.promptVersion},
+            ${followUp.outputProvenance.contentVersion ?? TAROT_CONTENT_VERSION},
+            ${followUp.outputProvenance.safetyPolicyVersion ?? "question-safety-v2"},
+            ${followUp.outputProvenance.schemaVersion}, ${followUp.createdAt}
+          )
+        `;
+      const [stored] = await tx`
+        select * from reading_sessions where id = ${reading.id} and user_id = ${reading.userId}
+      `;
+      if (!stored) throw new Error("READING_NOT_FOUND");
+      return hydrateReading(tx, stored);
+    });
 
   const readingSessions = {
     async createLocked(reading: StoredReading) {
@@ -739,10 +856,42 @@ export function createPostgresRepositories(
         return reading;
       });
     },
+    async importGuestReading(reading: StoredReading) {
+      const result = reading.result && readingResultSchema.parse(reading.result);
+      const provenance =
+        reading.outputProvenance && readingOutputProvenanceSchema.parse(reading.outputProvenance);
+      if (
+        reading.source !== "guest_trial" ||
+        reading.profileSnapshotId !== null ||
+        reading.encryptedRelatedPersonLens ||
+        reading.encryptedServerSeed ||
+        !result ||
+        !provenance
+      )
+        throw new Error("GUEST_READING_IMPORT_INVALID");
+      try {
+        return await importGuestReadingRows(reading, result, provenance);
+      } catch (error) {
+        // The draw id is the guest reading id, so the same free reading can
+        // live in only one account's history.
+        if (uniqueViolation(error, "reading_sessions_pkey"))
+          throw new Error("GUEST_READING_SAVED_ELSEWHERE");
+        throw error;
+      }
+    },
     async get(userId: string, readingId: string) {
       return userTransaction(userId, async (tx) => {
         const [row] = await tx`
           select * from reading_sessions where id = ${readingId} and user_id = ${userId}
+        `;
+        return row ? hydrateReading(tx, row) : undefined;
+      });
+    },
+    async getByIdempotencyKey(userId: string, idempotencyKey: string) {
+      return userTransaction(userId, async (tx) => {
+        const [row] = await tx`
+          select * from reading_sessions
+          where user_id = ${userId} and idempotency_key = ${idempotencyKey}
         `;
         return row ? hydrateReading(tx, row) : undefined;
       });
