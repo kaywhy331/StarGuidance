@@ -160,6 +160,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | DEC-013 | Paid readings may use public-domain/historical calculation methods with original interpretation, but proprietary modern chart systems, branding, tables, and teaching content require written commercial permission before software activation. | Owner-directed / required |
 | DEC-014 | Systems whose owners forbid the intended hosted/report use are omitted rather than shipped as disabled branded components. Nine Star Ki uses local versioned mathematics, an explicit third-star convention, and original prose/assets only. | Owner-directed / required |
 | DEC-015 | Landing entry offers **Free Reading** and **Sign up**. The guest lane requires a birthday for one browser-marked, deterministic reading. The date is processed transiently into a minimized stable-date lens and omitted from the guest receipt; no anonymous profile is created. Signup/sign-in unlocks a follow-up on the exact encrypted draw without silently saving the guest artifact. IP is only a privacy-minimized automation signal, not the entitlement identity. | Owner-directed / confirmed |
+| DEC-016 | A signed-in reader may explicitly choose **Save to my readings** for their free guest reading. The saved history entry keeps the exact draw, confirmed question, delivered interpretation, and birthday lens; it has no profile snapshot, is created at most once per reading, never counts against the account reading allowance, and is never created without that request. | Recommended / pending owner confirmation |
 
 ## 3.2 MVP scope
 | **Included** | **Deferred / future** |
@@ -185,7 +186,7 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 
 ## 4.1 Primary journey
 
-The landing page presents two explicit choices: **Free Reading** and **Sign up**. The account journey remains the full personalized path below. The guest path first accepts a required birthday and the current service/age acknowledgements, then completes one deterministic one- or three-card ritual without an AI-provider call. The private profile engine returns only stable date-derived statements; the browser-held reading receipt excludes the raw date. Signup/sign-in then offers a follow-up using the exact encrypted draw. The guest artifact is not saved to account history; future saved readings and full-profile personalization begin after onboarding.
+The landing page presents two explicit choices: **Free Reading** and **Sign up**. The account journey remains the full personalized path below. The guest path first accepts a required birthday and the current service/age acknowledgements, then completes one deterministic one- or three-card ritual without an AI-provider call. The private profile engine returns only stable date-derived statements; the browser-held reading receipt excludes the raw date. Signup/sign-in then offers a follow-up using the exact encrypted draw. The guest artifact is never saved silently: the signed-in reader may choose **Save to my readings** (DEC-016) to keep that exact reading in account history. New account readings and full-profile personalization begin after onboarding.
 
 | **Step** | **User experience** | **System behavior** |
 | --- | --- | --- |
@@ -679,7 +680,7 @@ Every claim must be traceable to one or more card/position tuples, an approved r
 | POST /readings/{id}/generate | Locked draw + curated meanings + compact lens + question | Validated structured result or deterministic fallback |
 | POST /readings/{id}/follow-up | Original context + one follow-up question | Child structured response; no redraw |
 | POST /guest-readings | Guest birthday + question/classification + one- or three-card spread + acknowledgements | Transient stable-date lens + CSPRNG locked deterministic reading + encrypted seven-day handoff without the raw date; no anonymous database row or AI call |
-| POST /guest-readings/continue | Authenticated user + encrypted handoff + optional follow-up | Exact draw recovery or same-draw deterministic follow-up; no redraw |
+| POST /guest-readings/continue | Authenticated user + encrypted handoff + optional follow-up, or an explicit save request | Exact draw recovery, same-draw deterministic follow-up, or one idempotent history entry with the same cards and interpretation; no redraw |
 | POST /checkout/report | User + profile snapshot + product | Hosted checkout session |
 | POST /webhooks/payment | Signed provider event | Idempotent order, entitlement, and job transition |
 | POST /reports/{id}/generate | Paid entitlement + profile snapshot | Durable structured report and export status |
