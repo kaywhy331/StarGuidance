@@ -95,6 +95,7 @@ Only the decorative landing artwork responds to pointer position, with damped de
 - A blocked localStorage store falls back to in-memory preference; it must never break a page. Cross-tab storage changes synchronize open views.
 - Server HTML starts with reduced motion until browser preferences are known. No JavaScript means readable, static content.
 - Hidden documents pause CSS animations. Decorative loops are removed; finite motion cannot continuously consume attention or GPU time. Network/state recovery stays independent of visibility.
+- WebKit's Linux compositor (WPE and WebKitGTK: GNOME Web and the WebKit that Playwright runs) dereferences a null pointer in its threaded compositor when an animated `filter` on the full-screen atmosphere finishes while the card fan is composited. `SiteMotion` marks those engines with `html[data-compositor="linux-webkit"]` (`usesLinuxWebKitCompositor`: Apple's vendor string on a Linux platform, which Safari on macOS and iOS never reports even though Playwright borrows Safari's user agent). There the backdrop, phase gate, and floor keep their opacity, transform, and border transitions on the same timings, but their colour grade and glows change without a filter transition. No other engine is affected.
 - No content is hidden pending intersection or an animation event. Focus cancels an active section reveal. Print cancels section animations and forces all report content visible.
 - Sound remains controlled by the existing audio settings. This system introduces no autoplay or new audio dependency.
 

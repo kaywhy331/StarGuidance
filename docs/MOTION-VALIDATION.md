@@ -68,6 +68,19 @@ The combined run passed all five Firefox cases and four WebKit cases. The final 
 
 Standalone Gitleaks 8.21.2 directory scans used `--config .gitleaks.toml --redact --no-banner`. `apps/web/tests` passed; `apps/web/src` reported two existing fixed synthetic fixtures in `shared-secret.test.ts:5` and `api/internal/interpretation-jobs/route.test.ts:40`. They are intentionally high-entropy test strings, not configured credentials. No allowlist was broadened. The staged candidate passed `git diff --cached --no-ext-diff | gitleaks stdin --config .gitleaks.toml --redact --no-banner`: no leaks found.
 
+### Linux WebKit compositor crash (2026-09-30)
+
+The intermittent `desktop-webkit` failures (`Page crashed` in `mvp.spec.ts:506`, fans that never enabled in `safety-interrupt.spec.ts:27`, and entrance animations that never finished in `motion.spec.ts:122`) were one engine bug. A local production build of `main` was driven through the guest wash with a probe that samples animation frames, timer lateness, running shell animations, and fan readiness every 250 ms. The kernel log recorded one `segfault at 0` in `libWPEWebKit-2.0.so`'s `ThreadedCompositor` thread, at the same instruction offset, for every crashed run, about 1.4 seconds after the fan opened.
+
+Bisecting with injected stylesheets isolated the trigger to the three atmosphere rules that transition `filter` (`.sanctuary-background img`, `.sanctuary-phase-gate`, `.sanctuary-floor-constellation`). Any one of them is enough. With those filter transitions present, 25 of 41 runs crashed. Without them, 0 of 16 crashed: transition properties limited to opacity and transform, filters removed, atmosphere transitions off, or all motion off. Card count, shadows, card-back artwork, containment, perspective, and the entrance animation did not matter.
+
+The fix (Linux WebKit only, see `docs/MOTION-SYSTEM.md`) was verified in two ways:
+
+- The unmodified probe ran 8 of 8 times without a crash or kernel segfault.
+- `guest-reading`, `motion.spec.ts:122`, `mvp.spec.ts:506`, and `safety-interrupt.spec.ts:27` ran with `--repeat-each=3` on `desktop-webkit`: 11 of 12 passed with no segfault.
+
+The one failure was an unrelated timing race. Software-rendered WebKit draws the 78-shell wash at under one frame per second, so a "Keep shuffling" click can outlast the wash's actionability check. That slowness is a property of headless software rendering and is not changed here.
+
 ## Screenshots
 
 These synthetic-account images were captured from the final production build in this session. Images were saved without opening them.
