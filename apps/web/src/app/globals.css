@@ -2206,6 +2206,22 @@ body {
     filter 1.6s ease;
 }
 
+/* WebKit's Linux compositor (see usesLinuxWebKitCompositor) can crash when one
+ * of these animated filters finishes while the card fan is on stage. There the
+ * atmosphere still fades and drifts on the same timings; only its colour grade
+ * and glows change without a filter transition. Every other engine is unaffected. */
+html[data-compositor="linux-webkit"] .sanctuary-background img {
+  transition-property: transform, object-position;
+}
+
+html[data-compositor="linux-webkit"] .sanctuary-phase-gate {
+  transition-property: opacity, transform, border-color;
+}
+
+html[data-compositor="linux-webkit"] .sanctuary-floor-constellation {
+  transition-property: opacity, transform;
+}
+
 .sanctuary-floor-constellation::before,
 .sanctuary-floor-constellation::after,
 .sanctuary-floor-constellation i {
