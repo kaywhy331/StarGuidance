@@ -116,7 +116,7 @@ CAPTURE_SCREENSHOTS=1 pnpm --filter @starguidance/web exec playwright test \
   --project=desktop-chromium --project=mobile-chromium
 ```
 
-The motion suite checks preference persistence, live device changes, blocked storage, cross-tab changes, no-JavaScript content, touch exclusion, desktop pointer reset, a bounded/restartable shuffle, all 78 available keyboard choices, card placement after resizing both viewport dimensions, and a revealed card surviving quiet-mode activation. Existing journeys cover accessibility, text reflow, guest conversion, fixed-draw follow-ups, and local report access.
+The motion suite checks preference persistence, live device changes, blocked storage, cross-tab changes, no-JavaScript content, touch exclusion, desktop pointer reset, buttons and history cards that stay hovered under a pointer resting on their bottom edge, a bounded/restartable shuffle, all 78 available keyboard choices, card placement after resizing both viewport dimensions, and a revealed card surviving quiet-mode activation. Existing journeys cover accessibility, text reflow, guest conversion, fixed-draw follow-ups, and local report access.
 
 ## Evidence limits
 

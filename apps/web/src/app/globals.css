@@ -118,15 +118,13 @@ body {
     text-wrap: balance;
     overflow-wrap: anywhere;
     cursor: pointer;
+    /* The hover lift itself lives in motion.css, where it is limited to fine
+     * pointers with full motion. */
     transition:
-      translate 220ms ease,
+      transform 220ms ease,
       box-shadow 220ms ease,
       border-color 220ms ease,
       background 220ms ease;
-  }
-
-  .sg-button:not(:disabled):hover {
-    translate: 0 -2px;
   }
 
   .sg-button:disabled {
@@ -8008,6 +8006,15 @@ html[data-compositor="linux-webkit"] .sanctuary-floor-constellation {
     0 1.8rem 4.5rem rgb(0 0 0 / 0.3),
     0 0 2.5rem rgb(83 171 155 / 0.06);
   translate: 0 -0.15rem;
+}
+
+/* Covers the strip the lift vacates (offsets run from inside the 1 px border),
+ * so a pointer resting on the card's bottom edge keeps hover instead of
+ * dropping it, and the lift, every frame. */
+.reading-memory-panel:hover::after {
+  position: absolute;
+  inset: 100% -1px calc(-1px - 0.15rem);
+  content: "";
 }
 
 .reading-memory-link {
