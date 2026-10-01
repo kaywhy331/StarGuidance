@@ -3,7 +3,7 @@
 import { MotionConfig, motion, useMotionValue, useSpring } from "motion/react";
 import { useEffect, useRef, type ReactNode } from "react";
 
-import { depthSpring, motionEase, motionTiming } from "@/lib/motion";
+import { depthSpring, motionEase, motionTiming, usesLinuxWebKitCompositor } from "@/lib/motion";
 import { useMotionPreference } from "@/lib/motion-preference";
 
 export function SiteMotion({ children }: { children: ReactNode }) {
@@ -11,6 +11,11 @@ export function SiteMotion({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.dataset.motion = reducedMotion ? "reduced" : "full";
   }, [reducedMotion]);
+  useEffect(() => {
+    // Engine workaround only; nothing about the page changes for other browsers.
+    if (usesLinuxWebKitCompositor(navigator))
+      document.documentElement.dataset.compositor = "linux-webkit";
+  }, []);
   useEffect(() => {
     const update = () => {
       document.documentElement.dataset.pageVisibility = document.hidden ? "hidden" : "visible";
