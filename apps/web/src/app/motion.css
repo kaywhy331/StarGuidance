@@ -141,6 +141,16 @@ html[data-motion="full"] .route-arrival {
     transform: translateY(-2px);
   }
 
+  /* The lift is visual only. While raised, the button's transform makes it
+   * the containing block for this strip, which covers the 2 px it vacated
+   * (offsets run from inside its 1 px border), so a pointer resting on its
+   * bottom edge keeps hover instead of dropping it, and the lift, every frame. */
+  html[data-motion="full"] .sg-button:not(:disabled):hover::after {
+    position: absolute;
+    inset: 100% -1px -3px;
+    content: "";
+  }
+
   html[data-motion="full"] .sg-button:not(:disabled):active {
     transform: translateY(0) scale(0.985);
   }

@@ -83,7 +83,7 @@ The report's existing contents index stays sticky on wide screens and returns to
 
 ### Hover, cursor, and touch
 
-Keep the native cursor. No trailing particles, custom cursor, magnetic buttons, or pointer follower over reading text. Buttons rise at most 2 px for fine-pointer hover and settle to a 0.985 scale press. Keyboard focus remains a strong, static outline. Interactive labels and hit targets do not drift.
+Keep the native cursor. No trailing particles, custom cursor, magnetic buttons, or pointer follower over reading text. Buttons rise at most 2 px for fine-pointer hover and settle to a 0.985 scale press; touch and quiet mode do not lift them. Keyboard focus remains a strong, static outline. Interactive labels and hit targets do not drift. A hover lift moves only what is drawn: while a button or history card is raised, a transparent strip covers the edge it vacated, so a pointer resting on that edge keeps hover instead of losing it, and the lift, every frame.
 
 Only the decorative landing artwork responds to pointer position, with damped depth. It resets on pointer exit or reduced-motion activation, ignores touch events, and does not run on a coarse pointer. Motion values update transforms without React rendering on every frame. Touch uses the same controls and information without depending on hover.
 
