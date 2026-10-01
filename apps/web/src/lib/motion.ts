@@ -33,3 +33,16 @@ export const motionEase = {
 } as const;
 
 export const depthSpring = { stiffness: 110, damping: 24, mass: 0.8 } as const;
+
+/**
+ * WebKit's Linux compositor (WPE and WebKitGTK: GNOME Web, and the WebKit that
+ * Playwright runs) can crash or stall its compositing thread when an animated
+ * `filter` on the full-screen atmosphere finishes while the 78-card fan is
+ * composited. Safari on macOS and iOS composites differently and never reports
+ * a Linux platform, even though Playwright's WebKit borrows Safari's user agent.
+ */
+export function usesLinuxWebKitCompositor(
+  browser: Pick<Navigator, "platform" | "vendor">,
+): boolean {
+  return browser.vendor === "Apple Computer, Inc." && /^linux\b/i.test(browser.platform);
+}

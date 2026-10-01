@@ -1,10 +1,29 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import {
   createAccountAndProfileViaApi,
+  finalizeReadingViaApi,
+  prepareReadingViaApi,
   reviewAndConfirmQuestion,
   type PreparedCeremony,
 } from "./reading-helpers";
+
+/** Where the element's top edge sits, and whether it is hovered, on every
+ * rendered frame for at least `durationMs` (and at least four frames). */
+function frameSamples(locator: Locator, durationMs: number) {
+  return locator.evaluate(async (element, duration) => {
+    const samples: { top: number; hovered: boolean }[] = [];
+    const end = performance.now() + duration;
+    while (performance.now() < end || samples.length < 4) {
+      await new Promise(requestAnimationFrame);
+      samples.push({
+        top: element.getBoundingClientRect().top,
+        hovered: element.matches(":hover"),
+      });
+    }
+    return samples;
+  }, durationMs);
+}
 
 test("quiet mode persists across routes and the live device preference takes precedence", async ({
   page,
@@ -117,6 +136,64 @@ test("public content stays readable without JavaScript and decorative depth igno
       .poll(() => artwork.evaluate((element) => getComputedStyle(element).transform))
       .toBe(before);
   }
+});
+
+test("a hovered button rises at most 2 px and stays under a pointer resting on its bottom edge", async ({
+  page,
+  isMobile,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
+  const cta = page.getByRole("link", { name: "Free Reading", exact: true });
+  await cta.scrollIntoViewIfNeeded();
+  // The hero copy rises into place; measure the button once it is still.
+  await expect
+    .poll(async () => new Set((await frameSamples(cta, 300)).map(({ top }) => top)).size)
+    .toBe(1);
+  const rest = await cta.evaluate((element) => element.getBoundingClientRect().toJSON() as DOMRect);
+  // A lift that carried the button off this last pixel row dropped hover,
+  // which dropped the lift, which brought hover back — every frame.
+  await page.mouse.move(rest.left + rest.width / 2, rest.bottom - 1);
+  await frameSamples(cta, 500);
+  const settled = await frameSamples(cta, 700);
+  const tops = [...new Set(settled.map(({ top }) => top))];
+  expect(tops).toHaveLength(1);
+  const lift = rest.top - tops[0]!;
+  if (isMobile) {
+    // Touch has no hover state to acknowledge, so nothing lifts.
+    expect(lift).toBeCloseTo(0, 2);
+    return;
+  }
+  expect(settled.every(({ hovered }) => hovered)).toBe(true);
+  expect(lift).toBeGreaterThan(0);
+  expect(lift).toBeLessThanOrEqual(2.01);
+
+  // Quiet mode keeps the hovered button exactly where it rests.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
+  const quiet = await frameSamples(cta, 500);
+  expect(quiet.every(({ hovered }) => hovered)).toBe(true);
+  for (const { top } of quiet) expect(top).toBeCloseTo(rest.top, 2);
+});
+
+test("a history card stays under a pointer resting on its bottom edge", async ({ page }) => {
+  await createAccountAndProfileViaApi(page);
+  await finalizeReadingViaApi(page, await prepareReadingViaApi(page));
+  await page.goto("/history");
+  const card = page.locator(".reading-memory-panel").first();
+  await card.scrollIntoViewIfNeeded();
+  await expect
+    .poll(async () => new Set((await frameSamples(card, 300)).map(({ top }) => top)).size)
+    .toBe(1);
+  const rest = await card.evaluate(
+    (element) => element.getBoundingClientRect().toJSON() as DOMRect,
+  );
+  await page.mouse.move(rest.left + rest.width / 2, rest.bottom - 1);
+  await frameSamples(card, 500);
+  const settled = await frameSamples(card, 700);
+  expect(settled.every(({ hovered }) => hovered)).toBe(true);
+  expect(new Set(settled.map(({ top }) => top)).size).toBe(1);
 });
 
 test("bounded shuffle settles, restarts on intent, and all 78 fan cards remain keyboard selectable", async ({
