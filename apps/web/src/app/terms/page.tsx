@@ -54,7 +54,8 @@ export default function TermsPage() {
         <h2>Your free reading, and continuing with an account</h2>
         <p className="policy-section__summary">
           Adults can try one free reading in a browser before creating an account. If you sign up
-          afterwards, you can ask the same cards a follow-up — they are never redrawn.
+          afterwards, you can ask the same cards a follow-up — they are never redrawn — and choose
+          whether to save the reading to your history.
         </p>
         <details className="policy-details">
           <summary>How this works</summary>
@@ -70,9 +71,9 @@ export default function TermsPage() {
             personalizes the interpretation only and never affects which cards are drawn.
           </p>
           <p>
-            A guest reading is not saved to account history. Saved readings, personalized profile
-            use, purchases, export, and account deletion controls are available once you have an
-            account.
+            A guest reading is saved to your account history only if you choose Save to my readings
+            after signing in. Saved readings, personalized profile use, purchases, export, and
+            account deletion controls are available once you have an account.
           </p>
         </details>
       </section>
@@ -104,9 +105,10 @@ export default function TermsPage() {
           <summary>How this works</summary>
           <p>
             Account birth details and questions are encrypted before they are stored. The question
-            from a free guest reading is kept only in an encrypted copy held by your browser, as
-            described in the <Link href="/privacy">Privacy Notice</Link>. You can export everything
-            held in your account, or delete the account and all of its data.
+            from a free guest reading is kept only in an encrypted copy held by your browser unless
+            you save that reading to your account, as described in the{" "}
+            <Link href="/privacy">Privacy Notice</Link>. You can download a copy of your account
+            data, or delete the account and the data held in it.
           </p>
         </details>
       </section>

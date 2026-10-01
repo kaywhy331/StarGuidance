@@ -683,7 +683,7 @@ export function ReadingScene({
         menu
         narration={audioAvailable && narration}
         reducedMotion={preferenceOrManagedMotionOff}
-        sigilSeed={reading.profileSnapshotId}
+        {...(reading.profileSnapshotId ? { sigilSeed: reading.profileSnapshotId } : {})}
         sound={sound}
         toggleAmbience={toggleAmbience}
         {...(audioAvailable ? { toggleNarration } : {})}
@@ -887,7 +887,7 @@ export function ReadingScene({
             reducedMotion={motionOff}
             result={reading.result}
             retryToken={streamRetryToken}
-            sigilSeed={reading.profileSnapshotId}
+            {...(reading.profileSnapshotId ? { sigilSeed: reading.profileSnapshotId } : {})}
             audioEnabled={audioAvailable && narration}
             target={streamTarget}
           />

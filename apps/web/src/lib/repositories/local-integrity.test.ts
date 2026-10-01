@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DeterministicFallbackProvider } from "@starguidance/ai";
 import type { StoredReading } from "@starguidance/database";
+import { DECK_VERSION, spreads, tarotCards } from "@starguidance/tarot-content";
+import { createLockedDraw } from "@starguidance/tarot-domain";
 
+import { storedGuestReading } from "../guest-reading-server";
 import { localStore } from "../local-store";
 import { createLocalRepositories } from "./local";
 
@@ -60,6 +64,51 @@ function reading(id: string, idempotencyKey: string): StoredReading {
     followUps: [],
     createdAt: "2026-08-05T00:00:00.000Z",
   };
+}
+
+async function savedGuestReading(owner = userId): Promise<StoredReading> {
+  const spread = spreads.find(({ id }) => id === "one-card")!;
+  const configuration = {
+    version: "reading-configuration-v1" as const,
+    reversalMode: "reversals_enabled" as const,
+    personalizationMode: "personalized_tarot" as const,
+    positions: spread.positions,
+    capabilities: spread.capabilities!,
+  };
+  const draw = createLockedDraw({ cards: tarotCards, deckVersion: DECK_VERSION, spread });
+  const questionClassification = {
+    version: "question-classification-v1" as const,
+    topic: "general" as const,
+    horizon: "open" as const,
+    intent: "clarity" as const,
+    generalReading: false,
+  };
+  const readerLens = ["You tend to trust what you can build steadily."];
+  const generated = await new DeterministicFallbackProvider().generateWithProvenance({
+    draw,
+    configuration,
+    question: "What deserves my attention now?",
+    questionClassification,
+    relevantTraitStatements: readerLens,
+  });
+  return storedGuestReading({
+    userId: owner,
+    receipt: {
+      version: "guest-reading-receipt-v2",
+      readingId: draw.id,
+      question: "What deserves my attention now?",
+      questionClassification,
+      configuration,
+      readerLens,
+      draw,
+      result: generated.result,
+      provenance: generated.provenance,
+      createdAt: draw.lockedAt,
+      expiresAt: new Date(Date.parse(draw.lockedAt) + 7 * 86_400_000).toISOString(),
+    },
+    encryptedQuestion: "encrypted-guest-question",
+    safetyClassification: "ordinary",
+  });
 }
 
 beforeEach(() => {
@@ -177,5 +226,86 @@ describe("local integrity parity", () => {
     expect(await repositories.birthProfiles.getActive(userId)).toBeUndefined();
     expect(await repositories.readingSessions.list(userId)).toEqual([]);
     expect(await repositories.users.get(userId)).toBeDefined();
+  });
+
+  it("saves a guest reading once per account and never into two histories", async () => {
+    const sessions = createLocalRepositories().readingSessions;
+    const guest = await savedGuestReading();
+
+    const first = await sessions.importGuestReading(guest);
+    const replay = await sessions.importGuestReading({ ...guest, followUps: [] });
+
+    expect(first).toMatchObject({ id: guest.id, source: "guest_trial", profileSnapshotId: null });
+    expect(first.generationStatus).toBe("ready");
+    expect(replay).toEqual(first);
+    expect(await sessions.getByIdempotencyKey(userId, guest.idempotencyKey)).toEqual(first);
+    expect(
+      await sessions.getByIdempotencyKey(
+        "00000000-0000-4000-8000-0000000000ff",
+        guest.idempotencyKey,
+      ),
+    ).toBeUndefined();
+    await expect(
+      sessions.importGuestReading({ ...guest, userId: "00000000-0000-4000-8000-0000000000ff" }),
+    ).rejects.toThrow("GUEST_READING_SAVED_ELSEWHERE");
+  });
+
+  it("refuses a guest save shaped like an account reading or missing its interpretation", async () => {
+    const sessions = createLocalRepositories().readingSessions;
+    const guest = await savedGuestReading();
+    const withoutResult: StoredReading = { ...guest };
+    delete withoutResult.result;
+
+    await expect(
+      sessions.importGuestReading({
+        ...guest,
+        profileSnapshotId: "d1f91755-e7f0-4731-a9c8-79ec9017d78c",
+      }),
+    ).rejects.toThrow("GUEST_READING_IMPORT_INVALID");
+    await expect(sessions.importGuestReading(withoutResult)).rejects.toThrow(
+      "GUEST_READING_IMPORT_INVALID",
+    );
+    expect(localStore.readings.size).toBe(0);
+  });
+
+  it("keeps a saved guest reading when the private profile is deleted", async () => {
+    const repositories = createLocalRepositories();
+    await repositories.users.ensure({ id: userId, email: "reader@example.test" });
+    await repositories.birthProfiles.saveVersion(userId, {
+      encryptedInput: "encrypted-profile",
+      encryptedCalculations: "encrypted-calculations",
+      snapshot: {
+        id: "00000000-0000-4000-8000-00000000000b",
+        profileId: "00000000-0000-4000-8000-00000000000c",
+        version: 1,
+        completeness: "core",
+        ontologyVersion: "profile-traits-v4",
+        traits: [],
+        tensions: [],
+        convergences: [],
+        calculationVersions: {
+          numerology: "test-v1",
+          dreamspell: "test-v1",
+          nineStarKi: "test-v1",
+          westernAstrology: "test-v1",
+          bazi: "test-v1",
+          planetaryAngularity: "test-v1",
+        },
+        createdAt: "2026-08-05T00:00:00.000Z",
+      },
+    });
+    const guest = await repositories.readingSessions.importGuestReading(await savedGuestReading());
+    await repositories.feedback.create({
+      userId,
+      readingId: guest.id,
+      kind: "experience",
+      resonance: 5,
+    });
+
+    expect(await repositories.birthProfiles.delete(userId)).toBe(true);
+    expect((await repositories.readingSessions.list(userId)).map(({ id }) => id)).toEqual([
+      guest.id,
+    ]);
+    expect(await repositories.feedback.list(userId, guest.id)).toHaveLength(1);
   });
 });

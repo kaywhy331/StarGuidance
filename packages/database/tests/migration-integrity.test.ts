@@ -91,6 +91,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0025_committed_draw_lifecycle":
     "cfd7055877f764cf098108223c977b8f9658076e7b67bc9da08c93ec669bbb8c",
   "0026_relationship_profiles": "bf9c00a7e1b1e2446425bc499ff506b828d142efe3b6495a1efa7e0b5c01d557",
+  "0027_guest_reading_history": "a54449316d37318a677e13a57c9fbb598f8404961492d334856790b43b46b63c",
 };
 
 describe("migration history", () => {
@@ -273,6 +274,25 @@ describe("migration history", () => {
     expect(sql).toMatch(/relationship_profile_snapshots_owner/i);
     expect(sql).toMatch(/force\s+row\s+level\s+security/i);
     expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+(?:table|column)/i);
+  });
+
+  it("keeps account snapshot lineage while allowing explicitly saved guest readings (0027)", () => {
+    const sql = executableSql("0027_guest_reading_history");
+    expect(sql).toMatch(
+      /alter\s+table\s+"reading_sessions"\s+alter\s+column\s+"profile_snapshot_id"\s+drop\s+not\s+null/i,
+    );
+    expect(sql).toMatch(
+      /alter\s+table\s+"reading_sessions"\s+add\s+column\s+"source"\s+text\s+default\s+'account'\s+not\s+null/i,
+    );
+    // Account readings still require their immutable snapshot; a saved guest
+    // reading carries no snapshot and no related-person lens.
+    expect(sql).toMatch(
+      /add\s+constraint\s+"reading_sessions_source_contract"[\s\S]*"source"\s*=\s*'account'\s+and\s+"reading_sessions"\."profile_snapshot_id"\s+is\s+not\s+null[\s\S]*"source"\s*=\s*'guest_trial'[\s\S]*"profile_snapshot_id"\s+is\s+null[\s\S]*"encrypted_related_person_lens"\s+is\s+null/i,
+    );
+    expect(sql).not.toMatch(/update\s|delete\s+from|truncate|drop\s+(?:table|column|constraint)/i);
+    expect(sql).not.toMatch(
+      /disable\s+row\s+level\s+security|bypassrls|security\s+definer|\bgrant\b/i,
+    );
   });
 
   it("orders the corrective migration after the migration that created the trigger", () => {

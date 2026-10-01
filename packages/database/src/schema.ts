@@ -217,9 +217,11 @@ export const readingSessions = pgTable(
   {
     id,
     userId: userId(),
-    profileSnapshotId: uuid("profile_snapshot_id")
-      .notNull()
-      .references(() => profileSnapshots.id),
+    // Account readings are drawn against an immutable profile snapshot. A
+    // guest reading the reader chose to save (migration 0027) never had one:
+    // its only personalization is the stored birthday lens.
+    profileSnapshotId: uuid("profile_snapshot_id").references(() => profileSnapshots.id),
+    source: text("source").default("account").notNull(),
     spreadId: text("spread_id").notNull(),
     spreadVersion: text("spread_version").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
@@ -253,6 +255,15 @@ export const readingSessions = pgTable(
       name: "reading_sessions_spread_version_fk",
     }),
     uniqueIndex("reading_sessions_user_idempotency_unique").on(table.userId, table.idempotencyKey),
+    check(
+      "reading_sessions_source_contract",
+      sql`(${table.source} = 'account' and ${table.profileSnapshotId} is not null)
+        or (
+          ${table.source} = 'guest_trial'
+          and ${table.profileSnapshotId} is null
+          and ${table.encryptedRelatedPersonLens} is null
+        )`,
+    ),
   ],
 );
 export const readingDraws = pgTable("reading_draws", {

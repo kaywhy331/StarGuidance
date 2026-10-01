@@ -32,4 +32,5 @@ export const EXPECTED_MIGRATIONS = [
   "0024_immutable_content_versions",
   "0025_committed_draw_lifecycle",
   "0026_relationship_profiles",
+  "0027_guest_reading_history",
 ] as const;
