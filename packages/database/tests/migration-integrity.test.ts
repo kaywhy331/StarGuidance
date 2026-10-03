@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { EXPECTED_MIGRATIONS } from "../src/migration-manifest";
+import { BROWSER_WITHHELD_TABLES } from "../src/browser-access-privileges";
+import { EXPECTED_MIGRATION_LINEAGE, EXPECTED_MIGRATIONS } from "../src/migration-manifest";
 
 /**
  * Guards the migration history itself.
@@ -22,6 +23,7 @@ const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "migra
 interface JournalEntry {
   idx: number;
   tag: string;
+  when: number;
 }
 
 function read(tag: string): string {
@@ -94,6 +96,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0027_guest_reading_history": "a54449316d37318a677e13a57c9fbb598f8404961492d334856790b43b46b63c",
   "0028_follow_up_reading_owner":
     "8417cf1a5e77841223000b2888c2de3f74cdbe1273bec13896c770a274395833",
+  "0029_browser_role_privilege_boundary":
+    "fb2e43b1a85bf2d0dfd95d63e8f8139e2b460b85313b20a771ac1464dbe64cfb",
 };
 
 describe("migration history", () => {
@@ -318,10 +322,55 @@ describe("migration history", () => {
     );
   });
 
+  it("withholds browser roles from the reference and webhook tables and their creator defaults (0029)", () => {
+    const sql = executableSql("0029_browser_role_privilege_boundary");
+    // Authority is checked (and raised on) before any default ACL is altered.
+    const authority = sql.search(/pg_has_role\(\s*current_user[\s\S]*?'SET'\s*\)/i);
+    const alter = sql.search(/alter\s+default\s+privileges\s+for\s+role/i);
+    expect(authority).toBeGreaterThanOrEqual(0);
+    expect(alter).toBeGreaterThan(authority);
+    expect(sql).toMatch(/raise\s+exception[\s\S]*using\s+errcode\s*=\s*'insufficient_privilege'/i);
+    // Implicit PUBLIC function EXECUTE is revoked in the creator-global default.
+    expect(sql).toMatch(
+      /alter\s+default\s+privileges\s+for\s+role\s+%I\s+revoke\s+execute\s+on\s+functions\s+from\s+public/i,
+    );
+    expect(sql).toMatch(/still leaves new functions executable by public/i);
+    for (const table of BROWSER_WITHHELD_TABLES) expect(sql).toContain(`'${table}'`);
+    expect(sql).toMatch(/revoke\s+all\s+on\s+table\s+public\.%I\s+from\s+public,\s*%s/i);
+    // Reference/webhook tables have no per-subject policy: never force or toggle RLS,
+    // and never touch the app actor, service_role, schema USAGE, or role attributes.
+    expect(sql).not.toMatch(
+      /row\s+level\s+security|\bgrant\b|\bto\s+(service_role|starguidance_app)\b|from\s+(service_role|starguidance_app)\b|create\s+role|alter\s+role|bypassrls|security\s+definer|\bpolicy\b|on\s+schema/i,
+    );
+    expect(sql).not.toMatch(/delete\s+from|drop\s+(table|column)|validate\s+constraint/i);
+  });
+
   it("orders the corrective migration after the migration that created the trigger", () => {
     const tags = journal.entries.sort((a, b) => a.idx - b.idx).map(({ tag }) => tag);
     expect(tags).toEqual(EXPECTED_MIGRATIONS);
     expect(Object.keys(IMMUTABLE_DIGESTS)).toEqual(EXPECTED_MIGRATIONS);
+  });
+
+  it("pins the applied hash and journal timestamp of every migration", () => {
+    const entries = [...journal.entries].sort((a, b) => a.idx - b.idx);
+    expect(EXPECTED_MIGRATION_LINEAGE.map(({ tag }) => tag)).toEqual(EXPECTED_MIGRATIONS);
+    expect(EXPECTED_MIGRATION_LINEAGE).toEqual(
+      entries.map(({ tag, when }) => ({ tag, createdAt: when, sha256: digest(tag) })),
+    );
+  });
+
+  it("keeps the 0029 snapshot chained to 0028 with no schema drift", () => {
+    const snapshot = (name: string) =>
+      JSON.parse(readFileSync(join(migrationsDir, "meta", `${name}_snapshot.json`), "utf8")) as {
+        id: string;
+        prevId: string;
+        tables: unknown;
+      };
+    const previous = snapshot("0028");
+    const current = snapshot("0029");
+    expect(current.prevId).toBe(previous.id);
+    expect(current.id).not.toBe(previous.id);
+    expect(current.tables).toEqual(previous.tables);
   });
 
   it("never recreates the auth.users synchronisation trigger after 0002", () => {

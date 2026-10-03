@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  BROWSER_WITHHELD_TABLES,
+  findBrowserDefaultAcls,
+  findBrowserReachableUnforcedTables,
+  findMissingWithheldTables,
+  findPublicFunctionDefaultGaps,
+} from "../src/browser-access-privileges";
 import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
-import { EXPECTED_MIGRATIONS } from "../src/migration-manifest";
+import { EXPECTED_MIGRATION_LINEAGE, EXPECTED_MIGRATIONS } from "../src/migration-manifest";
 import { createDatabaseClient } from "../src/postgres-client";
 import { diagnoseAuthInsert } from "./diagnose-auth-insert";
 import { completeStage, record, requiredEnv } from "./staging-result";
@@ -61,18 +68,24 @@ async function main(): Promise<void> {
   let forcedRlsProved = false;
 
   try {
-    const applied = await sql<{ id: number }[]>`
-      select id from drizzle.__drizzle_migrations order by id`;
+    const applied = await sql<{ id: number; hash: string; created_at: string }[]>`
+      select id, hash, created_at from drizzle.__drizzle_migrations order by id`;
     const appliedCount = applied.length;
-    const migrationsOk = appliedCount === EXPECTED_MIGRATIONS.length;
+    // Count alone cannot tell an edited or foreign history from ours: compare each
+    // applied row's file hash and journal timestamp with the pinned lineage.
+    const divergent = EXPECTED_MIGRATION_LINEAGE.filter((expected, index) => {
+      const row = applied[index];
+      return !row || row.hash !== expected.sha256 || Number(row.created_at) !== expected.createdAt;
+    }).map(({ tag }) => tag);
+    const migrationsOk = appliedCount === EXPECTED_MIGRATIONS.length && divergent.length === 0;
     if (!migrationsOk) failed = true;
     record({
       section: "Migrations",
       check: "Authoritative Drizzle history applied",
       status: migrationsOk ? "pass" : "fail",
       detail: migrationsOk
-        ? `${appliedCount} applied: ${EXPECTED_MIGRATIONS.join(", ")}`
-        : `expected ${EXPECTED_MIGRATIONS.length} applied entries, found ${appliedCount}`,
+        ? `${appliedCount} applied with matching hash and timestamp: ${EXPECTED_MIGRATIONS.join(", ")}`
+        : `expected ${EXPECTED_MIGRATIONS.length} applied entries, found ${appliedCount}; hash/timestamp mismatch at ${divergent.join(", ") || "none"}`,
     });
 
     // Migration 0002 removed the SECURITY DEFINER trigger that forced RLS made
@@ -330,6 +343,27 @@ async function main(): Promise<void> {
         : "the browser/server database-role boundary is not enforced",
     });
 
+    // Browser roles must reach no table that lacks forced RLS, and no creator
+    // default may hand them the next table, sequence or function.
+    const missingWithheld = await findMissingWithheldTables(sql);
+    const reachableTables = await findBrowserReachableUnforcedTables(sql);
+    const browserDefaults = await findBrowserDefaultAcls(sql);
+    const publicFunctionGaps = await findPublicFunctionDefaultGaps(sql);
+    const browserAccessOk =
+      missingWithheld.length === 0 &&
+      reachableTables.length === 0 &&
+      browserDefaults.length === 0 &&
+      publicFunctionGaps.length === 0;
+    if (!browserAccessOk) failed = true;
+    record({
+      section: "Row level security",
+      check: "Browser roles withheld from unforced tables and future-object defaults",
+      status: browserAccessOk ? "pass" : "fail",
+      detail: browserAccessOk
+        ? `${BROWSER_WITHHELD_TABLES.length} reference/webhook tables are unreachable and no creator default grants anon or authenticated`
+        : `${missingWithheld.length} withheld table(s) absent; ${reachableTables.length} browser-reachable unforced table grant(s); ${browserDefaults.length} browser default ACL entr(ies); ${publicFunctionGaps.length} creator(s) leave new functions PUBLIC-executable`,
+    });
+
     let actorOk = false;
     try {
       await sql.begin(async (tx) => {
@@ -351,7 +385,14 @@ async function main(): Promise<void> {
         : `the connection role cannot assume ${APPLICATION_DATABASE_ROLE}`,
     });
     forcedRlsProved =
-      tablesOk && rlsOk && policiesOk && webhookOk && appOnlyOk && roleBoundaryOk && actorOk;
+      tablesOk &&
+      rlsOk &&
+      policiesOk &&
+      webhookOk &&
+      appOnlyOk &&
+      roleBoundaryOk &&
+      browserAccessOk &&
+      actorOk;
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);
   }

@@ -204,6 +204,13 @@
       "when": 1790995102558,
       "tag": "0028_follow_up_reading_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791043200000,
+      "tag": "0029_browser_role_privilege_boundary",
+      "breakpoints": true
     }
   ]
 }
