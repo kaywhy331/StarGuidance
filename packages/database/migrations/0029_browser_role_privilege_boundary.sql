@@ -1,5 +1,6 @@
 /*
- * Forward security fix: browser roles hold no direct table access.
+ * Forward security fix: browser roles hold no direct table access, and the
+ * APPLICATION creator `postgres` no longer hands browser roles future objects.
  *
  * Supabase's platform default ACLs (global and `IN SCHEMA public`, for the
  * `postgres` and `supabase_admin` creators) grant ALL on every new public
@@ -9,17 +10,31 @@
  * tables and payment_webhook_events) kept those catalog grants. (Catalog
  * grants were verified; actual Data API reachability was not.)
  *
- * Future functions also carry PostgreSQL's implicit PUBLIC EXECUTE, which
- * `anon` and `authenticated` inherit. A per-schema revoke cannot remove it, so
- * for the creators `postgres` and `supabase_admin` (plus EVERY creator with a
- * global or public-schema table, sequence or function default row, whether or
- * not it names a browser role) this migration revokes EXECUTE FROM PUBLIC in
- * the creator's GLOBAL function defaults. Effect: functions those creators
- * create LATER, in any schema (including extension scripts they run), are not
- * PUBLIC-executable; the creator keeps EXECUTE and `service_role` keeps its
- * explicit default grant. Any other role that must call a future function
- * needs an explicit GRANT EXECUTE in the migration that creates it (as 0006
- * does). Existing functions and their bodies are not changed.
+ * SCOPE (explicit product decision, not "whatever the executor can administer"):
+ * the application creator is exactly `postgres`. Application DDL is created by
+ * `postgres`, the observed hosted migration identity (a non-superuser with
+ * INHERIT, BYPASSRLS and CREATEROLE but no USAGE or SET on `supabase_admin`).
+ *   - Changed: the `postgres` default ACLs, global and `IN SCHEMA public`, for
+ *     tables, sequences and functions lose PUBLIC, `anon` and `authenticated`.
+ *   - NOT changed, NOT closed: `supabase_admin` and every other role's default
+ *     ACLs. Their future objects keep whatever browser access those defaults
+ *     give (platform / other-creator residual). docs/OPERATIONS.md and
+ *     verify-staging-schema report this as a separate residual; an app-scope
+ *     pass is never a global result.
+ *   - Creator guard: this migration refuses to run, before any change, unless
+ *     BOTH session_user and current_user are `postgres`. An alternate login, or
+ *     a role that merely inherits `postgres`, would create objects it owns with
+ *     its own (built-in PUBLIC) defaults, so those objects would silently escape
+ *     this fix. No SET ROLE, membership or privilege is added to work around it.
+ *
+ * Function default effect: removing PUBLIC from the GLOBAL `postgres` function
+ * defaults affects EVERY future function `postgres` creates, in any schema,
+ * including extension scripts it runs. Callers must be granted EXECUTE
+ * explicitly in the migration that creates the function (as 0006 does); the
+ * creator keeps EXECUTE and `service_role` keeps its explicit default grant.
+ * Global and per-schema defaults combine additively, so a per-schema revoke
+ * cannot remove global PUBLIC EXECUTE, which is why the global row is changed.
+ * Existing functions and their bodies are not changed.
  *
  * Intended access model (docs/OPERATIONS.md, migration 0004):
  *   - Browsers use Supabase for Auth only; no application code queries a table
@@ -36,14 +51,9 @@
  * per-subject policy, and forcing RLS without policies would lock out the
  * server roles that legitimately read them.
  *
- * One creator set is frozen BEFORE any ACL is touched and used for every
- * step and postcondition: `postgres`, `supabase_admin`, and EVERY role with a
- * default ACL row for tables, sequences or functions (global or IN SCHEMA
- * public), whether or not that row names a browser role; each such creator's
- * global function default loses PUBLIC EXECUTE. It is never rediscovered from browser grants that this migration
- * removes. For each frozen creator every existing row in that scope has PUBLIC,
- * `anon` and `authenticated` revoked (other grantees, incl. service_role, are
- * kept) and the global function default always gets EXECUTE revoked from PUBLIC,
+ * For `postgres`, every existing default row in that scope has PUBLIC, `anon`
+ * and `authenticated` revoked (other grantees, incl. service_role, are kept)
+ * and the global function default always gets EXECUTE revoked from PUBLIC,
  * which also leaves a durable row so post-migration audits find the creator.
  *
  * Effective access is judged through PUBLIC and role inheritance. A default
@@ -51,19 +61,18 @@
  * revoked without affecting that group's other members, so the migration
  * rejects that state (nothing changed) and names the owner action.
  *
- * Authority: ALTER DEFAULT PRIVILEGES FOR ROLE needs the executor to hold the
- * creator's privileges (inherited), which pg_has_role(..., 'SET') does not
- * prove. Every statement therefore runs first in a sub-transaction that is
- * always rolled back. A non-owner holding only some privilege gets a WARNING
- * and a no-op from REVOKE, not an error, so after each table and sequence
- * REVOKE the effective browser/PUBLIC access is checked, in the trial too; any
- * leftover raises a precise error before the real pass, so the catalog is
- * unchanged. No role is switched and no
- * membership or privilege is added.
+ * Authority for the tables: a non-owner holding only some privilege gets a
+ * WARNING and a no-op from REVOKE, not an error. Every statement therefore
+ * runs first in a sub-transaction that is always rolled back, and after each
+ * table and sequence REVOKE the effective browser/PUBLIC access is checked, in
+ * the trial too; any leftover raises a precise error before the real pass, so
+ * the catalog is unchanged. No role is switched and no membership or privilege
+ * is added.
  */
 DO $default_privileges$
 DECLARE
-  creators text[];
+  creator constant text := 'postgres';
+  creator_oid oid;
   inherited record;
   entry record;
   grantees text;
@@ -72,41 +81,39 @@ DECLARE
   attempt int;
   step text := 'default privileges';
   detail text;
+  residual text;
 BEGIN
+  -- Creator guard: fail before any mutation unless the real connection AND the
+  -- effective role are the application creator.
+  IF session_user::text <> creator OR current_user::text <> creator THEN
+    RAISE EXCEPTION
+      'Migration 0029 refuses to run: application DDL must be created by role "%" (session_user "%", current_user "%"). Run it as a direct "%" connection; no role was switched and nothing was changed.',
+      creator, session_user, current_user, creator
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  SELECT oid INTO creator_oid FROM pg_roles WHERE rolname = creator;
+
   grantees := concat_ws(', ', 'PUBLIC',
     (SELECT string_agg(quote_ident(rolname), ', ' ORDER BY rolname)
      FROM pg_roles WHERE rolname IN ('anon', 'authenticated')));
 
-  -- Freeze the creator set before anything is changed.
-  SELECT coalesce(array_agg(c.rolname ORDER BY c.rolname), ARRAY[]::text[]) INTO creators
-  FROM (
-    SELECT rolname FROM pg_roles WHERE rolname IN ('postgres', 'supabase_admin')
-    UNION
-    SELECT r.rolname
-    FROM pg_default_acl d
-    JOIN pg_roles r ON r.oid = d.defaclrole
-    WHERE d.defaclobjtype IN ('r', 'S', 'f')
-      AND d.defaclnamespace IN (0::oid, 'public'::regnamespace::oid)
-  ) c;
-
-  -- A group role granted a default and inherited by a browser role.
+  -- A group role granted a creator default and inherited by a browser role.
   FOR inherited IN
-    SELECT DISTINCT r.rolname AS creator, g.rolname AS grantee, b.rolname AS browser
+    SELECT DISTINCT g.rolname AS grantee, b.rolname AS browser
     FROM pg_default_acl d
-    JOIN pg_roles r ON r.oid = d.defaclrole
     CROSS JOIN LATERAL aclexplode(d.defaclacl) a
     JOIN pg_roles g ON g.oid = a.grantee
     JOIN pg_roles b ON b.rolname IN ('anon', 'authenticated')
-    WHERE r.rolname = ANY (creators)
+    WHERE d.defaclrole = creator_oid
       AND d.defaclobjtype IN ('r', 'S', 'f')
       AND d.defaclnamespace IN (0::oid, 'public'::regnamespace::oid)
       AND g.oid <> b.oid
       AND pg_has_role(b.oid, g.oid, 'USAGE')
-    ORDER BY 1, 2, 3
+    ORDER BY 1, 2
   LOOP
     RAISE EXCEPTION
       'Migration 0029 refuses to run: "%" inherits the default privileges that creator "%" gives "%". Revoke that default or the membership as its owner first; nothing was changed.',
-      inherited.browser, inherited.creator, inherited.grantee
+      inherited.browser, creator, inherited.grantee
       USING ERRCODE = 'object_not_in_prerequisite_state';
   END LOOP;
 
@@ -114,23 +121,22 @@ BEGIN
   FOR attempt IN 1..2 LOOP
     BEGIN
       FOR entry IN
-        SELECT r.rolname, x.ns, x.objtype
+        SELECT x.ns, x.objtype
         FROM (
-          SELECT d.defaclrole AS role_oid, d.defaclnamespace AS ns, d.defaclobjtype AS objtype
+          SELECT d.defaclnamespace AS ns, d.defaclobjtype AS objtype
           FROM pg_default_acl d
-          WHERE d.defaclobjtype IN ('r', 'S', 'f')
+          WHERE d.defaclrole = creator_oid
+            AND d.defaclobjtype IN ('r', 'S', 'f')
             AND d.defaclnamespace IN (0::oid, 'public'::regnamespace::oid)
           UNION
-          SELECT oid, 0::oid, 'f'::"char" FROM pg_roles
+          SELECT 0::oid, 'f'::"char"
         ) x
-        JOIN pg_roles r ON r.oid = x.role_oid
-        WHERE r.rolname = ANY (creators)
-        ORDER BY r.rolname, x.ns, x.objtype
+        ORDER BY x.ns, x.objtype
       LOOP
-        step := format('default privileges created by role "%s"', entry.rolname);
+        step := format('default privileges created by role "%s"', creator);
         EXECUTE format(
           'ALTER DEFAULT PRIVILEGES FOR ROLE %I %s REVOKE ALL ON %s FROM %s',
-          entry.rolname,
+          creator,
           CASE WHEN entry.ns = 0 THEN '' ELSE 'IN SCHEMA public' END,
           CASE entry.objtype WHEN 'r' THEN 'TABLES' WHEN 'S' THEN 'SEQUENCES' ELSE 'FUNCTIONS' END,
           grantees
@@ -205,33 +211,44 @@ BEGIN
     END;
   END LOOP;
 
-  -- Effective check over the frozen set: a new object from any creator must be
-  -- unreachable by a browser role through the global default (or the built-in
-  -- one when absent), the public-schema default, PUBLIC or inheritance.
+  -- Effective check for the application creator: a new object it creates must
+  -- be unreachable by a browser role through the global default (or the
+  -- built-in one when absent), the public-schema default, PUBLIC or inheritance.
   IF EXISTS (
     SELECT 1
-    FROM unnest(creators) AS c(name)
-    JOIN pg_roles cr ON cr.rolname = c.name
-    CROSS JOIN (VALUES ('r'::"char"), ('S'::"char"), ('f'::"char")) AS k(objtype)
+    FROM (VALUES ('r'::"char"), ('S'::"char"), ('f'::"char")) AS k(objtype)
     CROSS JOIN pg_roles b
     CROSS JOIN LATERAL (
       SELECT a.grantee
       FROM pg_default_acl d
       CROSS JOIN LATERAL aclexplode(d.defaclacl) a
-      WHERE d.defaclrole = cr.oid AND d.defaclobjtype = k.objtype
+      WHERE d.defaclrole = creator_oid AND d.defaclobjtype = k.objtype
         AND d.defaclnamespace = 'public'::regnamespace::oid
       UNION ALL
       SELECT a.grantee
       FROM aclexplode(coalesce(
         (SELECT d.defaclacl FROM pg_default_acl d
-         WHERE d.defaclrole = cr.oid AND d.defaclobjtype = k.objtype AND d.defaclnamespace = 0),
-        acldefault(k.objtype, cr.oid))) a
+         WHERE d.defaclrole = creator_oid AND d.defaclobjtype = k.objtype AND d.defaclnamespace = 0),
+        acldefault(k.objtype, creator_oid))) a
     ) g
     WHERE b.rolname IN ('anon', 'authenticated')
       AND CASE WHEN g.grantee = 0 THEN true ELSE pg_has_role(b.oid, g.grantee, 'USAGE') END
   ) THEN
-    RAISE EXCEPTION 'A creator default still leaves new tables, sequences or functions reachable by a browser role';
+    RAISE EXCEPTION 'A postgres default still leaves new tables, sequences or functions reachable by a browser role';
   END IF;
+
+  -- Residual, reported and deliberately untouched: other creators' defaults.
+  SELECT string_agg(DISTINCT r.rolname, ', ' ORDER BY r.rolname) INTO residual
+  FROM pg_roles r
+  WHERE r.rolname <> creator
+    AND (r.rolname = 'supabase_admin'
+      OR EXISTS (
+        SELECT 1 FROM pg_default_acl d
+        WHERE d.defaclrole = r.oid AND d.defaclobjtype IN ('r', 'S', 'f')
+          AND d.defaclnamespace IN (0::oid, 'public'::regnamespace::oid)));
+  RAISE NOTICE
+    'Migration 0029 changed only the default privileges of role "%". Default privileges of other creators (%) were NOT changed; objects they create keep their browser exposure (platform residual).',
+    creator, coalesce(residual, 'none recorded');
 END
 $default_privileges$;--> statement-breakpoint
 

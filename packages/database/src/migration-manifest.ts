@@ -195,6 +195,6 @@ export const EXPECTED_MIGRATION_LINEAGE: readonly {
   {
     tag: "0029_browser_role_privilege_boundary",
     createdAt: 1791043200000,
-    sha256: "fca8c3cad8607e07c7fb2c6022a954fca8bfa9d5eb3bdb906e9a958f048ab1b2",
+    sha256: "d4e3c144420003941c4650cb1996831b45740b6ff218f90d1daa5f0004747ad3",
   },
 ];

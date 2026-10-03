@@ -17,7 +17,7 @@
     "test": "corepack pnpm --recursive --if-present test",
     "test:e2e": "corepack pnpm --filter @starguidance/web test:e2e",
     "db:check": "corepack pnpm --filter @starguidance/database db:check",
-    "db:migrate": "corepack pnpm --filter @starguidance/database exec drizzle-kit migrate",
+    "db:migrate": "tsx packages/database/scripts/migrate.ts",
     "db:seed": "tsx packages/database/src/seed.ts"
   },
   "devDependencies": {

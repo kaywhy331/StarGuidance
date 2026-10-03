@@ -97,7 +97,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0028_follow_up_reading_owner":
     "8417cf1a5e77841223000b2888c2de3f74cdbe1273bec13896c770a274395833",
   "0029_browser_role_privilege_boundary":
-    "fca8c3cad8607e07c7fb2c6022a954fca8bfa9d5eb3bdb906e9a958f048ab1b2",
+    "d4e3c144420003941c4650cb1996831b45740b6ff218f90d1daa5f0004747ad3",
 };
 
 describe("migration history", () => {
@@ -324,13 +324,18 @@ describe("migration history", () => {
 
   it("withholds browser roles from the reference and webhook tables and their creator defaults (0029)", () => {
     const sql = executableSql("0029_browser_role_privilege_boundary");
-    // The creator set is frozen before any ACL statement, and the real authority
-    // is proven by a rolled-back first pass (pg_has_role SET is not authority).
-    const freeze = sql.search(/creators\s+text\[\]/i);
+    // The application creator is the single constant `postgres`; the identity
+    // guard (session_user AND current_user) precedes every ACL statement, and the
+    // real authority is proven by a rolled-back first pass.
+    expect(sql).toMatch(/creator\s+constant\s+text\s*:=\s*'postgres'/i);
+    const guard = sql.search(
+      /session_user::text\s*<>\s*creator\s+or\s+current_user::text\s*<>\s*creator/i,
+    );
     const alter = sql.search(/alter\s+default\s+privileges\s+for\s+role/i);
-    expect(freeze).toBeGreaterThanOrEqual(0);
-    expect(alter).toBeGreaterThan(freeze);
-    expect(sql).not.toMatch(/pg_has_role\([^)]*'SET'/i);
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(alter).toBeGreaterThan(guard);
+    expect(sql).not.toMatch(/set\s+(local\s+)?role|set_config|pg_has_role\([^)]*'SET'/i);
+    expect(sql).not.toMatch(/for\s+role\s+'?supabase_admin/i);
     expect(sql).toMatch(/for\s+attempt\s+in\s+1\.\.2/i);
     expect(sql).toMatch(/errcode\s*=\s*'S0029'/i);
     expect(sql).toMatch(
@@ -339,8 +344,8 @@ describe("migration history", () => {
     expect(sql).toMatch(/pg_has_role\(b\.oid,\s*g\.oid,\s*'USAGE'\)/i);
     // Implicit PUBLIC function EXECUTE is revoked in the creator-global default.
     expect(sql).toMatch(/entry\.ns\s*=\s*0/i);
-    expect(sql).toMatch(/select\s+oid,\s*0::oid,\s*'f'::"char"\s+from\s+pg_roles/i);
-    expect(sql).toMatch(/acldefault\(k\.objtype,\s*cr\.oid\)/i);
+    expect(sql).toMatch(/select\s+0::oid,\s*'f'::"char"/i);
+    expect(sql).toMatch(/acldefault\(k\.objtype,\s*creator_oid\)/i);
     for (const table of BROWSER_WITHHELD_TABLES) expect(sql).toContain(`'${table}'`);
     expect(sql).toMatch(/revoke\s+all\s+on\s+table\s+public\.%I\s+from\s+%s/i);
     // Reference/webhook tables have no per-subject policy: never force or toggle RLS,

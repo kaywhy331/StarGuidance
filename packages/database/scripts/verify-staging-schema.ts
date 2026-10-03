@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  APPLICATION_CREATOR,
+  auditBrowserBoundary,
   BROWSER_WITHHELD_TABLES,
-  findBrowserDefaultAcls,
-  findBrowserFutureObjectAccess,
-  findBrowserReachableUnforcedTables,
-  findMissingWithheldTables,
 } from "../src/browser-access-privileges";
 import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
 import { EXPECTED_MIGRATION_LINEAGE, EXPECTED_MIGRATIONS } from "../src/migration-manifest";
@@ -345,23 +343,26 @@ async function main(): Promise<void> {
 
     // Browser roles must reach no table that lacks forced RLS, and no creator
     // default may hand them the next table, sequence or function.
-    const missingWithheld = await findMissingWithheldTables(sql);
-    const reachableTables = await findBrowserReachableUnforcedTables(sql);
-    const browserDefaults = await findBrowserDefaultAcls(sql);
-    const futureAccess = await findBrowserFutureObjectAccess(sql);
-    const browserAccessOk =
-      missingWithheld.length === 0 &&
-      reachableTables.length === 0 &&
-      browserDefaults.length === 0 &&
-      futureAccess.length === 0;
+    const boundary = await auditBrowserBoundary(sql);
+    const browserAccessOk = boundary.applicationScopeClean;
     if (!browserAccessOk) failed = true;
     record({
       section: "Row level security",
-      check: "Browser roles withheld from unforced tables and future-object defaults",
+      check: `Browser roles withheld from unforced tables and ${APPLICATION_CREATOR} future-object defaults`,
       status: browserAccessOk ? "pass" : "fail",
       detail: browserAccessOk
-        ? `${BROWSER_WITHHELD_TABLES.length} reference/webhook tables are unreachable and no creator default grants anon or authenticated`
-        : `${missingWithheld.length} withheld table(s) absent; ${reachableTables.length} browser-reachable unforced table grant(s); ${browserDefaults.length} browser default ACL entr(ies); ${futureAccess.length} creator/object kind(s) a browser role reaches on new objects (direct, PUBLIC or inherited)`,
+        ? `${BROWSER_WITHHELD_TABLES.length} reference/webhook tables are unreachable and no ${APPLICATION_CREATOR} default grants anon or authenticated (application scope only)`
+        : `${boundary.missingTables.length} withheld table(s) absent; ${boundary.ownershipDrift.length} withheld table(s) not owned by ${APPLICATION_CREATOR};${boundary.reachableTables.length} browser-reachable unforced table grant(s); ${boundary.applicationDefaults.length} browser default ACL entr(ies) and ${boundary.applicationFutureAccess.length} creator/object kind(s) a browser role reaches on new ${APPLICATION_CREATOR} objects (direct, PUBLIC or inherited)`,
+    });
+    // Other creators (notably supabase_admin) are outside migration 0029. Their
+    // exposure is never folded into the application result above.
+    record({
+      section: "Row level security",
+      check: "Platform and other-creator default privileges (residual, not changed by 0029)",
+      status: boundary.platformResidualPresent ? "limited" : "pass",
+      detail: boundary.platformResidualPresent
+        ? `${boundary.platformDefaults.length} browser default ACL entr(ies), ${boundary.platformFutureAccess.length} creator/object kind(s) of non-${APPLICATION_CREATOR} creators and ${boundary.platformReachableTables.length} non-${APPLICATION_CREATOR}-owned table grant(s) remain browser-reachable on new objects; the application-scope result does not cover them`
+        : `no non-${APPLICATION_CREATOR} creator default reaches a browser role`,
     });
 
     let actorOk = false;

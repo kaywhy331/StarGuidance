@@ -138,7 +138,7 @@ The repository's Drizzle files in `packages/database/migrations` are the only mi
 
 1. Select an explicitly non-production Supabase staging project, confirm the migration/fixture run is authorized, and take the owner-required backup before applying changes. The protected workflow operates only on reserved-domain synthetic identities and does not require deleting unrelated beta accounts.
 2. Set `DATABASE_URL` only in the operator shell or secret manager.
-3. Run `corepack pnpm db:check`, `corepack pnpm db:migrate`, and `corepack pnpm db:seed`.
+3. Run `corepack pnpm db:check`, `corepack pnpm db:migrate`, and `corepack pnpm db:seed`. `db:migrate` is the guarded entrypoint: it refuses (exit 3, nothing changed) unless `DATABASE_URL` is a direct `postgres` session; see [Operations](OPERATIONS.md#browser-role-default-privileges-migration-0029-application-creator-scope). Do not run `drizzle-kit migrate` directly.
 4. Run `DATABASE_INTEGRATION_URL=<isolated-url> corepack pnpm --filter @starguidance/database test:integration` and `DATABASE_INTEGRATION_URL=<isolated-url> corepack pnpm --filter @starguidance/web test:integration` against a disposable database. CI performs both with an isolated Postgres service; the web-owned suite directly verifies atomic paid-report fulfillment after profile deletion and replay idempotency.
 5. Run the Auth-backed two-user procedure in [Supabase staging](SUPABASE-STAGING.md).
 6. Record migration IDs and non-secret results; do not copy connection strings or keys into the PR.
