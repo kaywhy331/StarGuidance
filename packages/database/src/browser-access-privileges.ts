@@ -54,7 +54,8 @@ export async function findBrowserReachableUnforcedTables(
       and not (c.relrowsecurity and c.relforcerowsecurity)
       and (
         has_table_privilege(r.oid, c.oid,
-          'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+          'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER' ||
+          case when current_setting('server_version_num')::int >= 170000 then ', MAINTAIN' else '' end)
         or has_any_column_privilege(r.oid, c.oid, 'SELECT, INSERT, UPDATE, REFERENCES')
       )
     order by c.relname, r.rolname`;
@@ -71,50 +72,90 @@ export async function findMissingWithheldTables(sql: DatabaseClient): Promise<st
 }
 
 /**
- * Creator-role default ACLs (global or `IN SCHEMA public`) that would grant a
- * browser role access to the next table, sequence or function created.
+ * Creator-role default ACL entries (global or `IN SCHEMA public`) that reach a
+ * browser role on the next table, sequence or function: the browser role named
+ * directly, PUBLIC, or a group role a browser role inherits (reported by the
+ * group's name).
  */
 export async function findBrowserDefaultAcls(sql: DatabaseClient): Promise<BrowserDefaultAcl[]> {
   return sql<BrowserDefaultAcl[]>`
-    select creator.rolname as creator,
+    select distinct creator.rolname as creator,
       case when d.defaclnamespace = 0 then 'global' else 'public' end as scope,
       case d.defaclobjtype when 'r' then 'table' when 'S' then 'sequence' else 'function' end
         as "objectType",
-      grantee.rolname as grantee
+      coalesce(grantee.rolname, 'PUBLIC') as grantee
     from pg_default_acl d
     join pg_roles creator on creator.oid = d.defaclrole
     cross join lateral aclexplode(d.defaclacl) a
-    join pg_roles grantee on grantee.oid = a.grantee
+    left join pg_roles grantee on grantee.oid = a.grantee
+    cross join pg_roles b
     where d.defaclobjtype in ('r', 'S', 'f')
       and d.defaclnamespace in (0::oid, 'public'::regnamespace::oid)
-      and grantee.rolname in ('anon', 'authenticated')
-    order by creator.rolname, scope, "objectType", grantee.rolname`;
+      and b.rolname in ('anon', 'authenticated')
+      and case when a.grantee = 0 then true else pg_has_role(b.oid, a.grantee, 'USAGE') end
+    order by creator, scope, "objectType", grantee`;
+}
+
+export interface BrowserFutureAccess {
+  readonly creator: string;
+  readonly objectType: "table" | "sequence" | "function";
+  readonly role: string;
 }
 
 /**
- * Creators (the platform's `postgres`/`supabase_admin`, or any creator whose
- * defaults list a browser role) whose creator-global function default still
- * grants implicit or explicit PUBLIC EXECUTE. `anon` and `authenticated`
- * inherit PUBLIC, so every function such a creator makes next is browser
- * callable even when no default ACL names a browser role.
+ * Effective check, over the creators migration 0029 freezes (`postgres`,
+ * `supabase_admin` and every role with a global or `IN SCHEMA public` default
+ * row; the migration leaves a global function row for each, so this scope
+ * survives the removal of browser grants). Reports the browser roles that would
+ * reach a NEW object: from the global default (PostgreSQL's built-in one when
+ * absent, which includes PUBLIC EXECUTE) plus the public-schema default,
+ * directly, through PUBLIC, or by inheritance.
+ */
+export async function findBrowserFutureObjectAccess(
+  sql: DatabaseClient,
+): Promise<BrowserFutureAccess[]> {
+  return sql<BrowserFutureAccess[]>`
+    with creators as (
+      select r.oid, r.rolname from pg_roles r
+      where r.rolname in ('postgres', 'supabase_admin')
+         or exists (
+           select 1 from pg_default_acl d
+           where d.defaclrole = r.oid and d.defaclobjtype in ('r', 'S', 'f')
+             and d.defaclnamespace in (0::oid, 'public'::regnamespace::oid)
+         )
+    )
+    select distinct cr.rolname as creator,
+      case k.objtype when 'r' then 'table' when 'S' then 'sequence' else 'function' end
+        as "objectType",
+      b.rolname as role
+    from creators cr
+    cross join (values ('r'::"char"), ('S'::"char"), ('f'::"char")) as k(objtype)
+    cross join pg_roles b
+    cross join lateral (
+      select a.grantee
+      from pg_default_acl d cross join lateral aclexplode(d.defaclacl) a
+      where d.defaclrole = cr.oid and d.defaclobjtype = k.objtype
+        and d.defaclnamespace = 'public'::regnamespace::oid
+      union all
+      select a.grantee
+      from aclexplode(coalesce(
+        (select d.defaclacl from pg_default_acl d
+         where d.defaclrole = cr.oid and d.defaclobjtype = k.objtype and d.defaclnamespace = 0),
+        acldefault(k.objtype, cr.oid))) a
+    ) g
+    where b.rolname in ('anon', 'authenticated')
+      and case when g.grantee = 0 then true else pg_has_role(b.oid, g.grantee, 'USAGE') end
+    order by creator, "objectType", role`;
+}
+
+/**
+ * Creators whose next function a browser role can execute, whether through
+ * implicit or explicit PUBLIC EXECUTE (global or per-schema), a named grant or
+ * an inherited group. Derived from {@link findBrowserFutureObjectAccess}.
  */
 export async function findPublicFunctionDefaultGaps(sql: DatabaseClient): Promise<string[]> {
-  const rows = await sql<{ creator: string }[]>`
-    select r.rolname as creator
-    from pg_roles r
-    where (
-        r.rolname in ('postgres', 'supabase_admin')
-        or exists (
-          select 1 from pg_default_acl x
-          where x.defaclrole = r.oid and x.defaclobjtype = 'f'
-            and x.defaclnamespace in (0::oid, 'public'::regnamespace::oid)
-        )
-      )
-      and not exists (
-        select 1 from pg_default_acl d
-        where d.defaclrole = r.oid and d.defaclobjtype = 'f' and d.defaclnamespace = 0
-          and not exists (select 1 from aclexplode(d.defaclacl) a where a.grantee = 0)
-      )
-    order by r.rolname`;
-  return rows.map(({ creator }) => creator);
+  const rows = await findBrowserFutureObjectAccess(sql);
+  return [
+    ...new Set(rows.filter((row) => row.objectType === "function").map((row) => row.creator)),
+  ];
 }

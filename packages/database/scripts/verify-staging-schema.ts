@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import {
   BROWSER_WITHHELD_TABLES,
   findBrowserDefaultAcls,
+  findBrowserFutureObjectAccess,
   findBrowserReachableUnforcedTables,
   findMissingWithheldTables,
-  findPublicFunctionDefaultGaps,
 } from "../src/browser-access-privileges";
 import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
 import { EXPECTED_MIGRATION_LINEAGE, EXPECTED_MIGRATIONS } from "../src/migration-manifest";
@@ -348,12 +348,12 @@ async function main(): Promise<void> {
     const missingWithheld = await findMissingWithheldTables(sql);
     const reachableTables = await findBrowserReachableUnforcedTables(sql);
     const browserDefaults = await findBrowserDefaultAcls(sql);
-    const publicFunctionGaps = await findPublicFunctionDefaultGaps(sql);
+    const futureAccess = await findBrowserFutureObjectAccess(sql);
     const browserAccessOk =
       missingWithheld.length === 0 &&
       reachableTables.length === 0 &&
       browserDefaults.length === 0 &&
-      publicFunctionGaps.length === 0;
+      futureAccess.length === 0;
     if (!browserAccessOk) failed = true;
     record({
       section: "Row level security",
@@ -361,7 +361,7 @@ async function main(): Promise<void> {
       status: browserAccessOk ? "pass" : "fail",
       detail: browserAccessOk
         ? `${BROWSER_WITHHELD_TABLES.length} reference/webhook tables are unreachable and no creator default grants anon or authenticated`
-        : `${missingWithheld.length} withheld table(s) absent; ${reachableTables.length} browser-reachable unforced table grant(s); ${browserDefaults.length} browser default ACL entr(ies); ${publicFunctionGaps.length} creator(s) leave new functions PUBLIC-executable`,
+        : `${missingWithheld.length} withheld table(s) absent; ${reachableTables.length} browser-reachable unforced table grant(s); ${browserDefaults.length} browser default ACL entr(ies); ${futureAccess.length} creator/object kind(s) a browser role reaches on new objects (direct, PUBLIC or inherited)`,
     });
 
     let actorOk = false;

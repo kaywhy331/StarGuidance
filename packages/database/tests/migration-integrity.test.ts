@@ -97,7 +97,7 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0028_follow_up_reading_owner":
     "8417cf1a5e77841223000b2888c2de3f74cdbe1273bec13896c770a274395833",
   "0029_browser_role_privilege_boundary":
-    "fb2e43b1a85bf2d0dfd95d63e8f8139e2b460b85313b20a771ac1464dbe64cfb",
+    "fca8c3cad8607e07c7fb2c6022a954fca8bfa9d5eb3bdb906e9a958f048ab1b2",
 };
 
 describe("migration history", () => {
@@ -324,19 +324,25 @@ describe("migration history", () => {
 
   it("withholds browser roles from the reference and webhook tables and their creator defaults (0029)", () => {
     const sql = executableSql("0029_browser_role_privilege_boundary");
-    // Authority is checked (and raised on) before any default ACL is altered.
-    const authority = sql.search(/pg_has_role\(\s*current_user[\s\S]*?'SET'\s*\)/i);
+    // The creator set is frozen before any ACL statement, and the real authority
+    // is proven by a rolled-back first pass (pg_has_role SET is not authority).
+    const freeze = sql.search(/creators\s+text\[\]/i);
     const alter = sql.search(/alter\s+default\s+privileges\s+for\s+role/i);
-    expect(authority).toBeGreaterThanOrEqual(0);
-    expect(alter).toBeGreaterThan(authority);
-    expect(sql).toMatch(/raise\s+exception[\s\S]*using\s+errcode\s*=\s*'insufficient_privilege'/i);
-    // Implicit PUBLIC function EXECUTE is revoked in the creator-global default.
+    expect(freeze).toBeGreaterThanOrEqual(0);
+    expect(alter).toBeGreaterThan(freeze);
+    expect(sql).not.toMatch(/pg_has_role\([^)]*'SET'/i);
+    expect(sql).toMatch(/for\s+attempt\s+in\s+1\.\.2/i);
+    expect(sql).toMatch(/errcode\s*=\s*'S0029'/i);
     expect(sql).toMatch(
-      /alter\s+default\s+privileges\s+for\s+role\s+%I\s+revoke\s+execute\s+on\s+functions\s+from\s+public/i,
+      /when\s+insufficient_privilege[\s\S]*using\s+errcode\s*=\s*'insufficient_privilege'/i,
     );
-    expect(sql).toMatch(/still leaves new functions executable by public/i);
+    expect(sql).toMatch(/pg_has_role\(b\.oid,\s*g\.oid,\s*'USAGE'\)/i);
+    // Implicit PUBLIC function EXECUTE is revoked in the creator-global default.
+    expect(sql).toMatch(/entry\.ns\s*=\s*0/i);
+    expect(sql).toMatch(/select\s+oid,\s*0::oid,\s*'f'::"char"\s+from\s+pg_roles/i);
+    expect(sql).toMatch(/acldefault\(k\.objtype,\s*cr\.oid\)/i);
     for (const table of BROWSER_WITHHELD_TABLES) expect(sql).toContain(`'${table}'`);
-    expect(sql).toMatch(/revoke\s+all\s+on\s+table\s+public\.%I\s+from\s+public,\s*%s/i);
+    expect(sql).toMatch(/revoke\s+all\s+on\s+table\s+public\.%I\s+from\s+%s/i);
     // Reference/webhook tables have no per-subject policy: never force or toggle RLS,
     // and never touch the app actor, service_role, schema USAGE, or role attributes.
     expect(sql).not.toMatch(
