@@ -873,9 +873,21 @@ export function createPostgresRepositories(
         return await importGuestReadingRows(reading, result, provenance);
       } catch (error) {
         // The draw id is the guest reading id, so the same free reading can
-        // live in only one account's history.
-        if (uniqueViolation(error, "reading_sessions_pkey"))
+        // live in only one account's history. A key collision is only a
+        // foreign claim if the row is not this owner's: overlapping first
+        // saves by the same owner lose the primary-key race to each other,
+        // and the loser must see the winner's reading, not a conflict.
+        if (uniqueViolation(error, "reading_sessions_pkey")) {
+          const own = await userTransaction(reading.userId, async (tx) => {
+            const [row] = await tx`
+              select * from reading_sessions
+              where id = ${reading.id} and user_id = ${reading.userId}
+            `;
+            return row ? hydrateReading(tx, row) : undefined;
+          });
+          if (own) return own;
           throw new Error("GUEST_READING_SAVED_ELSEWHERE");
+        }
         throw error;
       }
     },

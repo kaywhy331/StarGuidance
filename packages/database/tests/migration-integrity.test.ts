@@ -92,6 +92,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
     "cfd7055877f764cf098108223c977b8f9658076e7b67bc9da08c93ec669bbb8c",
   "0026_relationship_profiles": "bf9c00a7e1b1e2446425bc499ff506b828d142efe3b6495a1efa7e0b5c01d557",
   "0027_guest_reading_history": "a54449316d37318a677e13a57c9fbb598f8404961492d334856790b43b46b63c",
+  "0028_follow_up_reading_owner":
+    "8417cf1a5e77841223000b2888c2de3f74cdbe1273bec13896c770a274395833",
 };
 
 describe("migration history", () => {
@@ -292,6 +294,27 @@ describe("migration history", () => {
     expect(sql).not.toMatch(/update\s|delete\s+from|truncate|drop\s+(?:table|column|constraint)/i);
     expect(sql).not.toMatch(
       /disable\s+row\s+level\s+security|bypassrls|security\s+definer|\bgrant\b/i,
+    );
+  });
+
+  it("binds follow-ups to a reading of the same account without touching history (0028)", () => {
+    const sql = executableSql("0028_follow_up_reading_owner");
+    const unique = sql.search(
+      /add\s+constraint\s+"reading_sessions_id_user_unique"\s+unique\s*\(\s*"id"\s*,\s*"user_id"\s*\)/i,
+    );
+    const ownerKey = sql.search(
+      /add\s+constraint\s+"follow_up_questions_reading_owner_fk"\s+foreign\s+key\s*\(\s*"reading_id"\s*,\s*"user_id"\s*\)\s+references\s+"public"\."reading_sessions"\s*\(\s*"id"\s*,\s*"user_id"\s*\)[^;]*\bnot\s+valid\s*;/i,
+    );
+    // The referenced key must exist before the foreign key that needs it.
+    expect(unique).toBeGreaterThanOrEqual(0);
+    expect(ownerKey).toBeGreaterThan(unique);
+    // Existing rows are neither validated nor rewritten here.
+    expect(sql).not.toMatch(/validate\s+constraint/i);
+    expect(sql).not.toMatch(
+      /update\s+"?\w+"?\s+set|delete\s+from|truncate|drop\s+(?:table|column|constraint)/i,
+    );
+    expect(sql).not.toMatch(
+      /disable\s+row\s+level\s+security|bypassrls|security\s+definer|\bgrant\b|\bpolicy\b/i,
     );
   });
 

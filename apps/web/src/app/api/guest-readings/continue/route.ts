@@ -141,8 +141,6 @@ export async function POST(request: Request) {
           user.id,
           guestReadingIdempotencyKey(receipt.readingId),
         );
-        if (existing)
-          return noStore(NextResponse.json({ readingId: existing.id, alreadySaved: true }));
         const followUp: StoredFollowUp | undefined =
           answered?.kind === "answered" && input.followUpQuestion
             ? {
@@ -156,6 +154,20 @@ export async function POST(request: Request) {
                 createdAt: new Date().toISOString(),
               }
             : undefined;
+        if (existing) {
+          // An earlier save whose reply was lost may predate this follow-up;
+          // keep the reader's answered question rather than dropping it. A
+          // retry never adds a second one.
+          if (followUp && existing.followUps.length === 0)
+            await persistence.repositories.followUps
+              .create(user.id, existing.id, followUp, { limit: 1 })
+              .catch((error: unknown) => {
+                // A concurrent retry already attached it.
+                if (!(error instanceof Error && error.message === "FOLLOW_UP_LIMIT_REACHED"))
+                  throw error;
+              });
+          return noStore(NextResponse.json({ readingId: existing.id, alreadySaved: true }));
+        }
         saved = await persistence.repositories.readingSessions.importGuestReading(
           storedGuestReading({
             userId: user.id,

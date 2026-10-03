@@ -13,6 +13,7 @@ const history = vi.hoisted(() => ({
   saved: new Map<string, StoredReading>(),
   importGuestReading: vi.fn(),
   getByIdempotencyKey: vi.fn(),
+  createFollowUp: vi.fn(),
   recordAudit: vi.fn(),
 }));
 
@@ -34,6 +35,7 @@ vi.mock("@/lib/persistence", () => ({
         importGuestReading: history.importGuestReading,
         getByIdempotencyKey: history.getByIdempotencyKey,
       },
+      followUps: { create: history.createFollowUp },
     },
   }),
   recordAudit: history.recordAudit,
@@ -129,6 +131,7 @@ afterEach(() => {
   limiter.assertRateLimit.mockReset();
   history.importGuestReading.mockReset();
   history.getByIdempotencyKey.mockReset();
+  history.createFollowUp.mockReset();
   history.recordAudit.mockReset();
 });
 
@@ -319,6 +322,68 @@ describe("saving a guest reading to account history", () => {
       result: { response: answered.followUp.response },
       outputProvenance: { providerId: "deterministic-fallback-v1" },
     });
+  });
+
+  it("attaches a follow-up asked after an earlier save whose reply was lost", async () => {
+    const issued = await receipt();
+    const question = "What would one grounded next step look like?";
+    await POST(request({ action: "save", receipt: issued }));
+    history.createFollowUp.mockImplementation(
+      async (userId: string, readingId: string, followUp: StoredReading["followUps"][number]) => {
+        const key = `${userId}:guest-trial:${readingId}`;
+        const reading = history.saved.get(key)!;
+        history.saved.set(key, { ...reading, followUps: [...reading.followUps, followUp] });
+      },
+    );
+
+    const again = await POST(
+      request({ action: "save", receipt: issued, followUpQuestion: question }),
+    );
+    const repeat = await POST(
+      request({ action: "save", receipt: issued, followUpQuestion: question }),
+    );
+
+    expect(await again.json()).toMatchObject({ alreadySaved: true });
+    expect(await repeat.json()).toMatchObject({ alreadySaved: true });
+    expect(history.importGuestReading).toHaveBeenCalledOnce();
+    expect(history.createFollowUp).toHaveBeenCalledOnce();
+    const saved = [...history.saved.values()][0]!;
+    expect(saved.followUps).toHaveLength(1);
+    expect(saved.followUps[0]).toMatchObject({
+      encryptedQuestion: `sealed:follow-up-question:${question}`,
+    });
+  });
+
+  it("treats a concurrent retry that already attached the follow-up as saved", async () => {
+    const issued = await receipt();
+    const question = "What would one grounded next step look like?";
+    await POST(request({ action: "save", receipt: issued }));
+    history.createFollowUp.mockRejectedValue(new Error("FOLLOW_UP_LIMIT_REACHED"));
+
+    const response = await POST(
+      request({ action: "save", receipt: issued, followUpQuestion: question }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ alreadySaved: true });
+    expect(history.createFollowUp).toHaveBeenCalledOnce();
+  });
+
+  it("reports a retryable failure when the follow-up cannot be attached", async () => {
+    const issued = await receipt();
+    await POST(request({ action: "save", receipt: issued }));
+    history.createFollowUp.mockRejectedValue(new Error("connection reset"));
+
+    const response = await POST(
+      request({
+        action: "save",
+        receipt: issued,
+        followUpQuestion: "What would one grounded next step look like?",
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(history.importGuestReading).toHaveBeenCalledOnce();
   });
 
   it("leaves out a follow-up that would need fresh cards", async () => {

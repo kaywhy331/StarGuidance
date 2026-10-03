@@ -197,6 +197,13 @@
       "when": 1790777950323,
       "tag": "0027_guest_reading_history",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790995102558,
+      "tag": "0028_follow_up_reading_owner",
+      "breakpoints": true
     }
   ]
 }

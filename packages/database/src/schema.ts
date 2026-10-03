@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -255,6 +256,8 @@ export const readingSessions = pgTable(
       name: "reading_sessions_spread_version_fk",
     }),
     uniqueIndex("reading_sessions_user_idempotency_unique").on(table.userId, table.idempotencyKey),
+    // Target for child keys that must belong to the reading's own account.
+    unique("reading_sessions_id_user_unique").on(table.id, table.userId),
     check(
       "reading_sessions_source_contract",
       sql`(${table.source} = 'account' and ${table.profileSnapshotId} is not null)
@@ -314,7 +317,15 @@ export const followUpQuestions = pgTable(
     schemaVersion: text("schema_version").default("legacy-unrecorded").notNull(),
     createdAt,
   },
-  (table) => [index("follow_up_questions_reading_idx").on(table.readingId)],
+  (table) => [
+    index("follow_up_questions_reading_idx").on(table.readingId),
+    // A follow-up can only point at a reading owned by the same account.
+    foreignKey({
+      columns: [table.readingId, table.userId],
+      foreignColumns: [readingSessions.id, readingSessions.userId],
+      name: "follow_up_questions_reading_owner_fk",
+    }).onDelete("cascade"),
+  ],
 );
 export const readingFeedback = pgTable(
   "reading_feedback",

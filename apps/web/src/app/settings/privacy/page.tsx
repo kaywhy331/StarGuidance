@@ -131,10 +131,15 @@ export default function PrivacyPage() {
       <Panel className="settings-group settings-group--danger">
         <h2>Delete your account</h2>
         <p>
-          This permanently deletes everything: your login, profile, saved people, readings,
-          settings, and purchased atlases with their receipts. It can’t be undone. We keep only an
-          anonymous note that a deletion happened; our payment processor keeps its own records of
-          past payments.
+          This permanently deletes your sign-in identity and the data held in your account: your
+          profile, saved people, saved readings, settings, and purchased atlases with their
+          receipts. It can’t be undone. We keep only an anonymous note that a deletion happened; our
+          payment processor keeps its own records of past payments.
+        </p>
+        <p>
+          A free guest reading kept in a browser is a separate copy. Deleting your account doesn’t
+          clear it from this or any other browser; it stops working on its own seven days after it
+          was made, and clearing this browser’s site data removes it sooner.
         </p>
         <p>To confirm, enter your current password and type DELETE.</p>
         <div className="settings-danger-fields">

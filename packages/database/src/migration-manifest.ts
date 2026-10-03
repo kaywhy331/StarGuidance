@@ -33,4 +33,5 @@ export const EXPECTED_MIGRATIONS = [
   "0025_committed_draw_lifecycle",
   "0026_relationship_profiles",
   "0027_guest_reading_history",
+  "0028_follow_up_reading_owner",
 ] as const;
