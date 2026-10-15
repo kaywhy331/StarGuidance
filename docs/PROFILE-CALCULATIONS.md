@@ -2,6 +2,8 @@
 
 ## Implemented, pending reference certification
 
+For requirement-to-fixture traceability, worked expected results, snapshot checks and the still-open expert review gates, see [Profile reference validation](PROFILE-VALIDATION.md). The separate [local AI evaluation](GROUNDED-AI-EVALUATION.md) retains adverse safety results and does not grant provider qualification.
+
 `pythagorean-v3` always calculates the date-derived Life Path and Birthday values. Life Path reduces month, day, and four-digit year separately, preserving 11, 22, or 33 at each component, then sums and reduces those three values while again preserving master numbers. This component-wise convention intentionally changes cases such as 1987-07-26 from the v2 all-digit result 4 to 22. Existing snapshots remain on v2; only newly calculated snapshots use v3. Expression, Soul Urge, and Personality are calculated when the entered birth name can be normalized under the rules below. The output is deterministic and covered by a digest-pinned regression set, but it is not yet independently certified.
 
 ### Name handling
