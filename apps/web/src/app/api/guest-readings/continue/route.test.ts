@@ -125,6 +125,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   auth.requireUser.mockReset();
   auth.assertCurrentPolicyConsents.mockReset();
@@ -436,5 +437,32 @@ describe("saving a guest reading to account history", () => {
     expect(expired.status).toBe(410);
     expect(anonymous.status).toBe(401);
     expect(history.importGuestReading).not.toHaveBeenCalled();
+  });
+
+  it("never renews the seven-day deadline through recovery and rejects saving at expiry", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+    const original = await receipt();
+    const payload = verifyGuestReadingReceipt(original)!;
+    const deadline = Date.parse(payload.expiresAt);
+    vi.setSystemTime(deadline - 1);
+    const recovered = await POST(request({ action: "recover", receipt: original }));
+    expect(recovered.status).toBe(200);
+    const { handoff } = await recovered.json();
+    const redeemed = await POST(request({ action: "redeem", handoff }));
+    expect(redeemed.status).toBe(200);
+    const { receipt: renewed } = await redeemed.json();
+    expect(verifyGuestReadingReceipt(renewed)?.expiresAt).toBe(payload.expiresAt);
+
+    vi.setSystemTime(deadline);
+    for (const token of [original, renewed]) {
+      const response = await POST(request({ action: "save", receipt: token }));
+      expect(response.status).toBe(410);
+      expect(await response.json()).toMatchObject({ expired: true });
+    }
+    const expiredHandoff = await POST(request({ action: "redeem", handoff }));
+    expect(expiredHandoff.status).toBe(410);
+    expect(history.importGuestReading).not.toHaveBeenCalled();
+    expect(history.createFollowUp).not.toHaveBeenCalled();
   });
 });

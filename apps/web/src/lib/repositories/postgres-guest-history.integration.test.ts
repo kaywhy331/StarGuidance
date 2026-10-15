@@ -816,4 +816,20 @@ describeDatabase("Postgres saved guest readings", () => {
       ),
     ).toBeUndefined();
   });
+
+  it("does not resurrect a deleted guest reading when a stale save retries", async () => {
+    if (!databaseUrl) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const owner = subjects[0]!.id;
+    const repositories = createPostgresRepositories({ databaseUrl, actorUserId: owner });
+    const reading = await guestReading(owner, { withFollowUp: false });
+    await repositories.readingSessions.importGuestReading(reading);
+    expect(await repositories.readingSessions.delete(owner, reading.id)).toBe(true);
+    expect(await repositories.readingSessions.get(owner, reading.id)).toBeUndefined();
+    // A stale client still holds a valid receipt after the history row is gone.
+    await repositories.readingSessions.importGuestReading(reading).catch(() => undefined);
+    expect(
+      await repositories.readingSessions.get(owner, reading.id),
+      "deleted history must not be recreated by a delayed save retry",
+    ).toBeUndefined();
+  });
 });
