@@ -1000,6 +1000,96 @@ describeDatabase("Postgres saved guest readings", () => {
     },
   );
 
+  itOnDisposableFixture.each([false, true])(
+    "refuses a deleted reading replay that crosses expiry while waiting for its fence lock (prune=%s)",
+    async (pruneExpiredFence) => {
+      if (!sql || !databaseUrl || !disposableFixtureManifest)
+        throw new Error("private fixture required");
+      const owner = subjects[0]!.id;
+      const repositories = createPostgresRepositories({ databaseUrl, actorUserId: owner });
+      const reading = await guestReading(owner, { withFollowUp: false });
+      const [deadline] = await sql<{ expiresAt: Date }[]>`
+        select clock_timestamp() + interval '5 seconds' as "expiresAt"
+      `;
+      reading.expiresAt = deadline!.expiresAt.toISOString();
+      await repositories.readingSessions.importGuestReading(reading);
+      expect(await repositories.readingSessions.delete(owner, reading.id)).toBe(true);
+
+      const side = createDatabaseClient(databaseUrl, { max: 2 });
+      const fence = guestReadingDeletionFence(reading.id);
+      let holding!: () => void;
+      const holdingLock = new Promise<void>((resolve) => (holding = resolve));
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      let holderPid = 0;
+      const holder = side.begin(async (tx) => {
+        const [backend] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`;
+        holderPid = backend!.pid;
+        await tx`select pg_advisory_xact_lock(hashtextextended(${fence}, 0))`;
+        holding();
+        await released;
+      });
+      holder.catch(() => undefined);
+      const pending: Promise<unknown>[] = [holder];
+      let settled: PromiseSettledResult<unknown>[] = [];
+      try {
+        await Promise.race([holdingLock, holder]);
+        const replay = repositories.readingSessions.importGuestReading(reading);
+        pending.push(replay);
+        replay.catch(() => undefined);
+        let blocked = false;
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          const [row] = await side<{ blocked: boolean }[]>`
+            select exists (
+              select 1 from pg_stat_activity
+              where datname = current_database()
+                and ${holderPid}::int = any(pg_blocking_pids(pid))
+            ) as blocked
+          `;
+          blocked = row!.blocked;
+          if (blocked) break;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(blocked).toBe(true);
+        // Real elapsed time, using the DB clock: no fake timers or fence edits.
+        await side`
+          select pg_sleep(greatest(0, extract(epoch from
+            (${reading.expiresAt}::timestamptz - clock_timestamp()))) + 0.05)
+        `;
+        if (pruneExpiredFence) {
+          const summary = await pruneExpiredSystemRows(side);
+          expect(summary.expiredGuestReadingDeletionFences).toBeGreaterThanOrEqual(1);
+        }
+        expect(
+          await side`select 1 from guest_reading_deletion_fences where reading_hash = ${fence}`,
+        ).toHaveLength(pruneExpiredFence ? 0 : 1);
+      } finally {
+        release();
+        settled = await Promise.allSettled(pending);
+        await side.end({ timeout: 5 }).catch(() => undefined);
+      }
+      const restored = await repositories.readingSessions.get(owner, reading.id);
+      const [completion] = await sql<{ expired: boolean }[]>`
+        select clock_timestamp() >= ${reading.expiresAt}::timestamptz as expired
+      `;
+      console.info(
+        "SG03_EXPIRY_REPLAY",
+        JSON.stringify({
+          pruneExpiredFence,
+          saveStatus: settled[1]!.status,
+          historyRestored: Boolean(restored),
+          expiredAtCompletion: completion!.expired,
+        }),
+      );
+      expect(settled[0]!.status).toBe("fulfilled");
+      expect(settled[1]!.status).toBe("rejected");
+      expect(String((settled[1] as PromiseRejectedResult).reason)).toMatch(
+        /GUEST_READING_(EXPIRED|DELETED)/,
+      );
+      expect(restored).toBeUndefined();
+    },
+  );
+
   it("lets the application role only read and append fences, and browsers neither", async () => {
     if (!sql || !databaseUrl) throw new Error("DATABASE_INTEGRATION_URL is required");
     const database = sql;
