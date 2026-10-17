@@ -691,7 +691,7 @@ export function createPostgresRepositories(
   };
 
   /** The per-reading lock a delete holds until its fence commits, and an
-   * import holds from its fence check until it commits. */
+   * import holds from its expiry and fence check until it commits. */
   const lockGuestReading = (tx: Transaction, readingId: string) =>
     tx`select pg_advisory_xact_lock(hashtextextended(${guestReadingDeletionFence(readingId)}, 0))`;
 
@@ -757,11 +757,24 @@ export function createPostgresRepositories(
       // first saves still meet at the insert itself: any delete of this
       // reading has then either committed its fence or waits for this commit.
       await lockGuestReading(tx, reading.id);
-      const [fenced] = await tx`
-        select 1 from guest_reading_deletion_fences
-        where reading_hash = ${guestReadingDeletionFence(reading.id)} and expires_at > now()
+      // The wait for the lock can outlast the receipt, and the system prune
+      // removes its fence once expired without taking this lock. So expiry is
+      // judged again here, not by now() (still the transaction's start), and
+      // in one statement with the fence: its snapshot is taken first and the
+      // wall clock read after it. A fence pruned before that snapshot had
+      // expired before the prune began, so this clock finds the receipt
+      // expired; a fence pruned later is still in the snapshot.
+      const [guard] = await tx`
+        select ${reading.expiresAt}::timestamptz <= clock.at as expired,
+          exists (
+            select 1 from guest_reading_deletion_fences
+            where reading_hash = ${guestReadingDeletionFence(reading.id)}
+              and expires_at > clock.at
+          ) as fenced
+        from (select clock_timestamp() as at) as clock
       `;
-      if (fenced) throw new Error("GUEST_READING_DELETED");
+      if (guard?.expired) throw new Error("GUEST_READING_EXPIRED");
+      if (guard?.fenced) throw new Error("GUEST_READING_DELETED");
       // The server seed was never kept past the guest ceremony, so the
       // draw is stored with its public proof only. No interpretation job:
       // the reading arrives with the interpretation the guest already read.
