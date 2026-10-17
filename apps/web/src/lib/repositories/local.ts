@@ -19,6 +19,7 @@ import type {
   StoredReport,
   UserSettingsRecord,
 } from "@starguidance/database";
+import { guestReadingDeletionFence } from "@starguidance/database";
 import type { StoredRitualProgress } from "@starguidance/contracts";
 
 import { assertLocalAdapter, localStore } from "../local-store";
@@ -26,6 +27,12 @@ import { assertLocalAdapter, localStore } from "../local-store";
 function ownedReading(userId: string, readingId: string): StoredReading | undefined {
   const reading = localStore.readings.get(readingId);
   return reading?.userId === userId ? reading : undefined;
+}
+
+/** Mirrors the system prune: a fence outlives its receipt only until the next write. */
+function pruneGuestReadingDeletionFences(now: number) {
+  for (const [fence, expiresAt] of localStore.guestReadingDeletionFences)
+    if (Date.parse(expiresAt) <= now) localStore.guestReadingDeletionFences.delete(fence);
 }
 
 function ownedProfile(userId: string, snapshotId: string): StoredProfileVersion | undefined {
@@ -291,6 +298,13 @@ export function createLocalRepositories(): ApplicationRepositories {
         !reading.outputProvenance
       )
         throw new Error("GUEST_READING_IMPORT_INVALID");
+      // Delete and import each run without yielding, so they never interleave;
+      // a deleted reading stays deleted while its receipt could be replayed.
+      const now = Date.now();
+      pruneGuestReadingDeletionFences(now);
+      if (localStore.guestReadingDeletionFences.has(guestReadingDeletionFence(reading.id)))
+        throw new Error("GUEST_READING_DELETED");
+      if (Date.parse(reading.expiresAt) <= now) throw new Error("GUEST_READING_EXPIRED");
       const existing = [...localStore.readings.values()].find(
         (candidate) =>
           candidate.userId === reading.userId &&
@@ -316,8 +330,16 @@ export function createLocalRepositories(): ApplicationRepositories {
       return [...localStore.readings.values()].filter((reading) => reading.userId === userId);
     },
     async delete(userId: string, readingId: string) {
-      if (!ownedReading(userId, readingId)) return false;
+      const reading = ownedReading(userId, readingId);
+      if (!reading) return false;
       localStore.readings.delete(readingId);
+      const now = Date.now();
+      pruneGuestReadingDeletionFences(now);
+      if (reading.source === "guest_trial" && Date.parse(reading.expiresAt) > now)
+        localStore.guestReadingDeletionFences.set(
+          guestReadingDeletionFence(readingId),
+          reading.expiresAt,
+        );
       for (const [feedbackId, feedback] of localStore.feedback)
         if (feedback.readingId === readingId) localStore.feedback.delete(feedbackId);
       return true;

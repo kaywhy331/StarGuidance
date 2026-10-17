@@ -57,6 +57,18 @@ function saveFailure(error: unknown): NextResponse {
       { error: "This free reading is already saved in another account.", savedElsewhere: true },
       { status: 409 },
     );
+  // A save that was delayed in flight, or replayed from another copy of the
+  // receipt, must not recreate a reading deleted from history meanwhile.
+  if (error instanceof Error && error.message === "GUEST_READING_DELETED")
+    return NextResponse.json(
+      {
+        error: "This reading was deleted from saved readings, so it can’t be saved again.",
+        deletedFromHistory: true,
+      },
+      { status: 409 },
+    );
+  if (error instanceof Error && error.message === "GUEST_READING_EXPIRED")
+    return NextResponse.json({ error: expiredMessage, expired: true }, { status: 410 });
   if (error instanceof Error && error.message === "READING_CONTENT_UNAVAILABLE")
     return NextResponse.json(
       { error: "This reading can’t be saved right now. It’s still kept here for 7 days." },

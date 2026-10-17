@@ -42,6 +42,7 @@ import type {
 import {
   APPLICATION_DATABASE_ROLE,
   createDatabaseClient,
+  guestReadingDeletionFence,
   insertInterpretationJob,
 } from "@starguidance/database";
 import { findSpread, TAROT_CONTENT_VERSION } from "@starguidance/tarot-content";
@@ -689,6 +690,11 @@ export function createPostgresRepositories(
     };
   };
 
+  /** The per-reading lock a delete holds until its fence commits, and an
+   * import holds from its fence check until it commits. */
+  const lockGuestReading = (tx: Transaction, readingId: string) =>
+    tx`select pg_advisory_xact_lock(hashtextextended(${guestReadingDeletionFence(readingId)}, 0))`;
+
   /** The rows of one saved guest reading, written in a single subject-bound
    * transaction so the session, draw, output, and any follow-up land together. */
   const importGuestReadingRows = (
@@ -697,6 +703,10 @@ export function createPostgresRepositories(
     provenance: ReadingOutputProvenance,
   ) =>
     userTransaction(reading.userId, async (tx) => {
+      // Judged on the database clock, the same one that prunes deletion
+      // fences, so no clock skew lets a receipt outlive its fence.
+      const [expiry] = await tx`select ${reading.expiresAt}::timestamptz <= now() as expired`;
+      if (expiry?.expired) throw new Error("GUEST_READING_EXPIRED");
       const [idempotent] = await tx`
         select * from reading_sessions
         where user_id = ${reading.userId} and idempotency_key = ${reading.idempotencyKey}
@@ -742,6 +752,16 @@ export function createPostgresRepositories(
         if (!existing) throw new Error("READING_IDEMPOTENCY_CONFLICT");
         return hydrateReading(tx, existing);
       }
+      // A deleted reading stays deleted while its receipt could still be
+      // replayed. The lock is taken only after the insert, so overlapping
+      // first saves still meet at the insert itself: any delete of this
+      // reading has then either committed its fence or waits for this commit.
+      await lockGuestReading(tx, reading.id);
+      const [fenced] = await tx`
+        select 1 from guest_reading_deletion_fences
+        where reading_hash = ${guestReadingDeletionFence(reading.id)} and expires_at > now()
+      `;
+      if (fenced) throw new Error("GUEST_READING_DELETED");
       // The server seed was never kept past the guest ceremony, so the
       // draw is stored with its public proof only. No interpretation job:
       // the reading arrives with the interpretation the guest already read.
@@ -919,11 +939,25 @@ export function createPostgresRepositories(
     },
     async delete(userId: string, readingId: string) {
       return userTransaction(userId, async (tx) => {
-        const rows = await tx`
-          delete from reading_sessions where id = ${readingId} and user_id = ${userId}
-          returning id
+        await lockGuestReading(tx, readingId);
+        // One statement: the removal and its fence commit together, so a save
+        // already in flight with this guest receipt finds the fence, never an
+        // empty slot to fill again. The fence lasts only as long as the
+        // receipt the reading was saved from; every receipt for one reading
+        // keeps its original expiry, so no older fence for it can remain.
+        const [result] = await tx`
+          with deleted as (
+            delete from reading_sessions where id = ${readingId} and user_id = ${userId}
+            returning source, expires_at
+          ), fenced as (
+            insert into guest_reading_deletion_fences (reading_hash, expires_at)
+            select ${guestReadingDeletionFence(readingId)}, expires_at from deleted
+            where source = 'guest_trial' and expires_at > now()
+            on conflict (reading_hash) do nothing
+          )
+          select count(*)::int as count from deleted
         `;
-        return rows.length === 1;
+        return result?.count === 1;
       });
     },
     async setGenerationStatus(

@@ -223,11 +223,18 @@ export interface ReadingSessionRepository {
    * Saves a verified, already interpreted guest reading into this account's
    * history. It creates no interpretation job and is idempotent per
    * (user, idempotency key): repeating the save returns the stored reading.
+   * A guest reading deleted from history stays deleted until its receipt
+   * expires: importing it again throws GUEST_READING_DELETED, and importing
+   * one whose receipt has expired throws GUEST_READING_EXPIRED.
    */
   importGuestReading(reading: StoredReading): Promise<StoredReading>;
   get(userId: string, readingId: string): Promise<StoredReading | undefined>;
   getByIdempotencyKey(userId: string, idempotencyKey: string): Promise<StoredReading | undefined>;
   list(userId: string): Promise<StoredReading[]>;
+  /**
+   * Deleting a saved guest reading also fences it (migration 0030) in the
+   * same step, so a save already in flight cannot recreate it.
+   */
   delete(userId: string, readingId: string): Promise<boolean>;
   setGenerationStatus(
     userId: string,

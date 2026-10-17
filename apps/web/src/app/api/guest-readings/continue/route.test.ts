@@ -409,6 +409,28 @@ describe("saving a guest reading to account history", () => {
     expect(await response.json()).toMatchObject({ savedElsewhere: true });
   });
 
+  it("refuses to recreate a reading deleted from history, without a retry", async () => {
+    history.importGuestReading.mockRejectedValueOnce(new Error("GUEST_READING_DELETED"));
+
+    const response = await POST(request({ action: "save", receipt: await receipt() }));
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body).toMatchObject({ deletedFromHistory: true });
+    expect(body).not.toHaveProperty("expired");
+    expect(history.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("reports expiry when the account store judges the receipt expired", async () => {
+    history.importGuestReading.mockRejectedValueOnce(new Error("GUEST_READING_EXPIRED"));
+
+    const response = await POST(request({ action: "save", receipt: await receipt() }));
+
+    expect(response.status).toBe(410);
+    expect(await response.json()).toMatchObject({ expired: true });
+    expect(history.recordAudit).not.toHaveBeenCalled();
+  });
+
   it("keeps the reading in place when the account store cannot save it", async () => {
     history.importGuestReading.mockRejectedValueOnce(new Error("connection refused"));
 

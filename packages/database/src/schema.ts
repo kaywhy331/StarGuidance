@@ -600,6 +600,19 @@ export const rateLimitBuckets = pgTable(
   ],
 );
 
+// User-less (migration 0030): a saved guest reading deleted from history
+// leaves only a domain-separated digest of its id, until the guest receipt it
+// came from expires, so a delayed or replayed save cannot recreate it. No
+// owner, content or other timestamp is kept; expired fences are pruned.
+export const guestReadingDeletionFences = pgTable(
+  "guest_reading_deletion_fences",
+  {
+    readingHash: text("reading_hash").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("guest_reading_deletion_fences_expires_at_idx").on(table.expiresAt)],
+);
+
 // Subject-bound for the application role (migration 0008): the request path
 // reaches only its own subject's rows, while the worker's inherently
 // cross-user claim sweep runs as the owning connection role under the

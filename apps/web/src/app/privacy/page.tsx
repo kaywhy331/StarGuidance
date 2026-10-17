@@ -92,6 +92,13 @@ export default function PrivacyNoticePage() {
             profile keeps it, because it was not made from that profile; deleting your account
             removes it.
           </p>
+          <p>
+            When you delete a saved free reading, StarGuidance keeps only a one-way code made from
+            the reading&apos;s ID — never the reading, your question, or your account — until the
+            copy in your browser stops working, at most seven days after the reading was made. That
+            code is what stops the browser copy, or a save already on its way, from saving the
+            deleted reading again.
+          </p>
         </details>
       </section>
 

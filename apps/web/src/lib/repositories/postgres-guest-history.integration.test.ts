@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DeterministicFallbackProvider } from "@starguidance/ai";
-import { APPLICATION_DATABASE_ROLE, createDatabaseClient } from "@starguidance/database";
+import {
+  APPLICATION_DATABASE_ROLE,
+  createDatabaseClient,
+  guestReadingDeletionFence,
+  pruneExpiredSystemRows,
+} from "@starguidance/database";
 import type { DatabaseClient, StoredReading } from "@starguidance/database";
 import {
   createSubject,
@@ -831,5 +836,214 @@ describeDatabase("Postgres saved guest readings", () => {
       await repositories.readingSessions.get(owner, reading.id),
       "deleted history must not be recreated by a delayed save retry",
     ).toBeUndefined();
+  });
+  it("keeps a deleted guest reading deleted for every account behind an opaque fence", async () => {
+    if (!sql || !databaseUrl) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const [owner, other] = [subjects[0]!.id, subjects[1]!.id];
+    const repositories = createPostgresRepositories({ databaseUrl, actorUserId: owner });
+    const reading = await guestReading(owner, { withFollowUp: false });
+    await repositories.readingSessions.importGuestReading(reading);
+    expect(await repositories.readingSessions.delete(owner, reading.id)).toBe(true);
+
+    // A save delayed in flight, an explicit re-save, and another account's
+    // copy of the receipt all present the same reading.
+    await expect(repositories.readingSessions.importGuestReading(reading)).rejects.toThrow(
+      "GUEST_READING_DELETED",
+    );
+    const foreign = createPostgresRepositories({ databaseUrl, actorUserId: other });
+    await expect(
+      foreign.readingSessions.importGuestReading({ ...reading, userId: other }),
+    ).rejects.toThrow("GUEST_READING_DELETED");
+    const [counts] = await sql`
+      select (select count(*)::int from reading_sessions where id=${reading.id}) as sessions,
+        (select count(*)::int from reading_draws where reading_id=${reading.id}) as draws,
+        (select count(*)::int from reading_outputs where reading_id=${reading.id}) as outputs
+    `;
+    expect(counts).toEqual({ sessions: 0, draws: 0, outputs: 0 });
+
+    // The fence is a digest and the receipt's own expiry; nothing else exists to keep.
+    const columns = await sql<{ column_name: string }[]>`
+      select column_name from information_schema.columns
+      where table_schema = 'public' and table_name = 'guest_reading_deletion_fences'
+      order by column_name
+    `;
+    expect(columns.map(({ column_name }) => column_name)).toEqual(["expires_at", "reading_hash"]);
+    const fences = await sql<{ reading_hash: string; expires_at: Date }[]>`
+      select reading_hash, expires_at from guest_reading_deletion_fences
+      where reading_hash = ${guestReadingDeletionFence(reading.id)}
+    `;
+    expect(fences.map(({ expires_at }) => expires_at.toISOString())).toEqual([reading.expiresAt]);
+    expect(fences[0]!.reading_hash).toMatch(/^[0-9a-f]{64}$/);
+    // No row of the fence table, in any column, carries the plain reading id.
+    const [plaintext] = await sql<{ count: number }[]>`
+      select count(*)::int as count from guest_reading_deletion_fences fence
+      where fence::text ilike ${`%${reading.id}%`}
+        or fence::text ilike ${`%${reading.id.replaceAll("-", "")}%`}
+    `;
+    expect(plaintext?.count).toBe(0);
+  });
+
+  it("refuses a save parked at its insert while the deletion of that reading commits", async () => {
+    if (!databaseUrl) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const [owner, other] = [subjects[0]!.id, subjects[1]!.id];
+    const repositories = createPostgresRepositories({ databaseUrl, actorUserId: owner });
+    const foreign = createPostgresRepositories({ databaseUrl, actorUserId: other });
+    const reading = await guestReading(owner, { withFollowUp: false });
+    await repositories.readingSessions.importGuestReading(reading);
+    // Its own connections: the delete and the save each hold one of the
+    // shared pool's three while they wait. An uncommitted fence with the same
+    // digest holds the real delete open after it removed the row, and the
+    // other account's save then parks on that removed row at its insert.
+    const side = createDatabaseClient(databaseUrl, { max: 2 });
+    let holding!: () => void;
+    const holdingFence = new Promise<void>((resolve) => (holding = resolve));
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let holderPid = 0;
+    const holder = side.begin(async (tx) => {
+      const [backend] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`;
+      holderPid = backend?.pid ?? 0;
+      await tx`
+        insert into guest_reading_deletion_fences (reading_hash, expires_at)
+        values (${guestReadingDeletionFence(reading.id)}, ${reading.expiresAt})
+      `;
+      holding();
+      await released;
+      throw new Error("ROLL_BACK_HOLDER");
+    });
+    holder.catch(() => undefined);
+    const waiting = async (expected: { behindHolder: number; total: number }) => {
+      let observed = { behindHolder: 0, total: 0 };
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const [row] = await side<{ behindHolder: number; total: number }[]>`
+          select
+            count(*) filter (where ${holderPid}::int = any(pg_blocking_pids(pid)))::int
+              as "behindHolder",
+            count(*)::int as total
+          from pg_stat_activity
+          where datname = current_database() and wait_event_type = 'Lock'
+        `;
+        observed = row ?? observed;
+        if (observed.behindHolder === expected.behindHolder && observed.total === expected.total)
+          break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return observed;
+    };
+    const pending: Promise<unknown>[] = [];
+    let settled: PromiseSettledResult<unknown>[] = [];
+    try {
+      await Promise.race([holdingFence, holder]);
+      const deletion = repositories.readingSessions.delete(owner, reading.id);
+      pending.push(deletion);
+      deletion.catch(() => undefined);
+      expect(await waiting({ behindHolder: 1, total: 1 })).toEqual({ behindHolder: 1, total: 1 });
+      const replay = foreign.readingSessions.importGuestReading({ ...reading, userId: other });
+      pending.push(replay);
+      replay.catch(() => undefined);
+      expect(await waiting({ behindHolder: 1, total: 2 })).toEqual({ behindHolder: 1, total: 2 });
+    } finally {
+      release();
+      settled = await Promise.allSettled([holder, ...pending]);
+      await side.end({ timeout: 5 }).catch(() => undefined);
+    }
+    // The holder rolled back, so the fence that remains is the delete's own.
+    expect(settled.map(({ status }) => status)).toEqual(["rejected", "fulfilled", "rejected"]);
+    expect((settled[1] as PromiseFulfilledResult<boolean>).value).toBe(true);
+    expect(String((settled[2] as PromiseRejectedResult).reason)).toContain("GUEST_READING_DELETED");
+    expect(await repositories.readingSessions.get(owner, reading.id)).toBeUndefined();
+    expect(await foreign.readingSessions.get(other, reading.id)).toBeUndefined();
+    expect(
+      await sql!`
+        select 1 from guest_reading_deletion_fences
+        where reading_hash = ${guestReadingDeletionFence(reading.id)}
+      `,
+    ).toHaveLength(1);
+  });
+
+  itOnDisposableFixture(
+    "refuses an expired import, never lets an expired fence block a save, and prunes it",
+    async () => {
+      if (!sql || !databaseUrl || !disposableFixtureManifest)
+        throw new Error("private fixture required");
+      const owner = subjects[0]!.id;
+      const repositories = createPostgresRepositories({ databaseUrl, actorUserId: owner });
+      const reading = await guestReading(owner, { withFollowUp: false });
+      // Judged on the database clock, whatever the application believed.
+      await expect(
+        repositories.readingSessions.importGuestReading({
+          ...reading,
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        }),
+      ).rejects.toThrow("GUEST_READING_EXPIRED");
+      expect(await repositories.readingSessions.get(owner, reading.id)).toBeUndefined();
+
+      await repositories.readingSessions.importGuestReading(reading);
+      expect(await repositories.readingSessions.delete(owner, reading.id)).toBe(true);
+      const fence = guestReadingDeletionFence(reading.id);
+      await expect(repositories.readingSessions.importGuestReading(reading)).rejects.toThrow(
+        "GUEST_READING_DELETED",
+      );
+      await sql`
+        update guest_reading_deletion_fences set expires_at = now() - interval '1 second'
+        where reading_hash = ${fence}
+      `;
+      // Expired but not yet pruned: the fence no longer decides anything.
+      expect(await repositories.readingSessions.importGuestReading(reading)).toMatchObject({
+        id: reading.id,
+      });
+      const summary = await pruneExpiredSystemRows(sql);
+      expect(summary.expiredGuestReadingDeletionFences).toBeGreaterThanOrEqual(1);
+      expect(
+        await sql`select 1 from guest_reading_deletion_fences where reading_hash = ${fence}`,
+      ).toHaveLength(0);
+    },
+  );
+
+  it("lets the application role only read and append fences, and browsers neither", async () => {
+    if (!sql || !databaseUrl) throw new Error("DATABASE_INTEGRATION_URL is required");
+    const database = sql;
+    const owner = subjects[0]!.id;
+    const repositories = createPostgresRepositories({ databaseUrl, actorUserId: owner });
+    const reading = await guestReading(owner, { withFollowUp: false });
+    await repositories.readingSessions.importGuestReading(reading);
+    await repositories.readingSessions.delete(owner, reading.id);
+    const fence = guestReadingDeletionFence(reading.id);
+    const asApplication = <T>(
+      work: (tx: Parameters<Parameters<typeof database.begin>[1]>[0]) => Promise<T>,
+    ) =>
+      database.begin(async (tx) => {
+        await tx.unsafe(`set local role ${APPLICATION_DATABASE_ROLE}`);
+        await tx`select set_config('request.jwt.claim.sub', ${owner}, true)`;
+        return work(tx);
+      });
+    expect(
+      await asApplication(
+        (tx) =>
+          tx`select reading_hash from guest_reading_deletion_fences where reading_hash = ${fence}`,
+      ),
+    ).toHaveLength(1);
+    await expect(
+      asApplication(
+        (tx) =>
+          tx`update guest_reading_deletion_fences set expires_at = now() where reading_hash = ${fence}`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asApplication(
+        (tx) => tx`delete from guest_reading_deletion_fences where reading_hash = ${fence}`,
+      ),
+    ).rejects.toThrow(/permission denied/);
+    const browserRoles = await database<{ rolname: string }[]>`
+      select rolname from pg_roles where rolname in ('anon', 'authenticated')
+    `;
+    for (const { rolname } of browserRoles) {
+      const [access] = await database<{ reachable: boolean }[]>`
+        select has_table_privilege(${rolname}, 'public.guest_reading_deletion_fences',
+          'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') as reachable
+      `;
+      expect(access?.reachable, rolname).toBe(false);
+    }
+    expect(browserRoles.length).toBeGreaterThan(0);
   });
 });

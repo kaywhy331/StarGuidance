@@ -35,6 +35,7 @@ export const EXPECTED_MIGRATIONS = [
   "0027_guest_reading_history",
   "0028_follow_up_reading_owner",
   "0029_browser_role_privilege_boundary",
+  "0030_guest_reading_deletion_fences",
 ] as const;
 
 /**
@@ -196,5 +197,10 @@ export const EXPECTED_MIGRATION_LINEAGE: readonly {
     tag: "0029_browser_role_privilege_boundary",
     createdAt: 1791043200000,
     sha256: "d4e3c144420003941c4650cb1996831b45740b6ff218f90d1daa5f0004747ad3",
+  },
+  {
+    tag: "0030_guest_reading_deletion_fences",
+    createdAt: 1792202490889,
+    sha256: "7d77919b3cba11ea560d8389500fc389d5db5f2be2fc913b3a1d34a42ac80b9c",
   },
 ];

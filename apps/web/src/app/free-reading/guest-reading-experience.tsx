@@ -1181,9 +1181,11 @@ function GuestReadingRitual({
       setSavedReadingId(parsed.data.readingId);
       return;
     }
+    // Retrying can never succeed for a reading saved in another account or
+    // deleted from history, so neither is offered a retry.
     showError(
       response.ok ? "Your reading couldn’t be saved just now. Please try again." : response.error,
-      response.data.savedElsewhere === true
+      response.data.savedElsewhere === true || response.data.deletedFromHistory === true
         ? undefined
         : [{ label: "Try again", onClick: () => void saveReading() }],
     );

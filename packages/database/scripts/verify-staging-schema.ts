@@ -20,7 +20,8 @@ import { completeStage, record, requiredEnv } from "./staging-result";
  */
 /**
  * App-only tables carry a user_id-free or cross-user workload (rate-limit
- * buckets keyed by opaque hash; the interpretation/report job queues' claim sweeps),
+ * buckets and guest-reading deletion fences keyed by opaque hash; the
+ * interpretation/report job queues' claim sweeps),
  * so they are absent from USER_OWNED_TABLES' per-subject policy shape — but
  * they must still be forced-RLS and unreachable from any browser role, and
  * both job queues' application-role policies must be subject-bound rather
@@ -33,6 +34,7 @@ const APP_ONLY_TABLES = [
   "deletion_receipts",
   "product_events",
   "runtime_configuration_versions",
+  "guest_reading_deletion_fences",
 ] as const;
 
 const USER_OWNED_TABLES = [

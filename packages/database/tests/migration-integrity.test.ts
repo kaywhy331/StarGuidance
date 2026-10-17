@@ -98,6 +98,8 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
     "8417cf1a5e77841223000b2888c2de3f74cdbe1273bec13896c770a274395833",
   "0029_browser_role_privilege_boundary":
     "d4e3c144420003941c4650cb1996831b45740b6ff218f90d1daa5f0004747ad3",
+  "0030_guest_reading_deletion_fences":
+    "7d77919b3cba11ea560d8389500fc389d5db5f2be2fc913b3a1d34a42ac80b9c",
 };
 
 describe("migration history", () => {
@@ -382,6 +384,49 @@ describe("migration history", () => {
     expect(current.prevId).toBe(previous.id);
     expect(current.id).not.toBe(previous.id);
     expect(current.tables).toEqual(previous.tables);
+  });
+
+  it("keeps the 0030 snapshot chained to 0029 with only the fence table added", () => {
+    const snapshot = (name: string) =>
+      JSON.parse(readFileSync(join(migrationsDir, "meta", `${name}_snapshot.json`), "utf8")) as {
+        id: string;
+        prevId: string;
+        tables: Record<string, unknown>;
+      };
+    const previous = snapshot("0029");
+    const current = snapshot("0030");
+    expect(current.prevId).toBe(previous.id);
+    const { "public.guest_reading_deletion_fences": fences, ...unchanged } = current.tables;
+    expect(fences).toBeDefined();
+    expect(unchanged).toEqual(previous.tables);
+  });
+
+  it("fences deleted guest readings with an opaque, expiring, app-append-only row (0030)", () => {
+    const sql = executableSql("0030_guest_reading_deletion_fences");
+    expect(sql).toMatch(
+      /create\s+table\s+"guest_reading_deletion_fences"\s*\(\s*"reading_hash"\s+text\s+primary\s+key\s+not\s+null,\s*"expires_at"\s+timestamp\s+with\s+time\s+zone\s+not\s+null\s*\)/i,
+    );
+    // No owner, content or other timestamp: nothing an export or a cascade could surface.
+    expect(sql).not.toMatch(/user_id|question|card|payload|created_at|reading_id/i);
+    expect(sql).toMatch(
+      /alter\s+table\s+"guest_reading_deletion_fences"\s+enable\s+row\s+level\s+security/i,
+    );
+    expect(sql).toMatch(
+      /alter\s+table\s+"guest_reading_deletion_fences"\s+force\s+row\s+level\s+security/i,
+    );
+    expect(sql).toMatch(
+      /create\s+policy\s+"guest_reading_deletion_fences_app"[\s\S]*to\s+starguidance_app/i,
+    );
+    expect(sql).toMatch(
+      /create\s+policy\s+"guest_reading_deletion_fences_system"[\s\S]*to\s+current_user/i,
+    );
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"guest_reading_deletion_fences"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+select,\s*insert\s+on\s+table\s+"guest_reading_deletion_fences"\s+to\s+starguidance_app/i,
+    );
+    expect(sql).not.toMatch(/grant\s+[^;]*(update|delete)|bypassrls|security\s+definer/i);
   });
 
   it("never recreates the auth.users synchronisation trigger after 0002", () => {

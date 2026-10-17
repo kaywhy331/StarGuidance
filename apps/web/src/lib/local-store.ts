@@ -44,6 +44,8 @@ export interface LocalStore {
   users: Map<string, LocalUser>;
   usersByEmail: Map<string, string>;
   readings: Map<string, StoredReading>;
+  /** Deleted saved guest readings: fence digest → receipt expiry (migration 0030). */
+  guestReadingDeletionFences: Map<string, string>;
   reports: Map<string, StoredReport>;
   orders: Map<string, StoredOrder>;
   reportSources: Map<string, string>;
@@ -83,6 +85,7 @@ export const localStore: LocalStore =
     users: new Map(),
     usersByEmail: new Map(),
     readings: new Map(),
+    guestReadingDeletionFences: new Map(),
     reports: new Map(),
     orders: new Map(),
     reportSources: new Map(),

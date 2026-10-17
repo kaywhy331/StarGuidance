@@ -116,6 +116,7 @@ beforeEach(() => {
   vi.stubEnv("RUNTIME_ADAPTER", "local");
   vi.stubEnv("ALLOW_LOCAL_RUNTIME_ADAPTER", "true");
   localStore.readings.clear();
+  localStore.guestReadingDeletionFences.clear();
   localStore.users.clear();
   localStore.usersByEmail.clear();
   localStore.profileSnapshots.clear();
@@ -124,7 +125,10 @@ beforeEach(() => {
   localStore.feedback.clear();
 });
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 describe("local integrity parity", () => {
   it("returns the original locked draw when a reading request is replayed", async () => {
@@ -248,6 +252,68 @@ describe("local integrity parity", () => {
     await expect(
       sessions.importGuestReading({ ...guest, userId: "00000000-0000-4000-8000-0000000000ff" }),
     ).rejects.toThrow("GUEST_READING_SAVED_ELSEWHERE");
+  });
+
+  it("keeps a deleted guest reading deleted for every account while its receipt lives", async () => {
+    const sessions = createLocalRepositories().readingSessions;
+    const guest = await savedGuestReading();
+    await sessions.importGuestReading(guest);
+
+    expect(await sessions.delete(userId, guest.id)).toBe(true);
+    // A save delayed in flight, an explicit re-save and another account's
+    // copy of the receipt all present the same reading.
+    for (const replay of [guest, { ...guest, userId: "00000000-0000-4000-8000-0000000000ff" }])
+      await expect(sessions.importGuestReading(replay)).rejects.toThrow("GUEST_READING_DELETED");
+    expect(localStore.readings.has(guest.id)).toBe(false);
+    // The fence is an opaque digest and the receipt's expiry, nothing else.
+    expect([...localStore.guestReadingDeletionFences]).toEqual([
+      [expect.stringMatching(/^[0-9a-f]{64}$/), guest.expiresAt],
+    ]);
+    expect(JSON.stringify([...localStore.guestReadingDeletionFences])).not.toContain(guest.id);
+  });
+
+  it("fences only deleted guest readings, and only until their receipt expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const repositories = createLocalRepositories();
+    const account = await repositories.readingSessions.createLocked(
+      reading("00000000-0000-4000-8000-000000000016", "fence-account-reading"),
+    );
+    expect(await repositories.readingSessions.delete(userId, account.id)).toBe(true);
+    expect(localStore.guestReadingDeletionFences.size).toBe(0);
+
+    const guest = await savedGuestReading();
+    await repositories.readingSessions.importGuestReading(guest);
+    expect(await repositories.readingSessions.delete(userId, guest.id)).toBe(true);
+    expect(localStore.guestReadingDeletionFences.size).toBe(1);
+
+    vi.setSystemTime(Date.parse(guest.expiresAt) - 1);
+    await expect(repositories.readingSessions.importGuestReading(guest)).rejects.toThrow(
+      "GUEST_READING_DELETED",
+    );
+    // At the receipt's deadline the fence is pruned and the receipt itself is refused.
+    vi.setSystemTime(Date.parse(guest.expiresAt));
+    await expect(repositories.readingSessions.importGuestReading(guest)).rejects.toThrow(
+      "GUEST_READING_EXPIRED",
+    );
+    expect(localStore.guestReadingDeletionFences.size).toBe(0);
+    expect(localStore.readings.has(guest.id)).toBe(false);
+  });
+
+  it("never lets an expired fence block a save", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const sessions = createLocalRepositories().readingSessions;
+    const guest = await savedGuestReading();
+    await sessions.importGuestReading(guest);
+    expect(await sessions.delete(userId, guest.id)).toBe(true);
+    const [fence] = [...localStore.guestReadingDeletionFences.keys()];
+    const fenceExpiry = Date.now() + 60_000;
+    localStore.guestReadingDeletionFences.set(fence!, new Date(fenceExpiry).toISOString());
+
+    vi.setSystemTime(fenceExpiry - 1);
+    await expect(sessions.importGuestReading(guest)).rejects.toThrow("GUEST_READING_DELETED");
+    vi.setSystemTime(fenceExpiry);
+    expect(await sessions.importGuestReading(guest)).toMatchObject({ id: guest.id });
+    expect(localStore.guestReadingDeletionFences.size).toBe(0);
   });
 
   it("refuses a guest save shaped like an account reading or missing its interpretation", async () => {
