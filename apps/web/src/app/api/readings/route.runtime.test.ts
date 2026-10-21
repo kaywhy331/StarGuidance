@@ -327,4 +327,56 @@ describe("reading runtime controls across prepare and finalization", () => {
     });
     expect(mocks.issueDrawCeremony).not.toHaveBeenCalled();
   });
+
+  it("never counts a saved free reading against the account allowance", async () => {
+    mocks.getRuntimeConfiguration.mockResolvedValue({
+      ...structuredClone(runtimeConfiguration),
+      commerce: {
+        ...runtimeConfiguration.commerce,
+        readingAccessMode: "free-window",
+        freeAllowance: 1,
+      },
+    });
+    mocks.listReadings.mockResolvedValue([
+      {
+        id: "00000000-0000-4000-8000-000000000905",
+        idempotencyKey: "guest-trial:00000000-0000-4000-8000-000000000905",
+        source: "guest_trial",
+        encryptedQuestion: "encrypted-guest-question",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    const prepared = await POST(
+      request({
+        action: "prepare",
+        spreadId: "one-card",
+        question: "What deserves my focus?",
+        questionConfirmed: true,
+        reversalMode: "reversals_enabled",
+        personalizationMode: "pure_tarot",
+      }),
+    );
+    const finalized = await POST(
+      request({
+        action: "finalize",
+        ceremonyToken: "x".repeat(40),
+        clientNonce: Buffer.alloc(32, 17).toString("base64url"),
+        cutIndex: 20,
+      }),
+    );
+
+    expect(prepared.status).toBe(201);
+    expect(mocks.issueDrawCeremony).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        entitlementDecision: expect.objectContaining({ outcome: "granted", used: 0 }),
+      }),
+    );
+    expect(finalized.status).toBe(201);
+    expect(mocks.createLockedReading).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entitlementDecision: expect.objectContaining({ outcome: "granted", used: 0 }),
+      }),
+    );
+  });
 });

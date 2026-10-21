@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -217,9 +218,11 @@ export const readingSessions = pgTable(
   {
     id,
     userId: userId(),
-    profileSnapshotId: uuid("profile_snapshot_id")
-      .notNull()
-      .references(() => profileSnapshots.id),
+    // Account readings are drawn against an immutable profile snapshot. A
+    // guest reading the reader chose to save (migration 0027) never had one:
+    // its only personalization is the stored birthday lens.
+    profileSnapshotId: uuid("profile_snapshot_id").references(() => profileSnapshots.id),
+    source: text("source").default("account").notNull(),
     spreadId: text("spread_id").notNull(),
     spreadVersion: text("spread_version").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
@@ -253,6 +256,17 @@ export const readingSessions = pgTable(
       name: "reading_sessions_spread_version_fk",
     }),
     uniqueIndex("reading_sessions_user_idempotency_unique").on(table.userId, table.idempotencyKey),
+    // Target for child keys that must belong to the reading's own account.
+    unique("reading_sessions_id_user_unique").on(table.id, table.userId),
+    check(
+      "reading_sessions_source_contract",
+      sql`(${table.source} = 'account' and ${table.profileSnapshotId} is not null)
+        or (
+          ${table.source} = 'guest_trial'
+          and ${table.profileSnapshotId} is null
+          and ${table.encryptedRelatedPersonLens} is null
+        )`,
+    ),
   ],
 );
 export const readingDraws = pgTable("reading_draws", {
@@ -303,7 +317,15 @@ export const followUpQuestions = pgTable(
     schemaVersion: text("schema_version").default("legacy-unrecorded").notNull(),
     createdAt,
   },
-  (table) => [index("follow_up_questions_reading_idx").on(table.readingId)],
+  (table) => [
+    index("follow_up_questions_reading_idx").on(table.readingId),
+    // A follow-up can only point at a reading owned by the same account.
+    foreignKey({
+      columns: [table.readingId, table.userId],
+      foreignColumns: [readingSessions.id, readingSessions.userId],
+      name: "follow_up_questions_reading_owner_fk",
+    }).onDelete("cascade"),
+  ],
 );
 export const readingFeedback = pgTable(
   "reading_feedback",
@@ -576,6 +598,19 @@ export const rateLimitBuckets = pgTable(
     primaryKey({ columns: [table.keyHash, table.windowStart] }),
     index("rate_limit_buckets_expires_at_idx").on(table.expiresAt),
   ],
+);
+
+// User-less (migration 0030): a saved guest reading deleted from history
+// leaves only a domain-separated digest of its id, until the guest receipt it
+// came from expires, so a delayed or replayed save cannot recreate it. No
+// owner, content or other timestamp is kept; expired fences are pruned.
+export const guestReadingDeletionFences = pgTable(
+  "guest_reading_deletion_fences",
+  {
+    readingHash: text("reading_hash").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("guest_reading_deletion_fences_expires_at_idx").on(table.expiresAt)],
 );
 
 // Subject-bound for the application role (migration 0008): the request path

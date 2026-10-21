@@ -61,6 +61,9 @@ export interface ReadingLensRecord {
   version: string;
   traitIndexes: readonly number[];
   tensionIndexes?: readonly number[] | undefined;
+  /** Only a saved guest reading carries its lens as text: its birthday-derived
+   * statements never belonged to a profile snapshot the indexes could name. */
+  statements?: readonly string[] | undefined;
 }
 
 export interface StoredFollowUp {
@@ -88,7 +91,11 @@ export interface StoredReading {
   id: string;
   userId: string;
   idempotencyKey: string;
-  profileSnapshotId: string;
+  /** The immutable snapshot an account reading was drawn against; null only
+   * for a saved guest reading, which was drawn before any profile existed. */
+  profileSnapshotId: string | null;
+  /** Set only for a guest reading the reader explicitly saved (migration 0027). */
+  source?: "guest_trial";
   readingLens: ReadingLensRecord;
   questionClassification: QuestionClassification;
   entitlementDecision: ReadingEntitlementDecision;
@@ -212,8 +219,22 @@ export interface TraitRepository {
 
 export interface ReadingSessionRepository {
   createLocked(reading: StoredReading): Promise<StoredReading>;
+  /**
+   * Saves a verified, already interpreted guest reading into this account's
+   * history. It creates no interpretation job and is idempotent per
+   * (user, idempotency key): repeating the save returns the stored reading.
+   * A guest reading deleted from history stays deleted until its receipt
+   * expires: importing it again throws GUEST_READING_DELETED, and importing
+   * one whose receipt has expired throws GUEST_READING_EXPIRED.
+   */
+  importGuestReading(reading: StoredReading): Promise<StoredReading>;
   get(userId: string, readingId: string): Promise<StoredReading | undefined>;
+  getByIdempotencyKey(userId: string, idempotencyKey: string): Promise<StoredReading | undefined>;
   list(userId: string): Promise<StoredReading[]>;
+  /**
+   * Deleting a saved guest reading also fences it (migration 0030) in the
+   * same step, so a save already in flight cannot recreate it.
+   */
   delete(userId: string, readingId: string): Promise<boolean>;
   setGenerationStatus(
     userId: string,

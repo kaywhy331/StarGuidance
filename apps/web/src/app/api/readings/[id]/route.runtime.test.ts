@@ -53,7 +53,7 @@ vi.mock("@/lib/runtime-configuration", async (importOriginal) => ({
   getRuntimeConfiguration: mocks.getRuntimeConfiguration,
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const readingId = "00000000-0000-4000-8000-000000000912";
 const lockedDraw = {
@@ -197,5 +197,107 @@ describe("follow-up runtime controls", () => {
       { limit: 3 },
     );
     expect(mocks.getReading.mock.results[0]?.value).toBeDefined();
+  });
+});
+
+describe("a saved guest reading", () => {
+  const guestReading = () => ({
+    id: readingId,
+    userId: "00000000-0000-4000-8000-000000000911",
+    idempotencyKey: `guest-trial:${readingId}`,
+    profileSnapshotId: null,
+    source: "guest_trial" as const,
+    questionClassification: {
+      version: "question-classification-v1",
+      topic: "change",
+      horizon: "open",
+      intent: "clarity",
+      generalReading: false,
+    },
+    readingLens: {
+      version: "guest-date-lens-v1",
+      traitIndexes: [],
+      statements: ["You tend to trust what you can build steadily."],
+    },
+    configuration: { ...configuration, personalizationMode: "personalized_tarot" as const },
+    encryptedQuestion: "encrypted-question",
+    draw: lockedDraw,
+    result: originalResult,
+    ritualProgress: {
+      version: "ritual-progress-v2",
+      phase: "complete",
+      cutIndex: 0,
+      revealedIndexes: [0],
+      updatedAt: "2026-08-20T00:05:00.000Z",
+    },
+    expiresAt: "2026-08-27T00:00:00.000Z",
+    generationStatus: "ready",
+    safetyClassification: "ordinary",
+    entitlementDecision: {
+      version: "reading-entitlement-v1",
+      mode: "guest-trial",
+      outcome: "granted",
+      entitlementClass: "standard",
+      used: 0,
+      limit: null,
+      remaining: null,
+      windowStartsAt: null,
+      windowEndsAt: null,
+    },
+    followUps: [],
+    createdAt: "2026-08-20T00:00:00.000Z",
+  });
+
+  beforeEach(() => {
+    mocks.getReading.mockResolvedValue(guestReading());
+    mocks.createFollowUp.mockResolvedValue(undefined);
+  });
+
+  it("opens without a profile snapshot and says where it came from", async () => {
+    const response = await GET(new Request(`https://starguidance.test/api/readings/${readingId}`), {
+      params: Promise.resolve({ id: readingId }),
+    });
+    const { reading } = (await response.json()) as {
+      reading: { profileSnapshotId: unknown; source?: string; personalization?: unknown };
+    };
+
+    expect(response.status).toBe(200);
+    expect(reading).toMatchObject({ profileSnapshotId: null, source: "guest_trial" });
+    expect(reading.personalization).toBeUndefined();
+    expect(mocks.getSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("answers a follow-up with the birthday lens it was read with", async () => {
+    const provider = mocks.createInterpretationProvider();
+    const response = await POST(
+      new Request(`https://starguidance.test/api/readings/${readingId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "followUp", question: "What changes this direction?" }),
+      }),
+      { params: Promise.resolve({ id: readingId }) },
+    );
+
+    expect(response.status).toBe(201);
+    expect(provider.generateFollowUpWithProvenance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relevantTraitStatements: ["You tend to trust what you can build steadily."],
+      }),
+    );
+    expect(mocks.getSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("keeps the interpretation its reader already read instead of regenerating it", async () => {
+    const response = await POST(
+      new Request(`https://starguidance.test/api/readings/${readingId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "retry" }),
+      }),
+      { params: Promise.resolve({ id: readingId }) },
+    );
+
+    expect(response.status).toBe(409);
+    expect(mocks.getRuntimeConfiguration).not.toHaveBeenCalled();
   });
 });

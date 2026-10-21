@@ -7,6 +7,7 @@ import {
   personalizationModeSchema,
   questionClassificationSchema,
   readingConfigurationSchema,
+  readingOutputProvenanceSchema,
   readingResultSchema,
   reversalModeSchema,
 } from "@starguidance/contracts";
@@ -193,6 +194,9 @@ export const guestReceiptPayloadSchema = z
     readerLens: z.array(z.string().min(1)).max(4).readonly(),
     draw: guestDrawSchema,
     result: readingResultSchema,
+    /** How the interpretation was produced, kept so a saved copy records it
+     * honestly. Receipts issued before saving existed omit it. */
+    provenance: readingOutputProvenanceSchema.optional(),
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
   })
@@ -207,7 +211,23 @@ export const guestContinuationInputSchema = z.discriminatedUnion("action", [
     receipt: z.string().min(32).max(65_536),
     question: z.string().trim().min(1).max(500),
   }),
+  /** Keeps this reading in the signed-in account's history, only on request. */
+  z.object({
+    action: z.literal("save"),
+    receipt: z.string().min(32).max(65_536),
+    /** A follow-up already answered on this page. The server re-derives the
+     * answer from the same cards; the browser never supplies answer text. */
+    followUpQuestion: z.string().trim().min(1).max(500).optional(),
+  }),
 ]);
+
+export const guestSaveResponseSchema = z
+  .object({
+    readingId: z.string().uuid(),
+    /** True when this account had already saved the reading. */
+    alreadySaved: z.boolean(),
+  })
+  .strict();
 
 export const guestFollowUpResponseSchema = z
   .object({
@@ -222,3 +242,4 @@ export type GuestReadingDisplay = z.infer<typeof guestReadingDisplaySchema>;
 export type GuestReadingResponse = z.infer<typeof guestReadingResponseSchema>;
 export type GuestReceiptPayload = z.infer<typeof guestReceiptPayloadSchema>;
 export type GuestFollowUpResponse = z.infer<typeof guestFollowUpResponseSchema>;
+export type GuestSaveResponse = z.infer<typeof guestSaveResponseSchema>;
