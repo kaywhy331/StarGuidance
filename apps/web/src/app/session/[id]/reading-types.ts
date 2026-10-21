@@ -55,8 +55,11 @@ export interface ReadingPayload {
   question: string;
   /** Display name of the spread (e.g. "Three-card spread"), when known. */
   spreadName?: string;
-  /** The immutable profile snapshot this reading was drawn against. */
-  profileSnapshotId: string;
+  /** The immutable profile snapshot this reading was drawn against; null for
+   * a saved free reading, which was drawn before any profile existed. */
+  profileSnapshotId: string | null;
+  /** Present only on a free guest reading the reader saved to history. */
+  source?: "guest_trial";
   personalization?: ReadingPersonalization;
   draw: LockedDraw;
   configuration: ReadingConfiguration;

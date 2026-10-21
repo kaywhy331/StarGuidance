@@ -17,7 +17,7 @@
     "test": "corepack pnpm --recursive --if-present test",
     "test:e2e": "corepack pnpm --filter @starguidance/web test:e2e",
     "db:check": "corepack pnpm --filter @starguidance/database db:check",
-    "db:migrate": "corepack pnpm --filter @starguidance/database exec drizzle-kit migrate",
+    "db:migrate": "tsx packages/database/scripts/migrate.ts",
     "db:seed": "tsx packages/database/src/seed.ts"
   },
   "devDependencies": {
@@ -25,7 +25,7 @@
     "@playwright/test": "1.61.1",
     "@types/node": "24.13.3",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.3.6",
+    "eslint-config-next": "16.3.8",
     "prettier": "3.9.6",
     "tsx": "4.23.1",
     "typescript": "6.0.3",

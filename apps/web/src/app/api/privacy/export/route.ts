@@ -39,8 +39,14 @@ export async function GET() {
         readings: data.readings.map((reading) => ({
           id: reading.id,
           profileSnapshotId: reading.profileSnapshotId,
+          source: reading.source ?? "account",
           spreadId: reading.spreadId,
           question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
+          // A saved guest reading keeps the birthday statements it was read
+          // with; account readings reference their exported profile instead.
+          ...(reading.source === "guest_trial"
+            ? { birthdayLensStatements: reading.readingLens.statements ?? [] }
+            : {}),
           ...(reading.encryptedRelatedPersonLens
             ? {
                 relatedPersonLens: JSON.parse(

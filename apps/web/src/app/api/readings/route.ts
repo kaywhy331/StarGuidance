@@ -57,6 +57,12 @@ const prepareInputSchema = z
   .strict();
 const idempotencyKeySchema = z.string().uuid();
 
+/** A saved guest reading was granted by the free trial, never by this
+ * account's own reading allowance. */
+function allowanceReadings(readings: readonly StoredReading[]): readonly StoredReading[] {
+  return readings.filter(({ source }) => source !== "guest_trial");
+}
+
 /** Up to ~120 characters, cut at a word boundary with an ellipsis. */
 function questionPreview(question: string, limit = 120): string {
   const text = question.trim();
@@ -152,7 +158,7 @@ export async function POST(request: Request) {
           idempotentReplay: true,
         });
       const entitlementDecision = readingEntitlementDecision(
-        previousReadings,
+        allowanceReadings(previousReadings),
         Date.now(),
         runtimeConfiguration.commerce,
       );
@@ -306,7 +312,7 @@ export async function POST(request: Request) {
         idempotentReplay: true,
       });
     const entitlementDecision = readingEntitlementDecision(
-      previousReadings,
+      allowanceReadings(previousReadings),
       Date.now(),
       runtimeConfiguration.commerce,
     );
@@ -561,12 +567,13 @@ export async function GET() {
         const stored = storedReadings.find((reading) => reading.id === id)!;
         const question = persistence.decrypt(encryptedQuestion, "reading-question");
         const spread = findSpread(spreadId);
-        const report = reports.find(
-          (candidate) => candidate.snapshotId === stored.profileSnapshotId,
-        );
+        const report = stored.profileSnapshotId
+          ? reports.find((candidate) => candidate.snapshotId === stored.profileSnapshotId)
+          : undefined;
         const artworkRouteVersion = draw.deckVersion.includes("v2") ? "v2" : "v3";
         return {
           id,
+          ...(stored.source ? { source: stored.source } : {}),
           spreadId,
           spreadName: spread?.name ?? spreadId.replaceAll("-", " "),
           questionPreview: questionPreview(question),
