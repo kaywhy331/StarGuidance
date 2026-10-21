@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "evaluate:local": "node --import tsx evaluation/run-local.ts"
   },
   "dependencies": {
     "@starguidance/contracts": "workspace:*",
