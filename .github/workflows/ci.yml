@@ -285,7 +285,19 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
-      - run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+      - run: |
+          case "${{ matrix.browser }}" in
+            chromium)
+              pnpm exec playwright install --with-deps chromium firefox
+              ;;
+            firefox)
+              pnpm exec playwright install --with-deps firefox webkit
+              ;;
+            *)
+              echo "Unsupported core browser: ${{ matrix.browser }}" >&2
+              exit 1
+              ;;
+          esac
       - env:
           EXCLUDE_SPREADS: ${{ matrix.exclude_spreads }}
         run: |
@@ -416,7 +428,7 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
-      - run: pnpm exec playwright install --with-deps webkit
+      - run: pnpm exec playwright install --with-deps webkit chromium
       - run: >-
           pnpm --filter @starguidance/web exec playwright test
           --project=desktop-webkit
