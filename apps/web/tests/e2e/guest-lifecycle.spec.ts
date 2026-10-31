@@ -226,31 +226,104 @@ test("signed-in client unmount aborts pending recovery and preserves copies for 
 }) => {
   const guest = await setup(page, baseURL);
   const before = await storage(page);
-  await page.addInitScript(() => {
-    const probe = { documentId: crypto.randomUUID(), requests: 0, aborts: 0, settled: 0 };
+  type ContinuityProbe = {
+    documentId: string;
+    requests: {
+      action: string;
+      parents: number;
+      afterCancellation: boolean;
+      abortReason: string | null;
+      settled: boolean;
+    }[];
+    requestsAtCancellation: number | null;
+    mutationsAfterCancellation: string[];
+  };
+  await page.addInitScript((keys) => {
+    const probe: ContinuityProbe = {
+      documentId: crypto.randomUUID(),
+      requests: [],
+      requestsAtCancellation: null,
+      mutationsAfterCancellation: [],
+    };
     (window as unknown as { continuityProbe: typeof probe }).continuityProbe = probe;
+    // Observe the real lifecycle signal even if a composed deadline wins first.
+    // These wrappers delegate unchanged: no fake clock or replacement deadline.
+    const deadlines = new WeakSet<AbortSignal>();
+    const parents = new WeakMap<AbortSignal, AbortSignal[]>();
+    const timeout = AbortSignal.timeout.bind(AbortSignal);
+    AbortSignal.timeout = (milliseconds) => {
+      const signal = timeout(milliseconds);
+      deadlines.add(signal);
+      return signal;
+    };
+    const any = AbortSignal.any.bind(AbortSignal);
+    AbortSignal.any = (signals) => {
+      const signal = any(signals);
+      parents.set(
+        signal,
+        signals.filter((source) => !deadlines.has(source)),
+      );
+      return signal;
+    };
+    const observed = new WeakSet<AbortSignal>();
+    for (const method of ["setItem", "removeItem"] as const) {
+      const original = Storage.prototype[method];
+      Storage.prototype[method] = function (key: string, value?: string) {
+        if (probe.requestsAtCancellation !== null && Object.values(keys).includes(key))
+          probe.mutationsAfterCancellation.push(`${method}:${key}`);
+        return original.call(this, key, value!);
+      };
+    }
     const original = window.fetch.bind(window);
     window.fetch = async (...args) => {
       if (!String(args[0]).endsWith("/api/guest-readings/continue")) return original(...args);
-      probe.requests += 1;
+      const signal = args[1]?.signal;
+      const lifecycle = signal ? (parents.get(signal) ?? []) : [];
+      const request = {
+        action: JSON.parse(String(args[1]?.body)).action as string,
+        parents: lifecycle.length,
+        afterCancellation:
+          probe.requestsAtCancellation !== null || lifecycle.some((parent) => parent.aborted),
+        abortReason: null as string | null,
+        settled: false,
+      };
+      probe.requests.push(request);
+      for (const parent of lifecycle) {
+        if (observed.has(parent)) continue;
+        observed.add(parent);
+        parent.addEventListener(
+          "abort",
+          () => {
+            probe.requestsAtCancellation ??= probe.requests.length;
+          },
+          { once: true },
+        );
+      }
       args[1]?.signal?.addEventListener(
         "abort",
         () => {
-          probe.aborts += 1;
+          request.abortReason = signal?.reason?.name ?? null;
         },
         { once: true },
       );
       try {
         return await original(...args);
       } finally {
-        probe.settled += 1;
+        request.settled = true;
       }
     };
-  });
+  }, KEYS);
   const received = deferred();
   const release = deferred();
-  const finished = deferred();
+  const finished: Promise<void>[] = [];
+  const attempts: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/guest-readings/continue"))
+      attempts.push(request.postDataJSON().action);
+  });
   await page.route("**/api/guest-readings/continue", async (route) => {
+    const handled = deferred();
+    finished.push(handled.promise);
     received.resolve();
     await release.promise;
     try {
@@ -258,22 +331,12 @@ test("signed-in client unmount aborts pending recovery and preserves copies for 
     } catch {
       /* aborted */
     } finally {
-      finished.resolve();
+      handled.resolve();
     }
   });
   const probe = () =>
     page.evaluate(
-      () =>
-        (
-          window as unknown as {
-            continuityProbe: {
-              documentId: string;
-              requests: number;
-              aborts: number;
-              settled: number;
-            };
-          }
-        ).continuityProbe,
+      () => (window as unknown as { continuityProbe: ContinuityProbe }).continuityProbe,
     );
   try {
     await page.goto("/free-reading?continue=1");
@@ -284,16 +347,46 @@ test("signed-in client unmount aborts pending recovery and preserves copies for 
       .getByRole("link", { name: "StarGuidance", exact: true })
       .click();
     await expect(page).toHaveURL(`${guest.origin}/`);
+    await expect.poll(async () => (await probe()).requestsAtCancellation).not.toBeNull();
     release.resolve();
-    await finished.promise;
-    await expect.poll(async () => (await probe()).settled).toBe(1);
-    expect(await probe()).toMatchObject({ documentId, requests: 1, aborts: 1 });
+    await Promise.all(finished);
+    await expect.poll(async () => (await probe()).requests.every((r) => r.settled)).toBe(true);
+    const after = await probe();
+    const actions = after.requests.map((request) => request.action);
+    // Either cleanup cancels recover, or its deadline starts one redeem before
+    // cleanup. Both schedules must stop at lifecycle cancellation, not a count
+    // chosen by navigation speed. A timeout is not lifecycle cancellation.
+    expect([["recover"], ["recover", "redeem"]]).toContainEqual(actions);
+    expect(after.documentId).toBe(documentId);
+    expect(after.requestsAtCancellation).toBe(after.requests.length);
+    expect(after.requests.map((request) => request.abortReason)).toEqual(
+      actions.length === 1 ? ["AbortError"] : ["TimeoutError", "AbortError"],
+    );
+    for (const request of after.requests)
+      expect(request).toMatchObject({ parents: 1, afterCancellation: false, settled: true });
+    expect(after.mutationsAfterCancellation).toEqual([]);
     expect(await storage(page)).toEqual(before);
+    expect(await probe()).toEqual(after);
+    expect(attempts).toEqual(actions);
     await page.unroute("**/api/guest-readings/continue");
     await page.goto("/free-reading?continue=1");
     await expect(page.getByTestId("guest-continuation-keepsake")).toHaveAttribute(
       "data-card-assignments",
       guest.reading.cards.map((card) => `${card.cardId}:${card.orientation}`).join(" "),
+    );
+    // Retry recovers the retained receipt; it must not redeem the handoff again.
+    expect(attempts).toEqual([...actions, "recover"]);
+    console.log(
+      JSON.stringify({
+        gate: "signed-in-continuation-cancellation",
+        actions,
+        abortReasons: after.requests.map((request) => request.abortReason),
+        requestsAtCancellation: after.requestsAtCancellation,
+        mutationsAfterCancellation: after.mutationsAfterCancellation,
+        retryActions: attempts,
+        copiesPreserved: true,
+        exactCardRetry: true,
+      }),
     );
   } finally {
     release.resolve();
