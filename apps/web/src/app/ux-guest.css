@@ -355,6 +355,32 @@
   text-align: center;
 }
 
+.guest-follow-up-note a {
+  color: #ecd28c;
+}
+
+/* Saving is an explicit choice, so it sits above the keepsake as its own
+ * quiet panel rather than hiding among the follow-up controls. */
+.guest-save-panel {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
+  width: min(42rem, 100%);
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgb(232 205 137 / 0.24);
+  border-radius: 1rem;
+  background: rgb(7 13 23 / 0.78);
+  text-align: center;
+}
+
+.guest-save-panel p {
+  margin: 0;
+  color: #c2d0cc;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
 .guest-continuation-next {
   display: grid;
   gap: 0.75rem;

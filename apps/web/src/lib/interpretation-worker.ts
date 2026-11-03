@@ -9,7 +9,7 @@ import {
   type ClaimedInterpretationJob,
   type DatabaseClient,
 } from "@starguidance/database";
-import { createInterpretationProvider, readingLensStatements } from "@starguidance/ai";
+import { createInterpretationProvider } from "@starguidance/ai";
 
 import { persistenceFor } from "./persistence";
 import { parseRelatedPersonReadingLens, relatedPersonProviderContext } from "./related-person-lens";
@@ -20,6 +20,7 @@ import {
   tryRecordProductEvent,
 } from "./product-telemetry";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "./runtime";
+import { storedReadingLensStatements, storedReadingSnapshot } from "./stored-reading-lens";
 import {
   getRuntimeConfiguration,
   interpretationRuntimeOptions,
@@ -77,13 +78,10 @@ async function processJob(
     const persistence = persistenceFor({ id: job.userId });
     const reading = await persistence.repositories.readingSessions.get(job.userId, job.readingId);
     if (!reading) throw new Error("INTERPRETATION_JOB_READING_MISSING");
-    const snapshot = (
-      await persistence.repositories.profileSnapshots.get(job.userId, reading.profileSnapshotId)
-    )?.snapshot;
-    const relevantTraitStatements =
-      reading.configuration.personalizationMode === "personalized_tarot" && snapshot
-        ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
-        : [];
+    const relevantTraitStatements = storedReadingLensStatements(
+      reading,
+      await storedReadingSnapshot(persistence, job.userId, reading),
+    );
     const relatedPersonContext = reading.encryptedRelatedPersonLens
       ? relatedPersonProviderContext(
           parseRelatedPersonReadingLens(

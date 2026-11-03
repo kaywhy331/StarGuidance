@@ -31,7 +31,9 @@ export const questionClassificationSchema = z.object({
 
 export const readingEntitlementDecisionSchema = z.object({
   version: z.literal("reading-entitlement-v1"),
-  mode: z.enum(["unlimited", "free-window"]),
+  /** `guest-trial` marks a saved free reading: the browser trial granted it,
+   * so it never counts against the account's own reading allowance. */
+  mode: z.enum(["unlimited", "free-window", "guest-trial"]),
   outcome: z.enum(["granted", "limitReached"]),
   entitlementClass: z.literal("standard"),
   used: z.number().int().nonnegative(),

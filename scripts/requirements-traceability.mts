@@ -17,7 +17,7 @@ const routing: Record<string, { milestone: string; owner: string; evidence: stri
     milestone: "M2",
     owner: "Full-stack engineering",
     evidence:
-      "`apps/web/src/app/api/auth/route.test.ts`; `apps/web/src/app/api/guest-readings/route.test.ts`; `apps/web/tests/e2e/guest-reading.spec.ts`; `apps/web/tests/e2e/mvp.spec.ts`",
+      "`apps/web/src/app/api/auth/route.test.ts`; `apps/web/src/app/api/guest-readings/route.test.ts`; `apps/web/src/app/api/guest-readings/continue/route.test.ts`; `apps/web/tests/e2e/guest-reading.spec.ts`; `apps/web/tests/e2e/mvp.spec.ts`",
   },
   PRO: {
     milestone: "M2/M3",
