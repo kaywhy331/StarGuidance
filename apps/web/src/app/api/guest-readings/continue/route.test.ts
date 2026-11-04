@@ -207,6 +207,39 @@ describe("account-gated guest continuation", () => {
     expect(verifyGuestReadingReceipt(body.receipt)?.readingId).toBe(original.id);
   });
 
+  it("reconstructs the same reading, cards and expiry on repeated handoff redemption", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+    const original = verifyGuestReadingReceipt(await receipt())!;
+    const handoff = issueGuestReadingHandoff(original);
+    const firstResponse = await POST(request({ action: "redeem", handoff }));
+    const firstBody = (await firstResponse.json()) as { reading: unknown; receipt: string };
+    const first = guestReadingDisplaySchema.parse(firstBody.reading);
+
+    // Retrying later reconstructs the original reading without extending its lifetime.
+    vi.setSystemTime(Date.parse(original.expiresAt) - 1);
+    const secondResponse = await POST(request({ action: "redeem", handoff }));
+    const secondBody = (await secondResponse.json()) as { reading: unknown; receipt: string };
+    const second = guestReadingDisplaySchema.parse(secondBody.reading);
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
+    expect(first.id).toBe(original.readingId);
+    expect(second.id).toBe(first.id);
+    expect(first.draw).toEqual(original.draw);
+    expect(second.draw).toEqual(first.draw);
+    expect(second.cards).toEqual(first.cards);
+    expect(first.receiptExpiresAt).toBe(original.expiresAt);
+    expect(second.receiptExpiresAt).toBe(first.receiptExpiresAt);
+    for (const renewed of [firstBody.receipt, secondBody.receipt]) {
+      expect(verifyGuestReadingReceipt(renewed)).toMatchObject({
+        readingId: original.readingId,
+        draw: original.draw,
+        expiresAt: original.expiresAt,
+      });
+    }
+  });
+
   it("explains an expired or unknown handoff plainly", async () => {
     const response = await POST(
       request({
