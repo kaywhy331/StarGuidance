@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { errors, expect, test, type Locator, type Page } from "@playwright/test";
+import { motionTiming } from "../../src/lib/motion";
 
 type SavedReading = {
   reading: {
@@ -69,7 +70,22 @@ async function drawAsGuestAndSignUp(page: Page): Promise<string[]> {
   await page.getByRole("button", { name: "Draw my cards" }).click();
   const preparedBody = await (await prepared).json();
   await expect(page.locator(".casino-card-shell")).toHaveCount(78);
-  await page.getByRole("button", { name: "Keep shuffling" }).click();
+  // Stirring is optional on this save journey. The app can legitimately open
+  // the fan while Playwright checks the transient button's actionability.
+  const washWindow =
+    motionTiming.washHold +
+    motionTiming.wash +
+    ((await page.locator(".casino-card-shell").count()) - 1) * motionTiming.washStagger +
+    motionTiming.stack;
+  try {
+    await page.getByRole("button", { name: "Keep shuffling" }).click({ timeout: washWindow });
+  } catch (error) {
+    if (!(error instanceof errors.TimeoutError)) throw error;
+    await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+      "data-ritual-phase",
+      "selectingCards",
+    );
+  }
   await page.getByRole("button", { name: "Motion: Full" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   const finalized = page.waitForResponse(
