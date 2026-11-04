@@ -1,6 +1,7 @@
 export * from "./calculation-version-registry";
 export * from "./deletion-receipts";
 export * from "./encryption";
+export * from "./guest-reading-deletion-fences";
 export * from "./database-role";
 export * from "./interpretation-jobs";
 export * from "./job-diagnostics";

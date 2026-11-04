@@ -243,7 +243,7 @@ export function ReadingResultScene({
         exitLabel="History"
         narration={audioAvailable && narration}
         reducedMotion={reducedMotion}
-        sigilSeed={reading.profileSnapshotId}
+        {...(reading.profileSnapshotId ? { sigilSeed: reading.profileSnapshotId } : {})}
         sound={sound}
         toggleAmbience={toggleAmbience}
         {...(audioAvailable ? { toggleNarration } : {})}
@@ -293,7 +293,7 @@ export function ReadingResultScene({
             reducedMotion={reducedMotion}
             result={reading.result}
             retryToken={0}
-            sigilSeed={reading.profileSnapshotId}
+            {...(reading.profileSnapshotId ? { sigilSeed: reading.profileSnapshotId } : {})}
             audioEnabled={audioAvailable && narration}
             target="primary"
           />
@@ -315,7 +315,14 @@ export function ReadingResultScene({
               ref={keepsakeHeadingRef}
               replayLabel="Replay the reading"
               sections={keepsakeSectionsFrom(reading.result)}
-              {...(reading.spreadName ? { spreadName: reading.spreadName } : {})}
+              {...(reading.spreadName
+                ? {
+                    spreadName:
+                      reading.source === "guest_trial"
+                        ? `${reading.spreadName} · Your free reading`
+                        : reading.spreadName,
+                  }
+                : {})}
             />
 
             {continuationMode === "choice" && (

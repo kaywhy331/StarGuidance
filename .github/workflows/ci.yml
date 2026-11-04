@@ -285,7 +285,19 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
-      - run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+      - run: |
+          case "${{ matrix.browser }}" in
+            chromium)
+              pnpm exec playwright install --with-deps chromium firefox
+              ;;
+            firefox)
+              pnpm exec playwright install --with-deps firefox webkit
+              ;;
+            *)
+              echo "Unsupported core browser: ${{ matrix.browser }}" >&2
+              exit 1
+              ;;
+          esac
       - env:
           EXCLUDE_SPREADS: ${{ matrix.exclude_spreads }}
         run: |
@@ -416,7 +428,7 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: python -m pip install --require-hashes -r apps/profile-engine/requirements.lock
-      - run: pnpm exec playwright install --with-deps webkit
+      - run: pnpm exec playwright install --with-deps webkit chromium
       - run: >-
           pnpm --filter @starguidance/web exec playwright test
           --project=desktop-webkit
@@ -512,7 +524,7 @@ jobs:
       # really removes them. Without it neither statement would run outside the
       # credential-gated staging project.
       - run: pnpm --filter @starguidance/database db:auth-shim
-      - run: pnpm --filter @starguidance/database exec drizzle-kit migrate
+      - run: pnpm db:migrate
       - run: pnpm db:seed
       - run: pnpm --filter @starguidance/database test:integration
       - run: pnpm --filter @starguidance/web test:integration

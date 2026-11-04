@@ -15,6 +15,8 @@ import { truncateAtWord } from "./history-format";
 
 interface HistoryItem {
   id: string;
+  /** Present only on a free guest reading the reader saved here. */
+  source?: "guest_trial";
   spreadId: string;
   spreadName: string;
   questionPreview: string;
@@ -180,7 +182,10 @@ function ReadingMemory({
           ) : null}
 
           <div className="reading-memory-copy">
-            <p>{item.spreadName}</p>
+            <p>
+              {item.spreadName}
+              {item.source === "guest_trial" ? " · Your free reading" : ""}
+            </p>
             <h2 id={titleId}>{question}</h2>
             {answer ? <blockquote>{answer}</blockquote> : null}
           </div>
