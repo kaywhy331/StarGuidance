@@ -136,6 +136,72 @@ function run(
 }
 
 describe("resolveGuestContinuation expiry cleanup", () => {
+  it.each([false, true])(
+    "does not start a request when already aborted (preferHandoff=%s)",
+    async (preferHandoff) => {
+      const controller = new AbortController();
+      controller.abort();
+      const initial = {
+        [GUEST_READING_RECEIPT_KEY]: "r-old",
+        [GUEST_READING_HANDOFF_KEY]: HANDOFF,
+        [TRIAL_KEY]: "1",
+      };
+      const { outcome, values, session, calls } = run(initial, [expired], {
+        preferHandoff,
+        signal: controller.signal,
+        session: { kind: "receipt", receipt: "r-old" },
+      });
+
+      expect(await outcome).toEqual({ kind: "aborted" });
+      expect(calls).toEqual([]);
+      expect(Object.fromEntries(values)).toEqual(initial);
+      expect(session.current).toEqual({ kind: "receipt", receipt: "r-old" });
+    },
+  );
+
+  it("preserves receipt copies when aborted between fallback settlement and outer cleanup", async () => {
+    const controller = new AbortController();
+    let receiptAtAbort: string | undefined;
+    let pendingAtAbort: Pending;
+    let handoffAtAbort: string | undefined;
+    const { outcome, values, session, calls } = run(
+      {
+        [GUEST_READING_RECEIPT_KEY]: "r-old",
+        [GUEST_READING_HANDOFF_KEY]: HANDOFF,
+        [TRIAL_KEY]: "1",
+      },
+      [expired, expired],
+      {
+        signal: controller.signal,
+        session: { kind: "receipt", receipt: "r-old" },
+        onPost: (harness, call) => {
+          if (call === 2) {
+            // Let redeem settle while live, then abort before its caller resumes.
+            queueMicrotask(() =>
+              queueMicrotask(() => {
+                receiptAtAbort = harness.values.get(GUEST_READING_RECEIPT_KEY);
+                pendingAtAbort = harness.session.current;
+                handoffAtAbort = harness.values.get(GUEST_READING_HANDOFF_KEY);
+                controller.abort();
+              }),
+            );
+          }
+        },
+      },
+    );
+
+    expect(await outcome).toEqual({ kind: "aborted" });
+    expect(calls.map((call) => call.action)).toEqual(["recover", "redeem"]);
+    // The expired handoff was removed before cancellation; receipt copies were not.
+    expect(handoffAtAbort).toBeUndefined();
+    expect(receiptAtAbort).toBe("r-old");
+    expect(pendingAtAbort).toEqual({ kind: "receipt", receipt: "r-old" });
+    expect(values.get(GUEST_READING_RECEIPT_KEY)).toBe(receiptAtAbort);
+    expect(session.current).toEqual(pendingAtAbort);
+    expect(values.has(GUEST_READING_HANDOFF_KEY)).toBe(false);
+    expect(values.get(TRIAL_KEY)).toBe("1");
+  });
+
   it("clears an expired receipt and its pending copy, keeping the trial marker", async () => {
     const { outcome, values, session } = run(
       { [GUEST_READING_RECEIPT_KEY]: "r-old", [TRIAL_KEY]: "1" },

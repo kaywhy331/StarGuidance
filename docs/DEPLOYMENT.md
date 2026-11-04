@@ -8,7 +8,7 @@ Historical PR #3 visual baseline: [deploy-preview-3--starguidance.netlify.app](h
 
 Release record, 2026-08-21: PR #19 merged as `55747fc2a4ff4af33120f91cea3e1f48bddc1d7b`. Netlify production deploy `6a889b71f468000008b8743b` published that exact application commit and returned `200` from `/api/health`, `/`, `/sign-in`, `/sign-up`, `/terms`, and `/privacy`; the preview-only route returned `404`. Follow-up PR #21 merged the test-only commit `6ce96532e459ada36176969f59e92bc5c8959262`, whose final main CI passed all 52 jobs and whose automatic Netlify production deploy was `6a88a965235fe100082efb96`. Subsequent test- or documentation-only merges can produce newer deployment IDs even though application source is unchanged, so use the Netlify deployment record's commit reference to identify the artifact currently serving the production alias. The pre-release rollback anchor is deploy `6a839aeb9399100008c982db` at `3bf6ad56804fcd716a40fe9cf68cf0074e47fca0`.
 
-This is a code-deployment receipt, not public-launch or provider-readiness approval. No production database migration, production secret change, DNS change, or provider activation was performed. Authenticated/provider-backed production flows remain unverified and fail-closed gates remain in force. The credentialed staging workflow remains restricted to `agent/starguidance-immersive-ux` and the protected `starguidance-staging` environment. Historical PR #19 preview: [deploy-preview-19--starguidance.netlify.app](https://deploy-preview-19--starguidance.netlify.app).
+This is a code-deployment receipt, not public-launch or provider-readiness approval. No production database migration, production secret change, DNS change, or provider activation was performed. Authenticated/provider-backed production flows remain unverified and fail-closed gates remain in force. The credentialed staging workflow remains restricted to the current `ALLOWED_REF` in [staging-verify.yml](../.github/workflows/staging-verify.yml) and the protected `starguidance-staging` environment. Historical PR #19 preview: [deploy-preview-19--starguidance.netlify.app](https://deploy-preview-19--starguidance.netlify.app).
 
 `/api/health` is a cheap public liveness check. It never touches Supabase, Postgres, the profile engine, or AI and returns `200` with only liveness, environment class, runtime-adapter class, staging-preview status, and staging build provenance. Use it for host health checks so a transient dependency does not recycle a healthy web process.
 
@@ -131,6 +131,46 @@ Configure the **Reset password** template similarly, using the recovery type:
 Disabling **Confirm email** gives the simplest MVP registration flow: signup creates a session immediately, while later sign-ins use the password. The tradeoff is that the email remains unverified. If confirmation stays enabled, it is a one-time registration step, not the recurring login mechanism.
 
 The callback accepts portable `signup` and `recovery` token hashes and retains Supabase's same-browser PKCE `code` exchange. On Netlify, signup/recovery initiation and callback redirects use the proxy-authenticated browser-visible host rather than the immutable internal deploy host. Do not put `ConfirmationURL`, a raw token, an email address, or a fixed production hostname into a custom link. After changing a template, request a new message and verify that its host is the active preview without recording its token-bearing URL.
+
+## Private beta
+
+The approved closed beta uses the existing Supabase staging project behind the Netlify production alias. The database remains a non-production test target; serving the production alias does not grant public-launch approval. Kevin confirms the target project, manages all secrets and provider settings, approves each protected verification run, and sends tester invites himself. This runbook records the procedure, not evidence that it has been executed. No additional spend, custom SMTP, or calculation certification is included.
+
+### Production-context configuration
+
+Kevin sets these names in Netlify's **Production** context using the [environment matrix](#environment-matrix); do not copy secret values, service addresses, or tester identities into Git, Hub notes, logs, or screenshots:
+
+- `APP_ENV` and `RUNTIME_ADAPTER`: select the matrix's production environment policy and Supabase runtime. Configure the Functions scope as well as the build context; build configuration alone does not reach serverless functions.
+- `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SUPABASE_URL`, and `NEXT_PUBLIC_SUPABASE_ANON_KEY`: bind the canonical beta alias and the owner-confirmed beta project. Include Functions scope for `NEXT_PUBLIC_APP_URL` so the scheduled interpretation worker can call the application.
+- `DATABASE_URL`, `DATA_ENCRYPTION_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`: provide the managed server-only database, encryption, and Auth configuration. The application uses the transaction-pooler connection described in the matrix; the protected migration workflow requires its separately configured direct database session, as described under [Database release sequence](#database-release-sequence).
+- `PROFILE_ENGINE_URL`, `PROFILE_ENGINE_SHARED_SECRET`, `READINESS_PROBE_SECRET`, and `INTERPRETATION_WORKER_SECRET`: configure the calculator and the three distinct service trust domains with the matrix's scope and strength requirements.
+- `AUTH_EMAIL_CONFIRMATION_MODE`: use the explicitly approved closed-test mode described above. Test email addresses remain unverified; the public-launch confirmation and SMTP gates still apply.
+
+Keep `AI_SAFETY_EVALUATION_APPROVED`, `ENABLE_PROFILE_REPORTS`, and `AI_PROVIDER_GATEWAY_APPROVED` off, and `READING_AUDIO_PROVIDER` disabled, using the safe defaults in the matrix. Readings use deterministic interpretation; live AI, paid reports, the custom AI gateway, and paid voice remain outside beta scope. Keep the unavailable calculation modules disabled.
+
+In the beta project's Supabase Auth URL configuration, Kevin sets **Site URL** to the canonical origin selected by `NEXT_PUBLIC_APP_URL` and allows that exact origin with `/auth/callback` as a redirect. Preserve the reviewed Deploy Preview callbacks needed by protected staging verification. Never include birth data, questions, email addresses, or tokens in recorded redirect evidence.
+
+### Protected migration, then deployment
+
+1. Kevin confirms that the protected environment's credentials target the approved existing beta database, including the direct migration session and isolated integration target required by the workflow. The beta decision requires no additional database dump before this run; legacy rows remain under migration `0028`'s `NOT VALID` owner key. Do not delete or backfill them as part of this procedure.
+2. Read `ALLOWED_REF` from the current [staging verification workflow](../.github/workflows/staging-verify.yml). Ensure that ref contains the reviewed current `main` and its complete authoritative migration history before dispatch; if it is behind, arrange the separately authorized fast-forward first. Do not change or bypass the ref guard. Select the exact reviewed Deploy Preview candidate for the workflow's `preview_url` input.
+3. Dispatch **Staging verification** on that allowed ref, supply the candidate through `preview_url`, and enter the staging confirmation requested by `confirm_staging`. Kevin approves the protected `starguidance-staging` environment for this specific run. Ordinary PR `guard` and `verify` checks are not this credentialed approval or its evidence.
+4. Let the workflow validate migration history and database access, apply the guarded Drizzle migrations, verify schema/RLS, prove seed idempotency, exercise isolation and deployed browser flows, rehearse synthetic key rotation, and clean up its synthetic identities. Inspect the redacted `staging-verification-summary` artifact: it must report **PASSED** through the latest migration in the checked-out manifest. Record only the run ID, candidate commit, migration IDs, and redacted outcome; **FAILED**, **NOT RUN**, or incomplete evidence blocks promotion.
+5. **Only after that hosted migration/verification run reports PASSED**, Kevin uses Netlify **Trigger deploy** for the configured **Production** context. Confirm the deployed commit and that `/api/health` reports the production environment and Supabase runtime. Public liveness does not substitute for the protected readiness evidence. Complete the smoke test below before Kevin invites testers.
+
+### Five-step smoke test
+
+Use an owner-controlled test account in the same browser on the beta alias, recording only pass/fail outcomes:
+
+1. Complete a free reading and reveal its deterministic result.
+2. Sign up from that reading's save/continue flow and confirm the same locked reading survives authentication.
+3. Save the reading to history and confirm success without drawing again.
+4. Open history and reopen the saved reading; confirm its cards and result match the original.
+5. Delete that test reading, reload history, and confirm it is absent and its former detail view is no longer accessible.
+
+### Rollback
+
+If the configured beta deploy fails acceptance, an authorized operator restores the previous successful Netlify production deploy using its deployment record and commit reference, after confirming compatibility with the migrated schema. Recheck health and the smoke flow. Database migrations are forward-only: restoring a Netlify deploy does not reverse them. If the earlier application cannot run against the current schema, stop promotion and obtain a separately reviewed forward fix; never edit applied migrations or reset the beta database to simulate rollback.
 
 ## Database release sequence
 
