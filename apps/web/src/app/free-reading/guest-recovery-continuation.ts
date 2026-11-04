@@ -54,6 +54,7 @@ export async function resolveGuestContinuation(options: {
   signal?: AbortSignal | undefined;
 }): Promise<ContinuationOutcome> {
   const { preferHandoff, store, pending, post, signal } = options;
+  if (signal?.aborted) return { kind: "aborted" };
   // A handoff that just arrived from an email link names the reading the
   // visitor meant; an older receipt in this browser must not win.
   const storedReceipt = preferHandoff ? undefined : store.read(GUEST_READING_RECEIPT_KEY);
@@ -103,6 +104,7 @@ export async function resolveGuestContinuation(options: {
     // handoff might still recover the reading.
     if (isExpired(response) && usableHandoff) {
       const fallback = await redeem(storedHandoff as string);
+      if (signal?.aborted) return { kind: "aborted" };
       if (fallback.definitive) clearExpiredReceipt(storedReceipt);
       return fallback.outcome;
     }
