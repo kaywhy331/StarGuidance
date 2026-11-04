@@ -260,6 +260,11 @@ async function probeDatabase(): Promise<DatabaseStatus> {
               and column_name = 'idempotency_key'
           )
           and exists (
+            select 1 from pg_constraint
+            where conrelid = to_regclass('public.reading_sessions')
+              and conname = 'reading_sessions_source_contract'
+          )
+          and exists (
             select 1 from information_schema.columns
             where table_schema = 'public' and table_name = 'reading_outputs'
               and column_name = 'safety_policy_version'

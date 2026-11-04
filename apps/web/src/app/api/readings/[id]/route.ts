@@ -4,7 +4,6 @@ import {
   createInterpretationProvider,
   classifyFollowUpScope,
   classifyQuestion,
-  readingLensStatements,
 } from "@starguidance/ai";
 import { actorTransaction, reenqueueInterpretationJob } from "@starguidance/database";
 import { ritualProgressSchema } from "@starguidance/contracts";
@@ -23,6 +22,7 @@ import { followUpLimit, followUpLimitMessage } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "@/lib/runtime";
 import { getRuntimeConfiguration, interpretationRuntimeOptions } from "@/lib/runtime-configuration";
+import { storedReadingLensStatements, storedReadingSnapshot } from "@/lib/stored-reading-lens";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("retry") }),
@@ -84,11 +84,10 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     const positions = reading.configuration.positions;
     const runtimeConfiguration = await getRuntimeConfiguration();
     const configuredFollowUpLimit = followUpLimit(runtimeConfiguration.commerce);
-    const [feedback, storedProfile] = await Promise.all([
+    const [feedback, snapshot] = await Promise.all([
       owned.persistence.repositories.feedback.list(owned.user.id, reading.id),
-      owned.persistence.repositories.profileSnapshots.get(owned.user.id, reading.profileSnapshotId),
+      storedReadingSnapshot(owned.persistence, owned.user.id, reading),
     ]);
-    const snapshot = storedProfile?.snapshot;
     const lensTraits = (snapshot?.traits ?? []).filter((_, index) =>
       reading.readingLens.traitIndexes.includes(index),
     );
@@ -104,8 +103,10 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           spreadName: spread?.name,
           // The immutable snapshot this reading was drawn against. Later profile
           // versions never move it, and a caller cannot otherwise tell which
-          // version of themselves a past reading interpreted.
+          // version of themselves a past reading interpreted. A saved guest
+          // reading has none and says where it came from instead.
           profileSnapshotId: reading.profileSnapshotId,
+          ...(reading.source ? { source: reading.source } : {}),
           configuration: reading.configuration,
           personalization:
             reading.configuration.personalizationMode === "personalized_tarot" && snapshot
@@ -295,13 +296,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ progress });
     }
     if (input.action === "retry") {
+      // A saved guest reading arrived with the interpretation its reader
+      // already read; regenerating would quietly replace it.
+      if (reading.source === "guest_trial")
+        return NextResponse.json(
+          { error: "This saved reading already has its interpretation." },
+          { status: 409 },
+        );
       const runtimeConfiguration = await getRuntimeConfiguration();
       const provider = createInterpretationProvider(
         interpretationRuntimeOptions(runtimeConfiguration),
       );
-      const snapshot = (
-        await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
-      )?.snapshot;
+      const snapshot = await storedReadingSnapshot(persistence, user.id, reading);
       // The local runtime adapter has no interpretation_jobs table (see
       // apps/web/src/lib/repositories/local.ts) and never runs on Netlify,
       // so it keeps the original direct, synchronous retry.
@@ -311,10 +317,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           configuration: reading.configuration,
           question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
           questionClassification: reading.questionClassification,
-          relevantTraitStatements:
-            reading.configuration.personalizationMode === "personalized_tarot" && snapshot
-              ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
-              : [],
+          relevantTraitStatements: storedReadingLensStatements(reading, snapshot),
           relatedPersonContext: storedRelatedPersonContext(
             persistence,
             reading.encryptedRelatedPersonLens,
@@ -402,13 +405,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         { error: followUpLimitMessage(configuredFollowUpLimit) },
         { status: 409 },
       );
-    const snapshot = (
-      await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
-    )?.snapshot;
-    const lensStatements =
-      reading.configuration.personalizationMode === "personalized_tarot" && snapshot
-        ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
-        : [];
+    const lensStatements = storedReadingLensStatements(
+      reading,
+      await storedReadingSnapshot(persistence, user.id, reading),
+    );
     const provider = createInterpretationProvider(
       interpretationRuntimeOptions(runtimeConfiguration),
     );

@@ -2,10 +2,16 @@ import "server-only";
 
 import {
   cardRevealLine,
+  classifyFollowUpScope,
+  classifyQuestion,
   createOracleStreamEvents,
   DeterministicFallbackProvider,
+  FALLBACK_PROVIDER_ID,
+  READING_RESULT_SCHEMA_VERSION,
 } from "@starguidance/ai";
-import { findSpread, tarotCards } from "@starguidance/tarot-content";
+import type { FollowUpResult, ReadingOutputProvenance } from "@starguidance/contracts";
+import type { StoredFollowUp, StoredReading } from "@starguidance/database";
+import { findSpread, TAROT_CONTENT_VERSION, tarotCards } from "@starguidance/tarot-content";
 import { finalizeCommittedDraw } from "@starguidance/tarot-domain";
 
 import { readingConfiguration } from "./draw-ceremony";
@@ -126,6 +132,7 @@ export async function lockGuestReceiptPayload(
     readerLens,
     draw,
     result: generated.result,
+    provenance: { ...generated.provenance, contentVersion: TAROT_CONTENT_VERSION },
     createdAt: recorded.lockedAt,
     expiresAt: new Date(
       Date.parse(recorded.lockedAt) + GUEST_READING_RECEIPT_TTL_SECONDS * 1_000,
@@ -164,7 +171,119 @@ export async function receiptPayloadFromHandoff(
     readerLens: handoff.readerLens,
     draw: handoff.draw,
     result: generated.result,
+    provenance: { ...generated.provenance, contentVersion: TAROT_CONTENT_VERSION },
     createdAt: handoff.createdAt,
     expiresAt: handoff.expiresAt,
   });
+}
+
+export type GuestFollowUpOutcome =
+  | { kind: "answered"; result: FollowUpResult; provenance: ReadingOutputProvenance }
+  | { kind: "interrupted"; safety: ReturnType<typeof classifyQuestion> }
+  | { kind: "newReadingRequired"; reason: ReturnType<typeof classifyFollowUpScope>["reason"] };
+
+/**
+ * Answers one follow-up from the receipt's exact cards with the deterministic
+ * narrator. A question the safety policy interrupts, or one about a different
+ * subject, gets no answer from these cards.
+ */
+export async function answerGuestFollowUp(
+  receipt: GuestReceiptPayload,
+  question: string,
+): Promise<GuestFollowUpOutcome> {
+  const safety = classifyQuestion(question);
+  if (safety.interrupt) return { kind: "interrupted", safety };
+  const scope = classifyFollowUpScope({
+    originalQuestion: receipt.question,
+    originalClassification: receipt.questionClassification,
+    followUpQuestion: question,
+  });
+  if (!scope.sameReading) return { kind: "newReadingRequired", reason: scope.reason };
+  const generated = await new DeterministicFallbackProvider().generateFollowUpWithProvenance({
+    draw: receipt.draw,
+    configuration: receipt.configuration,
+    question,
+    questionClassification: receipt.questionClassification,
+    relevantTraitStatements: receipt.readerLens,
+    originalResult: receipt.result,
+  });
+  return {
+    kind: "answered",
+    result: generated.result,
+    provenance: { ...generated.provenance, contentVersion: TAROT_CONTENT_VERSION },
+  };
+}
+
+/** One free reading maps to one history entry per account. */
+export function guestReadingIdempotencyKey(guestReadingId: string): string {
+  return `guest-trial:${guestReadingId}`;
+}
+
+/** Receipts issued before saving existed did not record their narrator
+ * version; the guest lane only ever used the deterministic narrator. */
+const UNRECORDED_GUEST_PROVENANCE: ReadingOutputProvenance = {
+  providerId: FALLBACK_PROVIDER_ID,
+  promptVersion: "legacy-unrecorded",
+  schemaVersion: READING_RESULT_SCHEMA_VERSION,
+  contentVersion: "legacy-unrecorded",
+};
+
+/**
+ * The account-history copy of a verified guest reading: the same id, cards,
+ * question, interpretation, and birthday lens, with every card already
+ * revealed. It has no profile snapshot, server seed, or interpretation job,
+ * and the guest trial — not the account allowance — granted it.
+ */
+export function storedGuestReading(input: {
+  userId: string;
+  receipt: GuestReceiptPayload;
+  encryptedQuestion: string;
+  safetyClassification: string;
+  followUp?: StoredFollowUp | undefined;
+  now?: Date;
+}): StoredReading {
+  const { receipt } = input;
+  const now = (input.now ?? new Date()).toISOString();
+  return {
+    id: receipt.readingId,
+    userId: input.userId,
+    idempotencyKey: guestReadingIdempotencyKey(receipt.readingId),
+    profileSnapshotId: null,
+    source: "guest_trial",
+    readingLens: {
+      version: "guest-date-lens-v1",
+      traitIndexes: [],
+      statements: receipt.readerLens,
+    },
+    questionClassification: receipt.questionClassification,
+    entitlementDecision: {
+      version: "reading-entitlement-v1",
+      mode: "guest-trial",
+      outcome: "granted",
+      entitlementClass: "standard",
+      used: 0,
+      limit: null,
+      remaining: null,
+      windowStartsAt: null,
+      windowEndsAt: null,
+    },
+    ritualProgress: {
+      version: "ritual-progress-v2",
+      phase: "complete",
+      cutIndex: receipt.draw.proof?.cutIndex ?? 0,
+      revealedIndexes: receipt.draw.assignments.map((_, index) => index),
+      updatedAt: now,
+    },
+    expiresAt: receipt.expiresAt,
+    spreadId: receipt.draw.spreadId,
+    configuration: receipt.configuration,
+    encryptedQuestion: input.encryptedQuestion,
+    safetyClassification: input.safetyClassification,
+    draw: receipt.draw,
+    result: receipt.result,
+    outputProvenance: receipt.provenance ?? UNRECORDED_GUEST_PROVENANCE,
+    generationStatus: "ready",
+    followUps: input.followUp ? [input.followUp] : [],
+    createdAt: receipt.createdAt,
+  };
 }

@@ -12,6 +12,7 @@ export interface SystemPruneSummary {
   expiredRateLimitBuckets: number;
   completedInterpretationJobs: number;
   completedReportJobs: number;
+  expiredGuestReadingDeletionFences: number;
 }
 
 /**
@@ -21,8 +22,10 @@ export interface SystemPruneSummary {
  * like the drain itself.
  *
  * Deletes only what is garbage by definition: rate-limit buckets past their
- * own expires_at, and completed interpretation jobs past the observability
- * window. Failed jobs are deliberately NOT pruned here — they are the
+ * own expires_at, completed interpretation jobs past the observability
+ * window, and guest-reading deletion fences whose receipt has expired (an
+ * expired receipt is refused before any import, so the fence guards
+ * nothing). Failed jobs are deliberately NOT pruned here — they are the
  * queue's only dead-letter record (nothing else surfaces status='failed'),
  * so removing them is an operator decision made through the guarded
  * retention command (apply-retention.ts) with an explicit approved cutoff.
@@ -43,9 +46,13 @@ export async function pruneExpiredSystemRows(
     where status = 'completed'
       and completed_at < now() - make_interval(hours => ${COMPLETED_JOB_RETENTION_HOURS})
   `;
+  const fences = await client`
+    delete from guest_reading_deletion_fences where expires_at < now()
+  `;
   return {
     expiredRateLimitBuckets: buckets.count,
     completedInterpretationJobs: jobs.count,
     completedReportJobs: reportJobs.count,
+    expiredGuestReadingDeletionFences: fences.count,
   };
 }
