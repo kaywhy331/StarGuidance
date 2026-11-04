@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
-import { spreads } from "@starguidance/tarot-content";
 
 import { requireUser } from "@/lib/auth";
 import { persistenceFor } from "@/lib/persistence";
+import { readingAudioAvailable } from "@/lib/reading-audio";
 import { readingEntitlementDecision } from "@/lib/reading-policy";
+import { getRuntimeConfiguration } from "@/lib/runtime-configuration";
 
 import { ReadingChooser } from "./reading-chooser";
 
@@ -12,26 +13,26 @@ export default async function ReadingsPage() {
   try {
     user = await requireUser();
   } catch {
-    redirect("/sign-in");
+    redirect("/sign-in?next=%2Freadings");
   }
   if (user.requiresPolicyReconsent) redirect("/consent");
   if (!user.profile) redirect("/onboarding");
-  const readings = await persistenceFor(user).repositories.readingSessions.list(user.id);
-  const access = readingEntitlementDecision(readings);
+  const [readings, runtimeConfiguration] = await Promise.all([
+    persistenceFor(user).repositories.readingSessions.list(user.id),
+    getRuntimeConfiguration(),
+  ]);
+  const access = readingEntitlementDecision(readings, undefined, runtimeConfiguration.commerce);
   return (
     <ReadingChooser
       access={access}
+      audioAvailable={readingAudioAvailable()}
+      animationVariant={
+        runtimeConfiguration.features.animationsEnabled
+          ? runtimeConfiguration.features.animationVariant
+          : "disabled"
+      }
       {...(user.settings ? { initialPreferences: user.settings } : {})}
-      spreads={spreads.map(
-        ({ id, name, purpose, estimatedMinutes, entitlementClass, positions }) => ({
-          id,
-          name,
-          purpose,
-          estimatedMinutes,
-          entitlementClass,
-          count: positions.length,
-        }),
-      )}
+      sigilSeed={user.profile.snapshot.id}
     />
   );
 }

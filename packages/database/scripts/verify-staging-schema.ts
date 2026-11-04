@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  APPLICATION_CREATOR,
+  auditBrowserBoundary,
+  BROWSER_WITHHELD_TABLES,
+} from "../src/browser-access-privileges";
 import { APPLICATION_DATABASE_ROLE } from "../src/database-role";
-import { EXPECTED_MIGRATIONS } from "../src/migration-manifest";
+import { EXPECTED_MIGRATION_LINEAGE, EXPECTED_MIGRATIONS } from "../src/migration-manifest";
 import { createDatabaseClient } from "../src/postgres-client";
 import { diagnoseAuthInsert } from "./diagnose-auth-insert";
 import { completeStage, record, requiredEnv } from "./staging-result";
@@ -15,7 +20,8 @@ import { completeStage, record, requiredEnv } from "./staging-result";
  */
 /**
  * App-only tables carry a user_id-free or cross-user workload (rate-limit
- * buckets keyed by opaque hash; the interpretation/report job queues' claim sweeps),
+ * buckets and guest-reading deletion fences keyed by opaque hash; the
+ * interpretation/report job queues' claim sweeps),
  * so they are absent from USER_OWNED_TABLES' per-subject policy shape — but
  * they must still be forced-RLS and unreachable from any browser role, and
  * both job queues' application-role policies must be subject-bound rather
@@ -26,6 +32,9 @@ const APP_ONLY_TABLES = [
   "report_jobs",
   "rate_limit_buckets",
   "deletion_receipts",
+  "product_events",
+  "runtime_configuration_versions",
+  "guest_reading_deletion_fences",
 ] as const;
 
 const USER_OWNED_TABLES = [
@@ -36,6 +45,8 @@ const USER_OWNED_TABLES = [
   "profile_snapshots",
   "profile_components",
   "profile_traits",
+  "relationship_profiles",
+  "relationship_profile_snapshots",
   "reading_sessions",
   "reading_draws",
   "reading_outputs",
@@ -57,18 +68,24 @@ async function main(): Promise<void> {
   let forcedRlsProved = false;
 
   try {
-    const applied = await sql<{ id: number }[]>`
-      select id from drizzle.__drizzle_migrations order by id`;
+    const applied = await sql<{ id: number; hash: string; created_at: string }[]>`
+      select id, hash, created_at from drizzle.__drizzle_migrations order by id`;
     const appliedCount = applied.length;
-    const migrationsOk = appliedCount === EXPECTED_MIGRATIONS.length;
+    // Count alone cannot tell an edited or foreign history from ours: compare each
+    // applied row's file hash and journal timestamp with the pinned lineage.
+    const divergent = EXPECTED_MIGRATION_LINEAGE.filter((expected, index) => {
+      const row = applied[index];
+      return !row || row.hash !== expected.sha256 || Number(row.created_at) !== expected.createdAt;
+    }).map(({ tag }) => tag);
+    const migrationsOk = appliedCount === EXPECTED_MIGRATIONS.length && divergent.length === 0;
     if (!migrationsOk) failed = true;
     record({
       section: "Migrations",
       check: "Authoritative Drizzle history applied",
       status: migrationsOk ? "pass" : "fail",
       detail: migrationsOk
-        ? `${appliedCount} applied: ${EXPECTED_MIGRATIONS.join(", ")}`
-        : `expected ${EXPECTED_MIGRATIONS.length} applied entries, found ${appliedCount}`,
+        ? `${appliedCount} applied with matching hash and timestamp: ${EXPECTED_MIGRATIONS.join(", ")}`
+        : `expected ${EXPECTED_MIGRATIONS.length} applied entries, found ${appliedCount}; hash/timestamp mismatch at ${divergent.join(", ") || "none"}`,
     });
 
     // Migration 0002 removed the SECURITY DEFINER trigger that forced RLS made
@@ -137,6 +154,84 @@ async function main(): Promise<void> {
       detail: tablesOk
         ? `${USER_OWNED_TABLES.length} of ${USER_OWNED_TABLES.length} present`
         : `${missingTables.length} table(s) absent`,
+    });
+
+    const missingOutputProvenance = await sql<{ table_name: string; column_name: string }[]>`
+      select required.table_name, required.column_name
+      from (values
+        ('reading_outputs', 'safety_policy_version'),
+        ('follow_up_questions', 'provider_id'),
+        ('follow_up_questions', 'prompt_version'),
+        ('follow_up_questions', 'content_version'),
+        ('follow_up_questions', 'safety_policy_version'),
+        ('follow_up_questions', 'schema_version')
+      ) as required(table_name, column_name)
+      where not exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public'
+          and columns.table_name = required.table_name
+          and columns.column_name = required.column_name
+      )`;
+    const outputProvenanceOk = missingOutputProvenance.length === 0;
+    if (!outputProvenanceOk) failed = true;
+    record({
+      section: "Migrations",
+      check: "Primary and follow-up output provenance columns present",
+      status: outputProvenanceOk ? "pass" : "fail",
+      detail: outputProvenanceOk
+        ? "all 6 provenance coordinates are present"
+        : `${missingOutputProvenance.length} provenance column(s) absent`,
+    });
+
+    const versionedReferenceConstraints = await sql<{ name: string; definition: string }[]>`
+      select conname as name, pg_get_constraintdef(oid) as definition
+      from pg_constraint
+      where conname in (
+        'cards_id_deck_version_pk',
+        'spreads_id_version_pk',
+        'card_meanings_card_deck_fk',
+        'spread_positions_spread_version_fk',
+        'reading_sessions_spread_version_fk'
+      ) and connamespace = 'public'::regnamespace`;
+    const normalizedReferenceConstraints = new Map(
+      versionedReferenceConstraints.map(({ name, definition }) => [
+        name,
+        definition.replaceAll('"', "").replace(/\s+/g, " ").toLowerCase(),
+      ]),
+    );
+    const expectedReferenceConstraints = new Map([
+      ["cards_id_deck_version_pk", "primary key (id, deck_version)"],
+      ["spreads_id_version_pk", "primary key (id, version)"],
+      ["card_meanings_card_deck_fk", "foreign key (card_id, deck_version)"],
+      ["spread_positions_spread_version_fk", "foreign key (spread_id, spread_version)"],
+      ["reading_sessions_spread_version_fk", "foreign key (spread_id, spread_version)"],
+    ]);
+    const referenceConstraintsOk = [...expectedReferenceConstraints].every(
+      ([name, prefix]) => normalizedReferenceConstraints.get(name)?.startsWith(prefix) === true,
+    );
+    const missingReferenceColumns = await sql<{ table_name: string; column_name: string }[]>`
+      select required.table_name, required.column_name
+      from (values
+        ('card_meanings', 'deck_version'),
+        ('spread_positions', 'spread_version')
+      ) as required(table_name, column_name)
+      where not exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public'
+          and columns.table_name = required.table_name
+          and columns.column_name = required.column_name
+          and columns.is_nullable = 'NO'
+      )`;
+    const versionedReferenceSchemaOk =
+      referenceConstraintsOk && missingReferenceColumns.length === 0;
+    if (!versionedReferenceSchemaOk) failed = true;
+    record({
+      section: "Migrations",
+      check: "Tarot reference content retains version-qualified lineage",
+      status: versionedReferenceSchemaOk ? "pass" : "fail",
+      detail: versionedReferenceSchemaOk
+        ? "card/deck and spread/version composite keys, lineage foreign keys, and non-null child versions are present"
+        : "a composite reference key, lineage foreign key, or non-null child version is absent",
     });
 
     const unforced = await sql<{ name: string }[]>`
@@ -248,6 +343,30 @@ async function main(): Promise<void> {
         : "the browser/server database-role boundary is not enforced",
     });
 
+    // Browser roles must reach no table that lacks forced RLS, and no creator
+    // default may hand them the next table, sequence or function.
+    const boundary = await auditBrowserBoundary(sql);
+    const browserAccessOk = boundary.applicationScopeClean;
+    if (!browserAccessOk) failed = true;
+    record({
+      section: "Row level security",
+      check: `Browser roles withheld from unforced tables and ${APPLICATION_CREATOR} future-object defaults`,
+      status: browserAccessOk ? "pass" : "fail",
+      detail: browserAccessOk
+        ? `${BROWSER_WITHHELD_TABLES.length} reference/webhook tables are unreachable and no ${APPLICATION_CREATOR} default grants anon or authenticated (application scope only)`
+        : `${boundary.missingTables.length} withheld table(s) absent; ${boundary.ownershipDrift.length} withheld table(s) not owned by ${APPLICATION_CREATOR};${boundary.reachableTables.length} browser-reachable unforced table grant(s); ${boundary.applicationDefaults.length} browser default ACL entr(ies) and ${boundary.applicationFutureAccess.length} creator/object kind(s) a browser role reaches on new ${APPLICATION_CREATOR} objects (direct, PUBLIC or inherited)`,
+    });
+    // Other creators (notably supabase_admin) are outside migration 0029. Their
+    // exposure is never folded into the application result above.
+    record({
+      section: "Row level security",
+      check: "Platform and other-creator default privileges (residual, not changed by 0029)",
+      status: boundary.platformResidualPresent ? "limited" : "pass",
+      detail: boundary.platformResidualPresent
+        ? `${boundary.platformDefaults.length} browser default ACL entr(ies), ${boundary.platformFutureAccess.length} creator/object kind(s) of non-${APPLICATION_CREATOR} creators and ${boundary.platformReachableTables.length} non-${APPLICATION_CREATOR}-owned table grant(s) remain browser-reachable on new objects; the application-scope result does not cover them`
+        : `no non-${APPLICATION_CREATOR} creator default reaches a browser role`,
+    });
+
     let actorOk = false;
     try {
       await sql.begin(async (tx) => {
@@ -269,7 +388,14 @@ async function main(): Promise<void> {
         : `the connection role cannot assume ${APPLICATION_DATABASE_ROLE}`,
     });
     forcedRlsProved =
-      tablesOk && rlsOk && policiesOk && webhookOk && appOnlyOk && roleBoundaryOk && actorOk;
+      tablesOk &&
+      rlsOk &&
+      policiesOk &&
+      webhookOk &&
+      appOnlyOk &&
+      roleBoundaryOk &&
+      browserAccessOk &&
+      actorOk;
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);
   }

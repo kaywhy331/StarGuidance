@@ -4,7 +4,18 @@ export function AtmosphericLayers({ reducedMotion }: { reducedMotion: boolean })
       aria-hidden="true"
       className={`atmospheric-layers ${reducedMotion ? "atmosphere-still" : ""}`}
     >
+      <div className="sanctuary-phase-veil" />
       <div className="sanctuary-light" />
+      <div className="sanctuary-phase-gate">
+        <i />
+        <i />
+        <i />
+        <span />
+      </div>
+      <div className="sanctuary-floor-constellation">
+        <i />
+        <i />
+      </div>
       <div className="sanctuary-sigil sanctuary-sigil-left" />
       <div className="sanctuary-sigil sanctuary-sigil-right" />
       <div className="mist mist-far" />

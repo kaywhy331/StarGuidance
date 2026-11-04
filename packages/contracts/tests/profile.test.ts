@@ -12,7 +12,7 @@ import {
 
 const core = {
   fullBirthName: "Ada Lovelace",
-  birthDate: "1815-12-10",
+  birthDate: "1915-12-10",
 };
 
 describe("birth profile contract", () => {
@@ -52,6 +52,27 @@ describe("birth profile contract", () => {
     const parsed = birthProfileInputSchema.safeParse({ ...core, birthplace: "X" });
     expect(parsed.success).toBe(false);
     if (!parsed.success) expect(parsed.error.issues[0]?.path).toEqual(["birthplace"]);
+  });
+
+  it("speaks plainly when required details are missing or implausible", () => {
+    const parsed = birthProfileInputSchema.safeParse({ fullBirthName: " ", birthDate: "" });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      // The form shows the first message for each field.
+      const messages: Record<string, string> = {};
+      for (const issue of parsed.error.issues) messages[issue.path.join(".")] ??= issue.message;
+      expect(messages.fullBirthName).toBe("Please share the name you were given at birth.");
+      expect(messages.birthDate).toBe("Choose your date of birth.");
+    }
+  });
+
+  it("rejects birth dates before 1900 and accepts the first day of 1900", () => {
+    const early = birthProfileInputSchema.safeParse({ ...core, birthDate: "1899-12-31" });
+    expect(early.success).toBe(false);
+    if (!early.success) expect(early.error.issues[0]?.message).toMatch(/1900/);
+    expect(birthProfileInputSchema.parse({ ...core, birthDate: "1900-01-01" }).birthDate).toBe(
+      "1900-01-01",
+    );
   });
 
   it("preserves Unicode names", () => {

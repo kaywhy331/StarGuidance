@@ -1,33 +1,59 @@
 import { NextResponse } from "next/server";
 import {
+  cardRevealLine,
   createInterpretationProvider,
+  classifyFollowUpScope,
   classifyQuestion,
-  readingLensStatements,
-  selectReadingLens,
 } from "@starguidance/ai";
 import { actorTransaction, reenqueueInterpretationJob } from "@starguidance/database";
 import { ritualProgressSchema } from "@starguidance/contracts";
-import { findSpread, resolveSpreadPositions, tarotCards } from "@starguidance/tarot-content";
+import { findSpread, tarotCards } from "@starguidance/tarot-content";
 import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { runInterpretationJobs } from "@/lib/interpretation-worker";
 import { persistenceFor, recordAudit } from "@/lib/persistence";
+import {
+  parseRelatedPersonReadingLens,
+  relatedPersonProviderContext,
+} from "@/lib/related-person-lens";
+import { tryRecordProductEvent } from "@/lib/product-telemetry";
+import { ritualSessionExpired } from "@/lib/ritual-progress";
 import { followUpLimit, followUpLimitMessage } from "@/lib/reading-policy";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 import { getRuntimeAdapter, getSystemDatabaseClient } from "@/lib/runtime";
+import { getRuntimeConfiguration, interpretationRuntimeOptions } from "@/lib/runtime-configuration";
+import { storedReadingLensStatements, storedReadingSnapshot } from "@/lib/stored-reading-lens";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("retry") }),
   z.object({ action: z.literal("followUp"), question: z.string().trim().min(1).max(500) }),
   z.object({
     action: z.literal("progress"),
-    phase: z.enum(["cuttingDeck", "revealingCards", "complete"]),
-    cutTaken: z.boolean(),
+    phase: z.enum([
+      "drawLocked",
+      "dealing",
+      "awaitingReveal",
+      "revealing",
+      "fullSpreadReady",
+      "interpretationStreaming",
+      "followUpAvailable",
+      "complete",
+    ]),
+    cutIndex: z.number().int().min(0).max(77),
     revealedIndexes: z.array(z.number().int().nonnegative()).max(10),
   }),
 ]);
 
-const ritualPhaseRank = { cuttingDeck: 0, revealingCards: 1, complete: 2 } as const;
+const ritualPhaseRank = {
+  drawLocked: 0,
+  dealing: 1,
+  awaitingReveal: 2,
+  revealing: 3,
+  fullSpreadReady: 4,
+  interpretationStreaming: 5,
+  followUpAvailable: 6,
+  complete: 7,
+} as const;
 
 async function ownedReading(id: string) {
   const user = await requireUser();
@@ -36,17 +62,35 @@ async function ownedReading(id: string) {
   return reading ? { persistence, reading, user } : undefined;
 }
 
+function storedRelatedPersonContext(
+  persistence: ReturnType<typeof persistenceFor>,
+  encryptedLens: string | undefined,
+) {
+  return encryptedLens
+    ? relatedPersonProviderContext(
+        parseRelatedPersonReadingLens(
+          persistence.decrypt(encryptedLens, "related-person-reading-lens"),
+        ),
+      )
+    : [];
+}
+
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const owned = await ownedReading((await context.params).id);
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { reading } = owned;
-    const spread = findSpread(reading.spreadId);
-    const positions = spread
-      ? resolveSpreadPositions(spread, reading.questionClassification)
-      : undefined;
-    const configuredFollowUpLimit = followUpLimit();
-    const feedback = await owned.persistence.repositories.feedback.list(owned.user.id, reading.id);
+    const spread = findSpread(reading.spreadId, reading.draw.spreadVersion);
+    const positions = reading.configuration.positions;
+    const runtimeConfiguration = await getRuntimeConfiguration();
+    const configuredFollowUpLimit = followUpLimit(runtimeConfiguration.commerce);
+    const [feedback, snapshot] = await Promise.all([
+      owned.persistence.repositories.feedback.list(owned.user.id, reading.id),
+      storedReadingSnapshot(owned.persistence, owned.user.id, reading),
+    ]);
+    const lensTraits = (snapshot?.traits ?? []).filter((_, index) =>
+      reading.readingLens.traitIndexes.includes(index),
+    );
     return NextResponse.json(
       {
         reading: {
@@ -56,23 +100,48 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
           // reflection and never written to a URL, log, or analytics payload.
           question: owned.persistence.decrypt(reading.encryptedQuestion, "reading-question"),
           spreadId: reading.spreadId,
+          spreadName: spread?.name,
           // The immutable snapshot this reading was drawn against. Later profile
           // versions never move it, and a caller cannot otherwise tell which
-          // version of themselves a past reading interpreted.
+          // version of themselves a past reading interpreted. A saved guest
+          // reading has none and says where it came from instead.
           profileSnapshotId: reading.profileSnapshotId,
+          ...(reading.source ? { source: reading.source } : {}),
+          configuration: reading.configuration,
+          personalization:
+            reading.configuration.personalizationMode === "personalized_tarot" && snapshot
+              ? {
+                  lensVersion: reading.readingLens.version,
+                  snapshotVersion: snapshot.version,
+                  completeness: snapshot.completeness,
+                  traits: lensTraits.map((trait) => ({
+                    domain: trait.domain,
+                    sourceSystem: trait.sourceSystem,
+                    stability: trait.stability,
+                    confidence: trait.confidence,
+                    calculationVersion: trait.calculationVersion,
+                  })),
+                  tensionCount: reading.readingLens.tensionIndexes?.length ?? 0,
+                  rawBirthDataSharedWithNarrator: false as const,
+                }
+              : undefined,
           draw: reading.draw,
           cards: reading.draw.assignments.map((assignment) => {
             const card = tarotCards.find(({ id }) => id === assignment.cardId);
             const position = positions?.find(({ id }) => id === assignment.positionId);
             if (!card) throw new Error("Locked draw references unavailable card content.");
+            const themes =
+              assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes;
+            const positionName =
+              position?.displayName ?? assignment.positionId.replaceAll("-", " ");
             return {
               cardId: card.id,
               name: card.name,
               orientation: assignment.orientation,
-              themes:
-                assignment.orientation === "reversed" ? card.reversedThemes : card.uprightThemes,
+              themes,
+              baselineMeaning: cardRevealLine(card, assignment.orientation, positionName),
               positionId: assignment.positionId,
-              positionName: position?.displayName ?? assignment.positionId.replaceAll("-", " "),
+              positionName,
               positionDescription:
                 position?.description ?? "How this card meets the focus of your reading.",
               placement: position?.placement ?? {
@@ -89,21 +158,32 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
               artwork: card.artwork,
             };
           }),
-          result: reading.result,
+          result:
+            reading.ritualProgress &&
+            ritualPhaseRank[reading.ritualProgress.phase] >= ritualPhaseRank.fullSpreadReady &&
+            reading.ritualProgress.revealedIndexes.length === reading.draw.assignments.length
+              ? reading.result
+              : undefined,
           outputProvenance: reading.outputProvenance,
           generationStatus: reading.generationStatus,
           questionClassification: reading.questionClassification,
           entitlementDecision: reading.entitlementDecision,
           ritualProgress: reading.ritualProgress,
           expiresAt: reading.expiresAt,
-          sessionExpired:
-            reading.ritualProgress?.phase !== "complete" &&
-            Date.now() >= Date.parse(reading.expiresAt),
+          sessionExpired: ritualSessionExpired(reading),
           safetyClassification: reading.safetyClassification,
-          followUps: reading.followUps.map(({ id, result }) => ({ id, result })),
+          // Like the main question, each follow-up question is returned only
+          // to its owner in this no-store response so the reading can show
+          // what was asked above what the cards answered.
+          followUps: reading.followUps.map(({ id, result, encryptedQuestion }) => ({
+            id,
+            result,
+            question: owned.persistence.decrypt(encryptedQuestion, "follow-up-question"),
+          })),
           followUpLimit: configuredFollowUpLimit,
           followUpsRemaining: Math.max(0, configuredFollowUpLimit - reading.followUps.length),
-          feedbackSubmitted: feedback.length > 0,
+          feedbackSubmitted: feedback.some(({ kind }) => kind === "experience"),
+          outcomeFeedbackSubmitted: feedback.some(({ kind }) => kind === "outcome"),
           createdAt: reading.createdAt,
         },
       },
@@ -141,6 +221,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  let activeFollowUpLimit: number | undefined;
   try {
     assertSameOrigin(request);
     const body: unknown = await request.json();
@@ -160,40 +241,50 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!owned) return NextResponse.json({ error: "Reading not found." }, { status: 404 });
     const { persistence, reading, user } = owned;
     assertCurrentPolicyConsents(user);
-    await assertRateLimit(`reading-action:${reading.userId}`, 15);
+    // Ritual progress only records which already-locked cards the reader has
+    // turned over. A ten-card spread writes a dozen of these in a minute, so
+    // they get their own, looser bucket instead of exhausting the one that
+    // guards AI generation (retry, follow-up). Both stay bounded.
+    const progressWrite =
+      typeof body === "object" && body !== null && "action" in body && body.action === "progress";
+    await assertRateLimit(
+      progressWrite ? `reading-progress:${reading.userId}` : `reading-action:${reading.userId}`,
+      progressWrite ? 60 : 15,
+    );
     const input = actionSchema.parse(body);
     if (input.action === "progress") {
-      if (
-        reading.ritualProgress?.phase !== "complete" &&
-        Date.now() >= Date.parse(reading.expiresAt)
-      )
-        return NextResponse.json(
-          { error: "This ritual session has expired. Its locked cards remain in history." },
-          { status: 410 },
-        );
+      // No expiry check here on purpose: every reading in this table already
+      // has its cards locked (createLocked), so revealing them after the
+      // session window changes nothing about the draw. Refusing it only
+      // stranded readers mid-reveal with no way to reach their interpretation.
       const revealedIndexes = [...new Set(input.revealedIndexes)].sort((a, b) => a - b);
       if (revealedIndexes.some((index) => index >= reading.draw.assignments.length))
         return NextResponse.json({ error: "Invalid ritual progress." }, { status: 422 });
       const previous = reading.ritualProgress;
       if (
         previous &&
-        (previous.cutTaken !== input.cutTaken ||
+        (previous.cutIndex !== input.cutIndex ||
           ritualPhaseRank[input.phase] < ritualPhaseRank[previous.phase] ||
           previous.revealedIndexes.some((index) => !revealedIndexes.includes(index)))
       )
         return NextResponse.json(
-          { error: "Ritual progress cannot move backward or change the recorded cut." },
+          { error: "This reading has already moved further along." },
           { status: 409 },
         );
-      if (input.phase === "complete" && revealedIndexes.length !== reading.draw.assignments.length)
+      if (
+        ["fullSpreadReady", "interpretationStreaming", "followUpAvailable", "complete"].includes(
+          input.phase,
+        ) &&
+        revealedIndexes.length !== reading.draw.assignments.length
+      )
         return NextResponse.json(
-          { error: "Every locked card must be revealed before the ritual is complete." },
+          { error: "Turn over every card before opening the whole reading." },
           { status: 422 },
         );
       const progress = ritualProgressSchema.parse({
-        version: "ritual-progress-v1",
+        version: "ritual-progress-v2",
         phase: input.phase,
-        cutTaken: input.cutTaken,
+        cutIndex: input.cutIndex,
         revealedIndexes,
         updatedAt: new Date().toISOString(),
       });
@@ -205,28 +296,38 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ progress });
     }
     if (input.action === "retry") {
-      const provider = createInterpretationProvider();
-      const snapshot = (
-        await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
-      )?.snapshot;
+      // A saved guest reading arrived with the interpretation its reader
+      // already read; regenerating would quietly replace it.
+      if (reading.source === "guest_trial")
+        return NextResponse.json(
+          { error: "This saved reading already has its interpretation." },
+          { status: 409 },
+        );
+      const runtimeConfiguration = await getRuntimeConfiguration();
+      const provider = createInterpretationProvider(
+        interpretationRuntimeOptions(runtimeConfiguration),
+      );
+      const snapshot = await storedReadingSnapshot(persistence, user.id, reading);
       // The local runtime adapter has no interpretation_jobs table (see
       // apps/web/src/lib/repositories/local.ts) and never runs on Netlify,
       // so it keeps the original direct, synchronous retry.
       if (getRuntimeAdapter() !== "supabase") {
         const generated = await provider.generateWithProvenance({
           draw: reading.draw,
+          configuration: reading.configuration,
           question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
           questionClassification: reading.questionClassification,
-          relevantTraitStatements: snapshot
-            ? readingLensStatements(reading.readingLens, snapshot.traits, snapshot.tensions)
-            : [],
+          relevantTraitStatements: storedReadingLensStatements(reading, snapshot),
+          relatedPersonContext: storedRelatedPersonContext(
+            persistence,
+            reading.encryptedRelatedPersonLens,
+          ),
         });
-        await persistence.repositories.outputs.save(
-          user.id,
-          reading.id,
-          generated.result,
-          generated.provenance,
-        );
+        await persistence.repositories.outputs.save(user.id, reading.id, generated.result, {
+          ...generated.provenance,
+          contentVersion: runtimeConfiguration.content.tarotContentVersion,
+          safetyPolicyVersion: runtimeConfiguration.prompts.safetyPolicyVersion,
+        });
         await persistence.repositories.readingSessions.setGenerationStatus(
           user.id,
           reading.id,
@@ -264,44 +365,86 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     const safety = classifyQuestion(input.question);
     if (safety.interrupt) return NextResponse.json({ safety }, { status: 422 });
-    const configuredFollowUpLimit = followUpLimit();
+    const runtimeConfiguration = await getRuntimeConfiguration();
+    const configuredFollowUpLimit = followUpLimit(runtimeConfiguration.commerce);
+    activeFollowUpLimit = configuredFollowUpLimit;
+    if (!reading.result)
+      return NextResponse.json(
+        { error: "Your reading is still being written. Ask a follow-up once it has arrived." },
+        { status: 409 },
+      );
+    const fullSpreadReady =
+      reading.ritualProgress !== undefined &&
+      ["fullSpreadReady", "interpretationStreaming", "followUpAvailable", "complete"].includes(
+        reading.ritualProgress.phase,
+      ) &&
+      reading.ritualProgress.revealedIndexes.length === reading.draw.assignments.length;
+    if (!fullSpreadReady)
+      return NextResponse.json(
+        { error: "Turn over every card before asking a follow-up." },
+        { status: 409 },
+      );
+    const originalQuestion = persistence.decrypt(reading.encryptedQuestion, "reading-question");
+    const followUpScope = classifyFollowUpScope({
+      originalQuestion,
+      originalClassification: reading.questionClassification,
+      followUpQuestion: input.question,
+    });
+    if (!followUpScope.sameReading)
+      return NextResponse.json(
+        {
+          error:
+            "That sounds like a new question — a different subject, person, or time frame. It deserves its own cards, so start a new reading for it.",
+          newReadingRequired: true,
+          reason: followUpScope.reason,
+        },
+        { status: 409 },
+      );
     if (reading.followUps.length >= configuredFollowUpLimit)
       return NextResponse.json(
         { error: followUpLimitMessage(configuredFollowUpLimit) },
         { status: 409 },
       );
-    if (!reading.result)
-      return NextResponse.json(
-        { error: "The original reading must be complete before asking a follow-up." },
-        { status: 409 },
-      );
-    const snapshot = (
-      await persistence.repositories.profileSnapshots.get(user.id, reading.profileSnapshotId)
-    )?.snapshot;
-    const lens = selectReadingLens(
-      input.question,
-      snapshot?.traits ?? [],
-      snapshot?.tensions ?? [],
-      reading.questionClassification.topic,
+    const lensStatements = storedReadingLensStatements(
+      reading,
+      await storedReadingSnapshot(persistence, user.id, reading),
     );
-    const provider = createInterpretationProvider();
-    const result = await provider.generateFollowUp({
+    const provider = createInterpretationProvider(
+      interpretationRuntimeOptions(runtimeConfiguration),
+    );
+    const generated = await provider.generateFollowUpWithProvenance({
       draw: reading.draw,
+      configuration: reading.configuration,
       question: input.question,
       questionClassification: reading.questionClassification,
-      relevantTraitStatements: lens.statements,
+      relevantTraitStatements: lensStatements,
+      relatedPersonContext: storedRelatedPersonContext(
+        persistence,
+        reading.encryptedRelatedPersonLens,
+      ),
       originalResult: reading.result,
     });
+    const result = generated.result;
     const followUp = {
       id: crypto.randomUUID(),
       encryptedQuestion: persistence.encrypt(input.question, "follow-up-question"),
       result,
+      outputProvenance: {
+        ...generated.provenance,
+        contentVersion: runtimeConfiguration.content.tarotContentVersion,
+        safetyPolicyVersion: runtimeConfiguration.prompts.safetyPolicyVersion,
+      },
       createdAt: new Date().toISOString(),
     };
     await persistence.repositories.followUps.create(user.id, reading.id, followUp, {
       limit: configuredFollowUpLimit,
     });
     await recordAudit(user.id, "reading.follow_up.created", "reading", reading.id);
+    await tryRecordProductEvent({
+      idempotencyKey: `reading:${reading.id}:followup:${followUp.id}`,
+      name: "followup_submitted",
+      properties: { statusClass: "completed" },
+    });
     return NextResponse.json(
       { followUp: { id: followUp.id, result }, draw: reading.draw },
       { status: 201 },
@@ -314,7 +457,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         { status: security.status, headers: security.headers },
       );
     if (error instanceof Error && error.message === "FOLLOW_UP_LIMIT_REACHED")
-      return NextResponse.json({ error: followUpLimitMessage(followUpLimit()) }, { status: 409 });
+      return NextResponse.json(
+        { error: followUpLimitMessage(activeFollowUpLimit ?? followUpLimit()) },
+        { status: 409 },
+      );
     if (error instanceof Error && error.message === POLICY_RECONSENT_REQUIRED)
       return NextResponse.json(
         { error: "Review the current service policies before continuing this reading." },
@@ -322,7 +468,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 400;
     return NextResponse.json(
-      { error: status === 401 ? "Authentication required." : "Invalid follow-up." },
+      {
+        error:
+          status === 401
+            ? "Authentication required."
+            : "That request could not be completed. Please try again.",
+      },
       { status },
     );
   }

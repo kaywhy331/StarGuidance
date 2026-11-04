@@ -4,8 +4,11 @@ import { z } from "zod";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { persistenceFor, recordAudit, saveProfileVersion } from "@/lib/persistence";
 import { POLICY_VERSIONS } from "@/lib/policies";
+import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { calculateProfile } from "@/lib/profile-engine";
+import { buildProfileHighlights, type ProfileHighlight } from "@/lib/report";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
+import { getRuntimeConfiguration, profileReportsEnabled } from "@/lib/runtime-configuration";
 
 const profileRequestSchema = birthProfileInputSchema.and(
   z.object({ consentVersion: z.literal(POLICY_VERSIONS.profilePersonalization) }),
@@ -19,6 +22,7 @@ export async function POST(request: Request) {
     assertCurrentPolicyConsents(user);
     await assertRateLimit(`profile:${user.id}`, 8);
     const input = profileRequestSchema.parse(await request.json());
+    const runtimeConfiguration = await getRuntimeConfiguration();
     const calculation = await calculateProfile(input);
     const persistence = persistenceFor(user);
     if (!user.consentRecords.some(({ version }) => version === input.consentVersion))
@@ -27,8 +31,31 @@ export async function POST(request: Request) {
         version: input.consentVersion,
         grantedAt: new Date().toISOString(),
       });
-    const snapshot = await saveProfileVersion(user, input, calculation);
+    const sourceSystemByFlag = {
+      numerology: "numerology",
+      dreamspell: "dreamspell",
+      western: "westernAstrology",
+      bazi: "bazi",
+      "nine-star-ki": "nineStarKi",
+    } as const;
+    const enabledSourceSystems = runtimeConfiguration.features.enabledProfileSystems.flatMap(
+      (system) => {
+        const source = sourceSystemByFlag[system];
+        if (!source) return [];
+        return system === "western" ? [source, "planetaryAngularity" as const] : [source];
+      },
+    );
+    const snapshot = await saveProfileVersion(user, input, calculation, enabledSourceSystems);
     await recordAudit(user.id, "profile.snapshot.created", "profile_snapshot", snapshot.id);
+    await tryRecordProductEvent({
+      idempotencyKey: `profile:${snapshot.id}:completed`,
+      name: "profile_completed",
+      properties: {
+        completeness: snapshot.completeness,
+        birthplacePresent: Boolean(input.birthplace),
+        birthTimePresent: Boolean(input.birthTime),
+      },
+    });
     return NextResponse.json({ snapshot }, { status: 201 });
   } catch (error) {
     const security = requestSecurityFailure(error);
@@ -37,13 +64,20 @@ export async function POST(request: Request) {
         { error: security.error },
         { status: security.status, headers: security.headers },
       );
-    if (error instanceof Error && error.message === "PROFILE_CALCULATION_REJECTED")
+    if (error instanceof Error && error.message === "PROFILE_CALCULATION_REJECTED") {
+      await tryRecordProductEvent({
+        idempotencyKey: `profile:failed:${crypto.randomUUID()}`,
+        name: "profile_failed",
+        properties: { errorClass: "validation", statusClass: "failed" },
+      });
       return NextResponse.json(
         {
-          error: "The calculation could not use these birth details.",
+          error:
+            "We couldn't read a profile from those birth details. Please check the date, place, and time, then try again.",
         },
         { status: 422 },
       );
+    }
     // Same message either way — the person cannot act on the distinction — but
     // the reason code lets an operator tell a slow service from a changed
     // contract from an unreachable one. It names a condition, never a value.
@@ -55,23 +89,38 @@ export async function POST(request: Request) {
         "PROFILE_ENGINE_CONTRACT_MISMATCH",
         "PROFILE_ENGINE_MISCONFIGURED",
       ].includes(error.message);
-    if (engineFailure)
+    if (engineFailure) {
+      await tryRecordProductEvent({
+        idempotencyKey: `profile:failed:${crypto.randomUUID()}`,
+        name: "profile_failed",
+        properties: {
+          errorClass:
+            error instanceof Error && error.message === "PROFILE_ENGINE_TIMEOUT"
+              ? "provider_timeout"
+              : "configuration",
+          statusClass: "failed",
+        },
+      });
       return NextResponse.json(
         {
           error:
-            "The private profile engine could not complete the calculation. Your profile was not changed; retry when it is available.",
+            "We couldn't finish your profile just now. Nothing was changed. Please try again in a moment.",
           reason: (error as Error).message,
         },
         { status: 503 },
       );
+    }
     if (error instanceof z.ZodError)
       return NextResponse.json(
-        { error: "Check the four birth-profile fields and try again." },
+        {
+          error:
+            "Please check your birth name, date of birth, birthplace, and birth time, then try again.",
+        },
         { status: 422 },
       );
     if (error instanceof Error && error.message === POLICY_RECONSENT_REQUIRED)
       return NextResponse.json(
-        { error: "Review the current service policies before saving a profile." },
+        { error: "Please review the updated Terms and Privacy Notice before saving your profile." },
         { status: 428 },
       );
     const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 503;
@@ -79,8 +128,8 @@ export async function POST(request: Request) {
       {
         error:
           status === 401
-            ? "Authentication required."
-            : "The private profile could not be saved. Your existing profile was not changed.",
+            ? "Please sign in again to continue."
+            : "We couldn't save your profile just now. Nothing was changed. Please try again.",
       },
       { status },
     );
@@ -91,17 +140,42 @@ export async function GET() {
   try {
     const user = await requireUser();
     const persistence = persistenceFor(user);
-    const profile = await persistence.repositories.birthProfiles.getActive(user.id);
+    const [profile, runtimeConfiguration] = await Promise.all([
+      persistence.repositories.birthProfiles.getActive(user.id),
+      getRuntimeConfiguration(),
+    ]);
     const input = profile
       ? birthProfileInputSchema.parse(
           JSON.parse(persistence.decrypt(profile.encryptedInput, "profile-input")),
         )
       : undefined;
+    let highlights: ProfileHighlight[] = [];
+    if (profile)
+      try {
+        highlights = buildProfileHighlights(
+          profile.snapshot,
+          JSON.parse(persistence.decrypt(profile.encryptedCalculations, "profile-calculations")),
+        );
+      } catch {
+        // Highlights are a courtesy summary; the profile itself still loads.
+        highlights = [];
+      }
+    const reportsEnabled = profileReportsEnabled(runtimeConfiguration);
     return NextResponse.json({
+      profileReportsEnabled: reportsEnabled,
+      ...(reportsEnabled
+        ? {
+            reportOffer: {
+              priceMinor: runtimeConfiguration.commerce.priceMinor,
+              currency: runtimeConfiguration.commerce.currency,
+            },
+          }
+        : {}),
       profile:
         profile && input
           ? {
               snapshot: profile.snapshot,
+              highlights,
               maskedName: `${input.fullBirthName.slice(0, 1)}${"•".repeat(
                 Math.min(input.fullBirthName.length - 1, 8),
               )}`,

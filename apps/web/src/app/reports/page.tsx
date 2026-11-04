@@ -1,44 +1,76 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { EmptyState, Panel } from "@starguidance/design-system";
 
 import { requireUser } from "@/lib/auth";
 import { persistenceFor } from "@/lib/persistence";
+import { formatReportEditionDate } from "@/lib/report-document";
+
+const REPORT_STATUS = {
+  pending: { icon: "◌", label: "Being prepared" },
+  ready: { icon: "✦", label: "Ready to read" },
+  failed: { icon: "↻", label: "Needs a retry" },
+} as const;
+
+export const metadata: Metadata = { title: "Reports" };
 
 export default async function ReportsPage() {
   let user: Awaited<ReturnType<typeof requireUser>>;
   try {
     user = await requireUser();
   } catch {
-    redirect("/sign-in");
+    redirect("/sign-in?next=%2Freports");
   }
   if (user.requiresPolicyReconsent) redirect("/consent");
   const reports = await persistenceFor(user).repositories.reports.list(user.id);
   return (
-    <main className="mx-auto min-h-screen max-w-4xl px-6 py-12">
-      <p className="text-sm tracking-[.18em] text-[#d8b56d] uppercase">Private purchases</p>
-      <h1 className="mt-2 text-5xl font-semibold">Profile reports</h1>
-      <div className="mt-8 grid gap-4">
+    <main className="report-library-shell">
+      <header className="report-library-header">
+        <div>
+          <p className="page-eyebrow">Your purchases</p>
+          <h1>Your pattern atlases</h1>
+          <p>
+            Each atlas is written from your birth details as they were on the day you bought it, and
+            it stays exactly as written. If you update your details later, you can get a new
+            edition.
+          </p>
+        </div>
+        <Link href="/profile">← Your profile</Link>
+      </header>
+      <section aria-label="Your pattern atlases" className="report-library-grid">
         {reports.length === 0 ? (
-          <EmptyState title="No profile reports yet">
-            Purchased reports and their preparation status will appear here.
+          <EmptyState title="No pattern atlases yet">
+            <p>
+              A pattern atlas is a one-time purchase: a long-form reading of your whole profile.
+              Once you buy one, it will appear here.
+            </p>
+            <Link href="/profile">See what’s inside your atlas</Link>
           </EmptyState>
         ) : (
-          reports.map((report) => (
-            <Panel key={report.id}>
-              <Link className="block" href={`/report/${report.id}`}>
-                <p className="text-sm text-[#d8b56d]">
-                  {report.provider === "local" ? "Local test adapter" : "Stripe test purchase"}
-                </p>
-                <h2 className="mt-2 text-2xl">Full profile report</h2>
-                <p className="mt-2 text-sm text-[#b8adc8]">
-                  {new Date(report.createdAt).toLocaleString()} · {report.status}
-                </p>
-              </Link>
-            </Panel>
-          ))
+          reports.map((report, index) => {
+            const status = REPORT_STATUS[report.status];
+            const date = formatReportEditionDate(report.createdAt);
+            return (
+              <Panel className="report-library-volume" key={report.id}>
+                <Link href={`/report/${report.id}`}>
+                  <span aria-hidden="true" className="report-library-volume-mark">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <h2>Pattern atlas · {date}</h2>
+                    <time dateTime={report.createdAt}>Purchased {date}</time>
+                  </div>
+                  <strong data-status={report.status}>
+                    <span aria-hidden="true">{status.icon}</span> {status.label}
+                  </strong>
+                  <span>{report.status === "ready" ? "Open atlas →" : "View status →"}</span>
+                </Link>
+              </Panel>
+            );
+          })
         )}
-      </div>
+      </section>
     </main>
   );
 }

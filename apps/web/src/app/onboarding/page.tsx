@@ -6,36 +6,42 @@ import { persistenceFor } from "@/lib/persistence";
 
 import { BirthProfileForm } from "./profile-form";
 
+export const metadata = { title: "Your birth profile" };
+
 export default async function OnboardingPage() {
   let user: Awaited<ReturnType<typeof requireUser>>;
   try {
     user = await requireUser();
   } catch {
-    redirect("/sign-in");
+    redirect("/sign-in?next=%2Fonboarding");
   }
   if (user.requiresPolicyReconsent) redirect("/consent");
   const persistence = persistenceFor(user);
   const activeProfile = await persistence.repositories.birthProfiles.getActive(user.id);
   let initialProfile: BirthProfileInput | undefined;
   if (activeProfile) {
-    initialProfile = birthProfileInputSchema.parse(
+    // A profile saved under older rules still opens for editing; if it no
+    // longer parses, the person simply re-enters it rather than hitting an error.
+    const parsed = birthProfileInputSchema.safeParse(
       JSON.parse(persistence.decrypt(activeProfile.encryptedInput, "profile-input")),
     );
+    if (parsed.success) initialProfile = parsed.data;
   }
+  const editing = Boolean(activeProfile);
   return (
-    <main className="mx-auto min-h-screen max-w-3xl px-6 py-12 sm:px-10">
-      <p className="text-sm tracking-[0.22em] text-[#d8b56d] uppercase">Private profile</p>
-      <h1 className="mt-3 text-4xl font-semibold sm:text-6xl">Begin with what you know.</h1>
-      <p className="mt-5 max-w-2xl text-lg leading-8 text-[#c9bfd4]">
-        Birth name and date are required. Place and time are optional; they only unlock more detail
-        and are never guessed.
-      </p>
-      <p className="mt-4 max-w-2xl leading-7 text-[#b8adc8]">
-        Your private profile personalizes how the cards are interpreted—never which cards are drawn.
-        The detailed profile report is a separate paid product; personalized readings do not require
-        buying it. Houses and Ascendant stay unavailable unless a validated calculation has the
-        context it needs.
-      </p>
+    <main className="onboarding-shell">
+      <header className="onboarding-intro">
+        <p className="eyebrow">
+          <span aria-hidden="true">✦</span>{" "}
+          {editing ? "Private profile · update your details" : "Private profile · your first step"}
+        </p>
+        <h1>{editing ? "Adjust what you know." : "Begin with what you know."}</h1>
+        <p>
+          {editing
+            ? "Correct or add to your birth details. Your next readings will use the updated profile; past readings stay as they were."
+            : "Your birth name and date of birth are all we need. Birthplace and birth time are optional, and you can simply choose “I don’t know” for either one."}
+        </p>
+      </header>
       <BirthProfileForm {...(initialProfile ? { initialProfile } : {})} />
     </main>
   );

@@ -12,9 +12,15 @@ import {
 } from "@starguidance/database";
 
 import { isHostedNetlifyRuntime, isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
+import {
+  guestTrialKeySource,
+  isValidGuestTrialSecret,
+  type GuestTrialKeySource,
+} from "@/lib/guest-reading-security";
 import { profileEngineBaseUrl } from "@/lib/profile-engine";
 import { findServiceUrlProblem } from "@/lib/service-url";
 import { isWeakSharedSecret } from "@/lib/shared-secret";
+import { getRuntimeConfiguration, interpretationRuntimeOptions } from "@/lib/runtime-configuration";
 
 const REQUIRED_STAGING_ENVIRONMENT = [
   "NEXT_PUBLIC_SUPABASE_URL",
@@ -214,7 +220,9 @@ async function probeDatabase(): Promise<DatabaseStatus> {
       rlsReady: false,
       actorTransactionReady: false,
     };
-  const client = createDatabaseClient(databaseUrl);
+  // Readiness must not reserve a multi-connection pool of its own in a
+  // serverless function; it performs one query and one actor transaction.
+  const client = createDatabaseClient(databaseUrl, { max: 1, idleTimeoutSeconds: 2 });
   try {
     const [readiness] = await client.unsafe<{ schema_ready: boolean; rls_ready: boolean }[]>(`
       select
@@ -225,10 +233,21 @@ async function probeDatabase(): Promise<DatabaseStatus> {
           and to_regclass('public.profile_snapshots') is not null
           and to_regclass('public.profile_components') is not null
           and to_regclass('public.profile_traits') is not null
+          and to_regclass('public.product_events') is not null
+          and to_regclass('public.runtime_configuration_versions') is not null
           and exists (
             select 1 from information_schema.columns
             where table_schema = 'public' and table_name = 'birth_profiles'
               and column_name = 'active_snapshot_id'
+          )
+          and not exists (
+            select required.column_name
+            from unnest(array['kind', 'outcome_status', 'behavior_changed']) as required(column_name)
+            where not exists (
+              select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'reading_feedback'
+                and columns.column_name = required.column_name
+            )
           )
           and exists (
             select 1 from information_schema.columns
@@ -239,6 +258,28 @@ async function probeDatabase(): Promise<DatabaseStatus> {
             select 1 from information_schema.columns
             where table_schema = 'public' and table_name = 'reading_sessions'
               and column_name = 'idempotency_key'
+          )
+          and exists (
+            select 1 from pg_constraint
+            where conrelid = to_regclass('public.reading_sessions')
+              and conname = 'reading_sessions_source_contract'
+          )
+          and exists (
+            select 1 from information_schema.columns
+            where table_schema = 'public' and table_name = 'reading_outputs'
+              and column_name = 'safety_policy_version'
+          )
+          and not exists (
+            select required.column_name
+            from unnest(array[
+              'provider_id', 'prompt_version', 'content_version',
+              'safety_policy_version', 'schema_version'
+            ]) as required(column_name)
+            where not exists (
+              select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'follow_up_questions'
+                and columns.column_name = required.column_name
+            )
           )
           and to_regclass('public.birth_profiles_user_unique') is not null
           and to_regclass('public.follow_up_questions_reading_idx') is not null
@@ -277,13 +318,16 @@ async function probeDatabase(): Promise<DatabaseStatus> {
             has_table_privilege('authenticated', 'public.users', 'select')
             or has_table_privilege('authenticated', 'public.reading_draws', 'update')
             or has_table_privilege('authenticated', 'public.entitlements', 'insert')
+            or has_table_privilege('authenticated', 'public.product_events', 'select')
+            or has_table_privilege('authenticated', 'public.runtime_configuration_versions', 'select')
           )
         ) as schema_ready,
         not exists (
           select 1
           from unnest(array[
             'users', 'consents', 'birth_profiles', 'profile_snapshots',
-            'profile_components', 'profile_traits'
+            'profile_components', 'profile_traits', 'product_events',
+            'runtime_configuration_versions'
           ]) as required(table_name)
           where not exists (
             select 1
@@ -347,7 +391,14 @@ export async function GET(request: Request) {
       { status: 401, headers: { "cache-control": "no-store", "www-authenticate": "Bearer" } },
     );
 
-  const interpretationProviderId = createInterpretationProvider().id;
+  const runtimeConfiguration = await getRuntimeConfiguration().catch(() => undefined);
+  const runtimeConfigurationReady = Boolean(
+    runtimeConfiguration &&
+    Object.values(runtimeConfiguration.versions).every((version) => version !== null),
+  );
+  const interpretationProviderId = createInterpretationProvider(
+    runtimeConfiguration ? interpretationRuntimeOptions(runtimeConfiguration) : { enabled: false },
+  ).id;
   const interpretation = {
     providerKind:
       interpretationProviderId.startsWith("groq:") ||
@@ -369,15 +420,25 @@ export async function GET(request: Request) {
     name,
     present: configured(name),
   }));
-  const missingEnvironmentVariables = requiredEnvironment
+  const missingEnvironmentVariables: string[] = requiredEnvironment
     .filter(({ present }) => !present)
     .map(({ name }) => name);
   const invalidEnvironmentVariables: string[] = [];
+  let guestTrialSource: GuestTrialKeySource | null = null;
   if (process.env.AI_PROVIDER?.trim() === "groq")
     invalidEnvironmentVariables.push(...configuredAiProviderRoute().invalidEnvironmentVariables);
   if (configured("DATA_ENCRYPTION_KEY")) {
     if (!isValidEncryptionKey(process.env.DATA_ENCRYPTION_KEY as string))
       invalidEnvironmentVariables.push("DATA_ENCRYPTION_KEY");
+  }
+  if (configured("GUEST_TRIAL_SECRET")) {
+    if (!isValidGuestTrialSecret(process.env.GUEST_TRIAL_SECRET))
+      invalidEnvironmentVariables.push("GUEST_TRIAL_SECRET");
+  }
+  try {
+    guestTrialSource = guestTrialKeySource();
+  } catch {
+    if (!configured("GUEST_TRIAL_SECRET")) missingEnvironmentVariables.push("GUEST_TRIAL_SECRET");
   }
   if (configured("DATA_ENCRYPTION_KEYS_PREVIOUS")) {
     const previous = (process.env.DATA_ENCRYPTION_KEYS_PREVIOUS as string)
@@ -438,7 +499,13 @@ export async function GET(request: Request) {
     database.connection &&
     database.schemaReady &&
     database.rlsReady &&
-    database.actorTransactionReady;
+    database.actorTransactionReady &&
+    runtimeConfigurationReady;
+
+  const runtimeConfigurationStatus = {
+    ready: runtimeConfigurationReady,
+    versions: runtimeConfiguration?.versions ?? null,
+  };
 
   return NextResponse.json(
     {
@@ -456,9 +523,13 @@ export async function GET(request: Request) {
       requiredEnvironment,
       missingEnvironmentVariables,
       invalidEnvironmentVariables,
+      guestTrial: {
+        keySource: guestTrialSource,
+      },
       // Report only a provider class and an approved-contract boolean. The
       // credential and arbitrary environment values never enter this payload.
       interpretation,
+      runtimeConfiguration: runtimeConfigurationStatus,
       profileEngine,
       database,
     },

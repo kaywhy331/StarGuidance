@@ -49,6 +49,7 @@ beforeEach(() => {
     id: "feedback-1",
     userId: user.id,
     readingId,
+    kind: "experience",
     resonance: 4,
     helpfulness: 5,
     encryptedComment: "encrypted-comment",
@@ -58,9 +59,10 @@ beforeEach(() => {
 
 describe("reading feedback", () => {
   it("stores the optional comment encrypted and returns no plaintext", async () => {
-    const response = await POST(request({ resonance: 4, helpfulness: 5, comment: "It helped." }), {
-      params: Promise.resolve({ id: readingId }),
-    });
+    const response = await POST(
+      request({ kind: "experience", resonance: 4, helpfulness: 5, comment: "It helped." }),
+      { params: Promise.resolve({ id: readingId }) },
+    );
 
     expect(response.status).toBe(201);
     expect(mocks.encrypt).toHaveBeenCalledWith("It helped.", "feedback-comment");
@@ -72,7 +74,7 @@ describe("reading feedback", () => {
 
   it("rejects empty or out-of-range feedback", async () => {
     const empty = await POST(request({}), { params: Promise.resolve({ id: readingId }) });
-    const invalid = await POST(request({ helpfulness: 6 }), {
+    const invalid = await POST(request({ kind: "experience", helpfulness: 6 }), {
       params: Promise.resolve({ id: readingId }),
     });
     expect(empty.status).toBe(400);
@@ -82,10 +84,38 @@ describe("reading feedback", () => {
 
   it("does not reveal whether another user's reading exists", async () => {
     mocks.getReading.mockResolvedValue(undefined);
-    const response = await POST(request({ helpfulness: 4 }), {
+    const response = await POST(request({ kind: "experience", helpfulness: 4 }), {
       params: Promise.resolve({ id: readingId }),
     });
     expect(response.status).toBe(404);
     expect(mocks.createFeedback).not.toHaveBeenCalled();
+  });
+
+  it("stores outcome status separately without rewriting the reading", async () => {
+    mocks.createFeedback.mockResolvedValue({
+      id: "feedback-outcome-1",
+      userId: user.id,
+      readingId,
+      kind: "outcome",
+      outcomeStatus: "partial",
+      behaviorChanged: true,
+      createdAt: "2026-08-20T12:00:00.000Z",
+    });
+
+    const response = await POST(
+      request({ kind: "outcome", outcomeStatus: "partial", behaviorChanged: true }),
+      { params: Promise.resolve({ id: readingId }) },
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.createFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "outcome",
+        readingId,
+        outcomeStatus: "partial",
+        behaviorChanged: true,
+      }),
+    );
+    expect(mocks.getReading).toHaveBeenCalledWith(user.id, readingId);
   });
 });

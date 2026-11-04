@@ -64,16 +64,25 @@ export async function insertInterpretationJob(
  * role directly (the interpretation_jobs_system policy, migration 0008), not
  * inside systemTransaction: the starguidance_app policy is subject-bound and
  * a subject-less app-role transaction sees no rows at all.
+ *
+ * Production workers omit `scope` and drain the global queue. Credentialed
+ * integration tests supply their synthetic reading ID so verification never
+ * leases retained beta work from another account.
  */
 export async function claimInterpretationJobs(
   client: DatabaseClient | DatabaseTransaction,
   limit: number,
+  scope?: { readingId: string },
 ): Promise<ClaimedInterpretationJob[]> {
+  const scopedReadingId = scope?.readingId ?? null;
   const rows = await client<InterpretationJobRow[]>`
     with claimed as (
       select id from interpretation_jobs
-      where (status = 'pending' and available_at <= now())
-         or (status = 'processing' and lock_expires_at < now())
+      where (
+        (status = 'pending' and available_at <= now())
+        or (status = 'processing' and lock_expires_at < now())
+      )
+        and (${scopedReadingId}::uuid is null or reading_id = ${scopedReadingId}::uuid)
       order by available_at
       limit ${limit}
       for update skip locked
@@ -239,10 +248,12 @@ export async function writeInterpretationResult(
   if (!existing)
     await tx`
       insert into reading_outputs (
-        user_id, reading_id, provider_id, prompt_version, content_version, schema_version, payload
+        user_id, reading_id, provider_id, prompt_version, content_version,
+        safety_policy_version, schema_version, payload
       ) values (
         ${input.userId}, ${input.readingId}, ${provenance.providerId},
-        ${provenance.promptVersion}, ${TAROT_CONTENT_VERSION},
+        ${provenance.promptVersion}, ${provenance.contentVersion ?? TAROT_CONTENT_VERSION},
+        ${provenance.safetyPolicyVersion ?? "question-safety-v2"},
         ${provenance.schemaVersion}, ${tx.json(JSON.parse(JSON.stringify(result)))}
       )
     `;

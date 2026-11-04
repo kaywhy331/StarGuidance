@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import type { BirthProfileInput, ProfileSnapshot } from "@starguidance/contracts";
+import type { BirthProfileInput, ProfileSnapshot, ProfileTrait } from "@starguidance/contracts";
 import { getProfileCompleteness } from "@starguidance/contracts";
 import {
   decryptSensitiveWithKeys,
@@ -10,6 +10,7 @@ import {
   type ApplicationRepositories,
   type RepositoryUser,
   type StoredProfileVersion,
+  type StoredRelationshipProfileVersion,
 } from "@starguidance/database";
 
 import type { ProfileCalculation } from "./profile-engine";
@@ -27,7 +28,12 @@ import { getDecryptionKeys, getEncryptionKey, getRepositoriesForUser } from "./r
 export type SensitiveDataClass =
   | "profile-input"
   | "profile-calculations"
+  | "related-person-profile-input"
+  | "related-person-profile-calculations"
+  | "related-person-reading-lens"
   | "reading-question"
+  | "draw-ceremony"
+  | "draw-server-seed"
   | "follow-up-question"
   | "feedback-comment"
   | "report-source";
@@ -42,6 +48,36 @@ export interface RequestPersistence {
   decrypt(value: string, dataClass: SensitiveDataClass): string;
 }
 
+export function filterProfileOntologyBySystem(
+  calculation: Pick<ProfileCalculation, "mappedTraits" | "mappedTensions" | "mappedConvergences">,
+  enabledSystems: readonly ProfileTrait["sourceSystem"][],
+) {
+  const enabled = new Set(enabledSystems);
+  const retainedIndexes = new Map<number, number>();
+  const traits = calculation.mappedTraits.filter((trait, index) => {
+    if (!enabled.has(trait.sourceSystem)) return false;
+    retainedIndexes.set(index, retainedIndexes.size);
+    return true;
+  });
+  const tensions = calculation.mappedTensions.flatMap((tension) => {
+    const [first, second] = tension.traitIndexes.map((index) => retainedIndexes.get(index));
+    return first === undefined || second === undefined
+      ? []
+      : [{ ...tension, traitIndexes: [first, second] as [number, number] }];
+  });
+  const convergences = calculation.mappedConvergences.flatMap((convergence) => {
+    const traitIndexes = convergence.traitIndexes.flatMap((index) => {
+      const retained = retainedIndexes.get(index);
+      return retained === undefined ? [] : [retained];
+    });
+    const sourceSystems = convergence.sourceSystems.filter((system) => enabled.has(system));
+    return traitIndexes.length < 2 || new Set(sourceSystems).size < 2
+      ? []
+      : [{ ...convergence, traitIndexes, sourceSystems }];
+  });
+  return { traits, tensions, convergences };
+}
+
 export function persistenceFor(user: Pick<RepositoryUser, "id">): RequestPersistence {
   const key = getEncryptionKey();
   const decryptionKeys = getDecryptionKeys();
@@ -54,22 +90,40 @@ export function persistenceFor(user: Pick<RepositoryUser, "id">): RequestPersist
   };
 }
 
-export async function saveProfileVersion(
-  user: Pick<RepositoryUser, "id">,
+const DEFAULT_PROFILE_SYSTEMS: readonly ProfileTrait["sourceSystem"][] = [
+  "numerology",
+  "dreamspell",
+  "westernAstrology",
+  "bazi",
+  "planetaryAngularity",
+  "nineStarKi",
+];
+
+function buildStoredProfileVersion(
+  persistence: RequestPersistence,
   input: BirthProfileInput,
   calculation: ProfileCalculation,
-): Promise<ProfileSnapshot> {
-  const persistence = persistenceFor(user);
-  const active = await persistence.repositories.birthProfiles.getActive(user.id);
+  enabledSystems: readonly ProfileTrait["sourceSystem"][],
+  profileId: string,
+  version: number,
+  inputClass: "profile-input" | "related-person-profile-input",
+  calculationClass: "profile-calculations" | "related-person-profile-calculations",
+): StoredProfileVersion {
+  const enabled = new Set(enabledSystems);
+  const { traits, tensions, convergences } = filterProfileOntologyBySystem(
+    calculation,
+    enabledSystems,
+  );
   const snapshot: ProfileSnapshot = {
     id: randomUUID(),
-    profileId: active?.snapshot.profileId ?? randomUUID(),
-    version: (active?.snapshot.version ?? 0) + 1,
+    profileId,
+    version,
     completeness: getProfileCompleteness(input),
     ontologyVersion: calculation.ontology_version,
-    traits: calculation.mappedTraits,
-    tensions: calculation.mappedTensions,
-    convergences: calculation.mappedConvergences,
+    traits,
+    tensions,
+    convergences,
+    enabledSystems,
     calculationVersions: {
       numerology: calculation.numerology.algorithm_version,
       dreamspell: calculation.dreamspell.algorithm_version,
@@ -83,14 +137,16 @@ export async function saveProfileVersion(
   const components: NonNullable<StoredProfileVersion["components"]> = [
     {
       system: "nine-star-ki",
-      status: "pending-certification",
-      payload: {
-        calculationVersion: calculation.nine_star_ki.algorithm_version,
-        interpretationVersion: calculation.nine_star_ki.interpretation_version,
-        certificationStatus: calculation.nine_star_ki.certification_status,
-        boundaryConvention: calculation.nine_star_ki.boundary_convention,
-        thirdStarConvention: calculation.nine_star_ki.third_star_convention,
-      },
+      status: enabled.has("nineStarKi") ? "pending-certification" : "unavailable",
+      payload: enabled.has("nineStarKi")
+        ? {
+            calculationVersion: calculation.nine_star_ki.algorithm_version,
+            interpretationVersion: calculation.nine_star_ki.interpretation_version,
+            certificationStatus: calculation.nine_star_ki.certification_status,
+            boundaryConvention: calculation.nine_star_ki.boundary_convention,
+            thirdStarConvention: calculation.nine_star_ki.third_star_convention,
+          }
+        : { reason: "disabled_by_feature_flag" },
     },
     ...(
       [
@@ -98,31 +154,91 @@ export async function saveProfileVersion(
         ["bazi", calculation.bazi],
         ["planetary-angularity", calculation.planetary_angularity],
       ] as const
-    ).map(([system, component]) => ({
-      system,
-      status:
-        component.status === "available" ? ("implemented" as const) : ("unavailable" as const),
-      payload:
-        component.status === "available"
-          ? {
-              calculationVersion: component.calculation_version,
-              evidence: component.evidence,
-              uncertainty: component.uncertainty,
-            }
-          : {
-              reason: component.reason,
-              calculationVersion: component.calculation_version,
-              activationRequirements: component.activation_requirements,
-            },
-    })),
+    ).map(([system, component]) => {
+      const sourceSystem =
+        system === "western-astrology"
+          ? "westernAstrology"
+          : system === "planetary-angularity"
+            ? "planetaryAngularity"
+            : "bazi";
+      if (!enabled.has(sourceSystem))
+        return {
+          system,
+          status: "unavailable" as const,
+          payload: { reason: "disabled_by_feature_flag" },
+        };
+      return {
+        system,
+        status:
+          component.status === "available" ? ("implemented" as const) : ("unavailable" as const),
+        payload:
+          component.status === "available"
+            ? {
+                calculationVersion: component.calculation_version,
+                evidence: component.evidence,
+                uncertainty: component.uncertainty,
+              }
+            : {
+                reason: component.reason,
+                calculationVersion: component.calculation_version,
+                activationRequirements: component.activation_requirements,
+              },
+      };
+    }),
   ];
   const profile: StoredProfileVersion = {
-    encryptedInput: persistence.encrypt(JSON.stringify(input), "profile-input"),
-    encryptedCalculations: persistence.encrypt(JSON.stringify(calculation), "profile-calculations"),
+    encryptedInput: persistence.encrypt(JSON.stringify(input), inputClass),
+    encryptedCalculations: persistence.encrypt(JSON.stringify(calculation), calculationClass),
     components,
     snapshot,
   };
+  return profile;
+}
+
+export async function saveProfileVersion(
+  user: Pick<RepositoryUser, "id">,
+  input: BirthProfileInput,
+  calculation: ProfileCalculation,
+  enabledSystems: readonly ProfileTrait["sourceSystem"][] = DEFAULT_PROFILE_SYSTEMS,
+): Promise<ProfileSnapshot> {
+  const persistence = persistenceFor(user);
+  const active = await persistence.repositories.birthProfiles.getActive(user.id);
+  const profile = buildStoredProfileVersion(
+    persistence,
+    input,
+    calculation,
+    enabledSystems,
+    active?.snapshot.profileId ?? randomUUID(),
+    (active?.snapshot.version ?? 0) + 1,
+    "profile-input",
+    "profile-calculations",
+  );
   return persistence.repositories.birthProfiles.saveVersion(user.id, profile);
+}
+
+export async function saveRelationshipProfileVersion(
+  user: Pick<RepositoryUser, "id">,
+  input: BirthProfileInput,
+  calculation: ProfileCalculation,
+  enabledSystems: readonly ProfileTrait["sourceSystem"][] = DEFAULT_PROFILE_SYSTEMS,
+  existing?: StoredRelationshipProfileVersion,
+): Promise<ProfileSnapshot> {
+  const persistence = persistenceFor(user);
+  const relationshipProfileId = existing?.relationshipProfileId ?? randomUUID();
+  const profile = buildStoredProfileVersion(
+    persistence,
+    input,
+    calculation,
+    enabledSystems,
+    relationshipProfileId,
+    (existing?.snapshot.version ?? 0) + 1,
+    "related-person-profile-input",
+    "related-person-profile-calculations",
+  );
+  return persistence.repositories.relationshipProfiles.saveVersion(user.id, {
+    ...profile,
+    relationshipProfileId,
+  });
 }
 
 export async function recordAudit(

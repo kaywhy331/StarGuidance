@@ -9,6 +9,7 @@ import {
   POLICY_VERSIONS,
   requiredPolicyConsentReceipts,
 } from "@/lib/policies";
+import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { assertRateLimit, assertSameOrigin, requestSecurityFailure } from "@/lib/request-security";
 
 const accountSettingsSchema = z.object({
@@ -90,6 +91,11 @@ export async function PATCH(request: Request) {
         ),
       );
       await recordAudit(user.id, "consent.required.accepted", "account", user.id);
+      await tryRecordProductEvent({
+        idempotencyKey: `consent:${user.id}:${POLICY_VERSIONS.terms}:${POLICY_VERSIONS.privacy}`,
+        name: "consent_completed",
+        properties: { routeClass: "consent", statusClass: "completed" },
+      });
     } else {
       const current = await repositories.settings.get(user.id);
       await repositories.settings.upsert({

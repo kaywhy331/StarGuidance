@@ -61,6 +61,18 @@ vi.mock("@/lib/request-security", () => ({
   assertRateLimit: mocks.assertRateLimit,
   assertSameOrigin: mocks.assertSameOrigin,
 }));
+vi.mock("@/lib/runtime-configuration", () => ({
+  getRuntimeConfiguration: async () => ({
+    commerce: {
+      stripePriceId: process.env.STRIPE_PROFILE_REPORT_PRICE_ID,
+      currency: "USD",
+      priceMinor: 2900,
+    },
+    features: { profileReportsEnabled: process.env.ENABLE_PROFILE_REPORTS === "true" },
+  }),
+  profileReportsEnabled: (configuration: { features: { profileReportsEnabled: boolean } }) =>
+    process.env.ENABLE_PROFILE_REPORTS === "true" && configuration.features.profileReportsEnabled,
+}));
 
 import { POST } from "./route";
 
@@ -402,7 +414,8 @@ describe("Stripe Checkout boundary", () => {
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({
-      error: "Stripe Checkout is temporarily unavailable.",
+      error:
+        "Secure checkout couldn’t be opened just now. Nothing was charged — please try again in a moment.",
     });
     expect(mocks.createOrder).not.toHaveBeenCalled();
   });

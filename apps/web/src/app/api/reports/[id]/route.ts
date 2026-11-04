@@ -12,12 +12,19 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       user.id,
       (await context.params).id,
     );
-    if (!report) return NextResponse.json({ error: "Report not found." }, { status: 404 });
+    if (!report)
+      return NextResponse.json(
+        { error: "We couldn’t find this atlas in your account." },
+        { status: 404 },
+      );
     return NextResponse.json({ report });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHENTICATED")
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    return NextResponse.json({ error: "The report could not be loaded." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Your atlas couldn’t be opened just now. Please try again in a moment." },
+      { status: 500 },
+    );
   }
 }
 
@@ -28,12 +35,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     await assertRateLimit(`report-retry:${user.id}`, 6, 60 * 60 * 1000);
     const reportId = (await context.params).id;
     const report = await persistenceFor(user).repositories.reports.get(user.id, reportId);
-    if (!report) return NextResponse.json({ error: "Report not found." }, { status: 404 });
+    if (!report)
+      return NextResponse.json(
+        { error: "We couldn’t find this atlas in your account." },
+        { status: 404 },
+      );
     if (report.status !== "failed")
       return NextResponse.json({ reportStatus: report.status }, { status: 200 });
     if (getRuntimeAdapter() !== "supabase")
       return NextResponse.json(
-        { error: "This local report has no background job to retry." },
+        {
+          error:
+            "This atlas can’t be restarted automatically here. Please contact support and we’ll finish it for you — you won’t be charged again.",
+        },
         { status: 409 },
       );
     const requeued = await actorTransaction(getSystemDatabaseClient(), user.id, (tx) =>
@@ -41,7 +55,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
     if (!requeued)
       return NextResponse.json(
-        { error: "The retained report source is unavailable for retry." },
+        {
+          error:
+            "This atlas can’t be restarted automatically. Please contact support and we’ll finish it for you — you won’t be charged again.",
+        },
         { status: 409 },
       );
     await recordAudit(user.id, "report.generation.retried", "report", reportId);
@@ -56,7 +73,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (error instanceof Error && error.message === "UNAUTHENTICATED")
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     return NextResponse.json(
-      { error: "The report retry could not be scheduled." },
+      { error: "We couldn’t restart preparation just now. Please try again in a moment." },
       { status: 500 },
     );
   }

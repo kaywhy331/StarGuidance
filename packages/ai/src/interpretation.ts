@@ -14,7 +14,8 @@ import type { LockedDraw, SpreadPosition, TarotCard } from "@starguidance/tarot-
  * person, and the raw question text is never copied into the result: readings
  * are persisted, questions are encrypted separately, and echoing one into the
  * other would quietly widen what is stored in the clear. The question shapes
- * the reading through its subject and its trait lens instead.
+ * the credential-free reading through its subject, a bounded non-identifying
+ * concern vocabulary, and its trait lens instead.
  */
 
 /** The subject a question is about, inferred from its wording. */
@@ -62,9 +63,16 @@ const subjectVoices: Record<QuestionSubject, SubjectVoice> = {
 };
 
 const subjectPatterns: readonly [RegExp, QuestionSubject][] = [
-  [/\b(work|career|job|business|project|lead|colleague|manager|role)\b/i, "work"],
-  [/\b(love|relationship|partner|friend|family|communicat|conflict|marriage)\b/i, "relationship"],
-  [/\b(change|move|choice|decide|direction|future|next|should i)\b/i, "change"],
+  [
+    /\b(love|relationship|partner|friend|family|communicat\w*|conflict|marriage|reconcil\w*|reconnect|break ?up)\b/i,
+    "relationship",
+  ],
+  [
+    /\b(work|career|job|business|project|lead|colleague|coworker|manager|boss|role|position|promot\w*|raise|salary|pay|income|interview|hiring|offer|employment|contract|client|company|team|freelance)\b/i,
+    "work",
+  ],
+  [/\b(change|move|relocat\w*|choice|decide|direction|future|next|should i)\b/i, "change"],
+  [/\b(wellbeing|well-being|balance|rest|energy|habit|stress|burnout|overwhelm)\b/i, "wellbeing"],
 ];
 
 const selectedTopicSubjects: Partial<Record<ReadingTopic, QuestionSubject>> = {
@@ -109,25 +117,32 @@ export interface ResolvedCard {
   readonly position: SpreadPosition;
   readonly orientation: "upright" | "reversed";
   readonly themes: readonly string[];
+  readonly reversalFacet?: NonNullable<TarotCard["reversalFacets"]>[number];
 }
 
 export function resolveDraw(
   draw: LockedDraw,
   context?: { topic: string; intent: string; generalReading: boolean },
+  fixedPositions?: readonly SpreadPosition[],
 ): readonly ResolvedCard[] {
-  const spread = findSpread(draw.spreadId);
+  const spread = findSpread(draw.spreadId, draw.spreadVersion);
   if (!spread) throw new Error(`Unknown spread in locked draw: ${draw.spreadId}`);
-  const positions = resolveSpreadPositions(spread, context);
+  const positions = fixedPositions ?? resolveSpreadPositions(spread, context);
   return draw.assignments.map((assignment) => {
     const card = tarotCards.find(({ id }) => id === assignment.cardId);
     if (!card) throw new Error(`Unknown locked card: ${assignment.cardId}`);
     const position = positions.find(({ id }) => id === assignment.positionId);
     if (!position) throw new Error(`Unknown position in locked draw: ${assignment.positionId}`);
+    const reversalFacet =
+      assignment.orientation === "reversed" && card.reversalFacets?.length
+        ? card.reversalFacets[position.order % card.reversalFacets.length]
+        : undefined;
     return {
       card,
       position,
       orientation: assignment.orientation,
       themes: assignment.orientation === "upright" ? card.uprightThemes : card.reversedThemes,
+      ...(reversalFacet ? { reversalFacet } : {}),
     };
   });
 }

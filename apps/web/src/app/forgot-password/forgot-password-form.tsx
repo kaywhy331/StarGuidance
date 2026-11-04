@@ -4,6 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button, Field } from "@starguidance/design-system";
 
+import { sendJson } from "@/lib/client-request";
+
+import { AccountMessage } from "../sign-up/account-threshold";
+
 export function ForgotPasswordForm() {
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -17,43 +21,26 @@ export function ForgotPasswordForm() {
         setError(undefined);
         const email = new FormData(event.currentTarget).get("email");
         setSubmitting(true);
-        const response = await fetch("/api/auth", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "request-password-reset", email }),
+        const result = await sendJson("/api/auth", "POST", {
+          action: "request-password-reset",
+          email,
         });
-        const payload = (await response.json()) as { error?: string };
         setSubmitting(false);
-        if (!response.ok) return setError(payload.error ?? "Unable to request recovery.");
+        if (!result.ok) return setError(result.error);
         setNotice(
-          "If an account exists for that email, a password recovery message is on its way.",
+          "If there's an account for that email, a reset link is on its way. It can take a minute or two — check your spam folder too.",
         );
       }}
     >
-      {error ? (
-        <p
-          aria-live="assertive"
-          className="rounded-2xl border border-rose-300/30 bg-rose-950/30 p-3 text-sm text-rose-100"
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <AccountMessage tone="error">{error}</AccountMessage> : null}
       <Field autoComplete="email" label="Email" name="email" required type="email" />
-      {notice ? (
-        <p aria-live="polite" className="text-sm leading-6 text-emerald-100">
-          {notice}
-        </p>
-      ) : null}
+      {notice ? <AccountMessage tone="success">{notice}</AccountMessage> : null}
       <Button disabled={submitting || Boolean(notice)} type="submit">
-        {submitting ? "Requesting recovery…" : "Email recovery instructions"}
+        {submitting ? "Sending…" : notice ? "Reset link sent" : "Email me a reset link"}
       </Button>
-      <Link
-        className="text-center text-sm text-[#d8b56d] underline-offset-4 hover:underline"
-        href="/sign-in"
-      >
-        Return to sign in
-      </Link>
+      <p className="account-form-switch">
+        <Link href="/sign-in">Back to sign in</Link>
+      </p>
     </form>
   );
 }

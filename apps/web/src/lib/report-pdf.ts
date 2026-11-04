@@ -65,12 +65,24 @@ export async function renderProfileReportPdf(report: StoredReport): Promise<Buff
         .font("Helvetica")
         .fontSize(11)
         .fillColor("#201827")
-        .text(section.body, {
+        .text(section.meaning, {
           align: "left",
           lineGap: 3,
           structParent: root,
           structType: "P",
         });
+      if (section.technicalNote)
+        document
+          .moveDown(0.4)
+          .font("Helvetica")
+          .fontSize(8.5)
+          .fillColor("#5d5266")
+          .text(`Technical notes: ${section.technicalNote}`, {
+            align: "left",
+            lineGap: 2,
+            structParent: root,
+            structType: "P",
+          });
       document.moveDown(1);
     }
 

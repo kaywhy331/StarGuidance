@@ -5,6 +5,8 @@ import { randomUUID } from "node:crypto";
 import type { ApplicationRepositories, StoredOrder } from "@starguidance/database";
 import type Stripe from "stripe";
 
+import { tryRecordProductEvent } from "./product-telemetry";
+
 type CommerceRepositories = Pick<
   ApplicationRepositories,
   "orders" | "entitlements" | "reports" | "reportFulfillment" | "audit"
@@ -145,8 +147,19 @@ export async function processStripeEvent(
     event.type === "checkout.session.async_payment_succeeded"
   ) {
     const session = event.data.object;
-    if (session.payment_status === "paid")
-      await fulfill(await orderForSession(dependencies.repositories, session), dependencies);
+    if (session.payment_status === "paid") {
+      const order = await orderForSession(dependencies.repositories, session);
+      await fulfill(order, dependencies);
+      await tryRecordProductEvent({
+        idempotencyKey: `order:${order.id}:purchase-completed`,
+        name: "purchase_completed",
+        properties: {
+          productId: "profile-report-v1",
+          provider: "stripe",
+          statusClass: "completed",
+        },
+      });
+    }
     return;
   }
 
@@ -173,6 +186,16 @@ export async function processStripeEvent(
     if (order.providerSessionId !== session.id)
       return audit(dependencies.repositories, order, "payment.superseded_session_closed");
     await revoke(order, "failed", "payment.failed", dependencies.repositories);
+    await tryRecordProductEvent({
+      idempotencyKey: `order:${order.id}:payment-failed`,
+      name: "payment_failed",
+      properties: {
+        productId: "profile-report-v1",
+        provider: "stripe",
+        statusClass: "failed",
+        errorClass: "provider_rejected",
+      },
+    });
     return;
   }
 

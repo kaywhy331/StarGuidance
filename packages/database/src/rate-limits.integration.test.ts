@@ -66,14 +66,31 @@ describeDatabase("Postgres-backed rate limiting", () => {
   });
 
   it("serializes concurrent increments so exactly the limit is allowed", async () => {
-    const key = `test:${randomUUID()}`;
     const limit = 5;
     const attempts = 20;
+    const windowMs = 60_000;
+
+    // Keep every measured request in one fixed window. Without this guard a
+    // run beginning at xx:xx:59 can legitimately allow five requests before
+    // the minute boundary and five after it, which tests boundary rollover
+    // instead of concurrent serialization. The probe uses a different key and
+    // therefore cannot consume any of the measured allowance.
+    const boundaryProbe = await asApp((tx) =>
+      checkRateLimit(tx, `test:boundary-probe:${randomUUID()}`, 1, windowMs),
+    );
+    if (boundaryProbe.retryAfterSeconds <= 15)
+      await new Promise((resolve) =>
+        setTimeout(resolve, boundaryProbe.retryAfterSeconds * 1_000 + 100),
+      );
+
+    const key = `test:${randomUUID()}`;
     // The whole point: a naive read-then-write check would let more than
     // `limit` callers through when they race. This proves the single
     // INSERT .. ON CONFLICT statement in check_rate_limit serializes them.
     const results = await Promise.all(
-      Array.from({ length: attempts }, () => asApp((tx) => checkRateLimit(tx, key, limit, 60_000))),
+      Array.from({ length: attempts }, () =>
+        asApp((tx) => checkRateLimit(tx, key, limit, windowMs)),
+      ),
     );
     expect(results.filter((result) => result.allowed)).toHaveLength(limit);
   });

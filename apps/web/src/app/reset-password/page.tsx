@@ -1,18 +1,29 @@
-import { Panel } from "@starguidance/design-system";
+import Link from "next/link";
 
+import { AccountThreshold } from "../sign-up/account-threshold";
 import { ResetPasswordForm } from "./reset-password-form";
+
+export const metadata = { title: "Choose a new password" };
 
 export default function ResetPasswordPage() {
   return (
-    <main className="mx-auto grid min-h-screen max-w-lg place-items-center px-6 py-16">
-      <Panel>
-        <p className="text-sm tracking-[0.2em] text-[#d8b56d] uppercase">Private account</p>
-        <h1 className="mt-3 text-4xl font-semibold">Choose a new password.</h1>
-        <p className="mt-4 leading-7 text-[#c9bfd4]">
-          This page works only after opening a valid, one-time recovery email.
-        </p>
-        <ResetPasswordForm />
-      </Panel>
-    </main>
+    <AccountThreshold
+      eyebrow="Almost there"
+      lede="Pick something you'll remember. Once it's saved, you'll sign in again with your new password."
+      panelEyebrow="New password"
+      panelLede={
+        <>
+          This page works after opening the reset link from your email. If it has expired,{" "}
+          <Link className="account-inline-link" href="/forgot-password">
+            request a new one
+          </Link>
+          .
+        </>
+      }
+      panelTitle="Choose a new password."
+      title="A fresh key for your space."
+    >
+      <ResetPasswordForm />
+    </AccountThreshold>
   );
 }

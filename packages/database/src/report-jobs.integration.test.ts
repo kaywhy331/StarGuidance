@@ -77,8 +77,7 @@ async function createPurchase(maxAttempts = 5): Promise<{
 }
 
 async function claimReport(reportId: string): Promise<ClaimedReportJob> {
-  const claimed = await asWorker((tx) => claimReportJobs(tx, 100));
-  const job = claimed.find((candidate) => candidate.reportId === reportId);
+  const [job] = await asWorker((tx) => claimReportJobs(tx, 1, { reportId }));
   if (!job) throw new Error(`Expected a claimable report job for ${reportId}`);
   return job;
 }
@@ -119,7 +118,7 @@ describeDatabase("Postgres-backed report fulfillment jobs", () => {
     const job = await claimReport(purchase.reportId);
 
     expect(job.encryptedSource).toContain(purchase.reportId);
-    const second = await asWorker((tx) => claimReportJobs(tx, 100));
+    const second = await asWorker((tx) => claimReportJobs(tx, 1, { reportId: purchase.reportId }));
     expect(second.some(({ reportId }) => reportId === purchase.reportId)).toBe(false);
     await completeReportJob(sql!, job.id);
   });

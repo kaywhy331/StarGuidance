@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { createDatabaseClient } from "../src/postgres-client";
@@ -17,19 +18,32 @@ const REFERENCE_TABLES = [
   "prompt_versions",
   "calculation_versions",
   "content_versions",
+  "runtime_configuration_versions",
 ] as const;
 
-async function fingerprint(): Promise<Record<string, number>> {
+interface TableFingerprint {
+  count: number;
+  sha256: string;
+}
+
+async function fingerprint(): Promise<Record<string, TableFingerprint>> {
   const sql = createDatabaseClient(requiredEnv("DATABASE_URL"));
   try {
-    const counts: Record<string, number> = {};
+    const fingerprints: Record<string, TableFingerprint> = {};
     for (const table of REFERENCE_TABLES) {
-      const [row] = await sql.unsafe<{ count: number }[]>(
-        `select count(*)::int as count from public.${table}`,
+      const rows = await sql.unsafe<{ row: unknown }[]>(
+        `select to_jsonb(reference_row) as row
+         from public.${table} as reference_row
+         order by to_jsonb(reference_row)::text`,
       );
-      counts[table] = row?.count ?? -1;
+      fingerprints[table] = {
+        count: rows.length,
+        sha256: createHash("sha256")
+          .update(rows.map(({ row }) => JSON.stringify(row)).join("\n"), "utf8")
+          .digest("hex"),
+      };
     }
-    return counts;
+    return fingerprints;
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);
   }
@@ -38,28 +52,32 @@ async function fingerprint(): Promise<Record<string, number>> {
 const [mode, file] = process.argv.slice(2);
 if (!mode || !file) throw new Error("usage: seed-fingerprint <capture|compare> <file>");
 
-const counts = await fingerprint();
+const fingerprints = await fingerprint();
 
 if (mode === "capture") {
-  writeFileSync(file, JSON.stringify(counts), "utf8");
-  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  writeFileSync(file, JSON.stringify(fingerprints), "utf8");
+  const total = Object.values(fingerprints).reduce((sum, value) => sum + value.count, 0);
   record({
     section: "Seed",
     check: "First seed populated reference data",
     status: total > 0 ? "pass" : "fail",
-    detail: `cards=${counts.cards} spreads=${counts.spreads} positions=${counts.spread_positions}`,
+    detail: `cards=${fingerprints.cards?.count ?? 0} spreads=${fingerprints.spreads?.count ?? 0} positions=${fingerprints.spread_positions?.count ?? 0}`,
   });
   if (total <= 0) process.exitCode = 1;
 } else if (mode === "compare") {
-  const before = JSON.parse(readFileSync(file, "utf8")) as Record<string, number>;
-  const drifted = REFERENCE_TABLES.filter((table) => before[table] !== counts[table]);
+  const before = JSON.parse(readFileSync(file, "utf8")) as Record<string, TableFingerprint>;
+  const drifted = REFERENCE_TABLES.filter(
+    (table) =>
+      before[table]?.count !== fingerprints[table]?.count ||
+      before[table]?.sha256 !== fingerprints[table]?.sha256,
+  );
   const idempotent = drifted.length === 0;
   record({
     section: "Seed",
     check: "Second seed is idempotent",
     status: idempotent ? "pass" : "fail",
     detail: idempotent
-      ? `all ${REFERENCE_TABLES.length} reference tables unchanged (cards=${counts.cards})`
+      ? `all ${REFERENCE_TABLES.length} reference tables byte-stable (cards=${fingerprints.cards?.count ?? 0})`
       : `${drifted.length} table(s) changed on the second run: ${drifted.join(", ")}`,
   });
   if (!idempotent) process.exitCode = 1;

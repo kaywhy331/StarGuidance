@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/auth";
+import { readingAudioAvailable } from "@/lib/reading-audio";
+import { getRuntimeConfiguration } from "@/lib/runtime-configuration";
 
 import { ReadingScene } from "./reading-scene";
 
@@ -9,11 +11,18 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   try {
     user = await requireUser();
   } catch {
-    redirect("/sign-in");
+    redirect(`/sign-in?next=${encodeURIComponent(`/session/${(await params).id}`)}`);
   }
   if (user.requiresPolicyReconsent) redirect("/consent");
+  const runtimeConfiguration = await getRuntimeConfiguration();
   return (
     <ReadingScene
+      audioAvailable={readingAudioAvailable()}
+      animationVariant={
+        runtimeConfiguration.features.animationsEnabled
+          ? runtimeConfiguration.features.animationVariant
+          : "disabled"
+      }
       {...(user.settings ? { initialPreferences: user.settings } : {})}
       readingId={(await params).id}
     />

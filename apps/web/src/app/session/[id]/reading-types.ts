@@ -5,6 +5,7 @@ import type {
   ReadingEntitlementDecision,
   ReadingOutputProvenance,
   ReadingResult,
+  ReadingConfiguration,
   StoredRitualProgress,
 } from "@starguidance/contracts";
 import type { LockedDraw, TarotArtwork } from "@starguidance/tarot-domain";
@@ -14,6 +15,7 @@ export interface DealtCardView {
   name: string;
   orientation: "upright" | "reversed";
   themes: readonly string[];
+  baselineMeaning: string;
   positionId: string;
   positionName: string;
   positionDescription: string;
@@ -31,14 +33,36 @@ export interface DealtCardView {
   artwork: TarotArtwork;
 }
 
+export interface ReadingPersonalization {
+  lensVersion: string;
+  snapshotVersion: number;
+  completeness: "core" | "locationEnhanced" | "complete";
+  traits: readonly {
+    domain: string;
+    sourceSystem: string;
+    stability: "stable" | "uncertain" | "unavailable";
+    confidence: "low" | "medium" | "high";
+    calculationVersion: string;
+  }[];
+  tensionCount: number;
+  rawBirthDataSharedWithNarrator: false;
+}
+
 export interface ReadingPayload {
   id: string;
   /** Decrypted only for the owning reader so the ritual can return their
    * private question to them. It is never placed in a URL or analytics. */
   question: string;
-  /** The immutable profile snapshot this reading was drawn against. */
-  profileSnapshotId: string;
+  /** Display name of the spread (e.g. "Three-card spread"), when known. */
+  spreadName?: string;
+  /** The immutable profile snapshot this reading was drawn against; null for
+   * a saved free reading, which was drawn before any profile existed. */
+  profileSnapshotId: string | null;
+  /** Present only on a free guest reading the reader saved to history. */
+  source?: "guest_trial";
+  personalization?: ReadingPersonalization;
   draw: LockedDraw;
+  configuration: ReadingConfiguration;
   cards: DealtCardView[];
   result?: ReadingResult;
   outputProvenance?: ReadingOutputProvenance;
@@ -50,9 +74,12 @@ export interface ReadingPayload {
   sessionExpired: boolean;
   /** The category `classifyQuestion()` (@starguidance/ai) assigned at creation. */
   safetyClassification?: SafetyCategory;
-  followUps: { id: string; result: FollowUpResult }[];
+  /** `question` is the owner's decrypted follow-up question, returned only
+   * in the owner's no-store reading response. */
+  followUps: { id: string; result: FollowUpResult; question?: string }[];
   followUpLimit: number;
   followUpsRemaining: number;
   feedbackSubmitted: boolean;
+  outcomeFeedbackSubmitted: boolean;
   createdAt: string;
 }

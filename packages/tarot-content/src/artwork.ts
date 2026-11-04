@@ -162,3 +162,91 @@ export function renderTarotFaceSvg(card: TarotCard): string {
   <path d="M250 948h220" stroke="url(#gilt)" stroke-width="2"/>
   </svg>`;
 }
+
+function constellation(seed: string): string {
+  let value = hash(`constellation:${seed}`);
+  const points = Array.from({ length: 7 }, (_, index) => {
+    value = (value * 1_664_525 + 1_013_904_223) >>> 0;
+    const x = 105 + (value % 510);
+    value = (value * 1_664_525 + 1_013_904_223) >>> 0;
+    const y = 145 + (value % 225) + index * 3;
+    return [x, y] as const;
+  });
+  const path = points.map(([x, y]) => `${x},${y}`).join(" ");
+  const nodes = points
+    .map(
+      ([x, y], index) =>
+        `<circle cx="${x}" cy="${y}" r="${index % 3 === 0 ? 4.2 : 2.2}" fill="currentColor" opacity="${index % 2 === 0 ? 0.8 : 0.48}"/>`,
+    )
+    .join("");
+  return `<polyline points="${path}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-opacity=".32"/>${nodes}`;
+}
+
+function narrativeLandscape(card: TarotCard): string {
+  const value = hash(`landscape:${card.id}`);
+  const horizon = 720 + (value % 86);
+  const offset = (value % 91) - 45;
+  const scenes = [
+    `<path d="M45 ${horizon} 170 ${horizon - 185} 255 ${horizon - 72} 360 ${horizon - 250} 470 ${horizon - 92} 675 ${horizon - 210}V930H45Z" fill="currentColor" opacity=".12"/><path d="M45 ${horizon} 170 ${horizon - 185} 255 ${horizon - 72} 360 ${horizon - 250} 470 ${horizon - 92} 675 ${horizon - 210}" fill="none" stroke="currentColor" stroke-width="3" stroke-opacity=".34"/>`,
+    `<path d="M45 ${horizon}q115-78 230 0t230 0 170 0v210H45Z" fill="currentColor" opacity=".1"/><path d="M45 ${horizon}q115-78 230 0t230 0 170 0M45 ${horizon + 58}q115-65 230 0t230 0 170 0" fill="none" stroke="currentColor" stroke-width="3" stroke-opacity=".32"/>`,
+    `<path d="M125 900V${horizon - 170}q235-245 470 0V900M200 900V${horizon - 115}q160-160 320 0V900" fill="none" stroke="currentColor" stroke-width="6" stroke-opacity=".28"/><path d="M270 900V${horizon - 50}q90-90 180 0V900" fill="currentColor" opacity=".08"/>`,
+    `<path d="M60 900 140 ${horizon - 180}l62 180 80 ${horizon - 255} 78 255 92 ${horizon - 215} 72 215 70 ${horizon - 155} 70 155Z" fill="currentColor" opacity=".1"/><path d="M60 900 140 ${horizon - 180}l62 180 80 ${horizon - 255} 78 255 92 ${horizon - 215} 72 215 70 ${horizon - 155} 70 155" fill="none" stroke="currentColor" stroke-width="3" stroke-opacity=".28"/>`,
+    `<path d="M70 900V${horizon - 25}h95v-110h80v65h75v-190h96v125h72v-80h88v190M45 ${horizon + 30}h630" fill="none" stroke="currentColor" stroke-width="5" stroke-opacity=".28"/><path d="M115 ${horizon - 70}h18m70-80h18m140-45h22m65 95h18" stroke="currentColor" stroke-width="8" stroke-opacity=".38"/>`,
+    `<path d="M45 900q160-260 315-65 155-195 315 65M${130 + offset} 900q${210 - offset}-335 ${430 - offset} 0" fill="none" stroke="currentColor" stroke-width="5" stroke-opacity=".3"/><circle cx="${360 + offset}" cy="${horizon - 170}" r="78" fill="currentColor" opacity=".08"/>`,
+  ];
+  return scenes[value % scenes.length] ?? scenes[0] ?? "";
+}
+
+/**
+ * Version 3 adds a unique constellation, horizon, light source, and spatial
+ * frame to every existing symbolic composition. V2 remains exported for
+ * immutable historical URLs; new draws opt into this renderer explicitly.
+ */
+export function renderTarotFaceSvgV3(card: TarotCard): string {
+  const seed = hash(`v3:${card.id}`);
+  const majorIndex = card.arcana === "major" ? Number(card.rank) : 0;
+  const palette = card.suit
+    ? suitColors[card.suit]
+    : {
+        light: majorIndex % 2 === 0 ? "#f1d690" : "#b8f0e3",
+        mid: majorIndex % 3 === 0 ? "#326f73" : "#63538a",
+        dark: "#090d1a",
+      };
+  const illustration = card.arcana === "major" ? majorScene(majorIndex) : minorScene(card);
+  const numeral = card.arcana === "major" ? String(majorIndex).padStart(2, "0") : card.rank;
+  const orbX = 190 + (seed % 340);
+  const orbY = 225 + ((seed >>> 8) % 235);
+  const orbRadius = 46 + ((seed >>> 16) % 58);
+  const landscape = narrativeLandscape(card);
+  const constellationMap = constellation(card.id);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1080" role="img" aria-label="${escapeXml(card.artwork.altText)}">
+  <defs>
+    <radialGradient id="sky-v3" cx="${Math.round((orbX / 720) * 100)}%" cy="${Math.round((orbY / 1080) * 100)}%" r="88%"><stop offset="0" stop-color="${palette.mid}"/><stop offset=".38" stop-color="${palette.dark}"/><stop offset="1" stop-color="#020409"/></radialGradient>
+    <radialGradient id="orb-v3"><stop stop-color="#fff6d3" stop-opacity=".85"/><stop offset=".28" stop-color="${palette.light}" stop-opacity=".36"/><stop offset="1" stop-color="${palette.light}" stop-opacity="0"/></radialGradient>
+    <linearGradient id="gilt-v3" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff4c6"/><stop offset=".46" stop-color="${palette.light}"/><stop offset="1" stop-color="#8b5c2e"/></linearGradient>
+    <filter id="paper-v3"><feTurbulence baseFrequency=".52" numOctaves="4" seed="${seed % 97}" type="fractalNoise"/><feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 .12 0"/></filter>
+    <filter id="glow-v3"><feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <clipPath id="frame-v3"><rect x="44" y="44" width="632" height="992" rx="16"/></clipPath>
+  </defs>
+  <rect width="720" height="1080" fill="#020409"/>
+  <rect x="20" y="20" width="680" height="1040" rx="18" fill="url(#sky-v3)" stroke="url(#gilt-v3)" stroke-width="10"/>
+  <g clip-path="url(#frame-v3)">
+    <circle cx="${orbX}" cy="${orbY}" r="${orbRadius * 2.5}" fill="url(#orb-v3)"/>
+    <circle cx="${orbX}" cy="${orbY}" r="${orbRadius}" fill="none" stroke="${palette.light}" stroke-width="3" stroke-opacity=".58"/>
+    <g color="${palette.light}" opacity=".66">${stars(`v3:${card.id}`)}</g>
+    <g color="${palette.light}" opacity=".72">${constellationMap}</g>
+    <g color="${palette.light}">${landscape}</g>
+    <path d="M45 890q145-125 315-34 170-91 315 34v146H45Z" fill="#020409" opacity=".76"/>
+    <circle cx="360" cy="500" r="258" fill="none" stroke="${palette.light}" stroke-width="2" stroke-opacity=".14"/>
+    <circle cx="360" cy="500" r="216" fill="none" stroke="${palette.light}" stroke-width="1" stroke-dasharray="3 12" stroke-opacity=".24"/>
+    <g color="${palette.light}" filter="url(#glow-v3)" stroke-linecap="round" stroke-linejoin="round">${illustration}</g>
+    <rect x="20" y="20" width="680" height="1040" filter="url(#paper-v3)" opacity=".3"/>
+  </g>
+  <rect x="44" y="44" width="632" height="992" rx="16" fill="none" stroke="${palette.light}" stroke-width="2" stroke-opacity=".62"/>
+  <path d="M44 172h70l35-35m422 0 35 35h70M44 908h70l35 35m422 0 35-35h70" fill="none" stroke="url(#gilt-v3)" stroke-width="3" stroke-opacity=".72"/>
+  <path d="M275 115h170M275 943h170" stroke="url(#gilt-v3)" stroke-width="2"/>
+  <text x="360" y="99" fill="${palette.light}" font-family="Georgia,serif" font-size="23" letter-spacing="8" text-anchor="middle">${escapeXml(numeral.toUpperCase())}</text>
+  <text x="360" y="995" fill="#f7edd8" font-family="Georgia,serif" font-size="28" letter-spacing="1.5" text-anchor="middle">${escapeXml(card.name.toUpperCase())}</text>
+  <circle cx="74" cy="74" r="6" fill="${palette.light}" opacity=".7"/><circle cx="646" cy="74" r="6" fill="${palette.light}" opacity=".7"/><circle cx="74" cy="1006" r="6" fill="${palette.light}" opacity=".7"/><circle cx="646" cy="1006" r="6" fill="${palette.light}" opacity=".7"/>
+  </svg>`;
+}

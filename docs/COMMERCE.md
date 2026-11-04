@@ -1,6 +1,6 @@
 # Commerce verification
 
-StarGuidance commerce is test-mode only on this branch and is hidden in the safe beta. Checkout and webhook processing both fail closed unless `ENABLE_PROFILE_REPORTS=true`; the UI additionally requires `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`. Both flags default false. When enabled, Checkout and the webhook still reject a live Stripe secret, and the webhook rejects `livemode: true` events. Removing those guards requires an approved price, refund/chargeback policy, Terms and Privacy Notice, launch region, support process, and a separate reviewed production change.
+StarGuidance commerce is test-mode only on this branch and is hidden in the safe beta. Checkout and webhook processing both fail closed unless `ENABLE_PROFILE_REPORTS=true`; Supabase mode additionally requires the published feature configuration and active report product. The server returns that effective capability to the UI, so no public environment variable can grant report access. These gates default false. When enabled, Checkout and the webhook still reject a live Stripe secret, and the webhook rejects `livemode: true` events. Removing those guards requires an approved price, refund/chargeback policy, Terms and Privacy Notice, launch region, support process, and a separate reviewed production change.
 
 ## Implemented lifecycle
 
@@ -22,7 +22,7 @@ Webhook event claims use a five-minute database lease. Concurrent delivery is ig
 
 Use an owner-controlled Stripe test account and a public staging webhook endpoint. Never place key values, webhook payloads, customer email addresses, Checkout URLs, or dashboard screenshots in GitHub logs or the PR.
 
-1. In an isolated commerce rehearsal only, configure `ENABLE_PROFILE_REPORTS=true`, `NEXT_PUBLIC_ENABLE_PROFILE_REPORTS=true`, `PAYMENTS_PROVIDER=stripe`, and test values for `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PROFILE_REPORT_PRICE_ID` in the narrowest deploy-preview scope. Checkout is created server-side and redirects to its returned URL; no Stripe publishable key is read by this application.
+1. In an isolated commerce rehearsal only, configure `ENABLE_PROFILE_REPORTS=true`, publish a separately approved `features` version with `profileReportsEnabled: true`, keep `profile-report-v1` active, configure `PAYMENTS_PROVIDER=stripe`, and add test values for `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the governed `stripePriceId` in the narrowest deploy-preview scope. Checkout is created server-side and redirects to its returned URL; no Stripe publishable key is read by this application.
 2. Subscribe the endpoint to the lifecycle events listed above. Confirm the endpoint is HTTPS and the signing secret belongs to that exact endpoint.
 3. Buy the report with a Stripe test card. Confirm the return page shows Preparing, one pending order becomes paid, exactly one active entitlement/report/job exists, the background drain reaches Ready, and a repeated browser request/event creates no duplicate.
 4. Replay the completed event, deliver two copies concurrently, and force one processing failure before retry. Confirm only the failed attempt is retried and fulfillment remains singular.

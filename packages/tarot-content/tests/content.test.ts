@@ -4,7 +4,7 @@ import {
   allSpreads,
   findSpread,
   legacySpreads,
-  renderTarotFaceSvg,
+  renderTarotFaceSvgV3,
   resolveSpreadPositions,
   selectSpreadContextTemplate,
   spreads,
@@ -20,48 +20,81 @@ describe("tarot content integrity", () => {
     for (const suit of ["wands", "cups", "swords", "pentacles"]) {
       expect(tarotCards.filter((card) => card.suit === suit)).toHaveLength(14);
     }
+    for (const card of tarotCards) expect(card.reversalFacets?.length).toBeGreaterThan(0);
   });
 
   it("assigns versioned, rights-documented artwork to every card", () => {
     for (const card of tarotCards) {
       expect(card.artwork.artworkId).toContain(card.id);
-      expect(card.artwork.frontAsset).toBe(`/art/tarot/v2/${card.id}.svg`);
+      expect(card.artwork.frontAsset).toBe(`/art/tarot/v3/${card.id}.svg`);
       expect(card.artwork.backAsset).toMatch(/\.webp$/);
       expect(card.artwork.altText).toContain(card.name);
       expect(card.artwork.artistCredit).toBeTruthy();
       expect(card.artwork.license).toContain("project use authorized");
       expect(card.artwork.provenance).toContain("original");
-      expect(card.artwork.artworkVersion).toBe("starguidance-celestial-gothic-v2");
+      expect(card.artwork.artworkVersion).toBe("starguidance-celestial-gothic-v3");
     }
   });
 
   it("renders 78 distinct lightweight illustrated faces", () => {
-    const faces = tarotCards.map((card) => renderTarotFaceSvg(card));
+    const faces = tarotCards.map((card) => renderTarotFaceSvgV3(card));
     expect(new Set(faces).size).toBe(78);
     for (const face of faces) {
       expect(face).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
-      expect(Buffer.byteLength(face, "utf8")).toBeLessThan(25_000);
+      expect(Buffer.byteLength(face, "utf8")).toBeLessThan(30_000);
+      expect(face).toContain('id="frame-v3"');
     }
   });
 
-  it("defines six selectable spreads and preserves four legacy spreads", () => {
-    expect(spreads.map(({ positions }) => positions.length)).toEqual([1, 3, 10, 7, 7, 9]);
+  it("defines eight selectable spreads and preserves every retired definition", () => {
+    expect(spreads.map(({ positions }) => positions.length)).toEqual([1, 3, 5, 7, 10, 7, 7, 9]);
     expect(spreads.map(({ id }) => id)).toEqual([
       "one-card",
       "three-card",
+      "crossroads",
+      "outlook",
       "celtic-cross",
       "horseshoe",
       "relationship",
       "nine-card-matrix",
     ]);
     expect(legacySpreads.map(({ id }) => id)).toEqual([
+      "one-card",
+      "three-card",
       "focus",
       "direction",
       "crossroads",
       "outlook",
+      "celtic-cross",
+      "horseshoe",
+      "relationship",
+      "nine-card-matrix",
     ]);
-    expect(allSpreads).toHaveLength(10);
+    expect(allSpreads).toHaveLength(18);
     expect(findSpread("outlook")?.positions).toHaveLength(7);
+    expect(findSpread("one-card")?.version).toBe("one-card-v3");
+    expect(findSpread("one-card", "one-card-v2")?.version).toBe("one-card-v2");
+    expect(spreads.map(({ version }) => version)).toEqual([
+      "one-card-v3",
+      "three-card-v3",
+      "crossroads-v2",
+      "outlook-v2",
+      "celtic-cross-v3",
+      "horseshoe-v3",
+      "relationship-v3",
+      "nine-card-matrix-v3",
+    ]);
+    expect(findSpread("crossroads", "crossroads-v1")?.capabilities).toBeUndefined();
+    for (const spread of spreads) {
+      expect(spread.capabilities).toBeDefined();
+      const positionIds = new Set(spread.positions.map(({ id }) => id));
+      for (const id of spread.capabilities?.trajectoryPositionIds ?? [])
+        expect(positionIds.has(id)).toBe(true);
+      for (const group of spread.capabilities?.alternativePositionGroups ?? [])
+        for (const id of group) expect(positionIds.has(id)).toBe(true);
+      for (const link of spread.capabilities?.linkedPositions ?? [])
+        for (const id of link.positionIds) expect(positionIds.has(id)).toBe(true);
+    }
     for (const spread of allSpreads) {
       expect(spread.purpose.length).toBeGreaterThan(20);
       expect(spread.estimatedMinutes).toBeGreaterThan(0);
@@ -111,17 +144,33 @@ describe("tarot content integrity", () => {
     ]);
   });
 
-  it("selects one- and three-card contexts deterministically", () => {
+  it("keeps current one- and three-card positions fixed while resolving historical contexts", () => {
     const one = findSpread("one-card")!;
     expect(
       selectSpreadContextTemplate(one, {
         topic: "general",
         intent: "decisionSupport",
         generalReading: false,
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveSpreadPositions(one, {
+        topic: "general",
+        intent: "decisionSupport",
+        generalReading: false,
+      })[0]?.displayName,
+    ).toBe("Focus");
+
+    const historicalOne = findSpread("one-card", "one-card-v2")!;
+    expect(
+      selectSpreadContextTemplate(historicalOne, {
+        topic: "general",
+        intent: "decisionSupport",
+        generalReading: false,
       })?.id,
     ).toBe("binary-inquiry");
     expect(
-      resolveSpreadPositions(one, {
+      resolveSpreadPositions(historicalOne, {
         topic: "general",
         intent: "decisionSupport",
         generalReading: false,
@@ -129,8 +178,22 @@ describe("tarot content integrity", () => {
     ).toBe("Yes / No Pivot");
 
     const three = findSpread("three-card")!;
+    expect(three.positions.map(({ displayName }) => displayName)).toEqual([
+      "Situation",
+      "Challenge",
+      "Direction",
+    ]);
     expect(
       selectSpreadContextTemplate(three, {
+        topic: "relationships",
+        intent: "clarity",
+        generalReading: false,
+      }),
+    ).toBeUndefined();
+
+    const historicalThree = findSpread("three-card", "three-card-v2")!;
+    expect(
+      selectSpreadContextTemplate(historicalThree, {
         topic: "relationships",
         intent: "clarity",
         generalReading: false,

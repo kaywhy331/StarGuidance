@@ -9,7 +9,12 @@ const supabase = vi.hoisted(() => ({
   signUp: vi.fn(),
   updateUser: vi.fn(),
 }));
-const admin = vi.hoisted(() => ({ deleteUser: vi.fn(), updateUserById: vi.fn() }));
+const admin = vi.hoisted(() => ({
+  createUser: vi.fn(),
+  deleteUser: vi.fn(),
+  listUsers: vi.fn(),
+  updateUserById: vi.fn(),
+}));
 const recovery = vi.hoisted(() => ({
   cookieDelete: vi.fn(),
   cookieGet: vi.fn(),
@@ -17,6 +22,8 @@ const recovery = vi.hoisted(() => ({
 }));
 const security = vi.hoisted(() => ({ recordSecurityAudit: vi.fn() }));
 const rateLimit = vi.hoisted(() => ({ assert: vi.fn() }));
+const telemetry = vi.hoisted(() => ({ record: vi.fn() }));
+const boundary = vi.hoisted(() => ({ requireUser: vi.fn() }));
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ delete: recovery.cookieDelete, get: recovery.cookieGet }),
@@ -48,6 +55,17 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("@/lib/request-security", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/request-security")>()),
   assertRateLimit: rateLimit.assert,
+}));
+
+vi.mock("@/lib/product-telemetry", () => ({
+  tryRecordProductEvent: telemetry.record,
+}));
+
+// The destination after sign-in comes from the provisioning boundary; its own
+// behaviour is covered elsewhere, so only its outcome is modelled here.
+vi.mock("@/lib/auth", () => ({
+  SESSION_COOKIE: "starguidance_session",
+  requireUser: boundary.requireUser,
 }));
 
 import { DELETE, POST } from "./route";
@@ -89,9 +107,9 @@ const credentials = {
 };
 const consents = {
   termsAccepted: true,
-  termsVersion: "terms-beta-2026-08-05",
+  termsVersion: "terms-beta-2026-10-01",
   privacyAccepted: true,
-  privacyVersion: "privacy-beta-2026-08-05",
+  privacyVersion: "privacy-beta-2026-10-01",
   ageConfirmed: true,
   ageEligibilityVersion: "age-18-beta-2026-08-05",
   marketingAccepted: false,
@@ -119,6 +137,8 @@ beforeEach(() => {
   supabase.resend.mockResolvedValue({ error: null });
   security.recordSecurityAudit.mockResolvedValue(undefined);
   rateLimit.assert.mockResolvedValue(undefined);
+  telemetry.record.mockResolvedValue(undefined);
+  boundary.requireUser.mockRejectedValue(new Error("UNAUTHENTICATED"));
 });
 
 afterEach(() => {
@@ -128,6 +148,7 @@ afterEach(() => {
   for (const mock of Object.values(recovery)) mock.mockReset();
   security.recordSecurityAudit.mockReset();
   rateLimit.assert.mockReset();
+  telemetry.record.mockReset();
 });
 
 describe("email and password authentication", () => {
@@ -139,7 +160,7 @@ describe("email and password authentication", () => {
     expect(response.status).toBe(503);
     expect(response.headers.get("retry-after")).toBe("60");
     expect(await response.json()).toEqual({
-      error: "Authentication is temporarily unavailable. Try again shortly.",
+      error: "Accounts are briefly unavailable. Please try again in a moment.",
     });
     expect(supabase.signInWithPassword).not.toHaveBeenCalled();
   });
@@ -163,7 +184,11 @@ describe("email and password authentication", () => {
     const response = await POST(request(credentials));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, authenticated: true });
+    expect(await response.json()).toEqual({
+      ok: true,
+      authenticated: true,
+      destination: "/consent",
+    });
     expect(security.recordSecurityAudit).toHaveBeenCalledWith(
       "4978a7ef-c4a6-462d-befe-d286a38a772f",
       "auth.signed_in",
@@ -184,6 +209,113 @@ describe("email and password authentication", () => {
     expect(response.status).toBe(401);
     expect(body.error).toMatch(/email or password/i);
     expect(JSON.stringify(body)).not.toContain("reader@example.test");
+    expect(telemetry.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "auth_failed",
+        properties: { errorClass: "authentication", statusClass: "failed" },
+      }),
+    );
+    expect(JSON.stringify(telemetry.record.mock.calls)).not.toContain("reader@example.test");
+  });
+
+  it("activates a password-proven pending account only in private testing mode", async () => {
+    vi.stubEnv("AUTH_EMAIL_CONFIRMATION_MODE", "private-testing");
+    supabase.signInWithPassword
+      .mockResolvedValueOnce({
+        data: { session: null, user: null },
+        error: { code: "email_not_confirmed", message: "Email not confirmed" },
+      })
+      .mockResolvedValueOnce({
+        data: { user: { id: "pending-user" } },
+        error: null,
+      });
+    admin.listUsers.mockResolvedValue({
+      data: {
+        users: [
+          { id: "unrelated", email: "someone-else@example.test" },
+          { id: "pending-user", email: "reader@example.test" },
+        ],
+      },
+      error: null,
+    });
+
+    const response = await POST(request(credentials));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      authenticated: true,
+      destination: "/consent",
+    });
+    expect(supabase.signInWithPassword).toHaveBeenCalledTimes(2);
+    expect(admin.listUsers).toHaveBeenCalledWith({ page: 1, perPage: 100 });
+    expect(admin.updateUserById).toHaveBeenCalledWith("pending-user", {
+      email_confirm: true,
+    });
+  });
+
+  it("never searches Auth users when a private-test password is invalid", async () => {
+    vi.stubEnv("AUTH_EMAIL_CONFIRMATION_MODE", "private-testing");
+    supabase.signInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: { code: "invalid_credentials", message: "Invalid login credentials" },
+    });
+
+    const response = await POST(request(credentials));
+
+    expect(response.status).toBe(401);
+    expect(admin.listUsers).not.toHaveBeenCalled();
+    expect(admin.updateUserById).not.toHaveBeenCalled();
+  });
+
+  it("creates and proves a stored Supabase password without sending mail in private testing", async () => {
+    vi.stubEnv("AUTH_EMAIL_CONFIRMATION_MODE", "private-testing");
+    admin.createUser.mockResolvedValue({
+      data: { user: { id: "private-test-user" } },
+      error: null,
+    });
+    supabase.signInWithPassword.mockResolvedValue({
+      data: {
+        user: { id: "private-test-user", app_metadata: {} },
+      },
+      error: null,
+    });
+
+    const response = await POST(
+      request({
+        ...credentials,
+        action: "sign-up",
+        email: "New.Reader@Example.Test",
+        displayName: "Nova",
+        consents,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, authenticated: true, pending: false });
+    expect(admin.createUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "new.reader@example.test",
+        password: credentials.password,
+        email_confirm: true,
+        app_metadata: expect.objectContaining({
+          starguidance_display_name: "Nova",
+          starguidance_policy_consents: expect.arrayContaining([
+            expect.objectContaining({ policy: "terms", version: consents.termsVersion }),
+            expect.objectContaining({ policy: "privacy", version: consents.privacyVersion }),
+          ]),
+        }),
+      }),
+    );
+    expect(supabase.signInWithPassword).toHaveBeenCalledWith({
+      email: "new.reader@example.test",
+      password: credentials.password,
+    });
+    expect(supabase.signUp).not.toHaveBeenCalled();
+    expect(security.recordSecurityAudit).toHaveBeenCalledWith(
+      "private-test-user",
+      "auth.signed_in",
+    );
   });
 
   it("creates an immediately authenticated account when confirmation is disabled", async () => {
@@ -288,9 +420,66 @@ describe("email and password authentication", () => {
       password: credentials.password,
       options: {
         emailRedirectTo:
-          "https://deploy-preview-4--starguidance.netlify.app/auth/callback?next=%2Fonboarding",
+          "https://deploy-preview-4--starguidance.netlify.app/auth/callback?next=%2Fonboarding&flow=signup",
       },
     });
+  });
+
+  it("returns confirmed guest readers to their encrypted same-draw continuation", async () => {
+    supabase.signUp.mockResolvedValue({
+      data: {
+        session: null,
+        user: { id: "pending-guest", identities: [{ id: "identity" }], app_metadata: {} },
+      },
+      error: null,
+    });
+
+    await POST(
+      request({
+        ...credentials,
+        action: "sign-up",
+        displayName: "Nova",
+        consents,
+        next: "/free-reading?continue=1",
+      }),
+    );
+
+    expect(supabase.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: {
+          emailRedirectTo:
+            "https://synthetic.invalid/auth/callback?next=%2Ffree-reading%3Fcontinue%3D1&flow=signup",
+        },
+      }),
+    );
+  });
+
+  it("rejects an unapproved signup return destination", async () => {
+    supabase.signUp.mockResolvedValue({
+      data: {
+        session: null,
+        user: { id: "pending-reader", identities: [{ id: "identity" }], app_metadata: {} },
+      },
+      error: null,
+    });
+
+    await POST(
+      request({
+        ...credentials,
+        action: "sign-up",
+        displayName: "Nova",
+        consents,
+        next: "//evil.invalid",
+      }),
+    );
+
+    expect(supabase.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: {
+          emailRedirectTo: "https://synthetic.invalid/auth/callback?next=%2Fonboarding&flow=signup",
+        },
+      }),
+    );
   });
 
   it("resends signup confirmation without requiring another registration attempt", async () => {
@@ -302,7 +491,9 @@ describe("email and password authentication", () => {
     expect(supabase.resend).toHaveBeenCalledWith({
       type: "signup",
       email: credentials.email,
-      options: { emailRedirectTo: "https://synthetic.invalid/auth/callback?next=%2Fonboarding" },
+      options: {
+        emailRedirectTo: "https://synthetic.invalid/auth/callback?next=%2Fonboarding&flow=signup",
+      },
     });
     expect(supabase.signUp).not.toHaveBeenCalled();
   });
@@ -335,7 +526,7 @@ describe("email and password authentication", () => {
 
     expect(await response.json()).toEqual({ ok: true, pending: true });
     expect(supabase.resetPasswordForEmail).toHaveBeenCalledWith(credentials.email, {
-      redirectTo: "https://synthetic.invalid/auth/callback?next=%2Freset-password",
+      redirectTo: "https://synthetic.invalid/auth/callback?next=%2Freset-password&flow=recovery",
     });
   });
 
@@ -427,7 +618,7 @@ describe("email and password authentication", () => {
     );
 
     expect(response.status).toBe(503);
-    expect((await response.json()).error).toMatch(/incomplete account was removed/i);
+    expect((await response.json()).error).toMatch(/unfinished account was removed/i);
     expect(admin.deleteUser).toHaveBeenCalledWith("unreceipted-user");
     expect(supabase.signOut).toHaveBeenCalledWith({ scope: "local" });
   });
@@ -448,9 +639,56 @@ describe("email and password authentication", () => {
     );
 
     expect(response.status).toBe(503);
-    expect((await response.json()).error).toMatch(/cleanup could not be confirmed/i);
+    expect((await response.json()).error).toMatch(
+      /couldn't confirm the unfinished account was removed/i,
+    );
     expect(admin.deleteUser).toHaveBeenCalledWith("uncertain-user");
     expect(supabase.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  it("routes a signed-in reader with current receipts and a profile to their readings", async () => {
+    supabase.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "4978a7ef-c4a6-462d-befe-d286a38a772f" } },
+      error: null,
+    });
+    boundary.requireUser.mockResolvedValue({ requiresPolicyReconsent: false, profile: {} });
+
+    const response = await POST(request(credentials));
+    expect((await response.json()).destination).toBe("/readings");
+
+    boundary.requireUser.mockResolvedValue({ requiresPolicyReconsent: false, profile: null });
+    const withoutProfile = await POST(request(credentials));
+    expect((await withoutProfile.json()).destination).toBe("/onboarding");
+
+    boundary.requireUser.mockResolvedValue({ requiresPolicyReconsent: false, profile: {} });
+    const withNext = await POST(request({ ...credentials, next: "/reports" }));
+    expect((await withNext.json()).destination).toBe("/reports");
+
+    const unsafeNext = await POST(request({ ...credentials, next: "//evil.invalid" }));
+    expect((await unsafeNext.json()).destination).toBe("/readings");
+  });
+
+  it("sends a reader to consent only when a required receipt is missing", async () => {
+    supabase.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "reader" } },
+      error: null,
+    });
+    boundary.requireUser.mockResolvedValue({ requiresPolicyReconsent: true, profile: {} });
+
+    const response = await POST(request({ ...credentials, next: "/readings" }));
+    expect((await response.json()).destination).toBe("/consent?next=%2Freadings");
+  });
+
+  it("falls back to the consent page when account state cannot be read", async () => {
+    supabase.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "reader" } },
+      error: null,
+    });
+    boundary.requireUser.mockRejectedValue(new Error("database unavailable"));
+
+    const response = await POST(request(credentials));
+    expect(response.status).toBe(200);
+    expect((await response.json()).destination).toBe("/consent");
   });
 
   it("ends only the current browser session on explicit sign-out", async () => {
@@ -469,7 +707,7 @@ describe("email and password authentication", () => {
     const response = await DELETE(deleteRequest());
 
     expect(response.status).toBe(502);
-    expect((await response.json()).error).toMatch(/could not end/i);
+    expect((await response.json()).error).toMatch(/couldn't sign you out/i);
     expect(security.recordSecurityAudit).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,36 @@
+/** Server ritual phases in the order a reading moves through them. */
+export const ritualPhaseOrder = [
+  "drawLocked",
+  "dealing",
+  "awaitingReveal",
+  "revealing",
+  "fullSpreadReady",
+  "interpretationStreaming",
+  "followUpAvailable",
+  "complete",
+] as const;
+
+export type RitualPhase = (typeof ritualPhaseOrder)[number];
+
+export function ritualPhaseRank(phase: RitualPhase): number {
+  return ritualPhaseOrder.indexOf(phase);
+}
+
+/** An unfinished ritual past its window. A reading whose interpretation was
+ * reached (followUpAvailable or complete) is never "expired": it is simply a
+ * kept reading. */
+export function ritualSessionExpired(
+  reading: { expiresAt: string; ritualProgress?: { phase: RitualPhase } | undefined },
+  now = Date.now(),
+): boolean {
+  const phase = reading.ritualProgress?.phase;
+  if (phase && ritualPhaseRank(phase) >= ritualPhaseRank("followUpAvailable")) return false;
+  return now >= Date.parse(reading.expiresAt);
+}
+
 export interface RitualProgress {
   revealedIndexes: readonly number[];
-  cutTaken: boolean;
+  cutIndex: number;
 }
 
 interface SessionStorageLike {
@@ -20,9 +50,20 @@ export function readRitualProgress(
   try {
     const parsed = JSON.parse(storage.getItem(key(readingId)) ?? "null") as unknown;
     if (!parsed || typeof parsed !== "object") return undefined;
-    const candidate = parsed as { revealedIndexes?: unknown; cutTaken?: unknown };
-    if (!Array.isArray(candidate.revealedIndexes) || typeof candidate.cutTaken !== "boolean")
-      return undefined;
+    const candidate = parsed as {
+      revealedIndexes?: unknown;
+      cutIndex?: unknown;
+      cutTaken?: unknown;
+    };
+    if (!Array.isArray(candidate.revealedIndexes)) return undefined;
+    const historicalCut = candidate.cutTaken === true ? 39 : 0;
+    const cutIndex =
+      typeof candidate.cutIndex === "number" &&
+      Number.isInteger(candidate.cutIndex) &&
+      candidate.cutIndex >= 0 &&
+      candidate.cutIndex <= 77
+        ? candidate.cutIndex
+        : historicalCut;
     const revealedIndexes = [
       ...new Set(
         candidate.revealedIndexes.filter(
@@ -30,7 +71,7 @@ export function readRitualProgress(
         ),
       ),
     ].sort((a, b) => a - b);
-    return { revealedIndexes, cutTaken: candidate.cutTaken };
+    return { revealedIndexes, cutIndex };
   } catch {
     return undefined;
   }
@@ -46,10 +87,10 @@ export function writeRitualProgress(
       key(readingId),
       JSON.stringify({
         revealedIndexes: [...new Set(progress.revealedIndexes)].sort((a, b) => a - b),
-        cutTaken: progress.cutTaken,
+        cutIndex: progress.cutIndex,
       }),
     );
   } catch {
-    // A blocked session store degrades to a fresh ritual, never a changed draw.
+    // A blocked session store degrades to server recovery, never a changed draw.
   }
 }

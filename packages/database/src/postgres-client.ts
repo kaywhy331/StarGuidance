@@ -5,11 +5,23 @@ export type DatabaseTransaction = postgres.TransactionSql<Record<string, never>>
 export type DatabaseRow = postgres.Row;
 export type DatabaseJsonValue = postgres.JSONValue;
 
-export function createDatabaseClient(databaseUrl: string): DatabaseClient {
+export interface DatabaseClientOptions {
+  /** Maximum physical connections opened by this process. */
+  readonly max?: number;
+  /** Seconds before an idle physical connection is released. */
+  readonly idleTimeoutSeconds?: number;
+  /** Seconds allowed while establishing a physical connection. */
+  readonly connectTimeoutSeconds?: number;
+}
+
+export function createDatabaseClient(
+  databaseUrl: string,
+  options: DatabaseClientOptions = {},
+): DatabaseClient {
   return postgres(databaseUrl, {
-    max: 5,
-    idle_timeout: 20,
-    connect_timeout: 10,
+    max: options.max ?? 5,
+    idle_timeout: options.idleTimeoutSeconds ?? 20,
+    connect_timeout: options.connectTimeoutSeconds ?? 10,
     prepare: false,
   });
 }

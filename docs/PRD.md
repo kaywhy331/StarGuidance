@@ -12,7 +12,7 @@ Prepared for Kevin
 
 > **Core product decision**
 >
-> Birth name and date of birth are required. Birth city/country and birth time are two independent optional fields. Onboarding asks four simple questions and does not require timezone entry or a time-confidence mode. Missing data reduces profile detail but never blocks a tarot reading.
+> Birth name and date of birth are required and visibly marked with `*`. Birth city/country and birth time are two independent optional fields with separate “I don't know” controls. All four details appear together in one form; onboarding does not request a timezone or expose internal calculation methods. Missing data never blocks a tarot reading.
 
 ## Document control
 | **Field** | **Value** |
@@ -35,7 +35,7 @@ Prepared for Kevin
 ## Executive summary
 The product delivers immersive tarot readings personalized by a private birth profile assembled from Western astrology (Whole Sign and Placidus), Pythagorean numerology, BaZi Four Pillars, Dreamspell Galactic Signature, Nine Star Ki, and planetary-angularity mapping. The profile is not displayed in the standard tarot experience; it is converted into a compact plain-language personality lens used to emphasize relevant card meanings. Users may later purchase a detailed profile report that reveals supported underlying systems and cross-system synthesis.
 
-The user experience remains simple on the surface: create an account, enter minimum birth details, select a reading, ask a question, experience the shuffle/deal/reveal sequence, and receive a structured interpretation. Behind that surface, calculations, random card selection, AI interpretation, privacy controls, content versioning, and payment fulfillment are separated so each can be tested and audited.
+The user experience remains simple on the surface: choose **Free Reading** to experience one birthday-enhanced deterministic ritual before signup, or choose **Sign up** to begin the private profile journey immediately. The guest birthday is processed transiently into a minimized stable-date lens; no guest profile is created and the raw date is omitted from the encrypted reading receipt. A guest who wants to ask the same cards a follow-up creates or enters an account without triggering a redraw. Behind that surface, guest entitlements, calculations, random card selection, AI interpretation, privacy controls, content versioning, and payment fulfillment are separated so each can be tested and audited.
 
 > **Non-negotiable architecture rule**
 >
@@ -45,6 +45,7 @@ The user experience remains simple on the surface: create an account, enter mini
 - **Required profile inputs:** full birth name and date of birth.
 - **Optional enhancement inputs:** a free-text birth city/country and a single birth-time field.
 - **Private personalization:** the base reading uses plain-language traits without showing placements, numbers, pillars, or signature labels.
+- **Try-before-account entry:** one birthday-enhanced deterministic reading is available before signup; the birthday supplies only a transient minimized lens, while follow-up and saved full-profile experiences require an account.
 - **Tarot integrity:** the profile affects interpretation, never card selection.
 - **MVP readings:** 1-card Focus, 3-card Direction, 5-card Crossroads, and 7-card Deeper Outlook.
 - **Immersive experience:** full-screen shuffle, automatic deal, user-controlled flips, progressive spoken-paced passages, and final integration.
@@ -145,12 +146,12 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **ID** | **Decision** | **Status** |
 | --- | --- | --- |
 | DEC-001 | Birth name and date of birth are required for personalized readings. | Confirmed |
-| DEC-002 | Birth city/country and birth time are independent optional fields; onboarding does not ask for timezone or time-confidence modes. | Owner-directed / confirmed |
+| DEC-002 | Birth city/country and birth time are independent optional fields in the same form as the required fields; each has an “I don't know” control, while onboarding asks for no timezone or time-confidence mode. | Owner-directed / confirmed |
 | DEC-003 | The private profile is used for readings but is not displayed in the base experience. | Confirmed |
 | DEC-004 | A detailed profile report is sold separately. | Confirmed |
 | DEC-005 | Profile data affects interpretation, never card selection. | Recommended / launch-critical |
 | DEC-006 | MVP begins with one original or properly licensed 78-card deck. | Recommended |
-| DEC-007 | MVP includes six selectable spreads and one follow-up question per completed reading. | Recommended |
+| DEC-007 | MVP includes six server-recommendable spreads and one follow-up question per completed reading. | Owner-directed / confirmed |
 | DEC-008 | MVP is a responsive web application; native apps are deferred. | Recommended |
 | DEC-009 | The Full Profile Report is the required one-time paid SKU; reading pricing remains configurable. | Recommended |
 | DEC-010 | MVP launches in English and is architected for localization. | Recommended |
@@ -158,11 +159,13 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | DEC-012 | Dreamspell terminology and artwork will be original or properly licensed. | Required |
 | DEC-013 | Paid readings may use public-domain/historical calculation methods with original interpretation, but proprietary modern chart systems, branding, tables, and teaching content require written commercial permission before software activation. | Owner-directed / required |
 | DEC-014 | Systems whose owners forbid the intended hosted/report use are omitted rather than shipped as disabled branded components. Nine Star Ki uses local versioned mathematics, an explicit third-star convention, and original prose/assets only. | Owner-directed / required |
+| DEC-015 | Landing entry offers **Free Reading** and **Sign up**. The guest lane requires a birthday for one browser-marked, deterministic reading. The date is processed transiently into a minimized stable-date lens and omitted from the guest receipt; no anonymous profile is created. Signup/sign-in unlocks a follow-up on the exact encrypted draw without silently saving the guest artifact. IP is only a privacy-minimized automation signal, not the entitlement identity. | Owner-directed / confirmed |
+| DEC-016 | A signed-in reader may explicitly choose **Save to my readings** for their free guest reading. The saved history entry keeps the exact draw, confirmed question, delivered interpretation, and birthday lens; it has no profile snapshot, is created at most once per reading, never counts against the account reading allowance, and is never created without that request. | Confirmed |
 
 ## 3.2 MVP scope
 | **Included** | **Deferred / future** |
 | --- | --- |
-| Account, consent, private birth profile, profile completeness | Guest personalized readings and anonymous profile storage |
+| Account, consent, private birth profile, profile completeness; one transient birthday-enhanced guest reading with account handoff | Anonymous profile storage and guest use of birth name, place, or time |
 | Western Whole Sign + Placidus, planetary angularity, numerology, BaZi, Dreamspell, and Nine Star Ki | Additional forecasting techniques, compatibility, and proprietary modern systems that do not permit the intended use |
 | One deck, four versioned spreads, upright/reversed | Deck marketplace, custom spreads, community decks |
 | Secure random draw, shuffle/deal/reveal, results, one follow-up | Unlimited chat, live readers, multiplayer/social features |
@@ -182,6 +185,9 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 *The user sees one coherent ritual; the system coordinates multiple deterministic and AI services behind it.*
 
 ## 4.1 Primary journey
+
+The landing page presents two explicit choices: **Free Reading** and **Sign up**. The account journey remains the full personalized path below. The guest path first accepts a required birthday and the current service/age acknowledgements, then completes one deterministic one- or three-card ritual without an AI-provider call. The private profile engine returns only stable date-derived statements; the browser-held reading receipt excludes the raw date. Signup/sign-in then offers a follow-up using the exact encrypted draw. The guest artifact is never saved silently: the signed-in reader may choose **Save to my readings** (DEC-016) to keep that exact reading in account history. New account readings and full-profile personalization begin after onboarding.
+
 | **Step** | **User experience** | **System behavior** |
 | --- | --- | --- |
 | 1 | Understands the product and chooses to begin. | Public page explains personalization, privacy, optional birth time, tarot randomness, and report offer. |
@@ -199,15 +205,16 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 ## 4.2 Screen inventory
 | **Route / screen** | **Purpose** | **Primary completion state** |
 | --- | --- | --- |
-| / | Brand, product explanation, trust, reading preview, report offer | User starts account creation or explores pricing |
+| / | Brand, product explanation, trust, reading preview, **Free Reading** and **Sign up** | User chooses guest experience or account creation |
+| /free-reading | Profile-free one- or three-card trial and encrypted account handoff | Reading completes before auth; follow-up conversion preserves the exact draw |
 | /sign-in | Email and password account access | Authenticated session |
 | /sign-up | Private account registration | Account created or one-time confirmation pending |
 | /forgot-password | Non-enumerating account recovery request | Recovery email requested |
 | /reset-password | Recovery-session password update | Password replaced and session retained |
 | /onboarding | Consent and private birth profile | Profile snapshot ready |
-| /readings | Reading catalog | Spread selected |
-| /readings/{slug} | Reading details and question entry | Question classified and session created |
-| /session/{id} | Shuffle, cut, deal, reveal, generation | All cards revealed and result ready |
+| /people | Private, permission-confirmed profiles for people in the user's life | Relationship profile created, versioned, or deleted |
+| /readings | Minimal question entry | Question classified, spread recommended, and ceremony prepared |
+| /session/{id} | Casino wash, gather, fan selection, deal, reveal, generation | All cards revealed and result ready |
 | /reading/{id} | Layered result and follow-up | Reading reviewed/saved; optional feedback |
 | /history | Saved readings and purchased reports | Artifact reopened or managed |
 | /profile | Birth facts, completeness, privacy controls, report preview | Profile updated, deleted, or report purchase started |
@@ -232,12 +239,12 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 ## 5.1 Account, consent, and identity
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **ACC-001** | Public visitors can view marketing pages, product explanations, pricing, and privacy information without an account. | **Must** | Public routes load without authentication and contain no personalized or private data. |
-| **ACC-002** | An authenticated account is required before a user can create a private birth profile, save a reading, or purchase a report. | **Must** | Unauthenticated users are redirected to sign in; no birth data is persisted to an anonymous browser session. |
+| **ACC-001** | Public visitors can view marketing pages, product explanations, pricing, privacy information, and complete one birthday-enhanced guest reading without an account. | **Must** | Public routes load without authentication; the guest lane requires only a birthday, processes it transiently through the private profile engine, calls no live AI provider, returns no raw question or birth date in the reading receipt, and creates no anonymous database user, profile, or reading. |
+| **ACC-002** | An authenticated account is required before a user can create a private birth profile, save a reading, or purchase a report. | **Must** | Unauthenticated users are redirected to sign in; no raw guest birth data is persisted in browser storage or an anonymous database record. |
 | **ACC-003** | MVP authentication supports conventional email and password credentials. | **Must** | New users can register, returning users can sign in without an email link, passwords are 12–72 characters, account recovery is non-enumerating, and all flows provide actionable error states. |
 | **ACC-004** | Social sign-in is supported behind a feature flag. | **Should** | Google and/or Apple sign-in can be enabled without changing user or profile schemas. |
 | **ACC-005** | The account display name is separate from the encrypted birth name used for numerology. | **Must** | Reading UI uses the display name; the birth name is never used as the public-facing account label. |
-| **ACC-006** | Age eligibility, Terms, Privacy Notice, and spiritual-entertainment disclosure are accepted before profile creation. | **Must** | Consent versions and timestamps are stored; unchecked required consent blocks continuation. |
+| **ACC-006** | Age eligibility, Terms, Privacy Notice, and spiritual-entertainment disclosure are accepted before profile creation or a guest draw. | **Must** | Account consent versions and timestamps are stored; the guest lane requires the current acknowledgements before drawing; unchecked required consent blocks continuation. |
 | **ACC-007** | Marketing consent is optional and independent from service consent. | **Must** | Users can complete onboarding without marketing consent and can change it later. |
 | **ACC-008** | Account sessions are protected and revocable. | **Must** | Logout invalidates the active session; optional signup-confirmation and password-recovery tokens expire; suspicious session events are logged without PII. |
 
@@ -252,14 +259,14 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 ## 5.2 Birth profile onboarding
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **PRO-001** | Full birth name and date of birth are the minimum required inputs for a personalized profile. | **Must** | The Continue action is disabled until both fields are valid and the privacy explanation has been acknowledged. |
-| **PRO-002** | Birth city/country is one optional free-text field. | **Must** | The interface never asks for a street address, country code, coordinates, IANA timezone, or additional location subfields. |
-| **PRO-003** | Birth time is one optional time field. | **Must** | Users can enter a time or leave it blank without selecting Unknown, Exact, or Approximate. |
+| **PRO-001** | Full birth name and date of birth are the minimum required inputs for a personalized profile. | **Must** | All four birth-detail inputs appear in one form; name/date are marked with `*`, and Save validates both before submission after the privacy explanation has been acknowledged. |
+| **PRO-002** | Birth city/country is one optional free-text field. | **Must** | Users can enter a city/country or independently select “I don't know,” which clears and disables only birthplace; the interface never asks for a street address, coordinates, timezone, or additional location subfields. |
+| **PRO-003** | Birth time is one optional time field. | **Must** | Users can enter a time or independently select “I don't know”; the control clears and disables only birth time and never asks them to classify precision. |
 | **PRO-004** | Birthplace and birth time are independent. | **Must** | Either optional field can be supplied without the other and profile creation is never blocked by missing timezone context. |
 | **PRO-005** | The system never invents a default birth time. | **Must** | Unknown times remain null; noon, midnight, sunrise, or inferred times are not stored as the user's birth time. |
 | **PRO-006** | Time-sensitive calculations fail closed when required context is unavailable. | **Should** | The entered time is retained, but astrology or BaZi facts requiring validated timezone context remain unavailable rather than being guessed. |
-| **PRO-007** | The onboarding copy explains the benefit of optional details without implying guaranteed predictive accuracy. | **Must** | Copy states that time and place unlock a more detailed astrological profile, including houses and Ascendant where available. |
-| **PRO-008** | Users see profile completeness status, not the hidden horoscope interpretation. | **Must** | The base experience may show Core, Location-Enhanced, or Complete; it does not expose placements, pillars, numbers, or signature details. |
+| **PRO-007** | Onboarding explains which details are required or optional without disclosing internal reading-generation tactics. | **Must** | Copy tells users how to complete or skip each field but does not name calculation systems, profile capabilities, placements, pillars, signatures, or interpretation methods. |
+| **PRO-008** | Onboarding keeps profile completeness and calculation capabilities private. | **Must** | The form shows only the supplied facts, privacy handling, and validation state; it does not display Core, Location-Enhanced, Complete, or a checklist of derived capabilities. |
 | **PRO-009** | The hidden profile is used internally to personalize tarot language and emphasis. | **Must** | The reading service receives a compact trait lens, not the full raw calculation payload. |
 | **PRO-010** | Base tarot readings do not reveal paid-report details. | **Must** | Generated readings may use plain-language traits but must not reveal raw natal placements, numerology values, BaZi pillars, or Galactic Signature labels. |
 | **PRO-011** | Users can update optional birth data later. | **Must** | Saving changes creates a new profile snapshot; future readings use the new snapshot while historical readings retain the original snapshot reference. |
@@ -268,16 +275,21 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 | **PRO-014** | Pythagorean numerology handles non-Latin names transparently. | **Should** | The original Unicode name is preserved; unsupported name-derived values are explicitly unavailable without requesting a Latin rendering or silently transliterating. |
 | **PRO-015** | The user can review and correct supplied birth facts without viewing the hidden profile. | **Must** | Settings show birth name masked by default, date, place, and time status with edit and delete controls. |
 | **PRO-016** | Profile calculation failures are recoverable. | **Must** | The user sees a clear retry state; no partial profile is silently marked complete; operations receives a traceable error event. |
+| **PRO-017** | Signed-in users can create private profiles for people in their lives. | **Must** | Name and birth date are required; birthplace and birth time are independently optional; creation requires an explicit acknowledgement that the user has permission to store the information. |
+| **PRO-018** | Relationship profiles are encrypted, versioned, and user-isolated. | **Must** | Raw inputs and calculation payloads use context-bound application encryption; edits append immutable snapshots; forced RLS, export, deletion, and account-cascade tests prevent cross-user access. |
+| **PRO-019** | A relationship profile enters a reading only through an explicit mention. | **Must** | Each active profile has a unique Unicode-safe `@handle`; plain-name matching and inferred identity resolution are prohibited; unmentioned profiles are not loaded into narration context. |
+| **PRO-020** | Historical relationship context remains reproducible and minimized. | **Must** | Draw finalization locks an encrypted lens containing immutable profile/snapshot references and at most three stable traits; retry and follow-up reuse it even if the active profile later changes or is deleted. Raw birth inputs never enter that lens. |
 
 **Epic completion criteria**
 
 | **[ ]** Core onboarding completes successfully using only birth name and date of birth. |
 | --- |
-| **[ ]** Birth city/country and birth time remain independent optional fields with no timezone or confidence-mode questions. |
+| **[ ]** All four details appear in one form; birth city/country and birth time remain independent optional fields with “I don't know” controls and no timezone or confidence-mode questions. |
 | **[ ]** An omitted time remains absent and no birth time is fabricated. |
-| **[ ]** The user sees completeness and editable facts but not the hidden profile interpretation. |
+| **[ ]** The user sees editable facts and private-handling copy but no completeness taxonomy, calculation-system names, capability checklist, or hidden profile interpretation. |
 | **[ ]** Updating profile facts creates a new snapshot and leaves historical readings unchanged. |
 | **[ ]** Unicode and non-Latin name cases follow the approved numerology handling policy. |
+| **[ ]** Relationship profiles require permission acknowledgement, remain user-isolated and encrypted, activate only through explicit `@handles`, and never alter card selection. |
 
 ## 5.3 Profile calculation and trait synthesis
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
@@ -314,49 +326,57 @@ Create a simple, premium-feeling spiritual guidance product that gives users a m
 ## 5.4 Reading catalog and question intake
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **RDG-001** | The reading catalog presents a small, understandable set of reading types. | **Must** | Each card shows title, purpose, card count, approximate experience length, and free/paid entitlement state. |
+| **RDG-001** | Reading intake recommends a suitable configured reading type without requiring spread knowledge. | **Must** | One direct question routes to the smallest suitable active spread; its title, purpose, card count, positions, and entitlement state remain available in the prepared ritual response and history. |
 | **RDG-002** | MVP includes One-Card, Three-Card, Celtic Cross, Horseshoe, Relationship / Two-Party, and Nine-Card Matrix spreads. | **Must** | All six spreads are fully configured, content-complete, tested, and operator-activatable. Retired spread definitions remain available only for historical locked draws. |
-| **RDG-003** | Spread definitions are data-driven and versioned. | **Must** | Card count, positions, labels, interpretive functions, reversals, animation preset, and result sections can change without rewriting the session engine. |
-| **RDG-004** | Users may type a question or choose a general reading where the spread permits it. | **Must** | Question-required spreads block empty submission; general readings use an approved default intent. |
-| **RDG-005** | Question input supports optional topic and time-horizon chips. | **Should** | Relationship, career, money, creativity, life direction, and general topics are available; predictive questions can select a bounded horizon. |
-| **RDG-006** | Question input is length-limited and private. | **Must** | The UI enforces the configured limit, stores the question encrypted, and never places the raw text in analytics or URLs. |
+| **RDG-003** | Spread definitions are data-driven and versioned. | **Must** | Card count, ordered positions, labels, interpretive functions, reversals, animation placement, linked positions, and trajectory/alternative/timing capabilities can change without rewriting the session engine. The complete definition is snapshotted before any card is known. |
+| **RDG-004** | Users submit one direct question to begin a reading. | **Must** | Empty submission is blocked. The normal entry scene contains only “What question did you have for the stars today?”, one input, and Send; there is no separate general-intention action, question confirmation, or spread picker. |
+| **RDG-005** | Topic, decision shape, relationship context, and horizon are inferred server-side. | **Should** | Deterministic classification recommends an active one-card, three-card, relationship, crossroads, horseshoe, or deeper-outlook structure while leaving the user's wording unchanged. |
+| **RDG-006** | Question input is length-limited and private. | **Must** | The UI and API enforce a 500-character limit, store the question encrypted, and never place the raw text in analytics or URLs. |
 | **RDG-007** | Questions are classified before the draw for domain, intent, time horizon, and safety risk. | **Must** | Classification is stored separately from the raw question and is used to select content and safety behavior. |
-| **RDG-008** | The interface helps users ask actionable questions. | **Must** | Examples encourage user-centered, bounded questions and discourage unverifiable accusations about third parties. |
-| **RDG-009** | Reading entitlements are configurable. | **Must** | Admin can set free allowances, prices, credits, or report-only monetization without changing reading code. |
-| **RDG-010** | Starting a reading creates a durable session before animation begins. | **Must** | The session has a unique ID, profile snapshot, spread version, entitlement decision, and recoverable initial state. |
+| **RDG-008** | The interface preserves the user's wording and minimizes pre-reading copy. | **Must** | No suggestion, explainer, confirmation panel, topic chip, or generic-intention button competes with the question. Safety handling may interrupt before any ceremony; third-party-private wording is reframed within the reading rather than treated as evidence of hidden facts. |
+| **RDG-009** | Reading entitlements are configurable. | **Must** | Authenticated allowances remain operator-configurable; the account-free trial is separately limited by a signed browser marker plus a privacy-minimized network automation quota. |
+| **RDG-010** | Starting a reading prepares a recoverable committed-draw ceremony before animation without selecting cards. | **Must** | The ceremony has a unique session ID, exact question, server-recommended immutable spread/configuration snapshot, profile-snapshot reference where applicable, safety/entitlement context, expiry, and server-seed commitment—but no card, position assignment, or orientation. The durable authenticated session and guest exact-draw receipt are created only at finalization. |
 
 **Epic completion criteria**
 
-| **[ ]** All four MVP spreads can be selected, started, and configured without hard-coded page logic. |
+| **[ ]** Every active spread can be recommended, started, and configured without hard-coded route logic or a user-facing spread chooser. |
 | --- |
 | **[ ]** Questions are stored privately, classified before the draw, and bounded by clear input rules. |
+| **[ ]** Every position/function is fixed before shuffle; the user's question is never silently rewritten. |
 | **[ ]** Unsafe or inappropriate question patterns are intercepted before immersive animation begins. |
 | **[ ]** Entitlement configuration can change without altering spread or draw code. |
 
 ## 5.5 Tarot draw and session integrity
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **DRW-001** | Card selection uses a cryptographically secure random source and a tested shuffle algorithm. | **Must** | The draw implementation uses platform CSPRNG, produces no duplicates, and passes property tests for deck integrity. |
+| **DRW-001** | Card selection uses committed cryptographic entropy and a tested unbiased shuffle. | **Must** | A 32-byte server seed is committed before the ritual; the browser creates an independent 32-byte CSPRNG nonce before shuffling and XOR-mixes another independent contribution for each stir; domain-separated HMAC-SHA-256 streams drive rejection-sampled Fisher–Yates and orientations without duplicates. |
 | **DRW-002** | The private profile never influences which cards are selected. | **Must** | Automated tests verify that the draw function accepts no profile traits, question meaning, or AI output as selection inputs. |
-| **DRW-003** | The final draw is locked and persisted before AI interpretation begins. | **Must** | A reading cannot change cards after generation starts; retries reuse the exact same draw. |
-| **DRW-004** | Card orientation is determined independently according to the spread configuration. | **Must** | Reversal enablement and orientation results are persisted with each dealt card. |
+| **DRW-003** | Final cards are assigned only after casino-wash gathering and the required user selections, then locked before interpretation. | **Must** | Preparation returns no assignments. Finalization accepts the exact number of distinct anonymous visual indexes and atomically persists all card-position-orientation records and the interpretation job; retries reuse that exact draw. |
+| **DRW-004** | Card orientation follows an explicit `reversals_enabled` or `upright_only` preference and an independent entropy stream. | **Must** | The mode and orientation results are persisted. Reversed content uses only curated contextual facets and is never automatically opposite or negative. |
 | **DRW-005** | The session records deck, card, spread, shuffle, and content versions. | **Must** | Every completed reading is reproducible from stored version references and draw records. |
 | **DRW-006** | Redraw is explicit and creates a new reading session. | **Must** | The interface never silently replaces an unfavorable draw; a new draw consumes the appropriate entitlement and links to the prior session only as history. |
 | **DRW-007** | Draw creation and payment-dependent consumption are idempotent. | **Must** | Repeated network requests cannot create multiple draws or consume multiple credits for one session. |
-| **DRW-008** | Interrupted sessions can resume from the last durable state. | **Must** | Reloading during shuffle, deal, reveal, or generation restores the same cards and correct interaction state. |
+| **DRW-008** | Interrupted sessions can resume from the last recoverable state. | **Must** | Reloading before finalization restores the commitment, pending client nonce, wash count, selected visual indexes, and ritual without inventing cards; reloading after finalization restores the exact locked draw and reveal progress. |
 | **DRW-009** | The user receives a concise trust explanation of the random draw. | **Should** | A visible help affordance states that profile data shapes interpretation, not card selection. |
-| **DRW-010** | A provably fair seed-commitment mode is supported as a future feature flag. | **Could** | The data model can store seed commitment and reveal values without redesigning reading sessions. |
+| **DRW-010** | Every new user-facing draw uses the committed entropy protocol. | **Must** | The durable proof stores algorithm versions, server-seed commitment, client-nonce hash, distinct selected indexes, and reversal mode; raw question/profile/meaning/payment/AI data cannot enter derivation. |
+| **DRW-011** | Each user-picked back is causally meaningful without exposing card identity. | **Must** | Pick order addresses distinct unknown entries in the uniform committed permutation; changing an index changes the assignment under fixed entropy, while every valid index pattern remains an unbiased draw without replacement. |
 
 ```text
-reading_session
-  -> entitlement_confirmed
-  -> draw_locked
+reading_created
+  -> question_entering
+  -> spread_recommended
+  -> safety_approved
   -> shuffling
+  -> gathering
+  -> selecting_cards
+  -> draw_finalizing
+  -> draw_locked
   -> dealing
   -> awaiting_reveal
   -> revealing
-  -> synthesis_pending
-  -> result_ready
+  -> full_spread_ready
+  -> interpretation_streaming
+  -> follow_up_available
   -> complete
 
 error branches: generation_failed | session_expired | payment_required | safety_interruption
@@ -366,44 +386,47 @@ error branches: generation_failed | session_expired | payment_required | safety_
 
 | **[ ]** Draw tests prove that card selection has no profile or AI dependency and cannot contain duplicates. |
 | --- |
-| **[ ]** Cards, orientations, versions, and position assignments persist before interpretation starts. |
+| **[ ]** No assignment exists before the required distinct selections; all cards, orientations, versions, and position assignments persist atomically before interpretation. |
+| **[ ]** Visual indexes measurably change assignments under fixed entropy, remain unbiased, and question/profile data never participates in entropy. |
 | **[ ]** Refresh, retry, and reconnect always restore the same draw and correct state. |
 | **[ ]** A new draw is always a new session and never a silent replacement. |
 
 ## 5.6 Immersive reading experience
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **UX-001** | The reading journey is governed by an explicit state machine. | **Must** | Invalid state combinations are impossible; transitions cover preparation, shuffle, compatibility cut-through, deal, reveal, generation, result, retry, and resume. |
-| **UX-002** | The shuffle sequence feels tactile and ritualized without delaying users unnecessarily. | **Must** | Lightweight shells spread across the sanctuary, gather back into one deck within the configured duration, and provide an immediate Deal now control. |
-| **UX-003** | Visual shuffling uses lightweight card shells rather than animating all 78 full card components. | **Must** | Mid-tier mobile devices maintain the minimum animation frame-rate target without memory spikes. |
-| **UX-004** | The shuffle flows directly into dealing without a redundant decision stop. | **Must** | The compatibility `cuttingDeck` state advances automatically; the UI never blocks on Cut/Skip cut and recovery still records a monotonic no-cut receipt. |
-| **UX-005** | Cards are dealt into spread-specific positions with stable layout. | **Must** | No card overlaps, clips, or moves unexpectedly across supported viewport sizes and text zoom levels. |
-| **UX-006** | Users intentionally reveal cards by tap, click, or keyboard. | **Must** | Each card has visible focus state, Enter/Space activation, screen-reader label, and locked double-trigger prevention. |
-| **UX-007** | Each reveal immediately shows deterministic card information. | **Must** | Card name, position, orientation, and concise baseline meaning appear without waiting for the final AI synthesis. |
-| **UX-008** | Final synthesis can generate while the user reveals cards. | **Must** | Background generation starts only after the draw is locked and never blocks card interaction. |
+| **UX-001** | The reading journey is governed by the explicit committed-draw state machine above. | **Must** | Invalid state combinations are impossible; finalization cannot occur before question/spread/safety preparation and the exact required anonymous-card selections, and whole-reading streaming cannot become visible before `full_spread_ready`. |
+| **UX-002** | The shuffle sequence feels tactile and ritualized without delaying users unnecessarily. | **Must** | Exactly 78 anonymous card backs overlap and travel along random-looking circular planar paths like a casino wash. Gather forms a center stack, settles it at bottom center, and opens it into a slight arch that fits the viewport. The composition must not use a spherical arrangement. |
+| **UX-003** | Visual shuffling uses lightweight card-back shells rather than animating 78 full card components. | **Must** | All 78 possibilities are visibly accounted for without mounting artwork, meanings, identities, orientations, or per-card application state; mid-tier mobile devices maintain the minimum animation frame-rate target without memory spikes. |
+| **UX-004** | Shuffle flows into a causally meaningful card-picking fan before finalization. | **Must** | Hover/focus highlights a card border; click, keyboard activation, or an upward swipe selects one unchosen back and lifts it into the next spread position. Selection continues until the recommended spread count is met. |
+| **UX-005** | Selected cards are dealt into spread-specific positions with stable layout. | **Must** | The fan may overlap deliberately, but dealt spread cards do not clip or move unexpectedly across supported viewport sizes and text zoom levels. |
+| **UX-006** | Users intentionally choose the reveal order among locked face-down spread positions by tap, click, or keyboard, or invoke Reveal All. | **Must** | Every unrevealed position remains eligible, has visible focus state, Enter/Space activation, a screen-reader position description, locked double-trigger prevention, and reduced-motion parity. Reveal order cannot change the locked assignment. |
+| **UX-007** | Each reveal immediately shows only that card's deterministic baseline. | **Must** | Card name, position, orientation, and one concise position-aware meaning appear without waiting for synthesis; no overall answer, outlook, alternate path, or unrevealed card identifier appears. |
+| **UX-008** | Interpretation may prepare privately while cards are revealed but remains gated. | **Must** | Background generation starts only after the draw is atomically locked and never blocks card interaction; result routes and streams suppress all whole-reading content until every position is revealed. |
 | **UX-009** | Reduced-motion and skip-animation modes provide the full experience. | **Must** | The system respects browser preferences, removes large transforms, and preserves all reading content and controls. |
-| **UX-010** | Reading sound is optional, user-controlled, and on by default inside the user-initiated ritual. | **Must** | A persistent sound control exists; spoken-paced word reveal works without audio, browser narration uses only a device-local voice when one is available, and no audio autoplays on the landing or account pages. |
+| **UX-010** | Reading sound is optional and user-controlled; card effects may default on, while cloud narration is separately opted into. | **Must** | Persistent sound-layer controls exist. Enabling Audio reading only reveals an explicit play button and never generates speech. A play action sends one authenticated, server-selected displayed passage to the configured Fish Audio adapter; full-reading playback requests the next passage only after the current one ends and advances the single visible passage with it. Provider timestamps reveal that passage word by word and illuminate only its referenced cards. Completed passages use a bounded, origin-scoped device cache so reload playback does not synthesize them again while the cache remains present. No reading audio autoplays or pre-renders, and the complete text experience remains available with audio off or unavailable. |
 | **UX-011** | The experience is mobile-first and touch-friendly. | **Must** | Primary controls meet target sizes; safe areas, orientation changes, and common mobile viewport issues are tested. |
-| **UX-012** | The visual system is minimal, immersive, and content-led. | **Must** | Screens use a restrained component set, clear hierarchy, high contrast, and no distracting decorative motion during reading text. |
-| **UX-013** | Loading and failure states preserve the ritual and the user's trust. | **Must** | The UI never shows a blank card, reshuffles on failure, or loses the question; retry language states that the same cards will be used. |
+| **UX-012** | The visual system is minimal, immersive, and content-led. | **Must** | Attention follows one explicit hierarchy: cards during shuffle/deal/reveal; a compact visible spread supporting one smaller, one-section-at-a-time interpretation window; next actions only after deliberate reading completion; and all other utilities collapsed, hidden, or visually discreet. Card and reading stages use an original responsive clear starry-night backdrop with a dark central field, high contrast, and no distracting decorative motion during reading text. |
+| **UX-013** | Loading and failure states preserve the ritual and the user's trust. | **Must** | The UI never shows a blank card, finalizes twice, reshuffles after locking, leaks an unrevealed card, or loses the confirmed question; retry language states that the same cards will be used. |
 | **UX-014** | The application supports current desktop and mobile browsers. | **Must** | Critical flows pass on current and previous major versions of Chrome, Safari, Firefox, and Edge, including iOS Safari and Android Chrome. |
 
 ### Animation choreography
 | **Stage** | **Default behavior** | **Accessible alternative** |
 | --- | --- | --- |
-| Prepare | Deck enters with subtle depth and ambient movement. | Static deck with immediate Begin control. |
-| Shuffle | Short overhand/riffle-inspired 2.5D sequence using lightweight shells. | Progress indicator with no large transforms. |
-| Cut-through | Compatibility state advances immediately after the gathered shuffle. | Identical immediate transition with no large transform. |
-| Deal | Cards travel to spread positions in order. | Cards appear sequentially with focus management. |
-| Reveal | User flips each card; baseline meaning appears. | Instant reveal with text announcement. |
-| Synthesis | Subtle transition from table to reading result. | Immediate content view; no parallax or scale. |
+| Prepare | The question is sent with a visible "Draw my cards" control; a short hint and a few tappable example questions help first-time readers, and the question stays visible with a busy status until the recommended spread is ready. | The same single input and labeled submit control; Enter submits, Shift+Enter adds a line. |
+| Casino wash | Circular planar paths scramble 78 overlapping lightweight anonymous backs; each additional wash adds fresh nonce entropy. | Static overlapping field accounting for all 78 backs, with the same secure initial nonce. |
+| Gather and fan | Backs gather to center, settle just above the fan at bottom center, and open into a shallow arch that fits the viewport. The spread and its positions are announced before the wash. | Immediate static fan with identical DOM order, one roving-tabindex group, and position-aware labels. |
+| Select and deal | Each pointer, keyboard, or upward-swipe choice lifts into the next spread position; on touch a first tap lifts and a second takes. Picked cards can be put back until the reader confirms "These are my cards", which locks the draw. | Arrow/Home/End keys browse, Enter/Space picks, focus moves to the next free card; cards appear sequentially with no large transform. |
+| Reveal | User chooses any remaining locked position or explicitly chooses Reveal All; only revealed baselines appear. | Instant reveal with text announcement and identical information gate. |
+| Synthesis | Begins visibly only after the full spread is revealed; the spread remains present while a smaller reading window shows one concise passage at a time. Follow-up and completion actions remain hidden until the reader explicitly finishes the final passage. | Immediate one-passage content view with the same acknowledgement boundary; no parallax or scale. |
 
 **Epic completion criteria**
 
-| **[ ]** All six selectable spreads render correctly on supported mobile and desktop viewport/device matrices. |
+| **[ ]** All six recommendable spreads render correctly on supported mobile and desktop viewport/device matrices. |
 | --- |
 | **[ ]** Keyboard, screen reader, reduced-motion, skip, and no-audio modes deliver the complete reading. |
-| **[ ]** Animation never changes the locked draw or blocks deterministic card content. |
+| **[ ]** Reduced motion never reduces entropy; pre-finalization washes affect only the pending client nonce, anonymous picks select unknown permutation indexes, and post-lock interaction never changes the draw. |
+| **[ ]** Whole-reading content is inaccessible until all cards are revealed, including through API/stream responses. |
+| **[ ]** Card, reading, and next-action surfaces never compete: only one primary stage is mounted at a time, and stream completion alone cannot expose follow-up controls. |
 | **[ ]** Performance and visual-regression thresholds pass on the defined representative devices. |
 
 ## 5.7 AI interpretation and safety
@@ -413,46 +436,56 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **AI-002** | The model receives calculated facts; it never computes astrology, numerology, BaZi, Dreamspell, Nine Star Ki, or card selection. | **Must** | Prompt templates contain only approved structured profile observations, locked draw data, curated meanings, and the user question. |
 | **AI-003** | The model receives only the minimum relevant profile lens. | **Must** | Raw birth name, exact birth details, account identifiers, and unrelated profile observations are excluded from the normal reading payload. |
 | **AI-004** | Question relevance selects profile observations. | **Must** | Career questions prioritize work/decision traits; relationship questions prioritize communication/attachment traits; selection is deterministic and auditable. |
-| **AI-005** | Interpretations are grounded in versioned tarot content. | **Must** | Every card-position interpretation includes retrieved upright/reversed meanings, position function, domain tags, and relevant combination rules. |
+| **AI-005** | Interpretations are grounded in versioned tarot content and complete-spread evidence. | **Must** | Every card-position interpretation includes an approved upright/reversed range, position function, confirmed question, domain tags, and relationship/combination evidence; tuple validation binds output to the locked draw. |
 | **AI-006** | The model returns a strict structured response. | **Must** | Responses validate against the approved JSON schema; malformed output triggers controlled repair or fallback and is never rendered directly. |
-| **AI-007** | The reading answers the user's question before expanding into detail. | **Must** | The result begins with a clear central answer/theme, followed by card-by-card reasoning, trajectory, user agency, and reflection. |
+| **AI-007** | The reading answers the user's question before expanding into detail. | **Must** | The result begins with a clear central answer/theme, followed by card-by-card positional evidence, cross-card synthesis, supported optional outlook, user agency, and reflection. |
 | **AI-008** | Future-oriented language is conditional, bounded, and non-deterministic. | **Must** | Output uses likely trajectory/under current conditions language and never guarantees dates, outcomes, pregnancy, death, guilt, infidelity, or financial returns. |
 | **AI-009** | The base reading does not expose the hidden profile's raw system labels. | **Must** | Automated checks reject output containing restricted placements, numbers, pillars, Kin labels, or internal confidence scores unless the paid report context explicitly allows them. |
-| **AI-010** | The model preserves card meaning while personalizing emphasis. | **Must** | Profile traits cannot reverse or replace the core meaning of a card/position without an explicit alternative interpretation. |
-| **AI-011** | The result distinguishes central trajectory, alternate trajectory, and user leverage. | **Must** | Structured output contains all three when the spread supports prediction or decision guidance. |
-| **AI-012** | Timing is expressed conservatively. | **Must** | Timing uses the user's selected horizon and broad near/mid/late ranges; exact dates require an explicit supported method and are disabled in MVP. |
+| **AI-010** | The model preserves card meaning while optionally personalizing emphasis. | **Must** | `pure_tarot` sends no traits. `personalized_tarot` weaves one to three relevant, available profile observations into the direct answer, card interpretation, synthesis, outlook, or agency instead of isolating them in an explainer passage. The structured `personalizationLens` remains a separately labeled audit record in evidence details; it cannot reverse/replace card meaning or be described as revealed by the cards. Unavailable or unvalidated system outputs are never invented. |
+| **AI-011** | Optional outlook sections are governed by spread capabilities. | **Must** | Likely trajectory appears only with configured outlook support; alternate path requires a configured choice/branch structure; neither is manufactured to fill a transcript. |
+| **AI-012** | Timing is expressed only through an approved configured method. | **Must** | The field is null unless both the spread capability snapshot and question support timing. Exact unsupported dates are prohibited in MVP. |
 | **AI-013** | High-stakes and crisis inputs follow a safety policy. | **Must** | Immediate-danger requests interrupt the tarot flow; medical/legal/financial questions are reframed toward reflection and professional support without deterministic advice. |
 | **AI-014** | Third-party private facts are not asserted. | **Must** | Questions about cheating, secret motives, guilt, or diagnosis are reframed toward observable dynamics, communication, boundaries, and the user's choices. |
 | **AI-015** | Generation failures have a deterministic fallback. | **Must** | The same locked cards display curated meanings and an actionable retry; the user never receives an empty paid result. |
 | **AI-016** | Prompts, models, policies, and schemas are versioned. | **Must** | Each output stores prompt version, model identifier, content version, safety policy version, and response schema version. |
 | **AI-017** | Token, latency, and cost budgets are enforced per spread. | **Must** | Maximum input/output sizes, timeout, retry count, and cost alert thresholds are configurable and monitored. |
 | **AI-018** | A pre-release evaluation suite measures quality and safety. | **Must** | The approved eval set covers all spreads, domains, profile completeness levels, adversarial questions, and prohibited claims; launch thresholds are met. |
+| **AI-019** | Explicitly mentioned relationship profiles can deepen personalized readings without making private-fact claims. | **Must** | The narrator receives only the locked `@handle`, immutable internal references, and at most three stable traits; raw birth data and calculations are excluded. It compares observable interaction patterns conditionally, never asserts the person's thoughts, motives, diagnosis, guilt, or future behavior as fact. |
+
+### Internal interpretation process
+
+Before user-visible prose, the engine analyzes the confirmed question's subject, decision/tension, horizon, and user agency; interprets each locked card through its curated orientation range and immutable position; scans the whole spread for repeated suits/elements, Major density, numbers/ranks, courts, reinforcement, conflict, movement, and configured linked positions; establishes a central answer; builds card-by-card support; synthesizes one coherent narrative; applies only supported outlook/timing capabilities; states user leverage; and closes with one practical reflection.
+
+Every claim must be traceable to one or more card/position tuples, an approved relationship rule, or a separately labeled personalization observation. A reversed card may use only a curated contextual facet supported by its card, position, question, and neighbors; reversed never means automatically opposite or negative.
 
 ### Reading result contract
 ```json
 {
-  "title": "...",
   "directAnswer": "...",
-  "centralTheme": "...",
+  "overallPattern": "...",
   "cards": [{
     "positionId": "...",
+    "positionLabel": "...",
     "cardId": "...",
-    "orientation": "upright|reversed",
-    "traditionalMeaning": "...",
-    "personalizedMeaning": "...",
-    "questionConnection": "..."
+    "orientation": "upright | reversed",
+    "coreMeaning": "...",
+    "positionInterpretation": "...",
+    "relationshipNotes": ["..."],
+    "supportingEvidence": ["..."]
   }],
-  "likelyTrajectory": {
-    "summary": "...",
-    "conditions": ["..."],
-    "alternateTrajectory": "..."
-  },
-  "userAgency": ["..."],
-  "reflectionQuestion": "...",
-  "uncertainty": "...",
+  "synthesis": "...",
+  "likelyTrajectory": null,
+  "alternatePath": null,
+  "timing": null,
+  "userAgency": "...",
+  "reflectionPrompt": "...",
+  "uncertaintyNote": "...",
+  "personalizationLens": null,
   "safetyFlags": []
 }
 ```
+
+`directAnswer`, `overallPattern`, `cards`, `synthesis`, `userAgency`, `reflectionPrompt`, and `uncertaintyNote` are required. The three outlook fields are strings only when supported, otherwise null. `personalizationLens`, when present, has label `Personalized reflection` and a short observations array. The renderer creates designed components from this object and never renders provider HTML or arbitrary Markdown.
 
 **Epic completion criteria**
 
@@ -462,26 +495,28 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **[ ]** Critical high-stakes, crisis, third-party accusation, pregnancy, death, diagnosis, guilt, and financial-return cases follow the approved policy. |
 | **[ ]** Fallback output provides a complete usable result from the same cards when the model is unavailable. |
 | **[ ]** Every output is reproducible by version references and traceable to approved card/profile inputs. |
+| **[ ]** One-card output has no fabricated alternate path/timing; every optional section matches the locked spread capability snapshot. |
 
 ## 5.8 Results, follow-up, and longitudinal feedback
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
-| **RES-001** | Results use layered disclosure rather than one long text wall. | **Must** | The first viewport shows title, concise answer, and card overview; deeper card meanings and profile-informed details are expandable. |
-| **RES-002** | Every result contains a consistent core structure. | **Must** | Central theme, answer to question, card-by-card interpretation, likely trajectory, alternate path, user agency, reflection prompt, and uncertainty note are present where applicable. |
+| **RES-001** | Results use layered disclosure rather than one long text wall. | **Must** | After full-spread reveal, the first viewport shows a concise direct answer and card overview; deeper positional/relationship evidence and separately labeled profile observations are expandable. |
+| **RES-002** | Every result contains a stable core and spread-aware optional sections. | **Must** | Direct answer, overall pattern, exact card/position evidence, synthesis, user agency, reflection prompt, and uncertainty are required. Trajectory, alternate path, timing, and personalization appear only where applicable. |
 | **RES-003** | The reading preserves the draw visually. | **Must** | All cards, positions, and orientations shown in results match the persisted draw exactly. |
 | **RES-004** | Completed readings are saved to history automatically. | **Must** | A user can reopen the original result; stored content is immutable apart from explicit annotation fields. |
-| **RES-005** | Users receive one contextual follow-up question per reading in MVP. | **Must** | The follow-up uses the same cards, profile snapshot, question, and output; it cannot redraw or silently change the initial interpretation. |
+| **RES-005** | Users receive one contextual clarification per reading in MVP. | **Must** | A clarification of the original subject and horizon uses the same cards, spread, orientations, profile snapshot, question, and output. A materially different subject, decision, person, or horizon is routed to a new reading session. |
 | **RES-006** | Follow-up answers are structured and safety-checked. | **Must** | The answer references the existing reading, states uncertainty, and is stored as a child record of the reading session. |
 | **RES-007** | Users can rate resonance and usefulness separately. | **Should** | Feedback captures at least resonance, helpfulness, and optional free text; it is never represented as proof of predictive accuracy. |
 | **RES-008** | Future-event readings can request an outcome follow-up. | **Should** | The user can opt into a scheduled check-in tied to the stated horizon and can disable reminders at any time. |
 | **RES-009** | Outcome feedback preserves the original prediction. | **Must** | The original reading remains unchanged; occurred/partial/did not occur/unclear and behavior-change fields are stored separately. |
 | **RES-010** | Sharing is excluded from MVP unless explicitly enabled. | **Could** | No public link is created by default; any future share flow requires deliberate redaction and consent. |
+| **RES-011** | Whole-reading content is withheld until the full spread is revealed. | **Must** | Before every position is revealed, APIs and UI expose only the locked face-down layout plus already revealed baselines; direct answer, synthesis, outlook, agency, reflection, and personalization remain unavailable. |
 
 **Epic completion criteria**
 
 | **[ ]** A completed reading can be reopened with identical cards, positions, orientations, and original interpretation. |
 | --- |
-| **[ ]** One follow-up can be asked without redrawing or overwriting the original result. |
+| **[ ]** One same-scope follow-up can be asked without redrawing or overwriting the original result; a changed scope creates a new session. |
 | **[ ]** Resonance, helpfulness, and later outcome data remain distinct metrics. |
 | **[ ]** No public sharing artifact exists unless the feature is separately enabled and reviewed. |
 
@@ -552,10 +587,10 @@ error branches: generation_failed | session_expired | payment_required | safety_
 ## 6.2 MVP spread definitions
 | **Reading** | **Positions** | **Use case** | **Result depth** |
 | --- | --- | --- | --- |
-| Single Card - Focus | Current focus | Daily/general orientation or one concise question | Concise answer + one card + agency |
-| Three Cards - Direction | Situation; Challenge; Direction | General questions and short-horizon decisions | Direct answer + three cards + trajectory |
-| Five Cards - Crossroads | Current path; Hidden influence; Path A; Path B; Leverage | Choice between options or competing approaches | Comparison + conditions + recommendation |
-| Seven Cards - Deeper Outlook | Foundation; Present; Incoming influence; Obstacle; External factor; Leverage; Likely outcome | Complex situation and bounded future outlook | Full synthesis + alternate trajectory |
+| Single Card - Focus | Current focus | Daily/general orientation or one concise question | Central theme, Focus card, what to notice, practical guidance, reflection; no automatic alternate trajectory |
+| Three Cards - Direction | Situation; Challenge; Direction | General questions and short-horizon decisions | Direct answer, all three positions and relationships, integrated guidance; optional conditional trajectory only as an inference from Direction |
+| Five Cards - Crossroads | Current path; Hidden influence; Path A; Path B; Leverage | Choice between options or competing approaches | Explicit configured-path comparison and agency; alternate path only because the spread structurally supports it; no invented outcome position |
+| Seven Cards - Deeper Outlook | Foundation; Present; Incoming influence; Obstacle; External factor; Leverage; Likely outcome | Complex situation and bounded future outlook | Cross-position synthesis and trajectory only from configured outlook positions; influence cards are not automatically predictions |
 
 ## 6.3 Shared personality trait ontology
 | **Domain** | **Examples of internal trait dimensions** |
@@ -644,6 +679,8 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | POST /readings/{id}/draw | Session ID + deck/spread versions | Locked draw; idempotent; no profile input |
 | POST /readings/{id}/generate | Locked draw + curated meanings + compact lens + question | Validated structured result or deterministic fallback |
 | POST /readings/{id}/follow-up | Original context + one follow-up question | Child structured response; no redraw |
+| POST /guest-readings | Guest birthday + question/classification + one- or three-card spread + acknowledgements | Transient stable-date lens + CSPRNG locked deterministic reading + encrypted seven-day handoff without the raw date; no anonymous database row or AI call |
+| POST /guest-readings/continue | Authenticated user + encrypted handoff + optional follow-up, or an explicit save request | Exact draw recovery, same-draw deterministic follow-up, or one idempotent history entry with the same cards and interpretation; no redraw |
 | POST /checkout/report | User + profile snapshot + product | Hosted checkout session |
 | POST /webhooks/payment | Signed provider event | Idempotent order, entitlement, and job transition |
 | POST /reports/{id}/generate | Paid entitlement + profile snapshot | Durable structured report and export status |
@@ -725,7 +762,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 | **ID** | **Requirement** | **Priority** | **Acceptance / completion criteria** |
 | --- | --- | --- | --- |
 | **NFR-001** | Public and authenticated core pages meet modern web performance targets. | **Must** | At p75 on representative mobile traffic: LCP <= 2.5s, INP <= 200ms, and CLS <= 0.10 for landing, catalog, onboarding, and result entry. |
-| **NFR-002** | Card animation remains responsive on representative mid-tier mobile devices. | **Must** | Primary shuffle/deal/reveal sequences target 60 fps and do not remain below 30 fps for sustained periods. |
+| **NFR-002** | Card animation remains responsive on representative mid-tier mobile devices. | **Must** | The 78-shell shuffle field and primary deal/reveal sequences target 60 fps and do not remain below 30 fps for sustained periods; the shuffle shells remain presentation-only DOM nodes without artwork decoding or React card state. |
 | **NFR-003** | Initial deterministic card content appears immediately after reveal. | **Must** | The reveal interaction does not depend on AI latency and responds within 150ms after the animation trigger on target devices. |
 | **NFR-004** | Full reading synthesis meets the latency budget. | **Must** | Standard readings complete within 15 seconds at p95 under expected load; longer reports expose durable status rather than a blocking spinner. |
 | **NFR-005** | Service availability and error budgets are defined. | **Must** | MVP target is at least 99.5% monthly availability for authenticated reading flows, excluding planned maintenance. |
@@ -810,7 +847,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 
 | **[ ]** All Must requirements have a passing test or documented manual acceptance record. |
 | --- |
-| **[ ]** All six selectable spreads pass complete end-to-end journeys for Core and Complete profiles. |
+| **[ ]** All six recommendable spreads pass complete end-to-end journeys for Core and Complete profiles. |
 | **[ ]** Calculation reference datasets pass at 100%; no unresolved boundary discrepancy remains hidden. |
 | **[ ]** AI and safety thresholds are approved by product, tarot/profile content, and safety owners. |
 | **[ ]** No Sev-1 or Sev-2 defect remains open; any waived lower-severity defect has an owner and target release. |
@@ -908,7 +945,7 @@ error branches: generation_failed | session_expired | payment_required | safety_
 - Western astrology aspect/orb set, BaZi boundary conventions, Pythagorean master-number rules, Dreamspell content scope, and final Nine Star Ki boundary/reference approval.
 - Whether the paid report includes a rendered natal chart wheel in MVP or a later release.
 - Supported launch countries/currencies and localized crisis/support content.
-- Account sign-in methods and whether a future unpersonalized guest demo is desired.
+- Additional account sign-in methods beyond email/password.
 
 ## 13.3 Change control
 Any change that affects card randomness, profile capability rules, safety policy, restricted profile visibility, payment entitlement, or data retention requires a documented decision, updated requirement/acceptance criteria, test impact review, and version increment. Cosmetic copy and layout changes may use normal design review when they do not alter those behaviors.

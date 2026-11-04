@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -8,6 +10,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -102,6 +105,39 @@ export const profileTraits = pgTable("profile_traits", {
   provenance: jsonb("provenance").notNull(),
   createdAt,
 });
+export const relationshipProfiles = pgTable(
+  "relationship_profiles",
+  {
+    id,
+    userId: userId(),
+    activeSnapshotId: uuid("active_snapshot_id"),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [index("relationship_profiles_user_idx").on(table.userId)],
+);
+export const relationshipProfileSnapshots = pgTable(
+  "relationship_profile_snapshots",
+  {
+    id,
+    userId: userId(),
+    relationshipProfileId: uuid("relationship_profile_id")
+      .notNull()
+      .references(() => relationshipProfiles.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    encryptedInput: text("encrypted_input").notNull(),
+    encryptedCalculations: text("encrypted_calculations").notNull(),
+    derivedPayload: jsonb("derived_payload").notNull(),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex("relationship_profile_snapshot_version_unique").on(
+      table.relationshipProfileId,
+      table.version,
+    ),
+    index("relationship_profile_snapshots_user_idx").on(table.userId),
+  ],
+);
 export const decks = pgTable("decks", {
   id,
   version: text("version").notNull().unique(),
@@ -109,63 +145,91 @@ export const decks = pgTable("decks", {
   active: boolean("active").default(true).notNull(),
   createdAt,
 });
-export const cards = pgTable("cards", {
-  id: text("id").primaryKey(),
-  deckVersion: text("deck_version")
-    .notNull()
-    .references(() => decks.version),
-  payload: jsonb("payload").notNull(),
-  createdAt,
-});
+export const cards = pgTable(
+  "cards",
+  {
+    id: text("id").notNull(),
+    deckVersion: text("deck_version")
+      .notNull()
+      .references(() => decks.version),
+    payload: jsonb("payload").notNull(),
+    createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.id, table.deckVersion], name: "cards_id_deck_version_pk" }),
+  ],
+);
 export const cardMeanings = pgTable(
   "card_meanings",
   {
     id,
-    cardId: text("card_id")
-      .notNull()
-      .references(() => cards.id, { onDelete: "cascade" }),
+    cardId: text("card_id").notNull(),
+    deckVersion: text("deck_version").notNull(),
     contentVersion: text("content_version").notNull(),
     payload: jsonb("payload").notNull(),
     createdAt,
   },
-  (table) => [uniqueIndex("card_meaning_content_unique").on(table.cardId, table.contentVersion)],
+  (table) => [
+    foreignKey({
+      columns: [table.cardId, table.deckVersion],
+      foreignColumns: [cards.id, cards.deckVersion],
+      name: "card_meanings_card_deck_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("card_meaning_content_unique").on(
+      table.cardId,
+      table.deckVersion,
+      table.contentVersion,
+    ),
+  ],
 );
-export const spreads = pgTable("spreads", {
-  id: text("id").primaryKey(),
-  version: text("version").notNull(),
-  payload: jsonb("payload").notNull(),
-  active: boolean("active").default(true).notNull(),
-  createdAt,
-});
+export const spreads = pgTable(
+  "spreads",
+  {
+    id: text("id").notNull(),
+    version: text("version").notNull(),
+    payload: jsonb("payload").notNull(),
+    active: boolean("active").default(true).notNull(),
+    createdAt,
+  },
+  (table) => [primaryKey({ columns: [table.id, table.version], name: "spreads_id_version_pk" })],
+);
 export const spreadPositions = pgTable(
   "spread_positions",
   {
     id,
-    spreadId: text("spread_id")
-      .notNull()
-      .references(() => spreads.id, { onDelete: "cascade" }),
+    spreadId: text("spread_id").notNull(),
+    spreadVersion: text("spread_version").notNull(),
     positionId: text("position_id").notNull(),
     displayOrder: integer("display_order").notNull(),
     payload: jsonb("payload").notNull(),
     createdAt,
   },
-  (table) => [uniqueIndex("spread_position_unique").on(table.spreadId, table.positionId)],
+  (table) => [
+    foreignKey({
+      columns: [table.spreadId, table.spreadVersion],
+      foreignColumns: [spreads.id, spreads.version],
+      name: "spread_positions_spread_version_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("spread_position_unique").on(table.spreadId, table.spreadVersion, table.positionId),
+  ],
 );
 export const readingSessions = pgTable(
   "reading_sessions",
   {
     id,
     userId: userId(),
-    profileSnapshotId: uuid("profile_snapshot_id")
-      .notNull()
-      .references(() => profileSnapshots.id),
-    spreadId: text("spread_id")
-      .notNull()
-      .references(() => spreads.id),
+    // Account readings are drawn against an immutable profile snapshot. A
+    // guest reading the reader chose to save (migration 0027) never had one:
+    // its only personalization is the stored birthday lens.
+    profileSnapshotId: uuid("profile_snapshot_id").references(() => profileSnapshots.id),
+    source: text("source").default("account").notNull(),
+    spreadId: text("spread_id").notNull(),
     spreadVersion: text("spread_version").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     encryptedQuestion: text("encrypted_question").notNull(),
+    encryptedRelatedPersonLens: text("encrypted_related_person_lens"),
     readingLens: jsonb("reading_lens").notNull(),
+    configuration: jsonb("configuration"),
     questionClassification: jsonb("question_classification")
       .default(
         sql`'{"version":"question-classification-v1","topic":"general","horizon":"open","intent":"generalReflection","generalReading":false}'::jsonb`,
@@ -186,7 +250,23 @@ export const readingSessions = pgTable(
     updatedAt,
   },
   (table) => [
+    foreignKey({
+      columns: [table.spreadId, table.spreadVersion],
+      foreignColumns: [spreads.id, spreads.version],
+      name: "reading_sessions_spread_version_fk",
+    }),
     uniqueIndex("reading_sessions_user_idempotency_unique").on(table.userId, table.idempotencyKey),
+    // Target for child keys that must belong to the reading's own account.
+    unique("reading_sessions_id_user_unique").on(table.id, table.userId),
+    check(
+      "reading_sessions_source_contract",
+      sql`(${table.source} = 'account' and ${table.profileSnapshotId} is not null)
+        or (
+          ${table.source} = 'guest_trial'
+          and ${table.profileSnapshotId} is null
+          and ${table.encryptedRelatedPersonLens} is null
+        )`,
+    ),
   ],
 );
 export const readingDraws = pgTable("reading_draws", {
@@ -201,6 +281,8 @@ export const readingDraws = pgTable("reading_draws", {
     .references(() => decks.version),
   shuffleVersion: text("shuffle_version").notNull(),
   assignments: jsonb("assignments").notNull(),
+  proof: jsonb("proof"),
+  encryptedServerSeed: text("encrypted_server_seed"),
   lockedAt: timestamp("locked_at", { withTimezone: true }).notNull(),
   createdAt,
 });
@@ -213,6 +295,7 @@ export const readingOutputs = pgTable("reading_outputs", {
   providerId: text("provider_id").notNull(),
   promptVersion: text("prompt_version").notNull(),
   contentVersion: text("content_version").notNull(),
+  safetyPolicyVersion: text("safety_policy_version").default("legacy-unrecorded").notNull(),
   schemaVersion: text("schema_version").notNull(),
   payload: jsonb("payload").notNull(),
   createdAt,
@@ -227,21 +310,62 @@ export const followUpQuestions = pgTable(
       .references(() => readingSessions.id, { onDelete: "cascade" }),
     encryptedQuestion: text("encrypted_question").notNull(),
     output: jsonb("output"),
+    providerId: text("provider_id").default("legacy-unrecorded").notNull(),
+    promptVersion: text("prompt_version").default("legacy-unrecorded").notNull(),
+    contentVersion: text("content_version").default("legacy-unrecorded").notNull(),
+    safetyPolicyVersion: text("safety_policy_version").default("legacy-unrecorded").notNull(),
+    schemaVersion: text("schema_version").default("legacy-unrecorded").notNull(),
     createdAt,
   },
-  (table) => [index("follow_up_questions_reading_idx").on(table.readingId)],
+  (table) => [
+    index("follow_up_questions_reading_idx").on(table.readingId),
+    // A follow-up can only point at a reading owned by the same account.
+    foreignKey({
+      columns: [table.readingId, table.userId],
+      foreignColumns: [readingSessions.id, readingSessions.userId],
+      name: "follow_up_questions_reading_owner_fk",
+    }).onDelete("cascade"),
+  ],
 );
-export const readingFeedback = pgTable("reading_feedback", {
-  id,
-  userId: userId(),
-  readingId: uuid("reading_id")
-    .notNull()
-    .references(() => readingSessions.id, { onDelete: "cascade" }),
-  resonance: integer("resonance"),
-  helpfulness: integer("helpfulness"),
-  encryptedComment: text("encrypted_comment"),
-  createdAt,
-});
+export const readingFeedback = pgTable(
+  "reading_feedback",
+  {
+    id,
+    userId: userId(),
+    readingId: uuid("reading_id")
+      .notNull()
+      .references(() => readingSessions.id, { onDelete: "cascade" }),
+    kind: text("kind").default("experience").notNull(),
+    resonance: integer("resonance"),
+    helpfulness: integer("helpfulness"),
+    outcomeStatus: text("outcome_status"),
+    behaviorChanged: boolean("behavior_changed"),
+    encryptedComment: text("encrypted_comment"),
+    createdAt,
+  },
+  (table) => [
+    check(
+      "reading_feedback_rating_range",
+      sql`(${table.resonance} is null or ${table.resonance} between 1 and 5)
+        and (${table.helpfulness} is null or ${table.helpfulness} between 1 and 5)`,
+    ),
+    check(
+      "reading_feedback_kind_contract",
+      sql`(
+        ${table.kind} = 'experience'
+        and ${table.outcomeStatus} is null
+        and ${table.behaviorChanged} is null
+        and (${table.resonance} is not null or ${table.helpfulness} is not null or ${table.encryptedComment} is not null)
+      ) or (
+        ${table.kind} = 'outcome'
+        and ${table.outcomeStatus} in ('occurred', 'partial', 'did_not_occur', 'unclear')
+        and ${table.behaviorChanged} is not null
+        and ${table.resonance} is null
+        and ${table.helpfulness} is null
+      )`,
+    ),
+  ],
+);
 export const products = pgTable("products", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -379,6 +503,85 @@ export const contentVersions = pgTable(
   },
   (table) => [uniqueIndex("content_type_version_unique").on(table.contentType, table.version)],
 );
+
+export const runtimeConfigurationVersions = pgTable(
+  "runtime_configuration_versions",
+  {
+    id,
+    domain: text("domain").notNull(),
+    version: integer("version").notNull(),
+    status: text("status").default("draft").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    approvedBy: uuid("approved_by").references(() => users.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex("runtime_configuration_domain_version_unique").on(table.domain, table.version),
+    uniqueIndex("runtime_configuration_one_published")
+      .on(table.domain)
+      .where(sql`${table.status} = 'published'`),
+    check(
+      "runtime_configuration_domain",
+      sql`${table.domain} in ('content', 'prompts', 'commerce', 'features', 'models')`,
+    ),
+    check(
+      "runtime_configuration_status",
+      sql`${table.status} in ('draft', 'approved', 'published', 'archived')`,
+    ),
+    check("runtime_configuration_payload_object", sql`jsonb_typeof(${table.payload}) = 'object'`),
+    check(
+      "runtime_configuration_independent_approval",
+      sql`${table.approvedBy} is null or ${table.createdBy} is null or ${table.approvedBy} <> ${table.createdBy}`,
+    ),
+  ],
+);
+
+// Privacy-minimized first-party funnel evidence. Rows contain no user id,
+// email, birth/profile data, question text, cards, report prose, URL, cookie,
+// or arbitrary exception string. The application validates a closed event
+// and property vocabulary before this app-only table is reached.
+export const productEvents = pgTable(
+  "product_events",
+  {
+    id,
+    idempotencyKey: text("idempotency_key").notNull(),
+    eventName: text("event_name").notNull(),
+    properties: jsonb("properties").notNull(),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex("product_events_idempotency_unique").on(table.idempotencyKey),
+    check("product_events_digest", sql`${table.idempotencyKey} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "product_events_name",
+      sql`${table.eventName} in (
+        'landing_view', 'pricing_view', 'signup_started', 'consent_completed',
+        'profile_started', 'profile_completed', 'reading_selected', 'question_submitted',
+        'shuffle_started', 'draw_locked', 'card_revealed', 'result_viewed',
+        'followup_submitted', 'feedback_submitted', 'reading_reopened',
+        'outcome_invited', 'outcome_submitted', 'report_previewed', 'checkout_started',
+        'purchase_completed', 'report_ready', 'report_viewed', 'auth_failed',
+        'profile_failed', 'generation_completed', 'generation_failed', 'fallback_used',
+        'payment_failed', 'job_retried'
+      )`,
+    ),
+    check("product_events_properties_object", sql`jsonb_typeof(${table.properties}) = 'object'`),
+    check(
+      "product_events_property_vocabulary",
+      sql`${table.properties} - array[
+        'routeClass', 'referrerClass', 'deviceClass', 'locale', 'completeness',
+        'birthplacePresent', 'birthTimePresent', 'spreadId', 'spreadVersion', 'cardCount',
+        'topic', 'horizon', 'questionLength', 'generalReading', 'generationMode',
+        'fallbackUsed', 'feedbackKind', 'outcomeStatus', 'behaviorChanged', 'ratingBand',
+        'readingAgeBucket', 'productId', 'priceId', 'campaignClass', 'modelVersion',
+        'provider', 'currency', 'priceMinor', 'statusClass', 'errorClass', 'durationBucket'
+      ]::text[] = '{}'::jsonb`,
+    ),
+  ],
+);
 // Not user-row-scoped: keyed by an opaque hash rather than a subject, and
 // must be visible/writable by the trusted server role regardless of which
 // (if any) user a request is bound to. See migration 0006 for the RLS
@@ -395,6 +598,19 @@ export const rateLimitBuckets = pgTable(
     primaryKey({ columns: [table.keyHash, table.windowStart] }),
     index("rate_limit_buckets_expires_at_idx").on(table.expiresAt),
   ],
+);
+
+// User-less (migration 0030): a saved guest reading deleted from history
+// leaves only a domain-separated digest of its id, until the guest receipt it
+// came from expires, so a delayed or replayed save cannot recreate it. No
+// owner, content or other timestamp is kept; expired fences are pruned.
+export const guestReadingDeletionFences = pgTable(
+  "guest_reading_deletion_fences",
+  {
+    readingHash: text("reading_hash").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("guest_reading_deletion_fences_expires_at_idx").on(table.expiresAt)],
 );
 
 // Subject-bound for the application role (migration 0008): the request path

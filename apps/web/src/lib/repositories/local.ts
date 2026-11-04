@@ -15,9 +15,11 @@ import type {
   StoredOrder,
   StoredProfileVersion,
   StoredReading,
+  StoredRelationshipProfileVersion,
   StoredReport,
   UserSettingsRecord,
 } from "@starguidance/database";
+import { guestReadingDeletionFence } from "@starguidance/database";
 import type { StoredRitualProgress } from "@starguidance/contracts";
 
 import { assertLocalAdapter, localStore } from "../local-store";
@@ -25,6 +27,12 @@ import { assertLocalAdapter, localStore } from "../local-store";
 function ownedReading(userId: string, readingId: string): StoredReading | undefined {
   const reading = localStore.readings.get(readingId);
   return reading?.userId === userId ? reading : undefined;
+}
+
+/** Mirrors the system prune: a fence outlives its receipt only until the next write. */
+function pruneGuestReadingDeletionFences(now: number) {
+  for (const [fence, expiresAt] of localStore.guestReadingDeletionFences)
+    if (Date.parse(expiresAt) <= now) localStore.guestReadingDeletionFences.delete(fence);
 }
 
 function ownedProfile(userId: string, snapshotId: string): StoredProfileVersion | undefined {
@@ -156,8 +164,14 @@ export function createLocalRepositories(): ApplicationRepositories {
       const user = localStore.users.get(userId);
       const profileId = user?.profile?.snapshot.profileId;
       if (!user || !profileId) return false;
+      // Only readings made with the profile go with it; a saved guest reading
+      // never had a snapshot and stays until the reader deletes it.
+      const deletedReadingIds = new Set<string>();
       for (const [recordId, reading] of localStore.readings)
-        if (reading.userId === userId) localStore.readings.delete(recordId);
+        if (reading.userId === userId && reading.profileSnapshotId !== null) {
+          localStore.readings.delete(recordId);
+          deletedReadingIds.add(recordId);
+        }
       // Finance/report records outlive the private profile. Remove their
       // snapshot pointer while retaining provider reconciliation and the
       // already-generated report product.
@@ -165,7 +179,8 @@ export function createLocalRepositories(): ApplicationRepositories {
         for (const value of collection.values())
           if (value.userId === userId) value.snapshotId = null;
       for (const [feedbackId, feedback] of localStore.feedback)
-        if (feedback.userId === userId) localStore.feedback.delete(feedbackId);
+        if (feedback.userId === userId && deletedReadingIds.has(feedback.readingId))
+          localStore.feedback.delete(feedbackId);
       for (const [snapshotId, profile] of localStore.profileSnapshots)
         if (profile.snapshot.profileId === profileId) {
           localStore.profileSnapshots.delete(snapshotId);
@@ -183,6 +198,66 @@ export function createLocalRepositories(): ApplicationRepositories {
     },
     async list(userId: string) {
       return (await birthProfiles.listVersions(userId)).map(({ snapshot }) => snapshot);
+    },
+  };
+
+  const relationshipProfiles = {
+    async getActive(userId: string, relationshipProfileId: string) {
+      const root = localStore.relationshipProfileRoots.get(relationshipProfileId);
+      if (root?.userId !== userId) return undefined;
+      return localStore.relationshipProfileSnapshots.get(root.activeSnapshotId);
+    },
+    async getSnapshot(userId: string, snapshotId: string) {
+      const profile = localStore.relationshipProfileSnapshots.get(snapshotId);
+      const root = profile
+        ? localStore.relationshipProfileRoots.get(profile.relationshipProfileId)
+        : undefined;
+      return root?.userId === userId ? profile : undefined;
+    },
+    async listActive(userId: string) {
+      return [...localStore.relationshipProfileRoots.values()].flatMap((root) => {
+        if (root.userId !== userId) return [];
+        const profile = localStore.relationshipProfileSnapshots.get(root.activeSnapshotId);
+        return profile ? [profile] : [];
+      });
+    },
+    async listVersions(userId: string, relationshipProfileId?: string) {
+      return [...localStore.relationshipProfileSnapshots.values()]
+        .filter((profile) => {
+          const root = localStore.relationshipProfileRoots.get(profile.relationshipProfileId);
+          return (
+            root?.userId === userId &&
+            (relationshipProfileId === undefined ||
+              profile.relationshipProfileId === relationshipProfileId)
+          );
+        })
+        .sort((left, right) => left.snapshot.version - right.snapshot.version);
+    },
+    async saveVersion(userId: string, profile: StoredRelationshipProfileVersion) {
+      const root = localStore.relationshipProfileRoots.get(profile.relationshipProfileId);
+      if (root && root.userId !== userId) throw new Error("RELATIONSHIP_PROFILE_NOT_FOUND");
+      const existingVersions = await this.listVersions(userId, profile.relationshipProfileId);
+      const snapshot = {
+        ...profile.snapshot,
+        profileId: profile.relationshipProfileId,
+        version: (existingVersions.at(-1)?.snapshot.version ?? 0) + 1,
+      };
+      const stored = structuredClone({ ...profile, snapshot });
+      localStore.relationshipProfileSnapshots.set(snapshot.id, stored);
+      localStore.relationshipProfileRoots.set(profile.relationshipProfileId, {
+        userId,
+        activeSnapshotId: snapshot.id,
+      });
+      return snapshot;
+    },
+    async delete(userId: string, relationshipProfileId: string) {
+      const root = localStore.relationshipProfileRoots.get(relationshipProfileId);
+      if (root?.userId !== userId) return false;
+      localStore.relationshipProfileRoots.delete(relationshipProfileId);
+      for (const [snapshotId, profile] of localStore.relationshipProfileSnapshots)
+        if (profile.relationshipProfileId === relationshipProfileId)
+          localStore.relationshipProfileSnapshots.delete(snapshotId);
+      return true;
     },
   };
 
@@ -213,15 +288,58 @@ export function createLocalRepositories(): ApplicationRepositories {
       localStore.readings.set(reading.id, structuredClone(reading));
       return structuredClone(reading);
     },
+    async importGuestReading(reading: StoredReading) {
+      if (
+        reading.source !== "guest_trial" ||
+        reading.profileSnapshotId !== null ||
+        reading.encryptedRelatedPersonLens ||
+        reading.encryptedServerSeed ||
+        !reading.result ||
+        !reading.outputProvenance
+      )
+        throw new Error("GUEST_READING_IMPORT_INVALID");
+      // Delete and import each run without yielding, so they never interleave;
+      // a deleted reading stays deleted while its receipt could be replayed.
+      const now = Date.now();
+      pruneGuestReadingDeletionFences(now);
+      if (localStore.guestReadingDeletionFences.has(guestReadingDeletionFence(reading.id)))
+        throw new Error("GUEST_READING_DELETED");
+      if (Date.parse(reading.expiresAt) <= now) throw new Error("GUEST_READING_EXPIRED");
+      const existing = [...localStore.readings.values()].find(
+        (candidate) =>
+          candidate.userId === reading.userId &&
+          candidate.idempotencyKey === reading.idempotencyKey,
+      );
+      if (existing) return structuredClone(existing);
+      // Mirrors the primary key: one free reading lives in one history.
+      if (localStore.readings.has(reading.id)) throw new Error("GUEST_READING_SAVED_ELSEWHERE");
+      const stored: StoredReading = { ...structuredClone(reading), generationStatus: "ready" };
+      localStore.readings.set(stored.id, stored);
+      return structuredClone(stored);
+    },
     async get(userId: string, readingId: string) {
       return ownedReading(userId, readingId);
+    },
+    async getByIdempotencyKey(userId: string, idempotencyKey: string) {
+      const reading = [...localStore.readings.values()].find(
+        (candidate) => candidate.userId === userId && candidate.idempotencyKey === idempotencyKey,
+      );
+      return reading ? structuredClone(reading) : undefined;
     },
     async list(userId: string) {
       return [...localStore.readings.values()].filter((reading) => reading.userId === userId);
     },
     async delete(userId: string, readingId: string) {
-      if (!ownedReading(userId, readingId)) return false;
+      const reading = ownedReading(userId, readingId);
+      if (!reading) return false;
       localStore.readings.delete(readingId);
+      const now = Date.now();
+      pruneGuestReadingDeletionFences(now);
+      if (reading.source === "guest_trial" && Date.parse(reading.expiresAt) > now)
+        localStore.guestReadingDeletionFences.set(
+          guestReadingDeletionFence(readingId),
+          reading.expiresAt,
+        );
       for (const [feedbackId, feedback] of localStore.feedback)
         if (feedback.readingId === readingId) localStore.feedback.delete(feedbackId);
       return true;
@@ -452,6 +570,7 @@ export function createLocalRepositories(): ApplicationRepositories {
         ...(storedSettings ? { settings: storedSettings } : {}),
         consents: await consents.list(userId),
         profiles: await birthProfiles.listVersions(userId),
+        relationshipProfiles: await relationshipProfiles.listVersions(userId),
         readings: await readingSessions.list(userId),
         feedback: [...localStore.feedback.values()].filter(
           (feedback) => feedback.userId === userId,
@@ -480,6 +599,12 @@ export function createLocalRepositories(): ApplicationRepositories {
           localStore.profileComponents.delete(id);
           localStore.profileTraits.delete(id);
         }
+      for (const [id, root] of localStore.relationshipProfileRoots)
+        if (root.userId === userId) localStore.relationshipProfileRoots.delete(id);
+      for (const [id, profile] of localStore.relationshipProfileSnapshots) {
+        const root = localStore.relationshipProfileRoots.get(profile.relationshipProfileId);
+        if (!root || root.userId === userId) localStore.relationshipProfileSnapshots.delete(id);
+      }
       for (const [token, id] of localStore.sessions)
         if (id === userId) localStore.sessions.delete(token);
       localStore.settings.delete(userId);
@@ -494,6 +619,7 @@ export function createLocalRepositories(): ApplicationRepositories {
     settings,
     consents,
     birthProfiles,
+    relationshipProfiles,
     profileSnapshots,
     profileComponents,
     traits,
@@ -509,8 +635,13 @@ export function createLocalRepositories(): ApplicationRepositories {
           id: randomUUID(),
           userId: input.userId,
           readingId: input.readingId,
+          kind: input.kind,
           ...(input.resonance === undefined ? {} : { resonance: input.resonance }),
           ...(input.helpfulness === undefined ? {} : { helpfulness: input.helpfulness }),
+          ...(input.outcomeStatus === undefined ? {} : { outcomeStatus: input.outcomeStatus }),
+          ...(input.behaviorChanged === undefined
+            ? {}
+            : { behaviorChanged: input.behaviorChanged }),
           ...(input.encryptedComment === undefined
             ? {}
             : { encryptedComment: input.encryptedComment }),

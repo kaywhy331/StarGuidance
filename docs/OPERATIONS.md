@@ -8,6 +8,28 @@ Authenticated browsers receive Supabase's `authenticated` role for Auth only. Mi
 
 The server-only `DATABASE_URL` role must be able to `SET LOCAL ROLE starguidance_app`; migration 0004 grants that membership to the migration role. Service repositories run only for the Stripe webhook and other explicit operator boundaries. Health, isolated Postgres tests, and protected staging verify both positive server-role access and negative browser-role access. A deployment fails health if `authenticated` can select a user, update a draw, or insert an entitlement.
 
+### Browser-role default privileges (migration 0029, application-creator scope)
+
+Migration `0029_browser_role_privilege_boundary` is a derivative, narrowed revision. It supersedes only the earlier broad 0029 contract, which froze every creator with a relevant default (plus `postgres` and `supabase_admin`) and failed only when the executor lacked authority over one of them; its locally validated scope was therefore broader than the observed hosted authority can execute. Historic exact-`db0ddab` validation evidence is unchanged. The revised file and its pinned checksum replace the earlier 0029, which was never applied to any hosted database per the last supplied lineage. No migration is appended behind it, and migrations 0000–0028 (including 0028's `NOT VALID` ownership constraint) are byte-identical.
+
+**Approved local source scope.** The application DDL creator is explicitly `postgres`. This is a product scope, not whatever roles a given executor can administer. The migration:
+
+- withdraws `anon`, `authenticated` and PUBLIC from the ten tables created without forced RLS (the nine tarot/commerce reference tables and `payment_webhook_events`), their sequences and their column privileges, including PG17 `MAINTAIN`; effective (PUBLIC and inherited) access is checked, not just direct grants;
+- removes PUBLIC, `anon` and `authenticated` from the **`postgres`** default ACLs, global and `IN SCHEMA public`, for tables, sequences and functions; and
+- keeps explicit `service_role` and `starguidance_app` grants as they are.
+
+**Creator guard (fails before any mutation).** PostgreSQL applies the default privileges of the **current** role to what it creates. A separate login, even one that inherits `postgres`, therefore creates objects it owns under its own (built-in, PUBLIC-executable) defaults. A session that ran `SET ROLE postgres` would in fact create `postgres`-owned objects with the `postgres` defaults; it is refused only as a stricter direct-login policy. The rule is: `session_user` **and** `current_user` must both be `postgres`. No `SET ROLE`, membership or privilege is added to work around a refusal.
+
+**Where the guard runs.** (1) Inside 0029, once, before any change. (2) On the actual application migration entrypoint, **every** invocation, including after 0029 is recorded: `pnpm db:migrate` runs `packages/database/scripts/migrate.ts`, which reads the connection's own identity, refuses with exit code 3 before touching the ledger or any object unless it is a direct `postgres` session, and otherwise applies all pending migrations through Drizzle in its single transaction on that same connection (the ledger format is unchanged). (3) `staging:preflight` checks the same identity first and, when refused, skips its remaining probes including the committed create/drop DDL probe. The CI migration rehearsal (`ci.yml`) and the staging workflow both call `pnpm db:migrate`, so no normal workflow invokes `drizzle-kit migrate`. Limit: a raw `drizzle-kit migrate`, `psql`, or any other tool run directly against the database bypasses this guard, and nothing in the database prevents another creator from creating objects. Unresolved grants inside the application scope (another grantor's grant, a table `postgres` does not own, a group-role default inherited by a browser role) still fail closed, atomically, via a rolled-back trial pass.
+
+**Function default effect.** Removing PUBLIC from the **global** `postgres` function defaults affects every future function `postgres` creates in every schema, including extension scripts run as `postgres`. Legitimate future callers need an explicit `GRANT EXECUTE` in the migration that creates the function (as 0006 does). Global and schema defaults combine additively, so a per-schema revoke cannot remove a global PUBLIC EXECUTE; that is why the global row is changed. Existing function ACLs and bodies do not change. This does not close arbitrary schema-specific grants or any other creator.
+
+**Unchanged platform defaults and remaining risk.** `supabase_admin` and every other non-`postgres` creator keep their default ACLs byte-for-byte. Objects they create (for example from Supabase platform tooling) keep whatever browser access those defaults give, and this migration does not make that state safe. This is a platform / other-creator **residual**, not universal closure. `staging:verify-schema` reports it as a separate `limited` check next to the application-scope `pass`/`fail`; `auditBrowserBoundary` exposes `applicationScopeClean`, `platformResidualPresent` and `globallyClean` separately, and callers must not read an application-scope pass as globally clean. Closing the residual needs a separate, explicitly authorized platform decision.
+
+**Future creator contract.** Application DDL must be created by a direct `postgres` connection through `pnpm db:migrate`. Any other creator must be added to the migration's scope (a new reviewed change) before it creates application objects, and anything it creates beforehand must be audited. `verify-staging-schema` treats the ten required tables as application scope whatever their current owner: an owner other than `postgres` fails the application check even with no browser grant, and a browser grant on such a table is reported as application exposure, not as platform residual. Unrelated tables owned by other roles stay in the separate residual check.
+
+**Execution status.** The Supabase CLI migration identity is currently blocked/unverified: the only observed identity is a read-only connector (`postgres`, non-superuser, `INHERIT`, `BYPASSRLS`, `CREATEROLE`, no `USAGE`/`SET` on `supabase_admin`), which is not an authorized migration route. That connector identity does not provide a CLI `DATABASE_URL`. Hosted execution must be separately supported and then separately confirmed by the owner before use. If the hosted ledger still ends at 0027, the confirmation must cover unchanged pending 0028 plus revised 0029, and the exact candidate, target project, route and ledger lineage must be verified immediately before any real execution; nothing in this change applies 0029 to a hosted database or connects to one. Local evidence comes from a disposable socket-only PostgreSQL 17 fixture that models that observed identity and does not prove hosted authority, provider behavior, Data API reachability or physical-device behavior.
+
 ## Role-separated queue diagnostics and recovery
 
 An authorized operator can inspect both durable queues without opening application records or emitting raw failures:
@@ -20,15 +42,32 @@ Provide `DATABASE_URL` only through the operator shell or managed secret store. 
 
 The authenticated `/operations` surface applies a narrower server-only role boundary:
 
-- `SUPPORT_USER_IDS` is a comma-separated UUID allowlist. Support sees the same aggregate queue health, read-only effective AI/report/allowance configuration, and exact opaque trace lookup. A trace returns only the entered UUID plus matching entity type, status, and creation timestamp—never user IDs, questions, profile facts, report content, encrypted values, or raw errors.
+- `SUPPORT_USER_IDS` is a comma-separated UUID allowlist. Support sees aggregate queue health, closed 24-hour product-event counts, read-only effective configuration, and exact opaque trace lookup. A trace returns only the entered UUID plus matching entity type, status, and creation timestamp—never user IDs, questions, profile facts, report content, encrypted values, or raw errors.
 - `OPERATOR_USER_IDS` is a separate UUID allowlist whose members inherit support visibility and may retry only a retained job currently locked in `failed`. The row is checked under a database lock, requests are same-origin and limited to 12 per operator per hour, and the retry plus its `operations.job.retried` audit receipt commit atomically.
-- A malformed allowlist fails operational access closed. Neither role can change model, prompt, content, product, deck, spread, or allowance configuration in the browser. Apply and roll back those changes through reviewed deployment configuration.
+- A malformed allowlist fails operational access closed. Support cannot mutate configuration. Operators receive the governed controls below; no browser role receives direct table privileges.
 
 Use opaque IDs only when a person has supplied the relevant reading/report/order reference through an approved support channel. Do not ask for screenshots containing questions or birth data. Named role owners, staff offboarding, periodic access review, and production incident escalation remain launch responsibilities.
+
+## Governed runtime and content releases
+
+Migration `0021_optimal_frightful_four` adds an app-only, forced-RLS configuration ledger with one published version per domain: `content`, `prompts`, `commerce`, `features`, and `models`. `pnpm db:seed` installs conservative system-approved version 1 records only when a domain has no history. The content release explicitly locks the deck, card set, meanings, spread catalog, interpretation rules, and enabled spread IDs.
+
+The operator console enforces this sequence:
+
+1. Create a strict-schema draft. Unknown keys, unreviewed prompt bundles, unknown spreads, and models outside `AI_PROVIDER_ALLOWED_MODELS` are rejected.
+2. A different operator approves the draft. The database rejects creator/approver identity equality.
+3. Publish the approved version. Archiving the prior release, publishing the target, and recording the audit receipt share one transaction and advisory domain lock.
+4. Roll back to an earlier approved or system-bootstrap release with the exact `ROLL BACK` confirmation. The action is audited and preserves all version history.
+
+Deck, spread, and product activation switches are separate restrictive controls for new sessions. They never change historical locked readings. Emergency AI/model/payment actions use `DISABLE NOW`, create an immediate published restrictive version, and record an audit receipt. Emergency controls cannot re-enable a capability; restoration uses the reviewed approval/rollback path. Production still requires two named operators, access-review cadence, and an approved change window.
 
 ## Data-encryption key rotation
 
 `DATA_ENCRYPTION_KEY` is the current write key. `DATA_ENCRYPTION_KEYS_PREVIOUS` accepts at most three comma-separated rollback keys during a bounded rotation. Reads try current then previous; all writes use current. Keys must be canonical base64 for exactly 32 random bytes.
+
+`GUEST_TRIAL_SECRET` is the preferred separate ephemeral-boundary key. It derives distinct receipt-encryption, marker-signing, browser-ID, and network-quota subkeys; never copy or manually reuse a database encryption, readiness, worker, profile-engine, AI, or payment secret as this value. Rotation intentionally invalidates outstanding seven-day guest handoffs. Existing signed trial cookies then fail closed into account conversion rather than granting another draw. Because the guest lane has no server-side artifact to re-encrypt, there is no previous-key overlap: schedule routine rotation after the seven-day handoff window, or rotate immediately on suspected compromise and communicate that unfinished guest continuations have expired. Verify the free-reading route, a prior-marker browser, and a newly issued signup handoff after deployment without recording questions or secret values.
+
+Netlify deploys have a bounded fallback when the dedicated key cannot be provisioned. During a real `deploy-preview` build, Next.js inlines only Netlify's non-secret `REVIEW_ID`; during a real `production` build, it inlines a fixed non-secret production marker. At runtime, the guest security module also requires the matching `APP_ENV`, a valid Netlify `SITE_ID`, and a valid `DATA_ENCRYPTION_KEY`. It then uses HMAC-SHA-256 with a versioned context to derive a guest-only subroot before deriving the four ordinary guest keys: previews include the site and review ID, while production includes the site and a different production domain. The data key is never used directly to sign or encrypt a guest artifact, derivative-key exposure does not reveal the root, and mismatched builds/runtimes cannot select either path. A present but malformed `GUEST_TRIAL_SECRET` also blocks fallback. Rotating the data key invalidates outstanding derived-mode receipts and markers; schedule that cutover around the seven-day handoff window or communicate expiry. A dedicated guest key decouples that rotation and remains the preferred long-term operating mode.
 
 The protected staging workflow performs a credentialed database-side rehearsal before cleanup. It keeps one reserved-domain synthetic user, selects only reserved-domain Auth subjects even when ordinary staging accounts coexist, refuses a vacuous zero-subject or zero-row run, generates a masked ephemeral key, re-encrypts every supported synthetic envelope, verifies that no synthetic row needs the old key, and then runs an `always()` rollback that restores and verifies the configured staging key. Synthetic maintenance assumes `starguidance_app` and binds each retained subject exactly as the server does, so forced RLS prevents the rehearsal from reading or changing any non-synthetic account and is neither disabled nor bypassed. Forward and rollback are separate mandatory gate stages, so a partial rotation or failed restoration cannot report `PASSED`. The ephemeral key is never committed, uploaded, or installed in Netlify/GitHub configuration.
 
@@ -110,9 +149,17 @@ pnpm --filter @starguidance/database retention
 
 ## Telemetry and hosted logs
 
-No Sentry, PostHog, Segment, Mixpanel, server content logger, or equivalent SDK is installed. An automated boundary test rejects those server call sites until a reviewed allowlisted adapter exists. Health and staging evidence publish names, booleans, status codes, fixed reason classes, counts, and synthetic aliases only.
+No Sentry, PostHog, Segment, Mixpanel, server content logger, or equivalent SDK is installed. First-party measurement is stored in `product_events` (migrations `0019`, `0020`, and `0022`) behind forced RLS and app-only insert/select grants. The application and database both enforce a closed event/property vocabulary. It has no user ID, email, birth field, profile statement/calculation, raw question/follow-up, card identity, reading URL, report prose, cookie, authorization value, provider payload, or arbitrary exception. The caller's idempotency value is SHA-256 digested before storage. Measurement failure never blocks a user or payment flow.
 
-Before enabling telemetry, define a strict event schema containing operational fields only—for example release, route template, status class, duration bucket, fixed error class, and opaque trace ID. Reject arbitrary objects and strings. Never include email, birth data, profile traits/calculations, question/follow-up text, cards plus question context, report prose, authorization/cookies, provider payloads, URLs with query strings, or exception messages that may quote them. Complete the hosted control-plane review in [Deployment](DEPLOYMENT.md).
+The every-minute durable-job trigger also evaluates content-free operational signals:
+
+- queue depth above 20 or oldest claimable work above 180 seconds;
+- any interpretation/report job failure in the current drain;
+- more than 20 auth failures, 5 profile failures, 5 generation failures, or 3 generations over 15 seconds in five minutes;
+- more than 2 payment failures in fifteen minutes;
+- hourly live-AI volume above `OPERATIONAL_LIVE_AI_VOLUME_ALERT_THRESHOLD` (default 500) as a bounded cost proxy.
+
+Every alert contains only class, severity, observed count, threshold, and `staging | production | unknown`. Configure one managed HTTPS `OPERATIONAL_ALERT_WEBHOOK_URL` to deliver it; invalid or non-HTTPS targets are ignored, and webhook failures are logged without the target or body. This repository path does not prove receiver ownership, paging escalation, database/host uptime alerts, or provider-native billing caps. Those must be configured and rehearsed by accountable operators before launch.
 
 ## Incident response
 

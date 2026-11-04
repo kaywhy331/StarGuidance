@@ -29,8 +29,9 @@ test("an account missing current receipts must re-consent before protected creat
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
       body: JSON.stringify({
-        spreadId: "three-card",
+        action: "prepare",
         question: "What can support a grounded next step?",
+        questionConfirmed: true,
       }),
     });
     return { body: await response.json(), status: response.status };
@@ -52,7 +53,7 @@ test("display identity, reading preferences, and reversible marketing consent pe
 
   const displayName = page.getByLabel("Display name");
   const reducedMotion = page.getByLabel(/Reduce card and scene motion/i);
-  const sound = page.getByLabel(/Enable optional reading sounds/i);
+  const sound = page.getByLabel(/Card sound effects/i);
   const marketing = page.getByLabel(/Send occasional product news/i);
   await expect(displayName).toHaveValue("Reader");
   await expect(sound).toBeChecked();
@@ -94,11 +95,13 @@ test("display identity, reading preferences, and reversible marketing consent pe
   await page.goto("/onboarding");
   await page.getByLabel("Full birth name").fill("Synthetic Reference");
   await page.getByLabel("Date of birth").fill("1990-01-15");
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await page
+    .getByRole("checkbox", { name: /I consent to the private use of my birth details/i })
+    .check();
+  await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
   await expect(page.getByText("For Nova", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Reduced motion/i })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: /^Motion:/ })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

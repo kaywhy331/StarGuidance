@@ -21,12 +21,23 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const target = new URL(request.url).searchParams.get("target") ?? "primary";
     const primary = target === "primary";
+    const fullSpreadReady =
+      reading.ritualProgress !== undefined &&
+      ["fullSpreadReady", "interpretationStreaming", "followUpAvailable", "complete"].includes(
+        reading.ritualProgress.phase,
+      ) &&
+      reading.ritualProgress.revealedIndexes.length === reading.draw.assignments.length;
+    if (primary && !fullSpreadReady)
+      return Response.json(
+        { error: "Turn over every card to open the whole reading." },
+        { status: 409 },
+      );
     const result = primary
       ? reading.result
       : reading.followUps.find(({ id }) => id === target)?.result;
     if (!result)
       return Response.json(
-        { error: "The persisted interpretation is not ready." },
+        { error: "Your reading is still being written. Please try again in a moment." },
         { status: 409 },
       );
 
@@ -56,7 +67,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
               `${JSON.stringify(
                 oracleStreamEventSchema.parse({
                   type: "error",
-                  message: "The oracle stream paused. Received text remains available.",
+                  message: "The reading paused partway. What arrived is kept — you can continue.",
                 }),
               )}\n`,
             ),
@@ -78,7 +89,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (error instanceof Error && error.message === "UNAUTHENTICATED")
       return Response.json({ error: "Authentication required." }, { status: 401 });
     return Response.json(
-      { error: "The persisted interpretation could not be loaded." },
+      { error: "Your reading could not be opened just now. Please try again." },
       { status: 500 },
     );
   }

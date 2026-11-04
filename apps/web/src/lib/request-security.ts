@@ -110,7 +110,12 @@ export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get("origin");
   if (!origin) throw new RequestSecurityError("MISSING_ORIGIN", 403);
   try {
-    if (new URL(origin).origin !== publicRequestOrigin(request))
+    const receivedOrigin = new URL(origin).origin;
+    const forwardedOrigin = publicRequestOrigin(request);
+    let configuredProductionOrigin: string | undefined;
+    if (process.env.APP_ENV === "production" && process.env.NEXT_PUBLIC_APP_URL?.trim())
+      configuredProductionOrigin = new URL(process.env.NEXT_PUBLIC_APP_URL).origin;
+    if (receivedOrigin !== forwardedOrigin && receivedOrigin !== configuredProductionOrigin)
       throw new RequestSecurityError("INVALID_ORIGIN", 403);
   } catch (error) {
     if (error instanceof RequestSecurityError) throw error;

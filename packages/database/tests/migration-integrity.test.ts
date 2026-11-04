@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { EXPECTED_MIGRATIONS } from "../src/migration-manifest";
+import { BROWSER_WITHHELD_TABLES } from "../src/browser-access-privileges";
+import { EXPECTED_MIGRATION_LINEAGE, EXPECTED_MIGRATIONS } from "../src/migration-manifest";
 
 /**
  * Guards the migration history itself.
@@ -22,6 +23,7 @@ const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "migra
 interface JournalEntry {
   idx: number;
   tag: string;
+  when: number;
 }
 
 function read(tag: string): string {
@@ -78,6 +80,26 @@ const IMMUTABLE_DIGESTS: Readonly<Record<string, string>> = {
   "0016_reading_intake_recovery":
     "783c256a90a1a8500a31ef9c12b83fd9e4020891fc612a99e2e374ed0fb8d1b6",
   "0017_sound-on-by-default": "3d3b98ed3d8215be7826057b853d7f006641871ded256200850247844f8d5565",
+  "0018_reading_outcome_feedback":
+    "ffa50fe9f19250b00dcb632b2f11ebd9a65b4d38eecc19346b658a4e6d315c60",
+  "0019_privacy_safe_product_events":
+    "4f4cf3fb0b1aa3d8d3e7bcf92d721145615d6099ba7385b082770765813cdb6a",
+  "0020_wonderful_thunderball": "c6478e72b5ac0b11694122ec6b7e5e120519a1f94f75e50741f2ddf4b19815dc",
+  "0021_optimal_frightful_four": "620be686d4a1602b6f449ac0fa3dfb9cbca06d9d27e395dd4db420c0a5951aef",
+  "0022_outstanding_smasher": "e3bbebde9605b48ae7829834b278273775aaddc6f78f0074ca30cfb1c360cdf4",
+  "0023_output_provenance": "238cc827f006c73a66326b726d31b0f4df8f419c8ce8ae1334f53e0994b182a0",
+  "0024_immutable_content_versions":
+    "bee71d381cd1a2206d428841f9d795fbe7e2c8cf8833a50e2e4c78c5f5ce452e",
+  "0025_committed_draw_lifecycle":
+    "cfd7055877f764cf098108223c977b8f9658076e7b67bc9da08c93ec669bbb8c",
+  "0026_relationship_profiles": "bf9c00a7e1b1e2446425bc499ff506b828d142efe3b6495a1efa7e0b5c01d557",
+  "0027_guest_reading_history": "a54449316d37318a677e13a57c9fbb598f8404961492d334856790b43b46b63c",
+  "0028_follow_up_reading_owner":
+    "8417cf1a5e77841223000b2888c2de3f74cdbe1273bec13896c770a274395833",
+  "0029_browser_role_privilege_boundary":
+    "d4e3c144420003941c4650cb1996831b45740b6ff218f90d1daa5f0004747ad3",
+  "0030_guest_reading_deletion_fences":
+    "7d77919b3cba11ea560d8389500fc389d5db5f2be2fc913b3a1d34a42ac80b9c",
 };
 
 describe("migration history", () => {
@@ -120,10 +142,291 @@ describe("migration history", () => {
     expect(sql).not.toMatch(/update|delete|drop/i);
   });
 
+  it("adds distinct experience and outcome feedback fields without rewriting history (0018)", () => {
+    const sql = executableSql("0018_reading_outcome_feedback");
+    for (const column of ["kind", "outcome_status", "behavior_changed"])
+      expect(sql).toMatch(new RegExp(`add column "${column}"`, "i"));
+    expect(sql).not.toMatch(/update|delete|drop/i);
+  });
+
+  it("keeps privacy-safe product events aggregate-only and app-only (0019)", () => {
+    const sql = executableSql("0019_privacy_safe_product_events");
+    expect(sql).toMatch(/create\s+table\s+"product_events"/i);
+    expect(sql).not.toMatch(/user_id|email|birth|question|card_id|pathname|url/i);
+    expect(sql).toMatch(/alter\s+table\s+"product_events"\s+force\s+row\s+level\s+security/i);
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"product_events"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+select,\s*insert\s+on\s+table\s+"product_events"\s+to\s+starguidance_app/i,
+    );
+    expect(sql).not.toMatch(/grant\s+(update|delete)|bypassrls|security\s+definer/i);
+  });
+
+  it("enforces the telemetry vocabulary and outcome-feedback invariants (0020)", () => {
+    const sql = executableSql("0020_wonderful_thunderball");
+    for (const constraint of [
+      "product_events_digest",
+      "product_events_name",
+      "product_events_properties_object",
+      "product_events_property_vocabulary",
+      "reading_feedback_rating_range",
+      "reading_feedback_kind_contract",
+    ])
+      expect(sql).toMatch(new RegExp(`add constraint "${constraint}"`, "i"));
+    expect(sql).toMatch(/outcome_submitted/i);
+    expect(sql).not.toMatch(/disable\s+row\s+level\s+security|bypassrls|security\s+definer/i);
+  });
+
+  it("creates an append-preserving, independently approved runtime control plane (0021)", () => {
+    const sql = executableSql("0021_optimal_frightful_four");
+    expect(sql).toMatch(/create\s+table\s+"runtime_configuration_versions"/i);
+    expect(sql).toMatch(/runtime_configuration_domain_version_unique/i);
+    expect(sql).toMatch(/runtime_configuration_one_published/i);
+    expect(sql).toMatch(/runtime_configuration_independent_approval/i);
+    expect(sql).toMatch(/create\s+function\s+protect_runtime_configuration_release/i);
+    expect(sql).toMatch(/create\s+trigger\s+runtime_configuration_release_immutable/i);
+    expect(sql).toMatch(
+      /alter\s+table\s+"runtime_configuration_versions"\s+force\s+row\s+level\s+security/i,
+    );
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"runtime_configuration_versions"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+select,\s*insert\s+on\s+table\s+"runtime_configuration_versions"\s+to\s+starguidance_app/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+update\s*\(status,\s*approved_by,\s*approved_at,\s*published_at\)[\s\S]*to\s+starguidance_app/i,
+    );
+    expect(sql).not.toMatch(/grant\s+update\s+on\s+table/i);
+    expect(sql).not.toMatch(/grant\s+delete|bypassrls|security\s+definer/i);
+  });
+
+  it("extends only the closed operational-event vocabulary (0022)", () => {
+    const sql = executableSql("0022_outstanding_smasher");
+    expect(sql).toMatch(/drop\s+constraint\s+"product_events_name"/i);
+    expect(sql).toMatch(/add\s+constraint\s+"product_events_name"/i);
+    expect(sql).toMatch(/auth_failed/i);
+    expect(sql).toMatch(/generation_completed/i);
+    expect(sql).not.toMatch(/alter\s+table[\s\S]*drop\s+column|delete\s+from/i);
+    expect(sql).not.toMatch(/disable\s+row\s+level\s+security|bypassrls|security\s+definer/i);
+  });
+
+  it("records complete provenance for new primary and follow-up outputs (0023)", () => {
+    const sql = executableSql("0023_output_provenance");
+    for (const column of [
+      "provider_id",
+      "prompt_version",
+      "content_version",
+      "safety_policy_version",
+      "schema_version",
+    ])
+      expect(sql).toMatch(
+        new RegExp(
+          `alter table "follow_up_questions" add column "${column}" text default 'legacy-unrecorded' not null`,
+          "i",
+        ),
+      );
+    expect(sql).toMatch(
+      /alter table "reading_outputs" add column "safety_policy_version" text default 'legacy-unrecorded' not null/i,
+    );
+    expect(sql).not.toMatch(/delete\s+from|drop\s+column|disable\s+row\s+level\s+security/i);
+  });
+
+  it("preserves historical tarot releases under version-qualified keys (0024)", () => {
+    const sql = executableSql("0024_immutable_content_versions");
+
+    expect(sql).toMatch(
+      /update\s+"card_meanings"[\s\S]*set\s+"deck_version"\s*=\s*card\."deck_version"[\s\S]*from\s+"cards"/i,
+    );
+    expect(sql).toMatch(
+      /update\s+"spread_positions"[\s\S]*set\s+"spread_version"\s*=\s*spread\."version"[\s\S]*from\s+"spreads"/i,
+    );
+    expect(sql).toMatch(
+      /add\s+constraint\s+"cards_id_deck_version_pk"\s+primary\s+key\s*\("id",\s*"deck_version"\)/i,
+    );
+    expect(sql).toMatch(
+      /add\s+constraint\s+"spreads_id_version_pk"\s+primary\s+key\s*\("id",\s*"version"\)/i,
+    );
+    expect(sql).toMatch(
+      /foreign\s+key\s*\("card_id",\s*"deck_version"\)[\s\S]*references\s+"public"\."cards"\("id",\s*"deck_version"\)/i,
+    );
+    expect(sql).toMatch(
+      /foreign\s+key\s*\("spread_id",\s*"spread_version"\)[\s\S]*references\s+"public"\."spreads"\("id",\s*"version"\)/i,
+    );
+    expect(sql).toMatch(/alter\s+column\s+"deck_version"\s+set\s+not\s+null/i);
+    expect(sql).toMatch(/alter\s+column\s+"spread_version"\s+set\s+not\s+null/i);
+    expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+column/i);
+    expect(sql).not.toMatch(/update\s+"(?:cards|spreads)"|set\s+"(?:payload|id|content_version)"/i);
+  });
+
+  it("adds committed-draw proof and immutable reading configuration without rewriting history (0025)", () => {
+    const sql = executableSql("0025_committed_draw_lifecycle");
+    expect(sql).toMatch(/alter\s+table\s+"reading_draws"\s+add\s+column\s+"proof"\s+jsonb/i);
+    expect(sql).toMatch(
+      /alter\s+table\s+"reading_draws"\s+add\s+column\s+"encrypted_server_seed"\s+text/i,
+    );
+    expect(sql).toMatch(
+      /alter\s+table\s+"reading_sessions"\s+add\s+column\s+"configuration"\s+jsonb/i,
+    );
+    expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+(?:table|column)/i);
+  });
+
+  it("adds encrypted relationship profiles and a locked minimized reading lens (0026)", () => {
+    const sql = executableSql("0026_relationship_profiles");
+    expect(sql).toMatch(/create\s+table\s+"relationship_profiles"/i);
+    expect(sql).toMatch(/create\s+table\s+"relationship_profile_snapshots"/i);
+    expect(sql).toMatch(/encrypted_input"\s+text\s+not\s+null/i);
+    expect(sql).toMatch(/encrypted_calculations"\s+text\s+not\s+null/i);
+    expect(sql).toMatch(/encrypted_related_person_lens"\s+text/i);
+    expect(sql).toMatch(/relationship_profile_snapshots_owner/i);
+    expect(sql).toMatch(/force\s+row\s+level\s+security/i);
+    expect(sql).not.toMatch(/delete\s+from|truncate|drop\s+(?:table|column)/i);
+  });
+
+  it("keeps account snapshot lineage while allowing explicitly saved guest readings (0027)", () => {
+    const sql = executableSql("0027_guest_reading_history");
+    expect(sql).toMatch(
+      /alter\s+table\s+"reading_sessions"\s+alter\s+column\s+"profile_snapshot_id"\s+drop\s+not\s+null/i,
+    );
+    expect(sql).toMatch(
+      /alter\s+table\s+"reading_sessions"\s+add\s+column\s+"source"\s+text\s+default\s+'account'\s+not\s+null/i,
+    );
+    // Account readings still require their immutable snapshot; a saved guest
+    // reading carries no snapshot and no related-person lens.
+    expect(sql).toMatch(
+      /add\s+constraint\s+"reading_sessions_source_contract"[\s\S]*"source"\s*=\s*'account'\s+and\s+"reading_sessions"\."profile_snapshot_id"\s+is\s+not\s+null[\s\S]*"source"\s*=\s*'guest_trial'[\s\S]*"profile_snapshot_id"\s+is\s+null[\s\S]*"encrypted_related_person_lens"\s+is\s+null/i,
+    );
+    expect(sql).not.toMatch(/update\s|delete\s+from|truncate|drop\s+(?:table|column|constraint)/i);
+    expect(sql).not.toMatch(
+      /disable\s+row\s+level\s+security|bypassrls|security\s+definer|\bgrant\b/i,
+    );
+  });
+
+  it("binds follow-ups to a reading of the same account without touching history (0028)", () => {
+    const sql = executableSql("0028_follow_up_reading_owner");
+    const unique = sql.search(
+      /add\s+constraint\s+"reading_sessions_id_user_unique"\s+unique\s*\(\s*"id"\s*,\s*"user_id"\s*\)/i,
+    );
+    const ownerKey = sql.search(
+      /add\s+constraint\s+"follow_up_questions_reading_owner_fk"\s+foreign\s+key\s*\(\s*"reading_id"\s*,\s*"user_id"\s*\)\s+references\s+"public"\."reading_sessions"\s*\(\s*"id"\s*,\s*"user_id"\s*\)[^;]*\bnot\s+valid\s*;/i,
+    );
+    // The referenced key must exist before the foreign key that needs it.
+    expect(unique).toBeGreaterThanOrEqual(0);
+    expect(ownerKey).toBeGreaterThan(unique);
+    // Existing rows are neither validated nor rewritten here.
+    expect(sql).not.toMatch(/validate\s+constraint/i);
+    expect(sql).not.toMatch(
+      /update\s+"?\w+"?\s+set|delete\s+from|truncate|drop\s+(?:table|column|constraint)/i,
+    );
+    expect(sql).not.toMatch(
+      /disable\s+row\s+level\s+security|bypassrls|security\s+definer|\bgrant\b|\bpolicy\b/i,
+    );
+  });
+
+  it("withholds browser roles from the reference and webhook tables and their creator defaults (0029)", () => {
+    const sql = executableSql("0029_browser_role_privilege_boundary");
+    // The application creator is the single constant `postgres`; the identity
+    // guard (session_user AND current_user) precedes every ACL statement, and the
+    // real authority is proven by a rolled-back first pass.
+    expect(sql).toMatch(/creator\s+constant\s+text\s*:=\s*'postgres'/i);
+    const guard = sql.search(
+      /session_user::text\s*<>\s*creator\s+or\s+current_user::text\s*<>\s*creator/i,
+    );
+    const alter = sql.search(/alter\s+default\s+privileges\s+for\s+role/i);
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(alter).toBeGreaterThan(guard);
+    expect(sql).not.toMatch(/set\s+(local\s+)?role|set_config|pg_has_role\([^)]*'SET'/i);
+    expect(sql).not.toMatch(/for\s+role\s+'?supabase_admin/i);
+    expect(sql).toMatch(/for\s+attempt\s+in\s+1\.\.2/i);
+    expect(sql).toMatch(/errcode\s*=\s*'S0029'/i);
+    expect(sql).toMatch(
+      /when\s+insufficient_privilege[\s\S]*using\s+errcode\s*=\s*'insufficient_privilege'/i,
+    );
+    expect(sql).toMatch(/pg_has_role\(b\.oid,\s*g\.oid,\s*'USAGE'\)/i);
+    // Implicit PUBLIC function EXECUTE is revoked in the creator-global default.
+    expect(sql).toMatch(/entry\.ns\s*=\s*0/i);
+    expect(sql).toMatch(/select\s+0::oid,\s*'f'::"char"/i);
+    expect(sql).toMatch(/acldefault\(k\.objtype,\s*creator_oid\)/i);
+    for (const table of BROWSER_WITHHELD_TABLES) expect(sql).toContain(`'${table}'`);
+    expect(sql).toMatch(/revoke\s+all\s+on\s+table\s+public\.%I\s+from\s+%s/i);
+    // Reference/webhook tables have no per-subject policy: never force or toggle RLS,
+    // and never touch the app actor, service_role, schema USAGE, or role attributes.
+    expect(sql).not.toMatch(
+      /row\s+level\s+security|\bgrant\b|\bto\s+(service_role|starguidance_app)\b|from\s+(service_role|starguidance_app)\b|create\s+role|alter\s+role|bypassrls|security\s+definer|\bpolicy\b|on\s+schema/i,
+    );
+    expect(sql).not.toMatch(/delete\s+from|drop\s+(table|column)|validate\s+constraint/i);
+  });
+
   it("orders the corrective migration after the migration that created the trigger", () => {
     const tags = journal.entries.sort((a, b) => a.idx - b.idx).map(({ tag }) => tag);
     expect(tags).toEqual(EXPECTED_MIGRATIONS);
     expect(Object.keys(IMMUTABLE_DIGESTS)).toEqual(EXPECTED_MIGRATIONS);
+  });
+
+  it("pins the applied hash and journal timestamp of every migration", () => {
+    const entries = [...journal.entries].sort((a, b) => a.idx - b.idx);
+    expect(EXPECTED_MIGRATION_LINEAGE.map(({ tag }) => tag)).toEqual(EXPECTED_MIGRATIONS);
+    expect(EXPECTED_MIGRATION_LINEAGE).toEqual(
+      entries.map(({ tag, when }) => ({ tag, createdAt: when, sha256: digest(tag) })),
+    );
+  });
+
+  it("keeps the 0029 snapshot chained to 0028 with no schema drift", () => {
+    const snapshot = (name: string) =>
+      JSON.parse(readFileSync(join(migrationsDir, "meta", `${name}_snapshot.json`), "utf8")) as {
+        id: string;
+        prevId: string;
+        tables: unknown;
+      };
+    const previous = snapshot("0028");
+    const current = snapshot("0029");
+    expect(current.prevId).toBe(previous.id);
+    expect(current.id).not.toBe(previous.id);
+    expect(current.tables).toEqual(previous.tables);
+  });
+
+  it("keeps the 0030 snapshot chained to 0029 with only the fence table added", () => {
+    const snapshot = (name: string) =>
+      JSON.parse(readFileSync(join(migrationsDir, "meta", `${name}_snapshot.json`), "utf8")) as {
+        id: string;
+        prevId: string;
+        tables: Record<string, unknown>;
+      };
+    const previous = snapshot("0029");
+    const current = snapshot("0030");
+    expect(current.prevId).toBe(previous.id);
+    const { "public.guest_reading_deletion_fences": fences, ...unchanged } = current.tables;
+    expect(fences).toBeDefined();
+    expect(unchanged).toEqual(previous.tables);
+  });
+
+  it("fences deleted guest readings with an opaque, expiring, app-append-only row (0030)", () => {
+    const sql = executableSql("0030_guest_reading_deletion_fences");
+    expect(sql).toMatch(
+      /create\s+table\s+"guest_reading_deletion_fences"\s*\(\s*"reading_hash"\s+text\s+primary\s+key\s+not\s+null,\s*"expires_at"\s+timestamp\s+with\s+time\s+zone\s+not\s+null\s*\)/i,
+    );
+    // No owner, content or other timestamp: nothing an export or a cascade could surface.
+    expect(sql).not.toMatch(/user_id|question|card|payload|created_at|reading_id/i);
+    expect(sql).toMatch(
+      /alter\s+table\s+"guest_reading_deletion_fences"\s+enable\s+row\s+level\s+security/i,
+    );
+    expect(sql).toMatch(
+      /alter\s+table\s+"guest_reading_deletion_fences"\s+force\s+row\s+level\s+security/i,
+    );
+    expect(sql).toMatch(
+      /create\s+policy\s+"guest_reading_deletion_fences_app"[\s\S]*to\s+starguidance_app/i,
+    );
+    expect(sql).toMatch(
+      /create\s+policy\s+"guest_reading_deletion_fences_system"[\s\S]*to\s+current_user/i,
+    );
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+"guest_reading_deletion_fences"\s+from\s+public,\s*authenticated/i,
+    );
+    expect(sql).toMatch(
+      /grant\s+select,\s*insert\s+on\s+table\s+"guest_reading_deletion_fences"\s+to\s+starguidance_app/i,
+    );
+    expect(sql).not.toMatch(/grant\s+[^;]*(update|delete)|bypassrls|security\s+definer/i);
   });
 
   it("never recreates the auth.users synchronisation trigger after 0002", () => {

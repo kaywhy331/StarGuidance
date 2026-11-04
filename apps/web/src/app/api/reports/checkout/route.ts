@@ -4,11 +4,39 @@ import Stripe from "stripe";
 import { assertCurrentPolicyConsents, POLICY_RECONSENT_REQUIRED, requireUser } from "@/lib/auth";
 import { isLocalRuntimeAdapterAuthorized } from "@/lib/hosted-runtime";
 import { persistenceFor } from "@/lib/persistence";
+import { tryRecordProductEvent } from "@/lib/product-telemetry";
 import { generateProfileReport, prepareProfileReportSource } from "@/lib/report";
 import { assertRateLimit, assertSameOrigin } from "@/lib/request-security";
 import { isStripeTestSecret } from "@/lib/stripe-events";
+import {
+  getRuntimeConfiguration,
+  profileReportsEnabled,
+  type CommerceConfiguration,
+} from "@/lib/runtime-configuration";
+
+const CHECKOUT_UNAVAILABLE =
+  "Secure checkout couldn’t be opened just now. Nothing was charged — please try again in a moment.";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function recordCheckoutStarted(
+  orderId: string,
+  provider: "local" | "stripe",
+  commerce: CommerceConfiguration,
+) {
+  await tryRecordProductEvent({
+    idempotencyKey: `order:${orderId}:checkout-started`,
+    name: "checkout_started",
+    properties: {
+      productId: "profile-report-v1",
+      provider,
+      statusClass: "started",
+      ...(commerce.stripePriceId ? { priceId: commerce.stripePriceId } : {}),
+      currency: commerce.currency,
+      priceMinor: commerce.priceMinor,
+    },
+  });
+}
 
 function configuredPaymentsProvider(): "local" | "stripe" | undefined {
   const provider = process.env.PAYMENTS_PROVIDER;
@@ -17,9 +45,10 @@ function configuredPaymentsProvider(): "local" | "stripe" | undefined {
   return undefined;
 }
 
-function stripeConfiguration(): { secretKey: string; price: string; appUrl: string } | undefined {
+function stripeConfiguration(
+  price: string | undefined,
+): { secretKey: string; price: string; appUrl: string } | undefined {
   const secretKey = process.env.STRIPE_SECRET_KEY;
-  const price = process.env.STRIPE_PROFILE_REPORT_PRICE_ID;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   return secretKey && isStripeTestSecret(secretKey) && price && appUrl
     ? { secretKey, price, appUrl }
@@ -52,7 +81,8 @@ async function createCheckoutSession(input: {
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    if (process.env.ENABLE_PROFILE_REPORTS !== "true")
+    const runtimeConfiguration = await getRuntimeConfiguration();
+    if (!profileReportsEnabled(runtimeConfiguration))
       return NextResponse.json(
         { error: "Profile reports are not available in this beta." },
         { status: 404 },
@@ -95,10 +125,10 @@ export async function POST(request: Request) {
         existingOrder.provider === "stripe" &&
         existingOrder.status === "pending"
       ) {
-        const configuration = stripeConfiguration();
+        const configuration = stripeConfiguration(runtimeConfiguration.commerce.stripePriceId);
         if (!configuration)
           return NextResponse.json(
-            { error: "Stripe Checkout requires configured test credentials." },
+            { error: "Purchases aren’t available right now. Please try again later." },
             { status: 503 },
           );
         const stripe = new Stripe(configuration.secretKey);
@@ -106,18 +136,17 @@ export async function POST(request: Request) {
         try {
           session = await stripe.checkout.sessions.retrieve(existingOrder.providerSessionId);
         } catch {
-          return NextResponse.json(
-            { error: "Stripe Checkout is temporarily unavailable." },
-            { status: 502 },
-          );
+          return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
         }
-        if (session.status === "open" && session.url)
+        if (session.status === "open" && session.url) {
+          await recordCheckoutStarted(existingOrder.id, "stripe", runtimeConfiguration.commerce);
           return NextResponse.json({
             checkoutUrl: session.url,
             orderId: existingOrder.id,
             status: existingOrder.status,
             adapter: existingOrder.provider,
           });
+        }
         if (session.status === "expired") {
           let replacement: Stripe.Checkout.Session;
           try {
@@ -130,16 +159,10 @@ export async function POST(request: Request) {
               idempotencyKey: `${user.id}:${existingOrder.idempotencyKey}:resume:${existingOrder.providerSessionId}`,
             });
           } catch {
-            return NextResponse.json(
-              { error: "Stripe Checkout is temporarily unavailable." },
-              { status: 502 },
-            );
+            return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
           }
           if (!replacement.url)
-            return NextResponse.json(
-              { error: "Stripe Checkout returned an invalid session." },
-              { status: 502 },
-            );
+            return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
           const replaced = await persistence.repositories.orders.replaceProviderSession(
             user.id,
             existingOrder.id,
@@ -154,6 +177,7 @@ export async function POST(request: Request) {
               { error: "Checkout changed in another request. Try again." },
               { status: 409 },
             );
+          await recordCheckoutStarted(existingOrder.id, "stripe", runtimeConfiguration.commerce);
           return NextResponse.json({
             checkoutUrl: replacement.url,
             orderId: existingOrder.id,
@@ -171,10 +195,10 @@ export async function POST(request: Request) {
     }
     if (!profile) return NextResponse.json({ error: "A profile is required." }, { status: 409 });
     if (paymentsProvider === "stripe") {
-      const configuration = stripeConfiguration();
+      const configuration = stripeConfiguration(runtimeConfiguration.commerce.stripePriceId);
       if (!configuration)
         return NextResponse.json(
-          { error: "Stripe Checkout requires configured test credentials." },
+          { error: "Purchases aren’t available right now. Please try again later." },
           { status: 503 },
         );
       const orderId = randomUUID();
@@ -202,17 +226,11 @@ export async function POST(request: Request) {
           idempotencyKey: `${user.id}:${profile.snapshot.id}:purchase:${purchaseAttempt}`,
         });
       } catch {
-        return NextResponse.json(
-          { error: "Stripe Checkout is temporarily unavailable." },
-          { status: 502 },
-        );
+        return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
       }
       const persistedOrderId = session.metadata?.orderId;
       if (!persistedOrderId || !UUID.test(persistedOrderId) || !session.url)
-        return NextResponse.json(
-          { error: "Stripe Checkout returned an invalid session." },
-          { status: 502 },
-        );
+        return NextResponse.json({ error: CHECKOUT_UNAVAILABLE }, { status: 502 });
       await persistence.repositories.orders.create(
         {
           id: persistedOrderId,
@@ -226,6 +244,7 @@ export async function POST(request: Request) {
         },
         encryptedReportSource,
       );
+      await recordCheckoutStarted(persistedOrderId, "stripe", runtimeConfiguration.commerce);
       return NextResponse.json({
         checkoutUrl: session.url,
         orderId: persistedOrderId,
@@ -244,6 +263,7 @@ export async function POST(request: Request) {
       status: "paid",
       createdAt: now,
     });
+    await recordCheckoutStarted(orderId, "local", runtimeConfiguration.commerce);
     await persistence.repositories.entitlements.grant({
       id: randomUUID(),
       userId: user.id,
@@ -257,6 +277,26 @@ export async function POST(request: Request) {
       snapshotId: profile.snapshot.id,
       orderId,
     });
+    await Promise.all([
+      tryRecordProductEvent({
+        idempotencyKey: `order:${orderId}:purchase-completed`,
+        name: "purchase_completed",
+        properties: {
+          productId: "profile-report-v1",
+          provider: "local",
+          statusClass: "completed",
+        },
+      }),
+      tryRecordProductEvent({
+        idempotencyKey: `report:${report.id}:ready`,
+        name: "report_ready",
+        properties: {
+          productId: "profile-report-v1",
+          provider: "local",
+          statusClass: "ready",
+        },
+      }),
+    ]);
     return NextResponse.json({ reportId: report.id, adapter: "local" }, { status: 201 });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "";

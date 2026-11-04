@@ -11,6 +11,7 @@ import {
   type StoredFeedback,
   type StoredOrder,
   type StoredProfileVersion,
+  type StoredRelationshipProfileVersion,
   type StoredReading,
   type StoredReport,
 } from "@starguidance/database";
@@ -43,6 +44,8 @@ export interface LocalStore {
   users: Map<string, LocalUser>;
   usersByEmail: Map<string, string>;
   readings: Map<string, StoredReading>;
+  /** Deleted saved guest readings: fence digest → receipt expiry (migration 0030). */
+  guestReadingDeletionFences: Map<string, string>;
   reports: Map<string, StoredReport>;
   orders: Map<string, StoredOrder>;
   reportSources: Map<string, string>;
@@ -52,6 +55,8 @@ export interface LocalStore {
   profileTraits: Map<string, ProfileTraitRecord[]>;
   feedback: Map<string, StoredFeedback>;
   profileSnapshots: Map<string, LocalProfileVersion>;
+  relationshipProfileRoots: Map<string, { userId: string; activeSnapshotId: string }>;
+  relationshipProfileSnapshots: Map<string, StoredRelationshipProfileVersion>;
   idempotency: Map<string, string>;
   webhookEvents: Map<
     string,
@@ -64,6 +69,10 @@ export interface LocalStore {
     }
   >;
   auditEvents: AuditRecord[];
+  productEvents: Map<
+    string,
+    { eventName: string; properties: Record<string, string | number | boolean> }
+  >;
 }
 
 const globalStore = globalThis as typeof globalThis & { __starGuidanceLocalStore?: LocalStore };
@@ -76,6 +85,7 @@ export const localStore: LocalStore =
     users: new Map(),
     usersByEmail: new Map(),
     readings: new Map(),
+    guestReadingDeletionFences: new Map(),
     reports: new Map(),
     orders: new Map(),
     reportSources: new Map(),
@@ -85,9 +95,12 @@ export const localStore: LocalStore =
     profileTraits: new Map(),
     feedback: new Map(),
     profileSnapshots: new Map(),
+    relationshipProfileRoots: new Map(),
+    relationshipProfileSnapshots: new Map(),
     idempotency: new Map(),
     webhookEvents: new Map(),
     auditEvents: [],
+    productEvents: new Map(),
   });
 
 export function assertLocalAdapter(): void {

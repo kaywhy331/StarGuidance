@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, LoadingState, Panel } from "@starguidance/design-system";
 
+import { requestJson, sendJson } from "@/lib/client-request";
 import type { OperationalRole } from "@/lib/operational-access";
+
+import { OperatorConfigurationPanel } from "./operator-configuration-panel";
 
 interface OperationsPayload {
   role: OperationalRole;
@@ -11,6 +14,10 @@ interface OperationsPayload {
     "interpretation" | "report",
     { statuses: Record<string, number>; failedByClass: Record<string, number> }
   >;
+  productMeasurement: {
+    windowHours: number;
+    events: Record<string, number>;
+  };
   trace: {
     id: string;
     entities: { type: string; status: string; createdAt: string }[];
@@ -25,13 +32,12 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
 
   const load = useCallback(async (id?: string) => {
     setMessage(undefined);
-    const response = await fetch(
+    const result = await requestJson<OperationsPayload>(
       `/api/operations${id ? `?traceId=${encodeURIComponent(id)}` : ""}`,
       { cache: "no-store" },
     );
-    const body = (await response.json()) as OperationsPayload & { error?: string };
-    if (!response.ok) return setMessage(body.error ?? "Operational diagnostics are unavailable.");
-    setPayload(body);
+    if (!result.ok) return setMessage(result.error);
+    setPayload(result.data);
   }, []);
 
   useEffect(() => {
@@ -41,20 +47,28 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
 
   const retry = async (queue: "interpretation" | "report") => {
     if (!payload?.trace) return;
-    const response = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "retry-job", queue, targetId: payload.trace.id }),
+    const result = await sendJson("/api/operations", "POST", {
+      action: "retry-job",
+      queue,
+      targetId: payload.trace.id,
     });
-    const body = (await response.json()) as { error?: string };
-    setMessage(response.ok ? "The failed job was safely requeued and audited." : body.error);
-    if (response.ok) await load(payload.trace.id);
+    setMessage(result.ok ? "The failed job was safely requeued and audited." : result.error);
+    if (result.ok) await load(payload.trace.id);
   };
 
   return (
     <div className="mt-8 grid gap-6">
       {!payload ? (
-        <LoadingState label="Loading masked operational status…" />
+        message ? (
+          <Panel role="alert">
+            <p>{message}</p>
+            <Button className="mt-4" onClick={() => void load()}>
+              Try again
+            </Button>
+          </Panel>
+        ) : (
+          <LoadingState label="Loading masked operational status…" />
+        )
       ) : (
         <>
           <Panel>
@@ -80,6 +94,29 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
             </div>
           </Panel>
           <Panel>
+            <h2 className="text-2xl">Privacy-safe product signals</h2>
+            <p className="mt-2 text-sm text-[#b8adc8]">
+              Aggregate counts from the last {payload.productMeasurement.windowHours} hours. The
+              event store contains no user ID, birth data, question text, card identity, URL, or
+              report prose.
+            </p>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {Object.entries(payload.productMeasurement.events).length === 0 ? (
+                <div>
+                  <dt className="text-xs text-[#a99db5]">Current window</dt>
+                  <dd>No events recorded</dd>
+                </div>
+              ) : (
+                Object.entries(payload.productMeasurement.events).map(([event, count]) => (
+                  <div key={event}>
+                    <dt className="text-xs text-[#a99db5]">{event}</dt>
+                    <dd>{count}</dd>
+                  </div>
+                ))
+              )}
+            </dl>
+          </Panel>
+          <Panel>
             <h2 className="text-2xl">Effective configuration</h2>
             <dl className="mt-4 grid gap-3 sm:grid-cols-2">
               {Object.entries(payload.configuration).map(([key, value]) => (
@@ -90,9 +127,8 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
               ))}
             </dl>
             <p className="mt-4 text-sm text-[#b8adc8]">
-              This surface is intentionally read-only for model, prompt, content, product, and
-              allowance configuration. Change those through reviewed deployment configuration and
-              its rollback path.
+              Runtime publishing and rollback controls appear here only for operators; support
+              access remains masked and read-only.
             </p>
           </Panel>
         </>
@@ -160,6 +196,7 @@ export function OperationsConsole({ role }: { role: OperationalRole }) {
           </p>
         )}
       </Panel>
+      {role === "operator" && <OperatorConfigurationPanel />}
     </div>
   );
 }

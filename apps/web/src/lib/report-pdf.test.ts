@@ -12,11 +12,15 @@ const report: StoredReport = {
   provider: "local",
   status: "ready",
   sections: [
-    { key: "overview", title: "Personal overview", body: "Structured overview body." },
+    {
+      key: "overview",
+      title: "Personal overview",
+      body: "Structured overview body.\n\nTechnical notes: Profile snapshot v2 (core).",
+    },
     {
       key: "western-astrology",
       title: "Western astrology",
-      body: "No validated calculation is available.",
+      body: "Not included in this edition.",
       unavailable: true,
     },
   ],
@@ -29,7 +33,20 @@ describe("profile report PDF", () => {
     expect(model.sections.map(({ key, title, body }) => ({ key, title, body }))).toEqual(
       report.sections.map(({ key, title, body }) => ({ key, title, body })),
     );
-    expect(model.sections[1]?.statusLabel).toBe("Explicitly unavailable");
+    expect(
+      model.sections.map(({ meaning, technicalNote }) => ({ meaning, technicalNote })),
+    ).toEqual([
+      { meaning: "Structured overview body.", technicalNote: "Profile snapshot v2 (core)." },
+      { meaning: "Not included in this edition.", technicalNote: undefined },
+    ]);
+    expect(model.sections[1]?.statusLabel).toBe("Not in this edition");
+  });
+
+  it("labels the edition by purchase date and never by payment provider", () => {
+    const model = buildReportDocumentModel(report);
+    expect(model.eyebrow).toBe("Pattern atlas · Purchased August 11, 2026");
+    expect(model.eyebrow).not.toMatch(/stripe|local|test|adapter/i);
+    expect(buildReportDocumentModel({ ...report, provider: "stripe" }).eyebrow).toBe(model.eyebrow);
   });
 
   it("generates a tagged, language-declared PDF with document structure", async () => {

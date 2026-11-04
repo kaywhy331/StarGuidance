@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+
+const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
 async function applyTwoHundredPercentText(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -33,7 +36,7 @@ async function expectHorizontalReflow(page: Page): Promise<void> {
   expect(evidence.clipped, "interactive controls must remain inside the viewport").toEqual([]);
 }
 
-async function createReading(page: Page): Promise<void> {
+async function reachOnboarding(page: Page): Promise<void> {
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(`a11y-${randomUUID()}@example.test`);
   await page.getByLabel("Password").fill("synthetic-private-password");
@@ -44,31 +47,54 @@ async function createReading(page: Page): Promise<void> {
   await page.getByLabel(/I confirm that I am at least 18/i).check();
   await page.getByRole("button", { name: "Accept and continue" }).click();
   await expect(page).toHaveURL(/\/onboarding$/);
+}
+
+async function createReading(page: Page): Promise<void> {
+  await reachOnboarding(page);
   await page.getByLabel("Full birth name").fill("Accessible Synthetic");
   await page.getByLabel("Date of birth").fill("1990-01-15");
-  await page.getByRole("checkbox", { name: /I consent to private profile calculation/i }).check();
-  await page.getByRole("button", { name: "Check profile capability" }).click();
+  await page
+    .getByRole("checkbox", { name: /I consent to the private use of my birth details/i })
+    .check();
+  await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/readings$/, { timeout: 30_000 });
-  await page.getByRole("button", { name: /^Continue with / }).click();
-  await page.getByLabel("Your private question").fill("What should I notice now?");
-  await page.getByRole("button", { name: "Begin the shuffle" }).click();
+  await page
+    .getByLabel("Your question for the stars")
+    .fill("How can I understand the uncertainty I feel right now?");
+  await page.getByRole("button", { name: "Draw my cards" }).click();
+  // This test validates reflow and keyboard operation, not decorative timing.
+  // Enable the persisted reduced-motion path before opening the fan so a busy
+  // WebKit runner cannot throttle the fan-opening timer past the assertion.
+  const motionControl = page.getByRole("button", { name: /^Motion:/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  const fan = page.getByTestId("casino-wash-deck");
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 20_000 });
+  for (let index = 1; index <= 3; index += 1) {
+    await page
+      .getByRole("button", { name: `Choose face-down card ${index}`, exact: true })
+      .press("Enter");
+    // Wait for React to commit each keyboard selection before pressing the
+    // next card.
+    await expect(fan).toHaveAttribute("data-selected-count", String(index));
+  }
+  await page.getByRole("button", { name: "These are my cards" }).press("Enter");
   await expect(page).toHaveURL(/\/session\/[a-f0-9-]+$/, { timeout: 30_000 });
   // Keep the accessibility suite fast while exercising the same centered,
   // reader-controlled sequence through standard buttons.
-  const motionControl = page.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
-  await page
-    .getByRole("button", { name: "Gather now", exact: true })
-    .click({ timeout: 2_000 })
-    .catch(() => {});
-  await page.getByRole("button", { name: "I’m ready", exact: true }).click();
-  for (let index = 0; index < 10; index += 1) {
-    const action = page.locator(".guided-next-action");
-    await expect(action).toBeVisible();
-    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
-    await action.click();
-    if (finalCard) break;
-  }
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  const sanctuary = page.getByTestId("mystic-sanctuary-scene");
+  await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
+  // The draw is already locked; reduced motion keeps deal/reveal transitions immediate.
+  await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("question-reflection")).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "I’m ready", exact: true }).dispatchEvent("click");
+  await page.getByRole("button", { name: "Reveal all" }).dispatchEvent("click");
   await expect(page.getByTestId("oracle-transcript")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -85,6 +111,50 @@ test("skip navigation and keyboard focus remain visibly operable", async ({ page
   expect(focusStyle.width).toBeGreaterThanOrEqual(2);
   await page.keyboard.press("Enter");
   await expect(page.locator("#main-content")).toBeFocused();
+});
+
+test("onboarding exposes valid automated WCAG semantics", async ({ page }) => {
+  await reachOnboarding(page);
+  const details = page.getByRole("group", { name: "Your birth details" });
+  await expect(details.getByLabel("Full birth name")).toHaveAttribute("required", "");
+  await expect(details.getByLabel("Date of birth")).toHaveAttribute("required", "");
+  await expect(details.getByRole("switch", { name: "I don't know my birthplace" })).toBeVisible();
+  await expect(
+    details.getByRole("switch", { name: "I don't know the time of birth" }),
+  ).toBeVisible();
+
+  const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  expect(
+    violations
+      .filter(({ impact }) => impact === "critical" || impact === "serious")
+      .map(({ id }) => id),
+  ).toEqual([]);
+});
+
+test("the account-free reading threshold exposes valid automated WCAG semantics", async ({
+  page,
+}) => {
+  await page.goto("/free-reading");
+  await expect(page.getByLabel("Your birthday")).toBeVisible();
+  let scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  expect(
+    scan.violations
+      .filter(({ impact }) => impact === "critical" || impact === "serious")
+      .map(({ id }) => id),
+  ).toEqual([]);
+
+  await page.getByLabel("Your birthday").fill("1990-01-15");
+  await page
+    .getByLabel(/I’m 18 or older, I agree to the Terms/i)
+    .evaluate((checkbox: HTMLInputElement) => checkbox.click());
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByLabel("What would you like to ask the cards?")).toBeVisible();
+  scan = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  expect(
+    scan.violations
+      .filter(({ impact }) => impact === "critical" || impact === "serious")
+      .map(({ id }) => id),
+  ).toEqual([]);
 });
 
 test("200% text reflows public, onboarding, and completed-reading controls at 320px", async ({

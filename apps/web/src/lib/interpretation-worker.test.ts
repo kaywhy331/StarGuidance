@@ -4,6 +4,7 @@ import type { StoredReading } from "@starguidance/database";
 const mocks = vi.hoisted(() => ({
   getRuntimeAdapter: vi.fn(),
   getSystemDatabaseClient: vi.fn(),
+  getRuntimeConfiguration: vi.fn(),
   persistenceFor: vi.fn(),
   createInterpretationProvider: vi.fn(),
   claimInterpretationJobs: vi.fn(),
@@ -18,6 +19,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./runtime", () => ({
   getRuntimeAdapter: mocks.getRuntimeAdapter,
   getSystemDatabaseClient: mocks.getSystemDatabaseClient,
+}));
+vi.mock("./runtime-configuration", () => ({
+  getRuntimeConfiguration: mocks.getRuntimeConfiguration,
+  interpretationRuntimeOptions: () => ({}),
 }));
 
 vi.mock("./persistence", () => ({
@@ -90,6 +95,18 @@ function reading(): StoredReading {
     },
     expiresAt: "2026-08-12T00:00:00.000Z",
     spreadId: "single-focus",
+    configuration: {
+      version: "reading-configuration-v1",
+      reversalMode: "reversals_enabled",
+      personalizationMode: "pure_tarot",
+      positions: [],
+      capabilities: {
+        trajectoryPositionIds: [],
+        alternativePositionGroups: [],
+        timingMethod: null,
+        linkedPositions: [],
+      },
+    },
     encryptedQuestion: "encrypted-question",
     safetyClassification: "ordinary",
     draw: {
@@ -130,6 +147,7 @@ function stubProvider(generateWithProvenance: ReturnType<typeof vi.fn>) {
     generate: vi.fn(),
     generateWithProvenance,
     generateFollowUp: vi.fn(),
+    generateFollowUpWithProvenance: vi.fn(),
   });
 }
 
@@ -140,6 +158,10 @@ beforeEach(() => {
       work("synthetic-actor-tx"),
   );
   mocks.getRuntimeAdapter.mockReturnValue("supabase");
+  mocks.getRuntimeConfiguration.mockResolvedValue({
+    content: { tarotContentVersion: "starguidance-original-v2" },
+    prompts: { safetyPolicyVersion: "question-safety-v2" },
+  });
   mocks.getSystemDatabaseClient.mockReturnValue("synthetic-system-client");
   mocks.claimInterpretationJobs.mockResolvedValue([]);
   mocks.writeInterpretationResult.mockResolvedValue(true);
@@ -168,7 +190,11 @@ describe("runInterpretationJobs", () => {
     stubPersistence(reading());
     const generateWithProvenance = vi.fn().mockResolvedValue({
       result: { cards: [] },
-      provenance: { providerId: "synthetic-provider", promptVersion: "v1", schemaVersion: "v1" },
+      provenance: {
+        providerId: "synthetic-provider",
+        promptVersion: "v1",
+        schemaVersion: "v1",
+      },
     });
     stubProvider(generateWithProvenance);
 
@@ -193,7 +219,13 @@ describe("runInterpretationJobs", () => {
       readingId,
       job: JOB,
       result: { cards: [] },
-      provenance: { providerId: "synthetic-provider", promptVersion: "v1", schemaVersion: "v1" },
+      provenance: {
+        providerId: "synthetic-provider",
+        promptVersion: "v1",
+        contentVersion: "starguidance-original-v2",
+        safetyPolicyVersion: "question-safety-v2",
+        schemaVersion: "v1",
+      },
     });
     expect(mocks.failInterpretationJob).not.toHaveBeenCalled();
     expect(mocks.markReadingGenerationFailed).not.toHaveBeenCalled();

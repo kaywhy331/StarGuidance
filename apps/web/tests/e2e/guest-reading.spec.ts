@@ -1,0 +1,240 @@
+import { randomUUID } from "node:crypto";
+
+import { expect, test } from "@playwright/test";
+
+test("a visitor completes a causal free reading before signup and continues with the exact cards", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.goto("/");
+  const freeReading = page.getByRole("link", { name: "Free Reading" });
+  await expect(freeReading).toHaveAttribute("href", "/free-reading");
+  await freeReading.click();
+
+  await expect(page.getByLabel("Your birthday")).toBeVisible({ timeout: 30_000 });
+  await page.getByLabel("Your birthday").fill("1990-01-15");
+  await page
+    .getByLabel(/I’m 18 or older, I agree to the Terms/i)
+    .evaluate((checkbox: HTMLInputElement) => checkbox.click());
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const questionHeading = page.getByRole("heading", {
+    name: "What would you like to ask the cards?",
+  });
+  await expect(questionHeading).toBeVisible();
+  await expect(questionHeading).toBeFocused();
+  const prepared = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/guest-readings" &&
+      response.request().postData()?.includes('"action":"prepare"') === true,
+  );
+  await page
+    .getByLabel("What would you like to ask the cards?")
+    .fill("What can I understand about the next step in my work?");
+  await page.getByRole("button", { name: "Draw my cards" }).click();
+  const preparedResponse = await prepared;
+  expect(preparedResponse.status()).toBe(201);
+  const preparedBody = await preparedResponse.json();
+  expect(JSON.stringify(preparedBody)).not.toMatch(/"cardId"|"assignments"|"orientation"/);
+
+  await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+    "data-ritual-phase",
+    "shuffling",
+  );
+  await expect(page.locator(".casino-card-shell")).toHaveCount(78);
+  const nonceBeforeStir = await page.evaluate(() => {
+    const pending = JSON.parse(sessionStorage.getItem("sg:guest-reading:v2") ?? "{}") as {
+      clientNonce?: string;
+    };
+    return pending.clientNonce;
+  });
+  await page.getByRole("button", { name: "Keep shuffling" }).click();
+  const entropyAfterStir = await page.evaluate(() => {
+    return JSON.parse(sessionStorage.getItem("sg:guest-reading:v2") ?? "{}") as {
+      clientNonce?: string;
+      stirCount?: number;
+    };
+  });
+  expect(nonceBeforeStir).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(entropyAfterStir.clientNonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(entropyAfterStir.clientNonce).not.toBe(nonceBeforeStir);
+  expect(entropyAfterStir.stirCount).toBe(1);
+  // The stir above needs the full-motion wash window; the rest of the journey
+  // runs on the persisted quiet path.
+  await page.getByRole("button", { name: "Motion: Full" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
+  const finalized = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/guest-readings" &&
+      response.request().postData()?.includes('"action":"finalize"') === true,
+  );
+  const cardCount = preparedBody.ceremony.spread.positions.length as number;
+  await expect(
+    page.getByRole("button", { name: "Choose face-down card 1", exact: true }),
+  ).toBeEnabled({ timeout: 20_000 });
+  const fanSurface = page.getByTestId("casino-fan-hit-surface");
+  const fanBounds = await fanSurface.boundingBox();
+  if (!fanBounds) throw new Error("The casino fan selection surface is not visible.");
+  for (let index = 0; index < cardCount; index += 1)
+    await fanSurface.click({
+      position: {
+        x: fanBounds.width * ((index + 1) / (cardCount + 1)),
+        y: fanBounds.height / 2,
+      },
+    });
+  // Nothing locks until the reader confirms the picks.
+  const confirmPicks = page.getByTestId("confirm-selected-cards");
+  await expect(confirmPicks).toHaveText("These are my cards");
+  await confirmPicks.click();
+  const finalizedResponse = await finalized;
+  expect(finalizedResponse.status()).toBe(201);
+  const finalizedBody = (await finalizedResponse.json()) as {
+    reading: {
+      cards: { cardId: string; orientation: "upright" | "reversed" }[];
+      result?: unknown;
+    };
+  };
+  expect(finalizedBody.reading.cards).toHaveLength(3);
+  expect(finalizedBody.reading.result).toBeUndefined();
+  const originalCards = finalizedBody.reading.cards.map(({ cardId }) => cardId);
+
+  await expect(page.getByTestId("guest-question-reflection")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".physical-card-front")).toHaveCount(0);
+  await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
+  await page.getByRole("button", { name: "I’m ready" }).click();
+  await page.getByRole("button", { name: "Reveal card 3, face down" }).click();
+  await expect(page.getByTestId("guest-guided-reveal-panel")).toContainText("Direction");
+  await expect(page.getByTestId("oracle-transcript")).toHaveCount(0);
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveAttribute(
+    "data-card-id",
+    originalCards[2]!,
+  );
+  await page.getByRole("button", { name: /Return to the spread/ }).click();
+  await page.getByRole("button", { name: "Turn over all cards" }).click();
+
+  const activePassage = page.getByTestId("reading-active-passage");
+  const signupGate = page.getByTestId("guest-signup-gate");
+  await expect(activePassage).toBeVisible({ timeout: 20_000 });
+  await expect(activePassage.locator(".oracle-entry-text")).toHaveText(/\S/);
+  await expect(activePassage.locator(".oracle-entry-text")).toContainText(
+    "the next step in your work",
+  );
+  await expect(activePassage).not.toContainText("whose function is");
+  await expect(activePassage).not.toContainText("current pattern begins with");
+  await expect(page.getByTestId("tarot-spread-stage")).toBeVisible();
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveCount(3);
+  await expect(signupGate).toHaveCount(0);
+  await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+    "data-reading-focus",
+    "reading",
+  );
+  await page.getByTestId("oracle-transcript").press("End");
+  await page.getByTestId("complete-reading-action").click();
+  await expect(activePassage).toHaveCount(0);
+  await expect(signupGate).toBeVisible();
+  // The gate never replaces the reading: the full keepsake stays beneath it.
+  await expect(page.getByTestId("reading-keepsake")).toBeVisible();
+  await expect(page.getByTestId("reading-keepsake")).toContainText("the next step in my work");
+  await expect(page.getByRole("button", { name: "Read it again" })).toBeVisible();
+  await expect(page.getByTestId("guest-reading-experience")).toHaveAttribute(
+    "data-reading-focus",
+    "actions",
+  );
+
+  await page.evaluate(() => {
+    sessionStorage.clear();
+    localStorage.removeItem("sg:guest-trial-used:v1");
+  });
+  await page.goto("/free-reading");
+  await expect(page.getByRole("region", { name: "Your locked tarot spread" })).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.locator(".physical-card-front")).toHaveCount(0);
+  await page.getByRole("button", { name: "I’m ready" }).click();
+  await page.getByRole("button", { name: "Reveal card 3, face down" }).click();
+  await expect(page.locator(".physical-tarot-card.is-revealed")).toHaveAttribute(
+    "data-card-id",
+    originalCards[2]!,
+  );
+  await page.getByRole("button", { name: /Return to the spread/ }).click();
+  await page.getByRole("button", { name: "Turn over all cards" }).click();
+  await expect(page.getByTestId("reading-active-passage")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("guest-signup-gate")).toHaveCount(0);
+  await page.getByTestId("oracle-transcript").press("End");
+  await page.getByTestId("complete-reading-action").click();
+  await expect(page.getByTestId("guest-signup-gate")).toBeVisible();
+  await page.getByRole("link", { name: "Sign up to continue" }).click();
+  await expect(page).toHaveURL(/\/sign-up\?next=/);
+
+  await page.getByLabel("Email").fill(`guest-${randomUUID()}@example.test`);
+  await page.getByLabel("Display name").fill("Nova");
+  await page.getByLabel(/^Password/).fill("synthetic-private-password");
+  await page.getByLabel("Confirm password").fill("synthetic-private-password");
+  await page.getByRole("button", { name: "Continue to privacy commitments" }).click();
+  await page.getByLabel(/I agree to the Terms/i).check();
+  await page.getByLabel(/I have read the Privacy Notice/i).check();
+  await page.getByLabel(/I confirm that I am at least 18/i).check();
+  await page.getByRole("button", { name: "Create private account" }).click();
+
+  await expect(page).toHaveURL(/\/free-reading\?continue=1$/, { timeout: 20_000 });
+  await expect(page.getByText("Same cards, now in your account")).toBeVisible({
+    timeout: 20_000,
+  });
+  const recoveredCards = await page
+    .getByTestId("guest-continuation-keepsake")
+    .getAttribute("data-card-ids");
+  expect(recoveredCards?.split(" ")).toEqual(originalCards);
+  await expect(page.getByTestId("reading-keepsake")).toBeVisible();
+  // Nothing reaches account history until the reader chooses to save.
+  const savePanel = page.getByTestId("guest-save-panel");
+  await expect(savePanel.getByRole("button", { name: "Save to my readings" })).toBeVisible();
+  const historyBeforeSave = (await (await page.request.get("/api/readings")).json()) as {
+    readings: unknown[];
+  };
+  expect(historyBeforeSave.readings).toEqual([]);
+
+  await page
+    .getByLabel("Ask these same cards one follow-up")
+    .fill("What is one practical way to meet that same next step?");
+  await page.getByRole("button", { name: "Ask the same cards" }).click();
+  await expect(
+    page.getByTestId("reading-keepsake").getByRole("heading", { name: /Follow-up on these cards/ }),
+  ).toBeVisible();
+  await expect(page.getByText(/cards stayed exactly as drawn/i)).toBeVisible();
+
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/guest-readings/continue" &&
+      response.request().postData()?.includes('"action":"save"') === true,
+  );
+  await savePanel.getByRole("button", { name: "Save to my readings" }).click();
+  const savedResponse = await saved;
+  expect(savedResponse.status()).toBe(201);
+  const { readingId } = (await savedResponse.json()) as { readingId: string };
+  await expect(savePanel.getByRole("status")).toContainText("Saved to your readings");
+  const stored = (await (await page.request.get(`/api/readings/${readingId}`)).json()) as {
+    reading: {
+      source?: string;
+      profileSnapshotId: string | null;
+      draw: { assignments: { cardId: string }[] };
+      followUps: unknown[];
+    };
+  };
+  expect(stored.reading).toMatchObject({ source: "guest_trial", profileSnapshotId: null });
+  expect(stored.reading.draw.assignments.map(({ cardId }) => cardId)).toEqual(originalCards);
+  // The follow-up answered before saving travels with the saved reading.
+  expect(stored.reading.followUps).toHaveLength(1);
+
+  await savePanel.getByRole("link", { name: "Open it in my readings" }).click();
+  await expect(page).toHaveURL(new RegExp(`/reading/${readingId}$`), { timeout: 20_000 });
+  const savedKeepsake = page.getByTestId("reading-keepsake");
+  await expect(savedKeepsake).toContainText("Your free reading", { timeout: 20_000 });
+  await expect(savedKeepsake).toContainText("the next step in my work");
+  await expect(
+    savedKeepsake.getByRole("heading", { name: /Follow-up on these cards/ }),
+  ).toBeVisible();
+  await page.goto("/history");
+  await expect(page.getByText(/Your free reading/)).toBeVisible({ timeout: 20_000 });
+});

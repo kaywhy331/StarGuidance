@@ -23,11 +23,40 @@ export async function GET() {
             persistence.decrypt(profile.encryptedCalculations, "profile-calculations"),
           ) as unknown,
         })),
+        relationshipProfiles: data.relationshipProfiles.map((profile) => ({
+          relationshipProfileId: profile.relationshipProfileId,
+          snapshot: profile.snapshot,
+          birthDetails: JSON.parse(
+            persistence.decrypt(profile.encryptedInput, "related-person-profile-input"),
+          ) as unknown,
+          calculations: JSON.parse(
+            persistence.decrypt(
+              profile.encryptedCalculations,
+              "related-person-profile-calculations",
+            ),
+          ) as unknown,
+        })),
         readings: data.readings.map((reading) => ({
           id: reading.id,
           profileSnapshotId: reading.profileSnapshotId,
+          source: reading.source ?? "account",
           spreadId: reading.spreadId,
           question: persistence.decrypt(reading.encryptedQuestion, "reading-question"),
+          // A saved guest reading keeps the birthday statements it was read
+          // with; account readings reference their exported profile instead.
+          ...(reading.source === "guest_trial"
+            ? { birthdayLensStatements: reading.readingLens.statements ?? [] }
+            : {}),
+          ...(reading.encryptedRelatedPersonLens
+            ? {
+                relatedPersonLens: JSON.parse(
+                  persistence.decrypt(
+                    reading.encryptedRelatedPersonLens,
+                    "related-person-reading-lens",
+                  ),
+                ) as unknown,
+              }
+            : {}),
           safetyClassification: reading.safetyClassification,
           draw: reading.draw,
           result: reading.result,
@@ -43,8 +72,11 @@ export async function GET() {
         feedback: data.feedback.map((feedback) => ({
           id: feedback.id,
           readingId: feedback.readingId,
+          kind: feedback.kind,
           resonance: feedback.resonance,
           helpfulness: feedback.helpfulness,
+          outcomeStatus: feedback.outcomeStatus,
+          behaviorChanged: feedback.behaviorChanged,
           ...(feedback.encryptedComment
             ? {
                 comment: persistence.decrypt(feedback.encryptedComment, "feedback-comment"),

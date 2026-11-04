@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import type { BrowserContext, Cookie } from "@playwright/test";
 
 import {
@@ -198,4 +199,50 @@ export async function deleteSyntheticIdentity(identity: SyntheticIdentity): Prom
     method: "DELETE",
     headers: { apikey: serviceKey(), authorization: `Bearer ${serviceKey()}` },
   }).catch(() => undefined);
+}
+
+/**
+ * Generates a signup action without dispatching email and confirms that GoTrue
+ * preserves the callback requested by the deployed application. The action
+ * link and its one-time token never leave this function. This proves the Auth
+ * URL allowlist, but deliberately does not claim that a provider template or
+ * inbox-delivery path is correct.
+ */
+export async function signupActionPreservesRedirect(redirectTo: string): Promise<boolean> {
+  const requestedRedirect = new URL(redirectTo).toString();
+  const runId = process.env.GITHUB_RUN_ID ?? "local";
+  const email = `${SYNTHETIC_EMAIL_PREFIX}${runId}-${randomUUID()}@${SYNTHETIC_EMAIL_DOMAIN}`;
+  if (process.env.GITHUB_ACTIONS === "true") process.stdout.write(`::add-mask::${email}\n`);
+
+  const client = createClient(supabaseUrl(), serviceKey(), {
+    auth: { autoRefreshToken: false, detectSessionInUrl: false, persistSession: false },
+  });
+  let generatedUserId: string | undefined;
+
+  try {
+    const { data, error } = await client.auth.admin.generateLink({
+      type: "signup",
+      email,
+      password: syntheticPassword(),
+      options: { redirectTo: requestedRedirect },
+    });
+    generatedUserId = data.user?.id;
+    if (error)
+      throw new Error(
+        `Generating a synthetic signup action failed with status ${error.status ?? "unknown"}`,
+      );
+
+    const actionLink = data.properties?.action_link;
+    if (!actionLink) throw new Error("Generating a synthetic signup action returned no link");
+    const acceptedRedirect = new URL(actionLink).searchParams.get("redirect_to");
+    return acceptedRedirect === requestedRedirect;
+  } finally {
+    if (generatedUserId) {
+      const { error } = await client.auth.admin.deleteUser(generatedUserId);
+      if (error)
+        throw new Error(
+          `Deleting a synthetic signup identity failed with status ${error.status ?? "unknown"}`,
+        );
+    }
+  }
 }

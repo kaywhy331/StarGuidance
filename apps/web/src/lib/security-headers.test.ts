@@ -14,6 +14,7 @@ describe("application security headers", () => {
 
     expect(headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
     expect(headers.get("Content-Security-Policy")).toContain("object-src 'none'");
+    expect(headers.get("Content-Security-Policy")).toContain("media-src 'self' blob:");
     expect(headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(headers.get("Permissions-Policy")).toContain("camera=()");
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");

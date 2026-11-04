@@ -2,8 +2,8 @@ name: Staging verification
 
 # Credential-gated verification of the owner-managed Supabase staging project.
 #
-# This workflow never runs automatically. It is restricted to the stacked
-# staging branch, runs only against the protected `starguidance-staging`
+# This workflow never runs automatically. It is restricted to the current
+# stacked staging branch, runs only against the protected `starguidance-staging`
 # environment, and publishes a single redacted Markdown summary. Secret values
 # are read into step environments and are never printed, echoed, or uploaded.
 #
@@ -18,7 +18,7 @@ on:
       preview_url:
         description: "Deploy preview to verify"
         required: true
-        default: "https://deploy-preview-4--starguidance.netlify.app"
+        default: "https://deploy-preview-30--starguidance.netlify.app"
       confirm_staging:
         description: "Type STAGING to confirm the target is non-production and this migration/test run is authorized"
         required: true
@@ -65,7 +65,9 @@ jobs:
     env:
       APP_ENV: ${{ vars.APP_ENV || 'staging' }}
       RUNTIME_ADAPTER: ${{ vars.RUNTIME_ADAPTER || 'supabase' }}
-      STAGING_BASE_URL: ${{ vars.NETLIFY_PREVIEW_URL || inputs.preview_url }}
+      # The required dispatch input identifies the exact release candidate.
+      # Never let a stale environment default silently verify an older preview.
+      STAGING_BASE_URL: ${{ inputs.preview_url }}
       STAGING_RESULTS: ${{ github.workspace }}/staging-results.jsonl
       SUMMARY_FILE: ${{ github.workspace }}/staging-verification-summary.md
       STAGE_DIR: ${{ github.workspace }}/staging-stages

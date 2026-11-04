@@ -55,6 +55,7 @@ let interpretationContract: InterpretationContract;
 const NAVIGATION_OPTIONS = { waitUntil: "commit" as const, timeout: 30_000 };
 const NAVIGATION_ATTEMPTS = 3;
 const API_REQUEST_TIMEOUT_MS = 60_000;
+const API_GET_ATTEMPTS = 2;
 const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60_000;
 
 /** Stable digest of a locked draw for byte-for-byte comparison. */
@@ -152,17 +153,26 @@ async function reloadApp(page: Page, ready: () => Promise<void>): Promise<void> 
 }
 
 async function apiGet<T>(page: Page, path: string): Promise<{ status: number; body: T }> {
-  try {
-    const response = await page.request.get(new URL(path, baseUrl).toString(), {
-      headers: { "cache-control": "no-store" },
-      timeout: API_REQUEST_TIMEOUT_MS,
-    });
-    return { status: response.status(), body: (await response.json()) as T };
-  } catch {
-    // Playwright's request error includes every cookie and authorization
-    // header. Never let that provider diagnostic reach a public Actions log.
-    throw new Error(`GET ${path} did not complete; request details redacted`);
+  for (let attempt = 1; attempt <= API_GET_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await page.request.get(new URL(path, baseUrl).toString(), {
+        headers: { "cache-control": "no-store" },
+        timeout: API_REQUEST_TIMEOUT_MS,
+      });
+      return { status: response.status(), body: (await response.json()) as T };
+    } catch {
+      if (attempt < API_GET_ATTEMPTS) {
+        await page.waitForTimeout(attempt * 500);
+        continue;
+      }
+      // Playwright's request error includes every cookie and authorization
+      // header. Never let that provider diagnostic reach a public Actions log.
+      throw new Error(
+        `GET ${path} did not complete after ${API_GET_ATTEMPTS} attempts; request details redacted`,
+      );
+    }
   }
+  throw new Error(`GET ${path} exhausted its bounded retry contract`);
 }
 
 async function apiPost<T>(
@@ -214,15 +224,41 @@ async function activeSnapshot(page: Page): Promise<{ id: string; version: number
 }
 
 async function createReading(page: Page, question: string): Promise<string> {
-  const { status, body } = await apiPost<{ readingId?: string }>(page, "/api/readings", {
-    // One card is sufficient for persistence/isolation assertions and avoids
-    // burning the live provider's staging quota on content the gate never reads.
-    spreadId: "one-card",
+  // The preparation response intentionally contains no card assignment: the
+  // browser contributes fresh entropy only after the question-routed ritual is prepared.
+  const prepared = await apiPost<{
+    ceremony?: { token?: string; sessionId?: string; serverSeedCommitment?: string };
+  }>(page, "/api/readings", {
+    action: "prepare",
     question,
+    questionConfirmed: true,
+    reversalMode: "reversals_enabled",
+    personalizationMode: "personalized_tarot",
   });
-  if (status !== 201 || !body.readingId)
-    throw new Error(`creating a reading returned status ${status}`);
-  return body.readingId;
+  const ceremony = prepared.body.ceremony;
+  if (
+    prepared.status !== 201 ||
+    !ceremony?.token ||
+    !ceremony.sessionId ||
+    !ceremony.serverSeedCommitment
+  )
+    throw new Error(`preparing a reading returned status ${prepared.status}`);
+
+  const clientNonce = await page.evaluate(() => {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  });
+  const finalized = await apiPost<{ readingId?: string }>(page, "/api/readings", {
+    action: "finalize",
+    ceremonyToken: ceremony.token,
+    clientNonce,
+    cutIndex: 0,
+  });
+  if (finalized.status !== 201 || finalized.body.readingId !== ceremony.sessionId)
+    throw new Error(`finalizing a reading returned status ${finalized.status}`);
+  return finalized.body.readingId;
 }
 
 async function readingState(page: Page, id: string): Promise<ReadingResponse["reading"]> {
@@ -329,10 +365,10 @@ test("both identities create profiles and the profile survives refresh", async (
   await createProfile(pageB, "user B", { name: "Bo Synthetic", date: "1985-06-02" });
 
   // The accessibility suite already proves the deployed onboarding form. This
-  // persistence suite commits the post-profile UI route without depending on
-  // Netlify's injected preview toolbar to observe a duplicate client transition.
+  // persistence suite commits the post-profile question route without depending
+  // on Netlify's injected preview toolbar to observe a duplicate client transition.
   await navigateApp(pageA, "/readings", () =>
-    expect(pageA.getByRole("button", { name: /^Continue with / })).toBeVisible({
+    expect(pageA.getByLabel("Your question for the stars")).toBeVisible({
       timeout: 15_000,
     }),
   );
@@ -346,7 +382,7 @@ test("both identities create profiles and the profile survives refresh", async (
   });
 
   await reloadApp(pageA, () =>
-    expect(pageA.getByRole("button", { name: /^Continue with / })).toBeVisible({
+    expect(pageA.getByLabel("Your question for the stars")).toBeVisible({
       timeout: 15_000,
     }),
   );
@@ -467,12 +503,14 @@ test("a reading is created against the active snapshot with a locked draw", asyn
   const persistedProviderId = outputProvenance?.providerId ?? "";
   const liveProvenance =
     approvedLiveProviderIds.has(persistedProviderId) &&
-    outputProvenance?.promptVersion === "reader-voice-v3" &&
-    outputProvenance.schemaVersion === "reading-result-v2";
+    ["reader-voice-v8", "reader-voice-v8-grounded"].includes(
+      outputProvenance?.promptVersion ?? "",
+    ) &&
+    outputProvenance?.schemaVersion === "reading-result-v3";
   const deterministicProvenance =
     outputProvenance?.providerId === "deterministic-fallback-v1" &&
-    outputProvenance.promptVersion === "deterministic-fallback-v3" &&
-    outputProvenance.schemaVersion === "reading-result-v2";
+    outputProvenance.promptVersion === "deterministic-fallback-v9" &&
+    outputProvenance.schemaVersion === "reading-result-v3";
   const configuredProvenance =
     interpretationContract === "approved-live" ? liveProvenance : deterministicProvenance;
   const safeFallbackReasons = [
@@ -498,16 +536,17 @@ test("a reading is created against the active snapshot with a locked draw", asyn
         : outputProvenance?.providerId
           ? "other"
           : "absent";
-  const promptState =
-    outputProvenance?.promptVersion === "reader-voice-v3"
-      ? "approved-live"
-      : outputProvenance?.promptVersion === "deterministic-fallback-v3"
-        ? "deterministic-fallback"
-        : outputProvenance?.promptVersion
-          ? "other"
-          : "absent";
+  const promptState = ["reader-voice-v8", "reader-voice-v8-grounded"].includes(
+    outputProvenance?.promptVersion ?? "",
+  )
+    ? "approved-live"
+    : outputProvenance?.promptVersion === "deterministic-fallback-v9"
+      ? "deterministic-fallback"
+      : outputProvenance?.promptVersion
+        ? "other"
+        : "absent";
   const schemaState =
-    reading.outputProvenance?.schemaVersion === "reading-result-v2"
+    reading.outputProvenance?.schemaVersion === "reading-result-v3"
       ? "approved"
       : "absent-or-other";
 
@@ -555,17 +594,25 @@ test("the locked draw is byte-identical across refresh, stream failure, retry, a
   await navigateApp(pageA, `/session/${readingId}`);
   // Use the same centered reader-controlled reveal path while shortening its
   // decorative timing for the staging integrity probe.
-  const motionControl = pageA.getByRole("button", { name: /^Reduced motion/ });
-  if ((await motionControl.getAttribute("aria-pressed")) !== "true") await motionControl.click();
-  await pageA
-    .getByRole("button", { name: "Gather now", exact: true })
-    .click({ timeout: 3_000 })
-    .catch(() => {});
+  const motionControl = pageA.getByRole("button", { name: /^Motion:/ });
+  if ((await motionControl.getAttribute("aria-pressed")) !== "true")
+    await motionControl.dispatchEvent("click");
+  await expect(motionControl).toHaveAttribute("aria-pressed", "true");
+  const sanctuary = pageA.getByTestId("mystic-sanctuary-scene");
+  await expect(sanctuary).toHaveAttribute("data-reduced-motion", "true");
+  await expect(sanctuary).toHaveAttribute("data-ritual-phase", "awaitingReveal", {
+    timeout: 20_000,
+  });
+  await expect(pageA.getByTestId("question-reflection")).toBeVisible({ timeout: 12_000 });
   await pageA.getByRole("button", { name: "I’m ready", exact: true }).click();
   for (let index = 0; index < 10; index += 1) {
+    await pageA
+      .getByRole("button", { name: /^Reveal card \d+, face down$/ })
+      .first()
+      .click();
     const action = pageA.locator(".guided-next-action");
     await expect(action).toBeVisible();
-    const finalCard = (await action.textContent())?.includes("Continue to your reading") === true;
+    const finalCard = (await action.textContent())?.includes("Open the complete reading") === true;
     await action.click();
     if (finalCard) break;
   }

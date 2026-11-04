@@ -27,17 +27,53 @@ const MAX_SCHEMA_BYTES = 96 * 1024;
 const MAX_QUESTION_CHARACTERS = 500;
 const MAX_READER_LENS_STATEMENTS = 3;
 const MAX_READER_LENS_CHARACTERS = 1_000;
-const MAX_ORIGINAL_PASSAGES = 24;
+const MAX_RELATIONSHIP_PROFILES = 3;
 const MAX_STRING_CHARACTERS = 4_000;
 const READING_SCHEMA_NAME = "reading";
 const FOLLOW_UP_SCHEMA_NAME = "follow_up";
 const GPT_OSS_PREFIX = "openai/gpt-oss-";
 const JSON_OBJECT_MODEL = "llama-3.3-70b-versatile";
 const REVIEWED_PROMPT_HASHES = new Map([
+  // reader-voice-v3 reading, guarded reading, follow-up, and guarded follow-up.
   ["6cbd882b93824b7ed2fa16a81b188d19224c5ad895abf5f91460fb0fd1181fd4", READING_SCHEMA_NAME],
   ["acb8039252911fa626ecf1dc2f2158e0bccdc5b2e4f9e9dccab8fd2e7c28ebbf", READING_SCHEMA_NAME],
   ["f4d4b305ebae00f4f295abd29fa462061de64326b0e8687f2240412c65f17f40", FOLLOW_UP_SCHEMA_NAME],
   ["0a0ee7b20f9473cf37c5334a99d910b251009e7b4f139e0fa16df405c54ad9f8", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v4 question-first reading, guarded reading, follow-up, and guarded follow-up.
+  ["281342777701f199e8cefc05f2b3d1cc1657ae5a677ab16fcbf63d7f9192947a", READING_SCHEMA_NAME],
+  ["8d2615a0faf9c21e26fe32c91dbbab4e5056dba96d150f68fd455eadb8966429", READING_SCHEMA_NAME],
+  ["c9895d3207fe0a445d94f91a27ef1f28cd0075d2ba70e085b28b90506c5e38c3", FOLLOW_UP_SCHEMA_NAME],
+  ["467fd8a2ecf5481e0429edf29117ad3c33c629316748151b9d8a2113bb4c3eb3", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v5 spread-aware reading, guarded reading, follow-up, and guarded follow-up.
+  ["e2fb57d4a6984c7ac5dbdfcf1f1c3478d07071e9db4986e821a4e0e4fc92a6f1", READING_SCHEMA_NAME],
+  ["8a51d144fbadc1bce8ed7a7dc4f420e359f7e92d6ae16ea42191299be1755db6", READING_SCHEMA_NAME],
+  ["aa564249169f94d34e3b0d98eea1c497d9f5933e73c6ae81a64cf3a26bd8ce02", FOLLOW_UP_SCHEMA_NAME],
+  ["6f8de98b9f3294356e39b49497e54c7d47b883000d5544d5e47c26047d04401b", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v6 question-led reading, guarded reading, follow-up, and guarded follow-up.
+  ["cfbb2ab1409739336db8581263069c14aed57cbc2935933a224824fc71db8c4f", READING_SCHEMA_NAME],
+  ["f03c5ffe9e3ac2f0bac84c430b38f4c073ce2c11fa31dd7726713ef1fdee1aee", READING_SCHEMA_NAME],
+  ["de963a0e4bda0467f071eef984fe93fb99dbc7832e490a3051b18763cf9d00a1", FOLLOW_UP_SCHEMA_NAME],
+  ["705626fccb0e264a58cb730aa50ce5838481ad56604abee4c8f0e49b2595d709", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v7 concise reading, guarded reading, follow-up, and guarded follow-up.
+  ["05455e8d16b3bab704136966790392f0b50497d0831552bad4e0a23f97fe1435", READING_SCHEMA_NAME],
+  ["02dd277a06d407ceaf2ca395180ae731abb35fe37417d2e3ec30379bada802cc", READING_SCHEMA_NAME],
+  ["a467ae5f4b3295b2c03b8e19f2ba774ad034718e4867a88238df5e4107164ad6", FOLLOW_UP_SCHEMA_NAME],
+  ["29dd2263401d24235c4ff1255f50ed0ce7c1d26eac6fb0eb52f4aaf0dba2d503", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v7-grounded reading, guarded reading, follow-up, and guarded follow-up.
+  ["824ef78cc267a0d769a10efb02badeba9dc8d436cfd0a7f162db8d1beecd3268", READING_SCHEMA_NAME],
+  ["c8ba06f53174a390d4e4f81a4424c8ca21ec84ea56c6152ba961c00de319224d", READING_SCHEMA_NAME],
+  ["5433ad4a583d6bc7f602e469603a776bc720d4dc9cc8c41efcc5d752d3cf4ae2", FOLLOW_UP_SCHEMA_NAME],
+  ["67316989afc19f6bb2a3509e2bf358a56a199a2d98885ebd65d22c68d070fef4", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v8 relationship-aware reading, guarded reading, follow-up, and guarded follow-up.
+  ["c10de8b9a3b48a19262e8e9843831fb4d19d828a8a98df51d1765aaf3261c574", READING_SCHEMA_NAME],
+  ["9cb6602d933feaa03ea2e56272fed73d6de2b705ea308a1ff10e147dc8eec551", READING_SCHEMA_NAME],
+  ["92c762c3a1819c8e14fb733ecdbc46444ded91ee1834b39e69c80fefe0109e0c", FOLLOW_UP_SCHEMA_NAME],
+  ["85c70379c1be97e3a06e76b7a1960737ece9705dbcad06ae7a85e8c79d70007b", FOLLOW_UP_SCHEMA_NAME],
+  // reader-voice-v8-grounded reading, guarded reading, follow-up, and guarded follow-up.
+  ["3f59f91ed95eba46d890c28d999414c22289451874fab080764899992605fc99", READING_SCHEMA_NAME],
+  ["814d69b5c04e559cd9d1e5599b17a4b51f551dce5f0acd3411ed854931f2dd35", READING_SCHEMA_NAME],
+  ["cbf0ad2c2ef080e2365bbaa8d2cabd61f8977b35e26163d0c81263372b572256", FOLLOW_UP_SCHEMA_NAME],
+  ["de1486a7b95aa1ab85add23b18c1f7b6139681c694646b8b6c5d5e9fcc322ca1", FOLLOW_UP_SCHEMA_NAME],
 ]);
 const SPREAD_POSITIONS = new Map([
   ["one-card", ["card-1"]],
@@ -100,18 +136,16 @@ const SPREAD_POSITIONS = new Map([
   ["crossroads", ["current-path", "hidden-influence", "path-a", "path-b", "leverage"]],
   ["outlook", ["foundation", "present", "incoming", "obstacle", "external", "leverage", "outcome"]],
 ]);
-const READING_PASSAGE_ROLES = new Set([
-  "opening",
-  "situation",
-  "underlyingPattern",
-  "development",
-  "turningPoint",
-  "trajectory",
-  "alternative",
-  "agency",
-  "reflection",
-  "closing",
-  "safety",
+const REVERSAL_FACETS = new Set([
+  "blocked",
+  "internalized",
+  "delayed",
+  "imbalanced",
+  "excessive",
+  "deficient",
+  "avoided",
+  "releasing",
+  "recovering",
 ]);
 const CARD_RANKS = new Set([
   "ace",
@@ -201,6 +235,25 @@ function validQuestionContext(value) {
   );
 }
 
+function validRelationshipLens(value, personalizationAllowed) {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_RELATIONSHIP_PROFILES &&
+    (personalizationAllowed || value.length === 0) &&
+    value.every(
+      (profile) =>
+        exactObject(profile, ["mention", "relevantTraitStatements"]) &&
+        boundedString(profile.mention, 201) &&
+        /^@[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(profile.mention) &&
+        Array.isArray(profile.relevantTraitStatements) &&
+        profile.relevantTraitStatements.length <= MAX_READER_LENS_STATEMENTS &&
+        profile.relevantTraitStatements.every((statement) =>
+          boundedString(statement, MAX_READER_LENS_CHARACTERS),
+        ),
+    )
+  );
+}
+
 function validCardId(cardId) {
   if (/^major-(?:0\d|1\d|2[01])$/.test(cardId)) return true;
   const match = /^(wands|cups|swords|pentacles)-([a-z]+)$/.exec(cardId);
@@ -222,77 +275,100 @@ function canonicalCardMetadata(cardId) {
   return { card: `${rank} of ${suit}`, arcana: "minor" };
 }
 
-function reviewedReadingSchema(cards) {
-  const positionIds = cards.map(({ positionId }) => positionId);
+function reviewedReadingSchema(cards, controls) {
   const exactCards = cards.map((entry) => ({
     type: "object",
     additionalProperties: false,
-    required: ["positionId", "cardId", "orientation", "passageIds"],
+    required: [
+      "positionId",
+      "positionLabel",
+      "cardId",
+      "orientation",
+      "coreMeaning",
+      "positionInterpretation",
+      "relationshipNotes",
+      "supportingEvidence",
+    ],
     properties: {
       positionId: { type: "string", enum: [entry.positionId], minLength: 1 },
+      positionLabel: { type: "string", enum: [entry.positionName], minLength: 1 },
       cardId: { type: "string", enum: [entry.cardId], minLength: 1 },
       orientation: { type: "string", enum: [entry.orientation] },
-      passageIds: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
-    },
-  }));
-  const passage = {
-    type: "object",
-    additionalProperties: false,
-    required: ["id", "role", "text", "cardReferences"],
-    properties: {
-      id: { type: "string", minLength: 1 },
-      role: { type: "string", enum: [...READING_PASSAGE_ROLES] },
-      text: { type: "string", minLength: 1 },
-      cardReferences: {
+      coreMeaning: { type: "string", minLength: 1, maxLength: 260 },
+      positionInterpretation: { type: "string", minLength: 1, maxLength: 420 },
+      relationshipNotes: {
         type: "array",
-        items: { type: "string", enum: positionIds },
-        maxItems: cards.length,
+        items: { type: "string", minLength: 1, maxLength: 420 },
+        maxItems: 12,
+      },
+      supportingEvidence: {
+        type: "array",
+        items: { type: "string", minLength: 1, maxLength: 320 },
+        minItems: 1,
+        maxItems: 12,
       },
     },
-  };
+  }));
+  const nullableText = (allowed, maxLength) =>
+    allowed
+      ? { anyOf: [{ type: "string", minLength: 1, maxLength }, { type: "null" }] }
+      : { type: "null" };
   return {
     type: "object",
     additionalProperties: false,
     required: [
       "schemaVersion",
-      "title",
-      "passages",
+      "directAnswer",
+      "overallPattern",
       "cards",
-      "trajectory",
+      "synthesis",
+      "likelyTrajectory",
+      "alternatePath",
+      "timing",
       "userAgency",
-      "reflectionQuestion",
-      "disconfirmingEvidence",
-      "uncertainty",
+      "reflectionPrompt",
+      "uncertaintyNote",
+      "personalizationLens",
       "safetyFlags",
     ],
     properties: {
-      schemaVersion: { type: "string", enum: ["reading-result-v2"] },
-      title: { type: "string", minLength: 1 },
-      passages: { type: "array", items: passage, minItems: 3, maxItems: 24 },
+      schemaVersion: { type: "string", enum: ["reading-result-v3"] },
+      directAnswer: { type: "string", minLength: 1, maxLength: 480 },
+      overallPattern: { type: "string", minLength: 1, maxLength: 360 },
       cards: {
         type: "array",
         items: exactCards.length === 1 ? exactCards[0] : { anyOf: exactCards },
         minItems: cards.length,
         maxItems: cards.length,
       },
-      trajectory: {
-        type: "object",
-        additionalProperties: false,
-        required: ["likelyPassageId", "conditions", "alternatePassageId"],
-        properties: {
-          likelyPassageId: { type: "string", minLength: 1 },
-          conditions: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
-          alternatePassageId: { type: "string", minLength: 1 },
-        },
-      },
-      userAgency: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
-      reflectionQuestion: { type: "string", minLength: 1 },
-      disconfirmingEvidence: {
-        type: "array",
-        items: { type: "string", minLength: 1 },
-        minItems: 1,
-      },
-      uncertainty: { type: "string", minLength: 1 },
+      synthesis: { type: "string", minLength: 1, maxLength: 480 },
+      likelyTrajectory: nullableText(controls.trajectoryAllowed, 420),
+      alternatePath: nullableText(controls.alternatePathAllowed, 420),
+      timing: nullableText(controls.timingAllowed, 260),
+      userAgency: { type: "string", minLength: 1, maxLength: 340 },
+      reflectionPrompt: { type: "string", minLength: 1, maxLength: 220 },
+      uncertaintyNote: { type: "string", minLength: 1, maxLength: 220 },
+      personalizationLens: controls.personalizationAllowed
+        ? {
+            anyOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["label", "observations"],
+                properties: {
+                  label: { type: "string", enum: ["Personalized reflection"] },
+                  observations: {
+                    type: "array",
+                    items: { type: "string", minLength: 1, maxLength: 300 },
+                    minItems: 1,
+                    maxItems: 6,
+                  },
+                },
+              },
+              { type: "null" },
+            ],
+          }
+        : { type: "null" },
       safetyFlags: { type: "array", items: { type: "string" } },
     },
   };
@@ -303,68 +379,106 @@ function reviewedFollowUpSchema() {
     type: "object",
     additionalProperties: false,
     required: ["response"],
-    properties: { response: { type: "string", minLength: 1 } },
+    properties: { response: { type: "string", minLength: 1, maxLength: 900 } },
   };
 }
 
 function validReadingResultSubset(value, lockedCards) {
   if (
-    !exactObject(value, ["title", "passages", "cards", "trajectory", "userAgency"]) ||
-    !boundedString(value.title) ||
-    !Array.isArray(value.passages) ||
-    value.passages.length < 3 ||
-    value.passages.length > MAX_ORIGINAL_PASSAGES ||
+    !exactObject(value, [
+      "directAnswer",
+      "overallPattern",
+      "cards",
+      "synthesis",
+      "likelyTrajectory",
+      "alternatePath",
+      "userAgency",
+    ]) ||
+    !boundedString(value.directAnswer) ||
+    !boundedString(value.overallPattern) ||
+    !boundedString(value.synthesis) ||
+    !boundedString(value.userAgency) ||
+    !(value.likelyTrajectory === null || boundedString(value.likelyTrajectory)) ||
+    !(value.alternatePath === null || boundedString(value.alternatePath)) ||
     !Array.isArray(value.cards) ||
-    value.cards.length !== lockedCards.length ||
-    !Array.isArray(value.userAgency) ||
-    value.userAgency.length < 1 ||
-    value.userAgency.some((entry) => !boundedString(entry)) ||
-    !exactObject(value.trajectory, ["likelyPassageId", "conditions", "alternatePassageId"]) ||
-    !boundedString(value.trajectory.likelyPassageId) ||
-    !boundedString(value.trajectory.alternatePassageId) ||
-    !Array.isArray(value.trajectory.conditions) ||
-    value.trajectory.conditions.length < 1 ||
-    value.trajectory.conditions.some((entry) => !boundedString(entry))
-  )
-    return false;
-  const passageIds = new Set();
-  for (const passage of value.passages) {
-    if (
-      !exactObject(passage, ["id", "role", "text", "cardReferences"]) ||
-      !boundedString(passage.id, 128) ||
-      passageIds.has(passage.id) ||
-      !READING_PASSAGE_ROLES.has(passage.role) ||
-      !boundedString(passage.text) ||
-      !Array.isArray(passage.cardReferences) ||
-      passage.cardReferences.length > lockedCards.length ||
-      passage.cardReferences.some(
-        (positionId) => !lockedCards.some((card) => card.positionId === positionId),
-      )
-    )
-      return false;
-    passageIds.add(passage.id);
-  }
-  if (
-    !passageIds.has(value.trajectory.likelyPassageId) ||
-    !passageIds.has(value.trajectory.alternatePassageId)
+    value.cards.length !== lockedCards.length
   )
     return false;
   const seenPositions = new Set();
   for (const card of value.cards) {
     if (
-      !exactObject(card, ["positionId", "cardId", "orientation", "passageIds"]) ||
+      !exactObject(card, [
+        "positionId",
+        "positionLabel",
+        "cardId",
+        "orientation",
+        "coreMeaning",
+        "positionInterpretation",
+        "relationshipNotes",
+        "supportingEvidence",
+      ]) ||
       seenPositions.has(card.positionId) ||
-      !Array.isArray(card.passageIds) ||
-      card.passageIds.length < 1 ||
-      card.passageIds.some((passageId) => !passageIds.has(passageId))
+      !boundedString(card.positionLabel, 128) ||
+      !boundedString(card.coreMeaning) ||
+      !boundedString(card.positionInterpretation) ||
+      !Array.isArray(card.relationshipNotes) ||
+      card.relationshipNotes.length > 12 ||
+      card.relationshipNotes.some((note) => !boundedString(note)) ||
+      !Array.isArray(card.supportingEvidence) ||
+      card.supportingEvidence.length < 1 ||
+      card.supportingEvidence.length > 12 ||
+      card.supportingEvidence.some((evidence) => !boundedString(evidence))
     )
       return false;
     const locked = lockedCards.find((entry) => entry.positionId === card.positionId);
-    if (!locked || locked.cardId !== card.cardId || locked.orientation !== card.orientation)
+    if (
+      !locked ||
+      locked.positionName !== card.positionLabel ||
+      locked.cardId !== card.cardId ||
+      locked.orientation !== card.orientation
+    )
       return false;
     seenPositions.add(card.positionId);
   }
   return true;
+}
+
+function validSpreadCapabilities(value, positionIds) {
+  if (
+    !exactObject(value, [
+      "trajectoryPositionIds",
+      "alternativePositionGroups",
+      "timingMethod",
+      "linkedPositions",
+    ]) ||
+    !Array.isArray(value.trajectoryPositionIds) ||
+    value.trajectoryPositionIds.some((id) => !positionIds.has(id)) ||
+    !Array.isArray(value.alternativePositionGroups) ||
+    value.alternativePositionGroups.some(
+      (group) =>
+        !Array.isArray(group) || group.length < 1 || group.some((id) => !positionIds.has(id)),
+    ) ||
+    !Array.isArray(value.linkedPositions)
+  )
+    return false;
+  if (
+    value.timingMethod !== null &&
+    (!exactObject(value.timingMethod, ["id", "positionIds"]) ||
+      !boundedString(value.timingMethod.id, 128) ||
+      !Array.isArray(value.timingMethod.positionIds) ||
+      value.timingMethod.positionIds.length < 1 ||
+      value.timingMethod.positionIds.some((id) => !positionIds.has(id)))
+  )
+    return false;
+  return value.linkedPositions.every(
+    (link) =>
+      exactObject(link, ["id", "positionIds", "relationship"]) &&
+      boundedString(link.id, 128) &&
+      Array.isArray(link.positionIds) &&
+      link.positionIds.length >= 2 &&
+      link.positionIds.every((id) => positionIds.has(id)) &&
+      ["sequence", "compare", "tension", "integration"].includes(link.relationship),
+  );
 }
 
 function validateReadingPayload(payload) {
@@ -373,20 +487,32 @@ function validateReadingPayload(payload) {
       "question",
       "questionContext",
       "spreadId",
+      "spreadCapabilities",
+      "trajectoryAllowed",
+      "alternatePathAllowed",
+      "timingAllowed",
+      "personalizationAllowed",
       "answerPositionId",
       "cards",
       "readerLens",
+      "relationshipLens",
     ]) ||
     !boundedString(payload.question, MAX_QUESTION_CHARACTERS) ||
     !boundedString(payload.spreadId, 64) ||
     !boundedString(payload.answerPositionId, 64) ||
     !validQuestionContext(payload.questionContext) ||
+    typeof payload.trajectoryAllowed !== "boolean" ||
+    typeof payload.alternatePathAllowed !== "boolean" ||
+    typeof payload.timingAllowed !== "boolean" ||
+    typeof payload.personalizationAllowed !== "boolean" ||
     !Array.isArray(payload.cards) ||
     payload.cards.length < 1 ||
     payload.cards.length > 10 ||
     !Array.isArray(payload.readerLens) ||
     payload.readerLens.length > MAX_READER_LENS_STATEMENTS ||
-    payload.readerLens.some((statement) => !boundedString(statement, MAX_READER_LENS_CHARACTERS))
+    payload.readerLens.some((statement) => !boundedString(statement, MAX_READER_LENS_CHARACTERS)) ||
+    (!payload.personalizationAllowed && payload.readerLens.length > 0) ||
+    !validRelationshipLens(payload.relationshipLens, payload.personalizationAllowed)
   )
     throw new Error("INVALID_STARGUIDANCE_PAYLOAD");
 
@@ -402,15 +528,19 @@ function validateReadingPayload(payload) {
         "positionId",
         "positionName",
         "positionMeans",
+        "positionDescription",
         "cardId",
         "card",
         "arcana",
         "orientation",
         "themes",
+        "domainTags",
+        "approvedReversalFacets",
       ]) ||
       !boundedString(entry.positionId, 64) ||
       !boundedString(entry.positionName, 128) ||
       !boundedString(entry.positionMeans, 512) ||
+      !boundedString(entry.positionDescription, 512) ||
       !validCardId(entry.cardId) ||
       !boundedString(entry.card, 128) ||
       !["major", "minor"].includes(entry.arcana) ||
@@ -419,6 +549,13 @@ function validateReadingPayload(payload) {
       entry.themes.length < 1 ||
       entry.themes.length > 8 ||
       entry.themes.some((theme) => !boundedString(theme, 256)) ||
+      !Array.isArray(entry.domainTags) ||
+      entry.domainTags.length > 16 ||
+      entry.domainTags.some((tag) => !boundedString(tag, 128)) ||
+      !Array.isArray(entry.approvedReversalFacets) ||
+      entry.approvedReversalFacets.length > REVERSAL_FACETS.size ||
+      entry.approvedReversalFacets.some((facet) => !REVERSAL_FACETS.has(facet)) ||
+      (entry.orientation === "upright" && entry.approvedReversalFacets.length > 0) ||
       seenPositions.has(entry.positionId) ||
       seenCards.has(entry.cardId)
     )
@@ -435,7 +572,23 @@ function validateReadingPayload(payload) {
   }
   if (!seenPositions.has(payload.answerPositionId)) throw new Error("INVALID_STARGUIDANCE_PAYLOAD");
   if (seenPositions.size !== positions.length) throw new Error("INVALID_STARGUIDANCE_PAYLOAD");
-  return { payload, schema: reviewedReadingSchema(payload.cards) };
+  if (
+    !validSpreadCapabilities(payload.spreadCapabilities, seenPositions) ||
+    payload.trajectoryAllowed !== payload.spreadCapabilities.trajectoryPositionIds.length > 0 ||
+    payload.alternatePathAllowed !==
+      payload.spreadCapabilities.alternativePositionGroups.length > 0 ||
+    payload.timingAllowed !== (payload.spreadCapabilities.timingMethod !== null)
+  )
+    throw new Error("INVALID_STARGUIDANCE_PAYLOAD");
+  return {
+    payload,
+    schema: reviewedReadingSchema(payload.cards, {
+      trajectoryAllowed: payload.trajectoryAllowed,
+      alternatePathAllowed: payload.alternatePathAllowed,
+      timingAllowed: payload.timingAllowed,
+      personalizationAllowed: payload.personalizationAllowed,
+    }),
+  };
 }
 
 /**
@@ -452,9 +605,15 @@ function validateFollowUpPayload(payload) {
       "question",
       "questionContext",
       "spreadId",
+      "spreadCapabilities",
+      "trajectoryAllowed",
+      "alternatePathAllowed",
+      "timingAllowed",
+      "personalizationAllowed",
       "answerPositionId",
       "cards",
       "readerLens",
+      "relationshipLens",
       "originalReading",
     ])
   )
@@ -463,20 +622,26 @@ function validateFollowUpPayload(payload) {
     question: payload.question,
     questionContext: payload.questionContext,
     spreadId: payload.spreadId,
+    spreadCapabilities: payload.spreadCapabilities,
+    trajectoryAllowed: payload.trajectoryAllowed,
+    alternatePathAllowed: payload.alternatePathAllowed,
+    timingAllowed: payload.timingAllowed,
+    personalizationAllowed: payload.personalizationAllowed,
     answerPositionId: payload.answerPositionId,
     cards: payload.cards,
     readerLens: payload.readerLens,
+    relationshipLens: payload.relationshipLens,
   });
   if (
     !exactObject(payload.originalReading, [
-      "title",
-      "passages",
+      "directAnswer",
+      "overallPattern",
       "cards",
-      "trajectory",
+      "synthesis",
+      "likelyTrajectory",
+      "alternatePath",
       "userAgency",
     ]) ||
-    !Array.isArray(payload.originalReading.passages) ||
-    payload.originalReading.passages.length > MAX_ORIGINAL_PASSAGES ||
     !validReadingResultSubset(payload.originalReading, payload.cards)
   )
     throw new Error("INVALID_STARGUIDANCE_PAYLOAD");

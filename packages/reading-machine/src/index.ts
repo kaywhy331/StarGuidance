@@ -1,17 +1,25 @@
 import { setup } from "xstate";
 
+/** The auditable consultation lifecycle. Card identity cannot exist before drawFinalizing. */
 export const readingStateNames = [
   "idle",
-  "selectingReading",
-  "enteringQuestion",
-  "preparingDeck",
+  "readingCreated",
+  "questionDrafting",
+  "questionConfirmed",
+  "spreadConfirmed",
+  "safetyApproved",
+  "focusing",
   "shuffling",
-  "cuttingDeck",
+  "selectingCards",
+  "optionalCut",
+  "drawFinalizing",
+  "drawLocked",
   "dealing",
   "awaitingReveal",
-  "revealingCards",
-  "generatingSynthesis",
-  "revealingResult",
+  "revealing",
+  "fullSpreadReady",
+  "interpretationStreaming",
+  "followUpAvailable",
   "complete",
   "generationFailed",
   "sessionExpired",
@@ -24,63 +32,100 @@ export const readingMachine = setup({
   types: {
     events: {} as
       | { type: "START" }
-      | { type: "SELECT" }
-      | { type: "CHANGE_READING" }
-      | { type: "QUESTION_ACCEPTED" }
+      | { type: "DRAFT_QUESTION" }
+      | { type: "CONFIRM_QUESTION" }
+      | { type: "REVISE_QUESTION" }
+      | { type: "CONFIRM_SPREAD" }
+      | { type: "CHANGE_SPREAD" }
+      | { type: "SAFETY_APPROVED" }
       | { type: "HIGH_STAKES" }
-      | { type: "DECK_READY" }
+      | { type: "CONTINUE_AS_REFLECTION" }
+      | { type: "FOCUS_COMPLETE" }
       | { type: "SHUFFLE_COMPLETE" }
+      | { type: "SELECTION_COMPLETE" }
       | { type: "CUT" }
       | { type: "SKIP_CUT" }
+      | { type: "DRAW_LOCKED" }
+      | { type: "FINALIZATION_FAILED" }
+      | { type: "RESTORE_LOCKED" }
+      | { type: "RESTORE_FOLLOW_UP" }
+      | { type: "RESTORE_COMPLETE" }
+      | { type: "RESHUFFLE" }
+      | { type: "BEGIN_DEAL" }
       | { type: "DEALT" }
       | { type: "REVEAL" }
       | { type: "ALL_REVEALED" }
-      | { type: "GENERATION_READY" }
+      | { type: "BEGIN_INTERPRETATION" }
       | { type: "GENERATION_FAILED" }
       | { type: "RETRY_GENERATION" }
-      | { type: "RESULT_REVEALED" }
-      | { type: "EXPIRE" }
-      | { type: "RESTART" }
-      | { type: "CONTINUE_AS_REFLECTION" },
+      | { type: "INTERPRETATION_COMPLETE" }
+      | { type: "COMPLETE" }
+      | { type: "EXPIRE" },
   },
 }).createMachine({
   id: "reading",
   initial: "idle",
   on: { EXPIRE: ".sessionExpired" },
   states: {
-    idle: { on: { START: "selectingReading" } },
-    selectingReading: { on: { SELECT: "enteringQuestion" } },
-    enteringQuestion: {
+    idle: { on: { START: "readingCreated" } },
+    readingCreated: {
       on: {
-        CHANGE_READING: "selectingReading",
-        QUESTION_ACCEPTED: "preparingDeck",
+        DRAFT_QUESTION: "questionDrafting",
+        RESTORE_LOCKED: "drawLocked",
+        /** A reading whose ritual already reached its interpretation reopens
+         * straight to it instead of replaying the deal and reveal. */
+        RESTORE_FOLLOW_UP: "followUpAvailable",
+        RESTORE_COMPLETE: "complete",
+      },
+    },
+    questionDrafting: { on: { CONFIRM_QUESTION: "questionConfirmed" } },
+    questionConfirmed: {
+      on: { CONFIRM_SPREAD: "spreadConfirmed", REVISE_QUESTION: "questionDrafting" },
+    },
+    spreadConfirmed: {
+      on: {
+        SAFETY_APPROVED: "safetyApproved",
         HIGH_STAKES: "highStakesQuestion",
+        CHANGE_SPREAD: "questionConfirmed",
+        REVISE_QUESTION: "questionDrafting",
       },
     },
     highStakesQuestion: {
       on: {
-        CHANGE_READING: "selectingReading",
-        RESTART: "enteringQuestion",
-        CONTINUE_AS_REFLECTION: "preparingDeck",
+        CONTINUE_AS_REFLECTION: "safetyApproved",
+        REVISE_QUESTION: "questionDrafting",
       },
     },
-    preparingDeck: { on: { DECK_READY: "shuffling" } },
-    shuffling: { on: { SHUFFLE_COMPLETE: "cuttingDeck" } },
-    cuttingDeck: {
-      // This is a visual gather rather than a second user decision: the scene
-      // holds here while the scattered cards return to one centered deck,
-      // then advances with SKIP_CUT. Keeping the explicit state also preserves
-      // persisted-flow compatibility.
-      on: { CUT: "dealing", SKIP_CUT: "dealing" },
+    safetyApproved: { always: "focusing" },
+    focusing: { on: { FOCUS_COMPLETE: "shuffling" } },
+    shuffling: { on: { SHUFFLE_COMPLETE: "selectingCards" } },
+    selectingCards: {
+      on: {
+        SELECTION_COMPLETE: "drawFinalizing",
+        /** A fresh ceremony replaces one that could not be locked. No card
+         * identity exists yet, so nothing drawn is discarded. */
+        RESHUFFLE: "shuffling",
+      },
     },
+    /** Historical recovery state for ceremonies prepared by the cut-based
+     * interface. New readings use selectingCards. */
+    optionalCut: { on: { CUT: "drawFinalizing", SKIP_CUT: "drawFinalizing" } },
+    drawFinalizing: {
+      on: { DRAW_LOCKED: "drawLocked", FINALIZATION_FAILED: "selectingCards" },
+    },
+    drawLocked: { on: { BEGIN_DEAL: "dealing" } },
     dealing: { on: { DEALT: "awaitingReveal" } },
-    awaitingReveal: { on: { REVEAL: "revealingCards" } },
-    revealingCards: { on: { REVEAL: "revealingCards", ALL_REVEALED: "generatingSynthesis" } },
-    generatingSynthesis: {
-      on: { GENERATION_READY: "revealingResult", GENERATION_FAILED: "generationFailed" },
+    awaitingReveal: { on: { REVEAL: "revealing" } },
+    revealing: { on: { REVEAL: "revealing", ALL_REVEALED: "fullSpreadReady" } },
+    fullSpreadReady: { on: { BEGIN_INTERPRETATION: "interpretationStreaming" } },
+    interpretationStreaming: {
+      on: {
+        INTERPRETATION_COMPLETE: "followUpAvailable",
+        GENERATION_FAILED: "generationFailed",
+      },
     },
-    generationFailed: { on: { RETRY_GENERATION: "generatingSynthesis" } },
-    revealingResult: { on: { RESULT_REVEALED: "complete" } },
+    generationFailed: { on: { RETRY_GENERATION: "interpretationStreaming" } },
+    followUpAvailable: { on: { COMPLETE: "complete" } },
     complete: { type: "final" },
     sessionExpired: { type: "final" },
   },

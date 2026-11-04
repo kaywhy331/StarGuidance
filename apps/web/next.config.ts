@@ -12,7 +12,9 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   `connect-src 'self'${process.env.NODE_ENV === "development" ? " ws: http:" : ""}`,
-  "media-src 'self'",
+  // Narration is assembled client-side from timestamped chunks and played
+  // through an origin-created object URL. No remote media origins are allowed.
+  "media-src 'self' blob:",
   "manifest-src 'self'",
 ].join("; ");
 
@@ -36,6 +38,16 @@ const nextConfig: NextConfig = {
     // is testing was built from the commit under test rather than an earlier
     // one; the health endpoint withholds it outside staging.
     DEPLOYED_COMMIT_REF: process.env.COMMIT_REF ?? "",
+    // REVIEW_ID is also build-only. Inline only its non-secret identifier for
+    // deploy previews so server code can derive a per-site/per-PR guest key
+    // without permitting that fallback in branch deploys or production.
+    GUEST_TRIAL_PREVIEW_ID:
+      process.env.CONTEXT === "deploy-preview" ? (process.env.REVIEW_ID ?? "") : "",
+    // A production build gets a separate non-secret marker. Runtime still has
+    // to prove APP_ENV=production, a valid Netlify SITE_ID, and a valid managed
+    // encryption root before the production guest subroot can be derived.
+    GUEST_TRIAL_PRODUCTION_BUILD:
+      process.env.CONTEXT === "production" ? "netlify-production-v1" : "",
   },
   experimental: {
     typedEnv: true,
