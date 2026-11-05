@@ -347,6 +347,9 @@ test("signed-in client unmount aborts pending recovery and preserves copies for 
       .getByRole("link", { name: "StarGuidance", exact: true })
       .click();
     await expect(page).toHaveURL(`${guest.origin}/`);
+    // The router can update the URL and unmount recovery before home finishes
+    // loading. Let that navigation render before starting the retry navigation.
+    await expect(page.getByRole("heading", { name: /Your pattern, held gently/ })).toBeVisible();
     await expect.poll(async () => (await probe()).requestsAtCancellation).not.toBeNull();
     release.resolve();
     await Promise.all(finished);

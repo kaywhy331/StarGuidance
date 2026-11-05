@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { motionTiming } from "../../src/lib/motion";
 
 import {
   createAccountAndProfileViaApi,
@@ -205,12 +206,20 @@ test("bounded shuffle settles, restarts on intent, and all 78 fan cards remain k
   test.setTimeout(150_000);
   await createAccountAndProfileViaApi(page);
   await page.goto("/readings");
+  // Keep the finite wash on stage while actionability waits for the real stir.
+  // Resume its timer below so automatic settling still runs on the app's clock.
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + motionTiming.washHold));
   const prepared = await reviewAndConfirmQuestion(
     page,
     "What can I understand about the next step in my work?",
   );
   expect(prepared.status()).toBe(201);
   const { ceremony } = (await prepared.json()) as { ceremony: PreparedCeremony };
+  await expect(page.getByTestId("mystic-sanctuary-scene")).toHaveAttribute(
+    "data-ritual-phase",
+    "shuffling",
+  );
   await expect(page.locator(".casino-card-shell")).toHaveCount(78);
   // Phase-specific legacy rules must not extend the new bounded atmosphere.
   await expect(page.locator(".sanctuary-light")).toHaveCSS("animation-duration", "3s");
@@ -226,6 +235,7 @@ test("bounded shuffle settles, restarts on intent, and all 78 fan cards remain k
             .filter((animation) => animation.playState === "running").length,
       );
   await expect.poll(runningShellAnimations).toBeGreaterThan(0);
+  await page.clock.resume();
   // The wash re-stacks, hands the pile to the fan, and every finite entrance
   // settles without any further click.
   await expect(page.getByRole("button", { name: /^Choose face-down card / })).toHaveCount(78, {
