@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
+import { motionTiming } from "../../src/lib/motion";
 
 test("a visitor completes a causal free reading before signup and continues with the exact cards", async ({
   page,
@@ -31,6 +32,10 @@ test("a visitor completes a causal free reading before signup and continues with
   await page
     .getByLabel("What would you like to ask the cards?")
     .fill("What can I understand about the next step in my work?");
+  // Hold the wash timer while exercising a real stir. Slow browser actionability
+  // checks must not consume the optional interaction's entire wash window.
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + motionTiming.washHold));
   await page.getByRole("button", { name: "Draw my cards" }).click();
   const preparedResponse = await prepared;
   expect(preparedResponse.status()).toBe(201);
@@ -59,8 +64,9 @@ test("a visitor completes a causal free reading before signup and continues with
   expect(entropyAfterStir.clientNonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(entropyAfterStir.clientNonce).not.toBe(nonceBeforeStir);
   expect(entropyAfterStir.stirCount).toBe(1);
-  // The stir above needs the full-motion wash window; the rest of the journey
-  // runs on the persisted quiet path.
+  await page.clock.resume();
+  // The rest of the journey accepts the wash finishing and uses the persisted
+  // quiet path; there is no second click on the transient stir control.
   await page.getByRole("button", { name: "Motion: Full" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   const finalized = page.waitForResponse(
