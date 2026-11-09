@@ -21,11 +21,11 @@
     "db:seed": "tsx packages/database/src/seed.ts"
   },
   "devDependencies": {
-    "@netlify/plugin-nextjs": "5.16.5",
-    "@playwright/test": "1.64.1",
+    "@netlify/plugin-nextjs": "5.16.6",
+    "@playwright/test": "1.65.0",
     "@types/node": "24.13.3",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.4.4",
+    "eslint-config-next": "16.4.5",
     "prettier": "3.9.10",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
